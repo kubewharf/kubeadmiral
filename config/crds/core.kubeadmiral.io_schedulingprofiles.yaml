@@ -1,0 +1,65 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+  creationTimestamp: null
+  name: schedulingprofiles.core.kubeadmiral.io
+spec:
+  group: core.kubeadmiral.io
+  names:
+    kind: SchedulingProfile
+    listKind: SchedulingProfileList
+    plural: schedulingprofiles
+    shortNames:
+    - sp
+    singular: schedulingprofile
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: SchedulingProfile configures the plugins to use when scheduling
+          a resource
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              plugins:
+                description: Plugins is the list of plugins to use when scheduling
+                  a resource
+                items:
+                  properties:
+                    name:
+                      description: Name is the name of the scheduler plugin
+                      type: string
+                    parameters:
+                      additionalProperties:
+                        x-kubernetes-preserve-unknown-fields: true
+                      description: Parameters is a map of custom parameters that is
+                        passed to the plugin
+                      type: object
+                  required:
+                  - name
+                  type: object
+                type: array
+            required:
+            - plugins
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true

@@ -1,0 +1,196 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+  creationTimestamp: null
+  name: overridepolicies.core.kubeadmiral.io
+spec:
+  group: core.kubeadmiral.io
+  names:
+    kind: OverridePolicy
+    listKind: OverridePolicyList
+    plural: overridepolicies
+    shortNames:
+    - op
+    singular: overridepolicy
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: OverridePolicy describes the override rules for a resource.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              overrideRules:
+                description: OverrideRules specify the override rules. Each rule specifies
+                  the overriders and the clusters these overriders should be applied
+                  to.
+                items:
+                  properties:
+                    overriders:
+                      description: Overriders specify the overriders to be applied
+                        in the target clusters.
+                      properties:
+                        jsonpatch:
+                          description: JsonPatch specifies overriders in a syntax
+                            similar to RFC6902 JSON Patch.
+                          items:
+                            properties:
+                              operator:
+                                description: Operator specifies the operation. If
+                                  omitted, defaults to "replace".
+                                type: string
+                              path:
+                                description: Path specified the location within the
+                                  resource document where the operation is performed.
+                                  Each key in the path should be prefixed with "/",
+                                  for example, "/metadata/labels".
+                                type: string
+                              value:
+                                description: Value is the value(s) required by the
+                                  operation.
+                                x-kubernetes-preserve-unknown-fields: true
+                            required:
+                            - path
+                            type: object
+                          type: array
+                      type: object
+                    targetClusters:
+                      description: TargetClusters selects the clusters in which the
+                        overriders in this rule should be applied. If multiple types
+                        of selectors are specified, the overall result is the intersection
+                        of all of them.
+                      properties:
+                        clusterAffinity:
+                          description: ClusterAffinity selects clusters by matching
+                            their labels and fields against expressions. If multiple
+                            terms are specified, their results are ORed.
+                          items:
+                            properties:
+                              matchExpressions:
+                                description: A list of cluster selector requirements
+                                  by cluster labels.
+                                items:
+                                  description: ClusterSelectorRequirement is a selector
+                                    that contains values, a key, and an operator that
+                                    relates the values and keys
+                                  properties:
+                                    key:
+                                      type: string
+                                    operator:
+                                      description: ClusterSelectorOperator is the
+                                        set of operators that can be used in a cluster
+                                        selector requirement.
+                                      enum:
+                                      - In
+                                      - NotIn
+                                      - Exists
+                                      - DoesNotExist
+                                      - Gt
+                                      - Lt
+                                      type: string
+                                    values:
+                                      items:
+                                        type: string
+                                      type: array
+                                  required:
+                                  - key
+                                  - operator
+                                  - values
+                                  type: object
+                                type: array
+                              matchFields:
+                                description: A list of cluster selector requirements
+                                  by cluster fields.
+                                items:
+                                  description: ClusterSelectorRequirement is a selector
+                                    that contains values, a key, and an operator that
+                                    relates the values and keys
+                                  properties:
+                                    key:
+                                      type: string
+                                    operator:
+                                      description: ClusterSelectorOperator is the
+                                        set of operators that can be used in a cluster
+                                        selector requirement.
+                                      enum:
+                                      - In
+                                      - NotIn
+                                      - Exists
+                                      - DoesNotExist
+                                      - Gt
+                                      - Lt
+                                      type: string
+                                    values:
+                                      items:
+                                        type: string
+                                      type: array
+                                  required:
+                                  - key
+                                  - operator
+                                  - values
+                                  type: object
+                                type: array
+                            type: object
+                          type: array
+                        clusterNames:
+                          description: ClusterNames selects clusters by their names.
+                            Empty ClusterNames selects all clusters.
+                          items:
+                            type: string
+                          type: array
+                        clusterSelector:
+                          additionalProperties:
+                            type: string
+                          description: ClusterSelector selects clusters by their labels.
+                            Empty labels selects all clusters.
+                          type: object
+                      type: object
+                  type: object
+                type: array
+            type: object
+          status:
+            properties:
+              refCount:
+                format: int64
+                minimum: 0
+                type: integer
+              typedRefCount:
+                items:
+                  properties:
+                    count:
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    group:
+                      type: string
+                    resource:
+                      type: string
+                  required:
+                  - count
+                  - resource
+                  type: object
+                type: array
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
