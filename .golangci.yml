@@ -1,0 +1,259 @@
+run:
+  skip-dirs:
+    - "pkg/client/clientset"
+    - "pkg/client/informers"
+    - "pkg/client/listers"
+linters:
+  # Disable all linters.
+  # Default: false
+  disable-all: true
+  # Enable specific linter
+  # https://golangci-lint.run/usage/linters/#enabled-by-default
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - containedctx
+    - contextcheck
+    # - cyclop # too demanding
+    # - decorder # little value-add
+    # - depguard # little value-add
+    # - dogsled # little value-add
+    - dupl
+    # - dupword # too many false-positives
+    - durationcheck
+    - errchkjson
+    - errname
+    - errorlint
+    # - execinquery # not using sql
+    - exhaustive
+    # - exhaustruct # too many false-positives for k8s
+    - exportloopref
+    - forbidigo
+    # - forcetypeassert # little value-add for k8s
+    # - funlen # too demanding
+    - gci
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    # - gochecknoglobals # too many false-positives for k8s
+    # - gochecknoinits # too many false-positives for k8s
+    # - gocognit # too demanding
+    - goconst
+    - gocritic
+    - gocyclo
+    # - godot # little value-add
+    # - godox # little value-add
+    # - goerr113 # too demanding
+    - gofmt
+    # - gofumpt # favour gofmt
+    - goheader
+    # - goimports # favour gci
+    # - gomnd # too many false-positives
+    - gomoddirectives
+    # - gomodguard # little value-add
+    - goprintffuncname
+    - gosec
+    - grouper
+    - importas
+    - interfacebloat
+    # - ireturn # too demanding
+    - lll
+    - loggercheck
+    # - maintidx # experimental
+    - makezero
+    - misspell
+    - musttag
+    - nakedret
+    # - nestif # too demanding
+    # - nilerr # disagree with its opinion
+    # - nilnil # disagree with its opinion
+    # - nlreturn # too demanding
+    - noctx
+    - nolintlint
+    # - nonamedreturns # favour nakedret
+    - nosprintfhostport
+    # - paralleltest # too many violations
+    - prealloc
+    - predeclared
+    # - promlinter # not using Prometheus
+    - reassign
+    - revive
+    # - rowserrcheck # not using sql
+    # - sqlscopecheck # not using sql
+    - stylecheck
+    - tagliatelle
+    - tenv
+    # - testableexamples # not sure what this does
+    # - testpackage # disagree with its opinion
+    - thelper
+    - tparallel
+    - unconvert
+    # - unparam # too many false-positives
+    - usestdlibvars
+    # - varnamelen # too demanding
+    - wastedassign
+    - whitespace
+    # - wrapcheck # too demanding
+    # - wsl # too demanding
+linters-settings:
+  errcheck:
+    # List of functions to exclude from checking, where each entry is a single function to exclude.
+    # See https://github.com/kisielk/errcheck#excluding-functions for details.
+    exclude-functions:
+      - (*github.com/spf13/pflag.FlagSet).Parse
+      - (github.com/kubewharf/kubeadmiral/pkg/stats.Metrics).Store
+      - (github.com/kubewharf/kubeadmiral/pkg/stats.Metrics).Counter
+      - (github.com/kubewharf/kubeadmiral/pkg/stats.Metrics).Rate
+      - (github.com/kubewharf/kubeadmiral/pkg/stats.Metrics).Timer
+      - (github.com/kubewharf/kubeadmiral/pkg/stats.Metrics).Duration
+      - (k8s.io/client-go/tools/cache.SharedInformer).AddEventHandler
+      - (k8s.io/client-go/tools/cache.SharedInformer).AddEventHandlerWithResyncPeriod
+      - (k8s.io/client-go/tools/cache.SharedInformer).RemoveEventHandler
+  gci:
+    # Section configuration to compare against.
+    # Section names are case-insensitive and may contain parameters in ().
+    # The default order of sections is `standard > default > custom > blank > dot`,
+    # If `custom-order` is `true`, it follows the order of `sections` option.
+    # Default: ["standard", "default"]
+    sections:
+      - standard # Standard section: captures all standard packages.
+      - default # Default section: contains all imports that could not be matched to another section type.
+      - prefix(github.com/kubewharf/kubeadmiral) # Group all local imports.
+    # Enable custom order of sections.
+    # If `true`, make the section order the same as the order of `sections`.
+    # Default: false
+    custom-order: true
+  importas:
+    # Do not allow unaliased imports of aliased packages.
+    # Default: false
+    no-unaliased: true
+    # List of aliases
+    # Default: []
+    alias:
+      # You can specify the package path by regular expression,
+      # and alias by regular expression expansion syntax like below.
+      # see https://github.com/julz/importas#use-regular-expression for details
+      - pkg: "k8s.io/apimachinery/pkg/api/errors"
+        alias: apierrors
+      - pkg: "k8s.io/apimachinery/pkg/apis/meta/v1"
+        alias: metav1
+
+      - pkg: k8s.io/api/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+        # corev1, appsv1...
+        alias: ${group}${v1}${v2}${v3}
+      - pkg: "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+        alias: apiextensionsv1
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/apis/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+        # fedcorev1a1
+        alias: fed${group}${v1}${v2}${v3}
+
+      - pkg: k8s.io/client-go/kubernetes/typed/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+        alias: ${group}${v1}${v2}${v3}client
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned
+        alias: fedclient
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/scheme
+        alias: fedscheme
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+        # fedcorev1a1client
+        alias: fed${group}${v1}${v2}${v3}client
+
+      - pkg: k8s.io/client-go/informers/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+        alias: ${group}${v1}${v2}${v3}informers
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions
+        alias: fedinformers
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+        # fedcorev1a1informers
+        alias: fed${group}${v1}${v2}${v3}informers
+
+      - pkg: k8s.io/client-go/listers/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+        alias: ${group}${v1}${v2}${v3}listers
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/listers/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+        # fedcorev1a1listers
+        alias: fed${group}${v1}${v2}${v3}listers
+  govet:
+    # Settings per analyzer.
+    settings:
+      # Analyzer name, run `go tool vet help` to see all analyzers.
+      printf:
+        # Comma-separated list of print function names to check (in addition to default, see `go tool vet help printf`).
+        # Default: []
+        funcs:
+          - (k8s.io/klog/v2).Infof
+          - (k8s.io/klog/v2).Warningf
+          - (k8s.io/klog/v2).Errorf
+          - (k8s.io/klog/v2).Fatalf
+          - (k8s.io/klog/v2).Exitf
+          - (k8s.io/client-go/tools/record.EventRecorder).Eventf
+          - (k8s.io/client-go/tools/record.EventRecorder).AnnotatedEventf
+  tagliatelle:
+    # Check the struct tag name case.
+    case:
+      # `camel` is used for `json` and `yaml`, and `header` is used for `header` (can be overridden)
+      # Default: {}
+      rules:
+        # Any struct tag type can be used.
+        # Support string case: `camel`, `pascal`, `kebab`, `snake`, `goCamel`, `goPascal`, `goKebab`, `goSnake`, `upper`, `lower`, `header`
+        json: goCamel
+        yaml: goCamel
+  gocritic:
+    # Which checks should be disabled; can't be combined with 'enabled-checks'.
+    # Default: []
+    disabled-checks:
+      - appendAssign # assigning the result of `append` to a different slice variable
+  revive:
+    rules:
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#exported
+      - name: exported
+        arguments:
+          - "disableStutteringCheck"
+  goheader:
+    values:
+      regexp:
+        YEAR: '20\d\d'
+        MAIN: |-
+          Licensed under the Apache License, Version 2\.0 \(the "License"\);
+          you may not use this file except in compliance with the License\.
+          You may obtain a copy of the License at
+
+          \s+http://www\.apache\.org/licenses/LICENSE-2\.0
+
+          Unless required by applicable law or agreed to in writing, software
+          distributed under the License is distributed on an "AS IS" BASIS,
+          WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied\.
+          See the License for the specific language governing permissions and
+          limitations under the License\.
+        MODIFIED_NOTICE: |-
+          This file may have been modified by The KubeAdmiral Authors
+          \("KubeAdmiral Modifications"\)\. All KubeAdmiral Modifications
+          are Copyright {{ YEAR }} The KubeAdmiral Authors\.
+        KUBERNETES_BOILERPLATE: |-
+          Copyright {{ YEAR }} The Kubernetes Authors\.
+
+          {{ MAIN }}
+
+          {{ MODIFIED_NOTICE }}
+        KUBEADMIRAL_BOILERPLATE: |-
+          Copyright {{ YEAR }} The KubeAdmiral Authors\.
+
+          {{ MAIN }}
+        BOILERPLATE: "^({{ KUBERNETES_BOILERPLATE }}|{{ KUBEADMIRAL_BOILERPLATE }})$"
+    template: "{{ BOILERPLATE }}"
+  forbidigo:
+    # Forbid the following identifiers (list of regexp).
+    # Default: ["^(fmt\\.Print(|f|ln)|print|println)$"]
+    forbid:
+      # Optionally put comments at the end of the regex, surrounded by `(# )?`
+      # Escape any special characters.
+      - (util)?runtime\.HandleError(# explicit error logging is preferred)?
+  lll:
+    line-length: 140
+  exhaustive:
+    default-signifies-exhaustive: true

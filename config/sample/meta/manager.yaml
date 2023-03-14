@@ -1,0 +1,69 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubeadmiral-controller-manager
+rules:
+  - apiGroups:
+      - "*"
+    resources:
+      - "*"
+    verbs:
+      - "*"
+  - nonResourceURLs:
+      - "*"
+    verbs:
+      - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubeadmiral-controller-manager
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubeadmiral-controller-manager
+subjects:
+  - kind: ServiceAccount
+    name: kubeadmiral-controller-manager
+    namespace: default
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubeadmiral-controller-manager
+  namespace: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubeadmiral-controller-manager
+  namespace: default
+  labels:
+    app: kubeadmiral-controller-manager
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: kubeadmiral-controller-manager
+  template:
+    metadata:
+      labels:
+        app: kubeadmiral-controller-manager
+    spec:
+      priorityClassName: system-cluster-critical
+      serviceAccountName: kubeadmiral-controller-manager
+      containers:
+        - name: manager
+          image: "kubewharf/kubeadmiral-controller-manager"
+          imagePullPolicy: Always
+          command:
+            - /kubeadmiral-controller-manager
+            - --enable-leader-elect=true
+            - --create-crds-for-ftcs=true
+            - --worker-count=20
+            - --kube-api-qps=100
+            - --kube-api-burst=200
+            - --klog-v=4
+      restartPolicy: Always
