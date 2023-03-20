@@ -24,6 +24,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -319,29 +320,37 @@ func (r *federatedResource) overridesForCluster(clusterName string) (fedtypesv1a
 
 		r.overridesMap = make(util.OverridesMap)
 
-		// Merge overrides from different controllers in the order specified by the FederatedTypeConfig
-		overrideControllerIndex := make(map[string]int, len(obj.Spec.Overrides))
-		for index, controllerOverride := range obj.Spec.Overrides {
-			overrideControllerIndex[controllerOverride.Controller] = index
-		}
-
-		allControllers := r.typeConfig.GetControllers()
-		for _, controllerGroup := range allControllers {
+		// Order overrides based on the controller name specified in the FTC
+		// Put overrides from unknown sources at the end, but preserve their relative orders
+		controllerOrder := make(map[string]int)
+		for _, controllerGroup := range r.typeConfig.GetControllers() {
 			for _, controller := range controllerGroup {
-				i, hasOverride := overrideControllerIndex[controller]
-				if !hasOverride {
-					// no overrides from this controller
-					continue
-				}
-				controllerOverride := obj.Spec.Overrides[i]
+				controllerOrder[controller] = len(controllerOrder)
+			}
+		}
+		sort.SliceStable(obj.Spec.Overrides, func(i, j int) bool {
+			lhs, isKnown := controllerOrder[obj.Spec.Overrides[i].Controller]
+			if !isKnown {
+				// lhs is unknown
+				// if rhs is known, return false so rhs can precede lhs
+				// if rhs is unknown, return false to preserve the relative order
+				return false
+			}
+			rhs, isKnown := controllerOrder[obj.Spec.Overrides[j].Controller]
+			if !isKnown {
+				// lhs controller is known and rhs controller is unknown
+				// lhs should precede rhs
+				return true
+			}
+			return lhs < rhs
+		})
 
-				for _, clusterOverride := range controllerOverride.Clusters {
-					clusterPatches := append(r.overridesMap[clusterOverride.ClusterName], clusterOverride.Patches...)
-
-					if len(clusterPatches) > 0 {
-						r.overridesMap[clusterOverride.ClusterName] = clusterPatches
-					}
-				}
+		// Merge overrides in the specified order
+		for _, controllerOverride := range obj.Spec.Overrides {
+			for _, clusterOverride := range controllerOverride.Clusters {
+				r.overridesMap[clusterOverride.ClusterName] = append(
+					r.overridesMap[clusterOverride.ClusterName], clusterOverride.Patches...,
+				)
 			}
 		}
 	}
