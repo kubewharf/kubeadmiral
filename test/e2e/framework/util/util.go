@@ -83,6 +83,8 @@ func AssertForItems[T any](
 	ginkgo.Fail(buf.String())
 }
 
+// PollUntilForItems polls each item in items with condFn until
+// it returns true, an error, or until ctx is cancelled.
 func PollUntilForItems[T any](
 	ctx context.Context,
 	items []T,
