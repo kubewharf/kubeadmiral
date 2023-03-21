@@ -93,8 +93,12 @@ type JsonPatchOverrider struct {
 	// +optional
 	Operator string `json:"operator,omitempty"`
 
-	// Path specified the location within the resource document where the operation is performed.
-	// Each key in the path should be prefixed with "/", for example, "/metadata/labels".
+	// Path is a JSON pointer (RFC 6901) specifying the location within the resource document where the
+	// operation is performed.
+	// Each key in the path should be prefixed with "/",
+	// while "~" and "/" should be escaped as "~0" and "~1" respectively.
+	// For example, to add a label "kubeadmiral.io/label",
+	// the path should be "/metadata/labels/kubeadmiral.io~1label".
 	Path string `json:"path"`
 
 	// Value is the value(s) required by the operation.
