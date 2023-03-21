@@ -82,6 +82,18 @@ func GetSimpleDeployment(baseName string) *appsv1.Deployment {
 	}
 }
 
+func IsDeploymentProgressing(deployment *appsv1.Deployment) bool {
+	for _, c := range deployment.Status.Conditions {
+		if c.Type != appsv1.DeploymentProgressing {
+			continue
+		}
+
+		return c.Status == corev1.ConditionTrue
+	}
+
+	return false
+}
+
 func GetSimpleDaemonset() *appsv1.DaemonSet {
 	return nil
 }

@@ -92,12 +92,6 @@ func resourcePropagationTest[T k8sObject](
 	ginkgo.It("Should succeed", resourcePropagationTestLabel, func(ctx ginkgo.SpecContext) {
 		var err error
 		object := config.objectFactory(f.Name())
-
-		ginkgo.GinkgoLogr.WithValues(
-			"gvr", config.gvr.String(),
-			"namespace", f.TestNamespace().Name,
-			"name", object.GetName(),
-		)
 		hostClient := config.clientGetter(f.HostKubeClient(), f.TestNamespace().Name)
 
 		var clusters []*fedcorev1a1.FederatedCluster
