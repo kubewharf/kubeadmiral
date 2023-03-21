@@ -22,11 +22,12 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
+	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework/resources"
 )
 
-var _ = ginkgo.Describe("CronJob Propagation", resourcePropagationTestLabel, func() {
+var _ = ginkgo.Describe("CronJob Propagation", func() {
 	f := framework.NewFramework("cronjob-propagation", framework.FrameworkOptions{CreateNamespace: true})
 
 	resourcePropagationTest(
@@ -43,6 +44,10 @@ var _ = ginkgo.Describe("CronJob Propagation", resourcePropagationTestLabel, fun
 				cronjob *batchv1b1.CronJob,
 			) (bool, error) {
 				return resources.IsCronJobScheduledOnce(cronjob), nil
+			},
+			statusCollection: &resourceStatusCollectionTestConfig{
+				gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federatedcronjobstatuses"),
+				path: "status",
 			},
 		},
 	)

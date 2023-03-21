@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/pointer"
 
+	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework/resources"
 )
@@ -48,7 +49,7 @@ func getJobWithManualSelector(baseName string) *batchv1.Job {
 	return job
 }
 
-var _ = ginkgo.Context("Job Propagation", resourcePropagationTestLabel, func() {
+var _ = ginkgo.Context("Job Propagation", func() {
 	testCases := []struct {
 		name       string
 		jobFactory func(string) *batchv1.Job
@@ -83,6 +84,10 @@ var _ = ginkgo.Context("Job Propagation", resourcePropagationTestLabel, func() {
 						_ dynamic.Interface,
 						job *batchv1.Job) (bool, error) {
 						return resources.IsJobComplete(job), nil
+					},
+					statusCollection: &resourceStatusCollectionTestConfig{
+						gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federatedjobstatuses"),
+						path: "status",
 					},
 				},
 			)
