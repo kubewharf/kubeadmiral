@@ -82,7 +82,8 @@ var _ = ginkgo.Context("Job Propagation", func() {
 					isPropagatedResourceWorking: func(
 						_ kubernetes.Interface,
 						_ dynamic.Interface,
-						job *batchv1.Job) (bool, error) {
+						job *batchv1.Job,
+					) (bool, error) {
 						return resources.IsJobComplete(job), nil
 					},
 					statusCollection: &resourceStatusCollectionTestConfig{
