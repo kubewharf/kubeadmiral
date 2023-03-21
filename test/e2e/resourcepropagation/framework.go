@@ -18,6 +18,9 @@ package resourcepropagation
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -38,6 +41,9 @@ import (
 
 var (
 	resourcePropagationTestLabel = ginkgo.Label("resource-propagation")
+
+	resourceUpdateTestAnnotationKey   = "kubeadmiral.io/e2e-update-test"
+	resourceUpdateTestAnnotationValue = "1"
 
 	defaultPollingInterval = 10 * time.Millisecond
 
@@ -136,6 +142,49 @@ func resourcePropagationTest[T k8sObject](
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 			gomega.Expect(failedClusters).
 				To(gomega.BeEmpty(), "Timed out waiting for resource to propagate to clusters %v", util.NameList(failedClusters))
+		})
+
+		ginkgo.By("Updating the source object", func() {
+			patch := []map[string]interface{}{
+				{
+					"op": "add",
+					// escape the / in annotation key
+					"path":  "/metadata/annotations/" + strings.Replace(resourceUpdateTestAnnotationKey, "/", "~1", 1),
+					"value": resourceUpdateTestAnnotationValue,
+				},
+			}
+			patchBytes, err := json.Marshal(patch)
+			fmt.Printf("%s\n", patchBytes)
+			gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
+
+			object, err = hostClient.Patch(ctx, object.GetName(), types.JSONPatchType, patchBytes, metav1.PatchOptions{})
+			gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
+		})
+
+		ginkgo.By("Waiting for update to be propagated", func() {
+			ctx, cancel := context.WithTimeout(ctx, resourcePropagationTimeout)
+			defer cancel()
+
+			failedClusters, err := util.PollUntilForItems(
+				ctx,
+				clusters,
+				func(c *fedcorev1a1.FederatedCluster) (bool, error) {
+					clusterObj, err := config.clientGetter(
+						f.ClusterKubeClient(ctx, c),
+						object.GetNamespace(),
+					).Get(ctx, object.GetName(), metav1.GetOptions{})
+					if err != nil {
+						return false, err
+					}
+					updatePropagated := clusterObj.GetAnnotations()[resourceUpdateTestAnnotationKey] == resourceUpdateTestAnnotationValue
+					return updatePropagated, nil
+				},
+				defaultPollingInterval,
+			)
+
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
+			gomega.Expect(failedClusters).
+				To(gomega.BeEmpty(), "Timed out waiting for resource update to propagate to clusters %v", util.NameList(failedClusters))
 		})
 
 		ginkgo.By("Waiting for propagated resource to work correctly", func() {
