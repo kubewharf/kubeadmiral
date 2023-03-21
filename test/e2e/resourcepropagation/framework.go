@@ -27,6 +27,7 @@ import (
 	"github.com/onsi/gomega"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,6 +35,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	controllerutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework/policies"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework/util"
@@ -41,13 +43,16 @@ import (
 
 var (
 	resourcePropagationTestLabel = ginkgo.Label("resource-propagation")
+)
 
+const (
 	resourceUpdateTestAnnotationKey   = "kubeadmiral.io/e2e-update-test"
 	resourceUpdateTestAnnotationValue = "1"
 
 	defaultPollingInterval = 10 * time.Millisecond
 
 	resourcePropagationTimeout = 30 * time.Second
+	resourceStatusTimeout      = 30 * time.Second
 	resourceReadyTimeout       = 2 * time.Minute
 	resourceDeleteTimeout      = 30 * time.Second
 )
@@ -67,8 +72,14 @@ type resourceClient[T k8sObject] interface {
 	) (result T, err error)
 }
 
+type resourceStatusCollectionTestConfig struct {
+	gvr  schema.GroupVersionResource
+	path string
+}
+
 type resourcePropagationTestConfig[T k8sObject] struct {
 	gvr                         schema.GroupVersionResource
+	statusCollection            *resourceStatusCollectionTestConfig
 	objectFactory               func(name string) T
 	clientGetter                func(client kubernetes.Interface, namespace string) resourceClient[T]
 	isPropagatedResourceWorking func(kubernetes.Interface, dynamic.Interface, T) (bool, error)
@@ -78,7 +89,7 @@ func resourcePropagationTest[T k8sObject](
 	f framework.Framework,
 	config *resourcePropagationTestConfig[T],
 ) {
-	ginkgo.It("Should succeed", func(ctx ginkgo.SpecContext) {
+	ginkgo.It("Should succeed", resourcePropagationTestLabel, func(ctx ginkgo.SpecContext) {
 		var err error
 		object := config.objectFactory(f.Name())
 
@@ -154,7 +165,6 @@ func resourcePropagationTest[T k8sObject](
 				},
 			}
 			patchBytes, err := json.Marshal(patch)
-			fmt.Printf("%s\n", patchBytes)
 			gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 
 			object, err = hostClient.Patch(ctx, object.GetName(), types.JSONPatchType, patchBytes, metav1.PatchOptions{})
@@ -215,6 +225,57 @@ func resourcePropagationTest[T k8sObject](
 			gomega.Expect(failedClusters).
 				To(gomega.BeEmpty(), "Timed out waiting for resource to be working in clusters %v", failedClusters)
 		})
+
+		if config.statusCollection != nil {
+			pathSegments := strings.Split(config.statusCollection.path, ".")
+			ginkgo.By("Waiting for status collection", func() {
+				gomega.Eventually(ctx, func(g gomega.Gomega) {
+					actualFieldByCluster := make(map[string]any, len(clusters))
+					for _, cluster := range clusters {
+						clusterObject, err := config.clientGetter(
+							f.ClusterKubeClient(ctx, cluster), object.GetNamespace(),
+						).Get(ctx, object.GetName(), metav1.GetOptions{})
+						gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
+
+						uns, err := pkgruntime.DefaultUnstructuredConverter.ToUnstructured(clusterObject)
+						gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
+						actualField, exists, err := unstructured.NestedFieldNoCopy(uns, pathSegments...)
+						gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
+						gomega.Expect(exists).To(
+							gomega.BeTrue(),
+							fmt.Sprintf("Cluster object does not contain specified field %q", config.statusCollection.path),
+						)
+						actualFieldByCluster[cluster.Name] = actualField
+					}
+
+					fedStatusUns, err := f.HostDynamicClient().Resource(config.statusCollection.gvr).Namespace(object.GetNamespace()).Get(
+						ctx, object.GetName(), metav1.GetOptions{})
+					if err != nil && apierrors.IsNotFound(err) {
+						// status might not have been created yet, use local g to fail only this attempt
+						g.Expect(err).NotTo(gomega.HaveOccurred(), "Federated status object has not been created")
+					}
+					gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
+
+					fedStatus := controllerutil.FederatedResource{}
+					err = pkgruntime.DefaultUnstructuredConverter.FromUnstructured(fedStatusUns.Object, &fedStatus)
+					gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
+
+					g.Expect(fedStatus.ClusterStatus).To(gomega.HaveLen(len(actualFieldByCluster)), "Collected status has wrong number of clusters")
+					for _, clusterStatus := range fedStatus.ClusterStatus {
+						actualField, exists := actualFieldByCluster[clusterStatus.ClusterName]
+						g.Expect(exists).To(gomega.BeTrue(), fmt.Sprintf("collected from unexpected cluster %s", clusterStatus.ClusterName))
+
+						collectedField, exists, err := unstructured.NestedFieldNoCopy(clusterStatus.CollectedFields, pathSegments...)
+						gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
+						g.Expect(exists).To(
+							gomega.BeTrue(),
+							fmt.Sprintf("collected fields does not contain %q for cluster %s", config.statusCollection.path, clusterStatus.ClusterName),
+						)
+						g.Expect(collectedField).To(gomega.Equal(actualField), "collected and actual fields differ")
+					}
+				}).WithTimeout(resourceStatusTimeout).WithPolling(defaultPollingInterval).Should(gomega.Succeed())
+			})
+		}
 
 		ginkgo.By("Deleting source object", func() {
 			err = hostClient.Delete(ctx, object.GetName(), metav1.DeleteOptions{})
