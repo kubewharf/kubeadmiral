@@ -17,27 +17,28 @@ limitations under the License.
 package signals
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"k8s.io/klog/v2"
 )
 
 var (
-	onlyOneSignalHandler = make(chan struct{})
-	shutdownSignals      = []os.Signal{os.Interrupt, syscall.SIGTERM}
+	gracefulShutdownSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
 )
 
-func SetupSignalHandler() (stopCh <-chan struct{}) {
-	close(onlyOneSignalHandler) // panics when called twice
-	stop := make(chan struct{})
+// SetupSignalHandler configures the cancel func to be called when one of the gracefulShutdownSignals is received. A
+// subsequent gracefulShutdownSignal would trigger a forceful termination of the program.
+func SetupSignalHandler(cancel context.CancelFunc) {
 	c := make(chan os.Signal, 2)
-	signal.Notify(c, shutdownSignals...)
+	signal.Notify(c, gracefulShutdownSignals...)
+
 	go func() {
 		<-c
-		close(stop)
+		cancel()
 		<-c
-		println("force shutdown")
-		os.Exit(1) // Exit directly if received second signal
+		klog.Fatal("Forced shutdown")
 	}()
-	return stop
 }
