@@ -37,6 +37,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/stats/prometheus"
 )
 
 // KnownControllers returns all well known controller names
@@ -90,7 +91,12 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 		return nil, fmt.Errorf("failed to create component config: %w", err)
 	}
 
-	metrics := stats.NewMock("", "kube-federation-manager", false)
+	var metrics stats.Metrics
+	if opts.PrometheusMetrics {
+		metrics = prometheusstats.New("kubeadmiral_controller_manager", opts.PrometheusAddr, opts.PrometheusPort)
+	} else {
+		metrics = stats.NewMock("", "kubeadmiral_controller_manager", false)
+	}
 
 	kubeClientset, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {

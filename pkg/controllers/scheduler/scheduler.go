@@ -174,7 +174,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
-	_ = s.metrics.Rate("scheduler.throughput", 1)
+	s.metrics.Rate("scheduler.throughput", 1)
 	key := qualifiedName.String()
 	keyedLogger := s.logger.WithValues("control-loop", "reconcile", "key", key)
 	startTime := time.Now()

@@ -50,6 +50,10 @@ type Options struct {
 	LogVerbosity    int
 	KlogVerbosity   int
 
+	PrometheusMetrics bool
+	PrometheusAddr    string
+	PrometheusPort    uint16
+
 	NSAutoPropExcludeRegexp string
 	CreateCRDsForFTCs       bool
 	ClusterJoinTimeout      time.Duration
@@ -94,6 +98,10 @@ func (o *Options) AddFlags(flags *pflag.FlagSet, allControllers []string, disabl
 
 	flags.IntVar(&o.WorkerCount, "worker-count", 1, "The number of workers to use for Kubeadmiral controllers")
 	flags.BoolVar(&o.EnableProfiling, "enable-profiling", false, "Enable profiling for the controller manager.")
+
+	flags.BoolVar(&o.PrometheusMetrics, "export-prometheus", true, "Whether to expose metrics through a prometheus endpoint")
+	flags.StringVar(&o.PrometheusAddr, "prometheus-addr", "", "prometheus collector address")
+	flags.Uint16Var(&o.PrometheusPort, "prometheus-port", 9090, "prometheus collector port")
 
 	flags.StringVar(
 		&o.NSAutoPropExcludeRegexp,
