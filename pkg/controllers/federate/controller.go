@@ -233,6 +233,10 @@ func (c *FederateController) reconcile(qualifiedName common.QualifiedName) (stat
 		}
 		return worker.StatusError
 	}
+	if isUpdated {
+		keyedLogger.Info("Added finalizer to source object")
+		return worker.StatusAllOK
+	}
 
 	if fedObject == nil {
 		logger.V(3).Info("No federated object found")
@@ -247,6 +251,12 @@ func (c *FederateController) reconcile(qualifiedName common.QualifiedName) (stat
 				qualifiedName.String(),
 				err,
 			)
+
+			if apierrors.IsInvalid(err) {
+				// if the federated object template is invalid, reenqueueing will not help solve the problem. instead,
+				// we should wait for the source object template to be updated - which will trigger its own reconcile.
+				return worker.StatusErrorNoRetry
+			}
 			return worker.StatusError
 		}
 		c.eventRecorder.Eventf(
@@ -328,27 +338,30 @@ func (c *FederateController) sourceObjectFromStore(qualifiedName common.Qualifie
 	return obj.(*unstructured.Unstructured), err
 }
 
+// ensureFinalizer adds the federate-controller finalizer to the given object if it does not already exist.
+// ensureFinalizer returns the updated object containing the new finalizer along with a a bool indicating if the object
+// was updated.
 func (c *FederateController) ensureFinalizer(
 	ctx context.Context,
 	sourceObj *unstructured.Unstructured,
-) (*unstructured.Unstructured, error) {
+) (*unstructured.Unstructured, bool, error) {
 	logger := klog.FromContext(ctx).WithValues("finalizer", FinalizerFederateController)
 
 	isUpdated, err := finalizersutil.AddFinalizers(sourceObj, sets.NewString(FinalizerFederateController))
 	if err != nil {
-		return nil, fmt.Errorf("failed to add finalizer to source object: %w", err)
+		return nil, false, fmt.Errorf("failed to add finalizer to source object: %w", err)
 	}
 	if !isUpdated {
-		return sourceObj, nil
+		return sourceObj, false, nil
 	}
 
 	logger.V(1).Info("Adding finalizer to source object")
 	sourceObj, err = c.sourceObjectClient.Namespace(sourceObj.GetNamespace()).Update(ctx, sourceObj, metav1.UpdateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to update source object with finalizer: %w", err)
+		return nil, false, fmt.Errorf("failed to update source object with finalizer: %w", err)
 	}
 
-	return sourceObj, err
+	return sourceObj, true, err
 }
 
 func (c *FederateController) removeFinalizer(
