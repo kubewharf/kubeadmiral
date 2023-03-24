@@ -93,7 +93,7 @@ func NewGenericInformerWithEventHandler(
 	if err != nil {
 		return nil, nil, err
 	}
-	klog.Infof("New informer for gvk: %+v", gvk)
+	klog.V(4).Infof("New informer for gvk: %+v", gvk)
 	store, controller := cache.NewInformer(
 		&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (pkgruntime.Object, error) {
