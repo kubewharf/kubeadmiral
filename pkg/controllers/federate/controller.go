@@ -233,10 +233,6 @@ func (c *FederateController) reconcile(qualifiedName common.QualifiedName) (stat
 		}
 		return worker.StatusError
 	}
-	if isUpdated {
-		keyedLogger.Info("Added finalizer to source object")
-		return worker.StatusAllOK
-	}
 
 	if fedObject == nil {
 		logger.V(3).Info("No federated object found")
@@ -338,30 +334,27 @@ func (c *FederateController) sourceObjectFromStore(qualifiedName common.Qualifie
 	return obj.(*unstructured.Unstructured), err
 }
 
-// ensureFinalizer adds the federate-controller finalizer to the given object if it does not already exist.
-// ensureFinalizer returns the updated object containing the new finalizer along with a a bool indicating if the object
-// was updated.
 func (c *FederateController) ensureFinalizer(
 	ctx context.Context,
 	sourceObj *unstructured.Unstructured,
-) (*unstructured.Unstructured, bool, error) {
+) (*unstructured.Unstructured, error) {
 	logger := klog.FromContext(ctx).WithValues("finalizer", FinalizerFederateController)
 
 	isUpdated, err := finalizersutil.AddFinalizers(sourceObj, sets.NewString(FinalizerFederateController))
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to add finalizer to source object: %w", err)
+		return nil, fmt.Errorf("failed to add finalizer to source object: %w", err)
 	}
 	if !isUpdated {
-		return sourceObj, false, nil
+		return sourceObj, nil
 	}
 
 	logger.V(1).Info("Adding finalizer to source object")
 	sourceObj, err = c.sourceObjectClient.Namespace(sourceObj.GetNamespace()).Update(ctx, sourceObj, metav1.UpdateOptions{})
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to update source object with finalizer: %w", err)
+		return nil, fmt.Errorf("failed to update source object with finalizer: %w", err)
 	}
 
-	return sourceObj, true, err
+	return sourceObj, err
 }
 
 func (c *FederateController) removeFinalizer(
