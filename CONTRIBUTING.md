@@ -8,7 +8,7 @@ Please do check our [Code of Conduct](CODE_OF_CONDUCT.md) before making contribu
 
 * [Reporting security issues](#reporting-security-issues)
 * [Reporting general issues](#reporting-general-issues)
-* [Code and doc contribution](#code-and-doc-contribution)
+* [Code and doc contribution](#code-and-documentation-contribution)
 * [Engage to help anything](#engage-to-help-anything)
 
 ## Reporting security issues
@@ -60,6 +60,7 @@ Before submitting a PR, we suggest you could take a look at the PR rules here.
 * [Branch Definition](#branch-definition)
 * [Commit Rules](#commit-rules)
 * [PR Description](#pr-description)
+* [Code style](#code-style)
 
 ### Workspace Preparation
 
@@ -108,6 +109,10 @@ This helps reviewing pull requests more quickly and avoids wasting time resolvin
 ### PR Description
 
 PR is the only way to make change to KubeAdmiral project. To help reviewers, we actually encourage contributors to make PR description as detailed as possible.
+
+### Code style
+
+Please refer to our [code style](./docs/code-style.md) guide before submitting any code.
 
 ## Engage to help anything
 
