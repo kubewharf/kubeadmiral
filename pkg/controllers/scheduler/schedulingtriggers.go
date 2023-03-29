@@ -240,7 +240,17 @@ func getClusterTaints(clusters []*fedcorev1a1.FederatedCluster) SortableMap[stri
 
 		// NOTE: we must sort the taint slice before inserting to ensure deterministic hashing
 		sort.Slice(taints, func(i, j int) bool {
-			return taints[i].Key < taints[j].Key || taints[i].Value < taints[j].Value || taints[i].Effect < taints[j].Effect
+			lhs, rhs := taints[i], taints[j]
+			switch {
+			case lhs.Key != rhs.Key:
+				return lhs.Key < rhs.Key
+			case lhs.Value != rhs.Value:
+				return lhs.Value < rhs.Value
+			case lhs.Effect != rhs.Effect:
+				return lhs.Value < rhs.Value
+			default:
+				return false
+			}
 		})
 		ret.Put(cluster.Name, taints)
 	}
