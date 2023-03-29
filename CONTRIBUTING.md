@@ -95,7 +95,7 @@ make
 
 ### Branch Definition
 
-Right now we assume every contribution via pull request is for the `develop` branch in KubeAdmiral.
+Right now we assume every contribution via pull request is for the `main` branch in KubeAdmiral.
 
 ### Commit Rules
 
