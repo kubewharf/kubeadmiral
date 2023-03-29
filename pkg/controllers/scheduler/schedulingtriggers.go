@@ -71,53 +71,34 @@ type keyValue[K any, V any] struct {
 	Value V `json:"value"`
 }
 
-// SortableMap is a simple implementation of map that can be to be used for hashing. The native golang map cannot be used for hashing as it
-// is unordered and can produce non-deterministic hashes.
-type SortableMap[K constraints.Ordered, V any] struct {
-	KeyValues []keyValue[K, V] `json:"keyValues"`
-}
-
-func (m *SortableMap[K, V]) Put(key K, value V) {
-	found := false
-	for _, kv := range m.KeyValues {
-		if kv.Key == key {
-			kv.Value = value
-			found = true
-			break
-		}
+func sortMap[K constraints.Ordered, V any](m map[K]V) []keyValue[K, V] {
+	ret := make([]keyValue[K, V], 0, len(m))
+	for k, v := range m {
+		ret = append(ret, keyValue[K, V]{Key: k, Value: v})
 	}
 
-	if !found {
-		m.KeyValues = append(m.KeyValues, keyValue[K, V]{Key: key, Value: value})
-	}
-}
-
-func (m *SortableMap[K, V]) Sort() {
-	sort.Slice(m.KeyValues, func(i, j int) bool {
-		return m.KeyValues[i].Key < m.KeyValues[j].Key
+	sort.Slice(ret, func(i, j int) bool {
+		return ret[i].Key < ret[j].Key
 	})
-}
-
-func NewSortableMap[K constraints.Ordered, V any]() SortableMap[K, V] {
-	return SortableMap[K, V]{
-		KeyValues: []keyValue[K, V]{},
-	}
+	return ret
 }
 
 type schedulingTriggers struct {
-	SchedulingAnnotations SortableMap[string, string] `json:"schedulingAnnotations"`
-	ReplicaCount          int64                       `json:"replicaCount"`
-	ResourceRequest       framework.Resource          `json:"resourceRequest"`
+	// NOTE: Use slices instead of maps for deterministic iteration order
+
+	SchedulingAnnotations []keyValue[string, string] `json:"schedulingAnnotations"`
+	ReplicaCount          int64                      `json:"replicaCount"`
+	ResourceRequest       framework.Resource         `json:"resourceRequest"`
 
 	PolicyName       string `json:"policyName"`
 	PolicyGeneration int64  `json:"policyGeneration"`
 
 	// a map from each cluster to its ready condition
-	ClusterReady SortableMap[string, bool] `json:"clusterReady"`
+	ClusterReady []keyValue[string, bool] `json:"clusterReady"`
 	// a map from each cluster to its labels
-	ClusterLabels SortableMap[string, SortableMap[string, string]] `json:"clusterLabels"`
+	ClusterLabels []keyValue[string, []keyValue[string, string]] `json:"clusterLabels"`
 	// a map from each cluster to its taints
-	ClusterTaints SortableMap[string, []corev1.Taint] `json:"clusterTaints"`
+	ClusterTaints []keyValue[string, []corev1.Taint] `json:"clusterTaints"`
 }
 
 func (s *Scheduler) computeSchedulingTriggerHash(
@@ -169,15 +150,14 @@ var knownSchedulingAnnotations = sets.New(
 	FollowsObjectAnnotation,
 )
 
-func getSchedulingAnnotations(fedObject *unstructured.Unstructured) SortableMap[string, string] {
-	ret := NewSortableMap[string, string]()
-	for k, v := range fedObject.GetAnnotations() {
-		if knownSchedulingAnnotations.Has(k) {
-			ret.Put(k, v)
+func getSchedulingAnnotations(fedObject *unstructured.Unstructured) []keyValue[string, string] {
+	annotations := fedObject.GetAnnotations() // this is a deep copy
+	for k := range annotations {
+		if !knownSchedulingAnnotations.Has(k) {
+			delete(annotations, k)
 		}
 	}
-	ret.Sort()
-	return ret
+	return sortMap(annotations)
 }
 
 func getReplicaCount(typeConfig *fedcorev1a1.FederatedTypeConfig, fedObject *unstructured.Unstructured) (int64, error) {
@@ -202,31 +182,24 @@ func getResourceRequest(fedObject *unstructured.Unstructured) framework.Resource
 	return framework.Resource{}
 }
 
-func getClusterReady(clusters []*fedcorev1a1.FederatedCluster) SortableMap[string, bool] {
-	ret := NewSortableMap[string, bool]()
+func getClusterReady(clusters []*fedcorev1a1.FederatedCluster) []keyValue[string, bool] {
+	ret := make(map[string]bool, len(clusters))
 	for _, cluster := range clusters {
-		ret.Put(cluster.Name, util.IsClusterReady(&cluster.Status))
+		ret[cluster.Name] = util.IsClusterReady(&cluster.Status)
 	}
-	ret.Sort()
-	return ret
+	return sortMap(ret)
 }
 
-func getClusterLabels(clusters []*fedcorev1a1.FederatedCluster) SortableMap[string, SortableMap[string, string]] {
-	ret := NewSortableMap[string, SortableMap[string, string]]()
+func getClusterLabels(clusters []*fedcorev1a1.FederatedCluster) []keyValue[string, []keyValue[string, string]] {
+	ret := make(map[string][]keyValue[string, string], len(clusters))
 	for _, cluster := range clusters {
-		labelsMap := NewSortableMap[string, string]()
-		for k, v := range cluster.GetLabels() {
-			labelsMap.Put(k, v)
-		}
-		labelsMap.Sort()
-		ret.Put(cluster.Name, labelsMap)
+		ret[cluster.Name] = sortMap(cluster.GetLabels())
 	}
-	ret.Sort()
-	return ret
+	return sortMap(ret)
 }
 
-func getClusterTaints(clusters []*fedcorev1a1.FederatedCluster) SortableMap[string, []corev1.Taint] {
-	ret := NewSortableMap[string, []corev1.Taint]()
+func getClusterTaints(clusters []*fedcorev1a1.FederatedCluster) []keyValue[string, []corev1.Taint] {
+	ret := make(map[string][]corev1.Taint, len(clusters))
 	for _, cluster := range clusters {
 		taints := make([]corev1.Taint, len(cluster.Spec.Taints))
 		for i, t := range cluster.Spec.Taints {
@@ -252,10 +225,9 @@ func getClusterTaints(clusters []*fedcorev1a1.FederatedCluster) SortableMap[stri
 				return false
 			}
 		})
-		ret.Put(cluster.Name, taints)
+		ret[cluster.Name] = taints
 	}
-	ret.Sort()
-	return ret
+	return sortMap(ret)
 }
 
 // enqueueFederatedObjectsForPolicy enqueues federated objects which match the policy
