@@ -35,7 +35,6 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/planner"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/refinedplanner"
 )
 
 const (
@@ -121,13 +120,6 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 	if su.DesiredReplicas != nil {
 		totalReplicas = *su.DesiredReplicas
 	}
-	clusterPreference := &refinedplanner.ReplicaSchedulingPreference{
-		TotalReplicas: totalReplicas,
-		Clusters:      clusterPreferences,
-		Rebalance:     true,
-	}
-
-	planner := refinedplanner.NewPlanner(clusterPreference)
 
 	currentReplicas := map[string]int64{}
 	for cluster, replicas := range su.CurrentClusters {
@@ -135,14 +127,20 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 			currentReplicas[cluster] = *replicas
 			continue
 		}
-		currentReplicas[cluster] = *su.DesiredReplicas
+		currentReplicas[cluster] = totalReplicas
 	}
 
 	scheduleResult, overflow, err := planner.Plan(
+		&planner.ReplicaSchedulingPreference{
+			Clusters: clusterPreferences,
+		},
+		totalReplicas,
 		ExtractClusterNames(clusters),
 		currentReplicas,
-		map[string]int64{},
-		"",
+		nil,
+		su.Key(),
+		false,
+		true,
 	)
 	if err != nil {
 		return clusterReplicasList, framework.NewResult(framework.Error)
@@ -150,7 +148,7 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 
 	klog.V(4).Infof(
 		"[scheduling] for %q clusterPreferences: %s, currentReplicas: %s, result: %s",
-		su.Key(), spew.Sprint(clusterPreference), spew.Sprint(currentReplicas), spew.Sprint(scheduleResult),
+		su.Key(), spew.Sprint(clusterPreferences), spew.Sprint(currentReplicas), spew.Sprint(scheduleResult),
 	)
 
 	// TODO: Check if we really need to place the federated type in clusters
