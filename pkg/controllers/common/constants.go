@@ -121,6 +121,9 @@ const (
 	FollowersAnnotation = DefaultPrefix + "followers"
 	// EnableFollowerSchedulingAnnotation indicates whether follower scheduling should be enabled for the leader object.
 	EnableFollowerSchedulingAnnotation = InternalPrefix + "enable-follower-scheduling"
+
+	// AutoMigrationAnnotation contains auto migration information.
+	AutoMigrationAnnotation = DefaultPrefix + "auto-migration"
 )
 
 // The following consts are keys used to store information in the federated cluster secret

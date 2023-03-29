@@ -90,6 +90,8 @@ type schedulingTriggers struct {
 	ReplicaCount          int64                      `json:"replicaCount"`
 	ResourceRequest       framework.Resource         `json:"resourceRequest"`
 
+	AutoMigrationInfo *string `json:"autoMigrationInfo,omitempty"`
+
 	PolicyName       string `json:"policyName"`
 	PolicyGeneration int64  `json:"policyGeneration"`
 
@@ -119,6 +121,12 @@ func (s *Scheduler) computeSchedulingTriggerHash(
 	if policy != nil {
 		trigger.PolicyName = policy.GetName()
 		trigger.PolicyGeneration = policy.GetGeneration()
+		if policy.GetSpec().AutoMigration != nil {
+			// Only consider auto-migration annotation when auto-migration is enabled in the policy.
+			if value, exists := fedObject.GetAnnotations()[common.AutoMigrationAnnotation]; exists {
+				trigger.AutoMigrationInfo = &value
+			}
+		}
 	}
 
 	trigger.ClusterReady = getClusterReady(clusters)

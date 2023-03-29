@@ -203,6 +203,7 @@ var (
 		common.FollowersAnnotation,
 	)
 
+	// TODO: Do we need to specify the internal annotations here?
 	// List of annotations that should be ignored on the source object
 	ignoredAnnotations = sets.New(
 		RetainReplicasAnnotation,
