@@ -46,10 +46,12 @@ type SchedulingUnit struct {
 
 	// Describes the current scheduling state
 	CurrentClusters map[string]*int64
+	AutoMigration   *AutoMigrationConfig
 
 	// Controls the scheduling behavior
-	SchedulingMode fedcorev1a1.SchedulingMode
-	StickyCluster  bool
+	SchedulingMode  fedcorev1a1.SchedulingMode
+	StickyCluster   bool
+	AvoidDisruption bool
 
 	// Used to filter/select clusters
 	ClusterSelector map[string]string
@@ -60,6 +62,17 @@ type SchedulingUnit struct {
 	MinReplicas     map[string]int64
 	MaxReplicas     map[string]int64
 	Weights         map[string]int64
+}
+
+type AutoMigrationConfig struct {
+	Info                      *AutoMigrationInfo
+	KeepUnschedulableReplicas bool
+}
+
+// AutoMigrationInfo contains information related to auto migration.
+type AutoMigrationInfo struct {
+	// Describes the estimated max number of replicas a cluster can accommodate.
+	EstimatedCapacity map[string]int64 `json:"estimatedCapacity,omitempty"`
 }
 
 // Affinity is a group of affinity scheduling rules.

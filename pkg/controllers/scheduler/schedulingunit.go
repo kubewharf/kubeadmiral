@@ -81,6 +81,18 @@ func (s *Scheduler) schedulingUnitForFedObject(
 
 		DesiredReplicas: desiredReplicasOption,
 		CurrentClusters: currentReplicas,
+		AvoidDisruption: policy.GetSpec().ReplicaRescheduling.AvoidDisruption,
+	}
+
+	if autoMigration := policy.GetSpec().AutoMigration; autoMigration != nil {
+		info, err := getAutoMigrationInfo(fedObject)
+		if err != nil {
+			return nil, err
+		}
+		schedulingUnit.AutoMigration = &framework.AutoMigrationConfig{
+			Info:                      info,
+			KeepUnschedulableReplicas: autoMigration.KeepUnschedulableReplicas,
+		}
 	}
 
 	schedulingUnit.SchedulingMode = schedulingMode
@@ -222,11 +234,25 @@ func getSchedulingModeFromObject(object *unstructured.Unstructured) (fedcorev1a1
 	return "", false
 }
 
+func getAutoMigrationInfo(fedObject *unstructured.Unstructured) (*framework.AutoMigrationInfo, error) {
+	value, exists := fedObject.GetAnnotations()[common.AutoMigrationAnnotation]
+	if !exists {
+		return nil, nil
+	}
+
+	autoMigration := new(framework.AutoMigrationInfo)
+	if err := json.Unmarshal([]byte(value), autoMigration); err != nil {
+		return nil, err
+	}
+	return autoMigration, nil
+}
+
 func getIsStickyClusterFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) bool {
 	return policy.GetSpec().StickyCluster
 }
 
 func getIsStickyClusterFromObject(object *unstructured.Unstructured) (bool, bool) {
+	// TODO: consider passing in the annotations directly to prevent incurring a deep copy for each call
 	annotations := object.GetAnnotations()
 	if annotations == nil {
 		return false, false
