@@ -15,7 +15,7 @@ KubeAdmiral 是基于 [Kubernetes Federation v2](https://github.com/kubernetes-s
 
 # 部署
 
-KubeAdmiral 支持 Kubernetes 1.16-1.24 版本，更高或者更低的 Kubernetes 版本可能会导致兼容相关的问题，请参考 [Quickstart](./docs/quicstart.md) 完成部署 。
+KubeAdmiral 支持 Kubernetes 1.16-1.24 版本，更高或者更低的 Kubernetes 版本可能会导致兼容相关的问题，请参考 [Quickstart](./docs/quickstart.md) 完成部署 。
 
 # 社区
 
