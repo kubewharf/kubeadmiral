@@ -104,7 +104,10 @@ type PreferredSchedulingTerm struct {
 }
 
 func (s *SchedulingUnit) Key() string {
-	return s.Namespace + "/" + s.Name
+	if len(s.Namespace) > 0 {
+		return s.Namespace + "/" + s.Name
+	}
+	return s.Name
 }
 
 type ClusterScore struct {
