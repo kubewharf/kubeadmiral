@@ -307,32 +307,29 @@ func (f *framework) ClusterDynamicClient(ctx context.Context, cluster *fedcorev1
 
 func restConfigFromCluster(ctx context.Context, cluster *fedcorev1a1.FederatedCluster) *rest.Config {
 	restConfig := &rest.Config{Host: cluster.Spec.APIEndpoint}
+	restConfig.Insecure = cluster.Spec.Insecure
 
-	if cluster.Spec.Insecure {
-		restConfig.Insecure = true
-	} else {
-		clusterSecretName := cluster.Spec.SecretRef.Name
-		gomega.Expect(clusterSecretName).ToNot(gomega.BeEmpty())
+	clusterSecretName := cluster.Spec.SecretRef.Name
+	gomega.Expect(clusterSecretName).ToNot(gomega.BeEmpty())
 
-		secret, err := hostKubeClient.CoreV1().Secrets(FedSystemNamespace).Get(
-			ctx,
-			clusterSecretName,
-			metav1.GetOptions{},
-		)
-		gomega.Expect(err).ToNot(gomega.HaveOccurred())
+	secret, err := hostKubeClient.CoreV1().Secrets(FedSystemNamespace).Get(
+		ctx,
+		clusterSecretName,
+		metav1.GetOptions{},
+	)
+	gomega.Expect(err).ToNot(gomega.HaveOccurred())
 
-		caData := secret.Data[common.ClusterCertificateAuthorityKey]
-		gomega.Expect(caData).ToNot(gomega.BeEmpty())
-		certData := secret.Data[common.ClusterClientCertificateKey]
-		gomega.Expect(certData).ToNot(gomega.BeEmpty())
-		keyData := secret.Data[common.ClusterClientKeyKey]
-		gomega.Expect(keyData).ToNot(gomega.BeEmpty())
+	caData := secret.Data[common.ClusterCertificateAuthorityKey]
+	gomega.Expect(caData).ToNot(gomega.BeEmpty())
+	certData := secret.Data[common.ClusterClientCertificateKey]
+	gomega.Expect(certData).ToNot(gomega.BeEmpty())
+	keyData := secret.Data[common.ClusterClientKeyKey]
+	gomega.Expect(keyData).ToNot(gomega.BeEmpty())
 
-		restConfig.TLSClientConfig = rest.TLSClientConfig{
-			CertData: certData,
-			KeyData:  keyData,
-			CAData:   caData,
-		}
+	restConfig.TLSClientConfig = rest.TLSClientConfig{
+		CertData: certData,
+		KeyData:  keyData,
+		CAData:   caData,
 	}
 
 	return restConfig
