@@ -190,21 +190,8 @@ func BuildClusterConfigWithGenericClient(
 	clusterConfig.QPS = restConfig.QPS
 	clusterConfig.Burst = restConfig.Burst
 
-	if cluster.Spec.Insecure {
-		clusterConfig.Insecure = true
-		return clusterConfig, nil
-	}
-
-	secretName := cluster.Spec.SecretRef.Name
-	if len(secretName) == 0 {
-		clusterConfig.CAFile = restConfig.CAFile
-		clusterConfig.CertFile = restConfig.CertFile
-		clusterConfig.KeyFile = restConfig.KeyFile
-		return clusterConfig, nil
-	}
-
 	secret := &corev1.Secret{}
-	err = fedClient.Get(context.TODO(), secret, fedSystemNamespace, secretName)
+	err = fedClient.Get(context.TODO(), secret, fedSystemNamespace, cluster.Spec.SecretRef.Name)
 	if err != nil {
 		return nil, err
 	}
