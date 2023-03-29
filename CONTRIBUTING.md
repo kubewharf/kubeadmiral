@@ -61,6 +61,7 @@ Before submitting a PR, we suggest you could take a look at the PR rules here.
 * [Commit Rules](#commit-rules)
 * [PR Description](#pr-description)
 * [Code style](#code-style)
+* [Testing](#testing)
 
 ### Workspace Preparation
 
@@ -114,6 +115,10 @@ PR is the only way to make change to KubeAdmiral project. To help reviewers, we 
 
 Please refer to our [code style](./docs/code-style.md) guide before submitting any code.
 
+### Testing
+
+We are currently in the midst of increasing our coverage for both unit tests and end-to-end tests. You may refer to the [e2e documentation](./docs/e2e-tests.md) to find out how to write and run end-to-end tests for KubeAdmiral.
+
 ## Engage to help anything
 
 GitHub is the primary place for KubeAdmiral contributors to collaborate. Although contributions via PR is an explicit way to help, we still call for any other types of helps.
@@ -127,3 +132,4 @@ GitHub is the primary place for KubeAdmiral contributors to collaborate. Althoug
 * Write blogs on KubeAdmiral, and so on.
 
 In a word, **ANY HELP CAN BE A CONTRIBUTION.**
+
