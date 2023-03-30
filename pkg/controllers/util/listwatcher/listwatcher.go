@@ -95,8 +95,6 @@ func (p *pagedListWatcher) Start(ctx context.Context) {
 	logger := klog.FromContext(ctx).WithValues("paged-list-watcher", p.name)
 	listCh := make(chan string, 1)
 
-	logger.V(4).Info("Start paged listwatcher")
-
 	go func() {
 		for {
 			// list resource
@@ -104,7 +102,6 @@ func (p *pagedListWatcher) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			default:
-				logger.V(4).Info("Listing resource")
 				p.mux <- Event{Type: StartSync}
 
 				resourceVersion, err := p.list(ctx)
@@ -118,7 +115,6 @@ func (p *pagedListWatcher) Start(ctx context.Context) {
 			}
 
 			// watch resource
-			logger.V(4).Info("Watching resource")
 			select {
 			case <-ctx.Done():
 				return

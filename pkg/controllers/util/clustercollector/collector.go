@@ -40,7 +40,10 @@ import (
 )
 
 // ClusterCollector collects the allocated and availaible resources in a cluster by processing the node and pod objects
-// in a cluster. ClusterCollector does this in a way that does not require pod objects, keeping memory usage low.
+// in a cluster. ClusterCollector does this in a way that does not require pod objects to be cached, keeping memory
+// usage low. Correctness is based on the premise that a pod's resource requirement canot be modified after it is
+// created. This means that we only need to add the resource requirements on pod creation, and subtract the resource
+// requirements on pod completion/deletion.
 type ClusterCollector struct {
 	mu          sync.Mutex
 	listWatcher listwatcher.ListWatcher
