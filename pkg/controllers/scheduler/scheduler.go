@@ -190,10 +190,10 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 	keyedLogger := s.logger.WithValues("control-loop", "reconcile", "key", key)
 	startTime := time.Now()
 
-	keyedLogger.Info("Start reconcile")
+	keyedLogger.V(3).Info("Start reconcile")
 	defer func() {
 		s.metrics.Duration(fmt.Sprintf("%s.latency", s.name), startTime)
-		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcile")
+		keyedLogger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcile")
 	}()
 
 	fedObject, err := s.federatedObjectFromStore(qualifiedName)
@@ -202,7 +202,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		return worker.StatusError
 	}
 	if apierrors.IsNotFound(err) || fedObject.GetDeletionTimestamp() != nil {
-		keyedLogger.Info("Observed object deletion")
+		keyedLogger.V(3).Info("Observed object deletion")
 		return worker.StatusAllOK
 	}
 
@@ -212,7 +212,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		keyedLogger.Error(err, "Failed to check controller dependencies")
 		return worker.StatusError
 	} else if !ok {
-		keyedLogger.Info("Controller dependencies not fulfilled")
+		keyedLogger.V(3).Info("Controller dependencies not fulfilled")
 		return worker.StatusAllOK
 	}
 
@@ -231,7 +231,6 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 
 	if hasSchedulingPolicy {
 		if policy, err = s.policyFromStore(policyKey); err != nil {
-			keyedLogger.WithValues("policy", policyKey.String()).Error(err, "Failed to find matched policy")
 			if apierrors.IsNotFound(err) {
 				// do not retry since the object will be reenqueued after the policy is subsequently created
 				// emit an event to warn users that the assigned propagation policy does not exist
@@ -244,6 +243,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 				)
 				return worker.Result{Success: false, RequeueAfter: nil}
 			}
+			keyedLogger.WithValues("policy", policyKey.String()).Error(err, "Failed to find matched policy")
 			return worker.StatusError
 		}
 	}
@@ -264,11 +264,11 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 	if !triggersChanged {
 		// scheduling triggers have not changed, skip scheduling
 		shouldSkipScheduling = true
-		keyedLogger.Info("Scheduling triggers not changed, skip scheduling")
+		keyedLogger.V(3).Info("Scheduling triggers not changed, skip scheduling")
 	} else if len(fedObject.GetAnnotations()[common.NoSchedulingAnnotation]) > 0 {
 		// skip scheduling if no-scheduling annotation is found
 		shouldSkipScheduling = true
-		keyedLogger.Info("No-scheduling annotation found, skip scheduling")
+		keyedLogger.V(3).Info("No-scheduling annotation found, skip scheduling")
 		s.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeNormal,
@@ -304,7 +304,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 
 	if !hasSchedulingPolicy {
 		// deschedule the federated object if there is no policy attached
-		keyedLogger.Info("No policy specified, scheduling to no clusters")
+		keyedLogger.V(3).Info("No policy specified, scheduling to no clusters")
 		s.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeNormal,
@@ -317,7 +317,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		}
 	} else {
 		// schedule according to matched policy
-		keyedLogger.WithValues("policy", policyKey.String()).Info("Matched policy found, start scheduling")
+		keyedLogger.WithValues("policy", policyKey.String()).V(3).Info("Matched policy found, start scheduling")
 		s.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeNormal,
@@ -362,9 +362,8 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 			)
 			return worker.StatusError
 		}
-
-		keyedLogger.Info(fmt.Sprintf("Scheduling result obtained: %s", result.String()))
 	}
+	keyedLogger.V(3).Info("Scheduling result obtained", "result", result.String())
 
 	var followerSchedulingEnabled bool
 	if policy != nil {
@@ -394,12 +393,26 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		)
 		return worker.StatusError
 	}
+
+	updateLogger := keyedLogger.WithValues(
+		"result", result.String(),
+		"policy", policyKey.String(),
+		"trigger-hash", triggerHash,
+		"enableFollowerScheduling", auxInfo.enableFollowerScheduling,
+	)
+	if auxInfo.unschedulableThreshold != nil {
+		updateLogger = updateLogger.WithValues("unschedulableThreshold", auxInfo.unschedulableThreshold.String())
+	} else {
+		updateLogger = updateLogger.WithValues("unschedulableThreshold", "nil")
+	}
+
+	updateLogger.V(1).Info("Updating federated object")
 	if _, err := s.federatedObjectClient.Namespace(qualifiedName.Namespace).Update(
 		context.TODO(),
 		fedObject,
 		metav1.UpdateOptions{},
 	); err != nil {
-		keyedLogger.Error(err, "Failed to update federated object")
+		updateLogger.Error(err, "Failed to update federated object")
 		s.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeWarning,
@@ -413,8 +426,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		return worker.StatusError
 	}
 
-	keyedLogger.WithValues("result", result.String(), "policy", policyKey.String(), "trigger-hash", triggerHash).
-		Info("Scheduling success")
+	updateLogger.V(1).Info("Updated federated object")
 	s.eventRecorder.Eventf(
 		fedObject,
 		corev1.EventTypeNormal,
