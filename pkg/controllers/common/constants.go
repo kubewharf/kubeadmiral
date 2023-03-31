@@ -122,6 +122,8 @@ const (
 	// EnableFollowerSchedulingAnnotation indicates whether follower scheduling should be enabled for the leader object.
 	EnableFollowerSchedulingAnnotation = InternalPrefix + "enable-follower-scheduling"
 
+	// When a pod remains unschedulable beyond this threshold, it becomes eligible for automatic migration.
+	PodUnschedulableThresholdAnnotation = InternalPrefix + "pod-unschedulable-threshold"
 	// AutoMigrationAnnotation contains auto migration information.
 	AutoMigrationAnnotation = DefaultPrefix + "auto-migration"
 )
