@@ -83,6 +83,16 @@ spec:
                       of available replicas that the object currently has. E.g. `status.availableReplicas`
                       for Deployment and ReplicaSet.
                     type: string
+                  labelSelector:
+                    description: Path to a metav1.LabelSelector field that selects
+                      the replicas for this object. E.g. `spec.selector` for Deployment
+                      and ReplicaSet.
+                    type: string
+                  readyReplicasStatus:
+                    description: Path to a numeric field that reflects the number
+                      of ready replicas that the object currently has. E.g. `status.readyReplicas`
+                      for Deployment and ReplicaSet.
+                    type: string
                   replicasSpec:
                     description: Path to a numeric field that indicates the number
                       of replicas that an object can be divided into. E.g. `spec.replicas`
