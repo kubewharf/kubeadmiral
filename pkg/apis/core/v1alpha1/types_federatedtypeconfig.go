@@ -82,6 +82,7 @@ type FederatedTypeConfigSpec struct {
 	// resource.
 	// +optional
 	StatusType *APIResource `json:"statusType,omitempty"`
+
 	// Whether or not Status object should be populated.
 	// +optional
 	StatusCollection *StatusCollection `json:"statusCollection,omitempty"`
@@ -92,6 +93,10 @@ type FederatedTypeConfigSpec struct {
 	// Whether or not to plan the rollout process
 	// +optional
 	RolloutPlan *RolloutPlanMode `json:"rolloutPlan,omitempty"`
+	// Configurations for auto migration.
+	// +optional
+	AutoMigration *AutoMigrationConfig `json:"autoMigration,omitempty"`
+
 	// The controllers that must run before the resource can be propagated to member clusters.
 	// Each inner slice specifies a step. Step T must complete before step T+1 can commence.
 	// Controllers within each step can execute in parallel.
@@ -150,6 +155,11 @@ type StatusAggregationMode string
 type RevisionHistoryMode string
 
 type RolloutPlanMode string
+
+type AutoMigrationConfig struct {
+	// Whether or not to enable auto migration.
+	Enabled bool `json:"enabled"`
+}
 
 // APIResource defines how to configure the dynamic client for an API resource.
 type APIResource struct {

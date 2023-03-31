@@ -37,6 +37,15 @@ spec:
             type: object
           spec:
             properties:
+              autoMigration:
+                description: Configurations for auto migration.
+                properties:
+                  enabled:
+                    description: Whether or not to enable auto migration.
+                    type: boolean
+                required:
+                - enabled
+                type: object
               controllers:
                 description: The controllers that must run before the resource can
                   be propagated to member clusters. Each inner slice specifies a step.
