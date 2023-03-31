@@ -24,6 +24,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -141,7 +142,17 @@ func NewScheduler(
 
 	s.clusterLister = clusterInformer.Lister()
 	s.clusterSynced = clusterInformer.Informer().HasSynced
-	clusterInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(s.enqueueFederatedObjectsForCluster))
+	clusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj interface{}) { s.enqueueFederatedObjectsForCluster(obj.(pkgruntime.Object)) },
+		DeleteFunc: func(obj interface{}) { s.enqueueFederatedObjectsForCluster(obj.(pkgruntime.Object)) },
+		UpdateFunc: func(oldUntyped, newUntyped interface{}) {
+			oldCluster, newCluster := oldUntyped.(*fedcorev1a1.FederatedCluster), newUntyped.(*fedcorev1a1.FederatedCluster)
+			if !equality.Semantic.DeepEqual(oldCluster.Labels, newCluster.Labels) ||
+				!equality.Semantic.DeepEqual(oldCluster.Spec.Taints, newCluster.Spec.Taints) {
+				s.enqueueFederatedObjectsForCluster(newCluster)
+			}
+		},
+	})
 
 	s.schedulingProfileLister = schedulingProfileInformer.Lister()
 	s.schedulingProfileSynced = schedulingProfileInformer.Informer().HasSynced
