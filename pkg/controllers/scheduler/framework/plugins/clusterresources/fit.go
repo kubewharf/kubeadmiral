@@ -38,7 +38,7 @@ const (
 
 type ClusterResourcesFit struct{}
 
-func NewClusterResourcesFit(_ framework.FrameworkHandle) (framework.Plugin, error) {
+func NewClusterResourcesFit(_ framework.Handle) (framework.Plugin, error) {
 	return &ClusterResourcesFit{}, nil
 }
 

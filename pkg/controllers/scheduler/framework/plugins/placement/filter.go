@@ -29,7 +29,7 @@ const (
 
 type PlacementFilter struct{}
 
-func NewPlacementFilter(_ framework.FrameworkHandle) (framework.Plugin, error) {
+func NewPlacementFilter(_ framework.Handle) (framework.Plugin, error) {
 	return &PlacementFilter{}, nil
 }
 

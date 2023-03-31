@@ -25,44 +25,11 @@ import (
 	"fmt"
 	"reflect"
 
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
-
-// Option for the framework.
-type Option func(*frameworkOptions)
-
-type frameworkOptions struct {
-	dynamicClient          dynamic.Interface
-	dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory
-	clusterDynamicClients  ClusterDynamicClients
-}
-
-type ClusterDynamicClients interface {
-	Get(string) dynamic.Interface
-}
-
-func WithDynamicClient(dynamicClient dynamic.Interface) Option {
-	return func(o *frameworkOptions) {
-		o.dynamicClient = dynamicClient
-	}
-}
-
-func WithDynamicInformerFactory(dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory) Option {
-	return func(o *frameworkOptions) {
-		o.dynamicInformerFactory = dynamicInformerFactory
-	}
-}
-
-func WithClusterDynamicClients(clusterDynamicClients ClusterDynamicClients) Option {
-	return func(o *frameworkOptions) {
-		o.clusterDynamicClients = clusterDynamicClients
-	}
-}
 
 type frameworkImpl struct {
 	scorePluginsWeightMap map[string]int
@@ -70,32 +37,17 @@ type frameworkImpl struct {
 	scorePlugins          []framework.ScorePlugin
 	selectPlugins         []framework.SelectPlugin
 	replicasPlugins       []framework.ReplicasPlugin
-
-	dynamicClient          dynamic.Interface
-	dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory
-	clusterDynamicClients  ClusterDynamicClients
 }
-
-var defaultFrameworkOptions = frameworkOptions{}
 
 var _ framework.Framework = &frameworkImpl{}
 
-func NewFramework(registry Registry, opts ...Option) (framework.Framework, error) {
-	options := defaultFrameworkOptions
-	for _, opt := range opts {
-		opt(&options)
-	}
-
-	fwk := &frameworkImpl{
-		dynamicInformerFactory: options.dynamicInformerFactory,
-		clusterDynamicClients:  options.clusterDynamicClients,
-		dynamicClient:          options.dynamicClient,
-	}
+func NewFramework(registry Registry, handle framework.Handle) (framework.Framework, error) {
+	fwk := &frameworkImpl{}
 
 	pluginsMap := make(map[string]framework.Plugin)
 
 	for name, factory := range registry {
-		plugin, err := factory(fwk)
+		plugin, err := factory(handle)
 		if err != nil {
 			return nil, fmt.Errorf("error initializing plugin %q: %w", name, err)
 		}
@@ -274,16 +226,4 @@ func (f *frameworkImpl) RunReplicasPlugin(
 		return clusterReplicasList, result
 	}
 	return clusterReplicasList, result
-}
-
-func (f *frameworkImpl) DynamicSharedInformerFactory() dynamicinformer.DynamicSharedInformerFactory {
-	return f.dynamicInformerFactory
-}
-
-func (f *frameworkImpl) DynamicClient() dynamic.Interface {
-	return f.dynamicClient
-}
-
-func (f *frameworkImpl) ClusterDynamicClients() func(string) dynamic.Interface {
-	return f.clusterDynamicClients.Get
 }

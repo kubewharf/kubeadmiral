@@ -36,7 +36,7 @@ const (
 
 type ClusterResourcesBalancedAllocation struct{}
 
-func NewClusterResourcesBalancedAllocation(_ framework.FrameworkHandle) (framework.Plugin, error) {
+func NewClusterResourcesBalancedAllocation(_ framework.Handle) (framework.Plugin, error) {
 	return &ClusterResourcesBalancedAllocation{}, nil
 }
 

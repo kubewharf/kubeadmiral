@@ -27,7 +27,7 @@ import (
 )
 
 // PluginFactory is a function that builds a plugin.
-type PluginFactory = func(f framework.FrameworkHandle) (framework.Plugin, error)
+type PluginFactory = func(f framework.Handle) (framework.Plugin, error)
 
 // Registry is a collection of all available plugins. The framework uses a
 // registry to enable and initialize configured plugins.

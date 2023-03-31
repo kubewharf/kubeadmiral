@@ -30,7 +30,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/runtime"
 )
 
-func (s *Scheduler) profileForFedObject(_ *unstructured.Unstructured) (framework.Framework, error) {
+func (s *Scheduler) profileForFedObject(_ *unstructured.Unstructured, handle framework.Handle) (framework.Framework, error) {
 	// TODO: generate registry from fed object's type
 	DefaultRegistry := runtime.Registry{
 		apiresources.APIResourcesName:                           apiresources.NewAPIResources,
@@ -44,8 +44,5 @@ func (s *Scheduler) profileForFedObject(_ *unstructured.Unstructured) (framework
 		maxcluster.MaxClusterName:                               maxcluster.NewMaxCluster,
 	}
 
-	return runtime.NewFramework(
-		DefaultRegistry,
-		runtime.WithDynamicClient(s.dynamicClient),
-	)
+	return runtime.NewFramework(DefaultRegistry, handle)
 }
