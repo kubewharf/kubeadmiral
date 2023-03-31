@@ -36,13 +36,13 @@ util::create_host_cluster "${HOST_CLUSTER_NAME}" "${KUBECONFIG_PATH}" "${MANIFES
 
 # start member clusters
 for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
-    echo
-    util::create_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${KUBECONFIG_PATH}" &
+  echo
+  util::create_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${KUBECONFIG_PATH}" &
 done
 
 wait
 
 # join the member clusters
 for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
-    util::join_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${HOST_CLUSTER_NAME}" "${KUBECONFIG_PATH}"
+  util::join_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${HOST_CLUSTER_NAME}" "${KUBECONFIG_PATH}"
 done
