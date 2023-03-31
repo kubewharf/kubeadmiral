@@ -223,7 +223,7 @@ func (p *pagedListWatcher) watch(ctx context.Context, resourceVersion string) er
 					Object: event.Object,
 				}
 			case watch.Error:
-				return fmt.Errorf("watch channel closed unexpectedly: %w", err)
+				return fmt.Errorf("watch channel closed unexpectedly: %v", event.Object)
 			default:
 				continue
 			}
