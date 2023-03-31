@@ -246,7 +246,7 @@ func (s *Scheduler) enqueueFederatedObjectsForPolicy(policy pkgruntime.Object) {
 		return
 	}
 
-	s.logger.WithValues("policy", policyAccessor.GetName()).Info("Enqueue federated objects for policy")
+	s.logger.WithValues("policy", policyAccessor.GetName()).V(2).Info("Enqueue federated objects for policy")
 
 	fedObjects, err := s.federatedObjectLister.List(labels.Everything())
 	if err != nil {
@@ -271,11 +271,11 @@ func (s *Scheduler) enqueueFederatedObjectsForPolicy(policy pkgruntime.Object) {
 func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster pkgruntime.Object) {
 	clusterObj := cluster.(*fedcorev1a1.FederatedCluster)
 	if !util.IsClusterJoined(&clusterObj.Status) {
-		s.logger.WithValues("cluster", clusterObj.Name).Info("Skip enqueue federated objects for cluster, cluster not joined")
+		s.logger.WithValues("cluster", clusterObj.Name).V(3).Info("Skip enqueue federated objects for cluster, cluster not joined")
 		return
 	}
 
-	s.logger.WithValues("cluster", clusterObj.Name).Info("Enqueue federated objects for cluster")
+	s.logger.WithValues("cluster", clusterObj.Name).V(2).Info("Enqueue federated objects for cluster")
 
 	fedObjects, err := s.federatedObjectLister.List(labels.Everything())
 	if err != nil {
