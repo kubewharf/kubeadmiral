@@ -23,9 +23,11 @@ package listwatcher
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"strconv"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,33 +38,46 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-func TestPagedListWatcher(t *testing.T) {
-	var pods []runtime.Object
-	var clientset kubernetes.Interface
-
-	reset := func(numPods int) {
-		pods = make([]runtime.Object, numPods)
-		for i := 1; i <= numPods; i++ {
-			pods[i-1] = &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: fmt.Sprintf("pod-%d", i),
-				},
-			}
-		}
-		clientset = fake.NewSimpleClientset(pods...)
+func setupFakeClient(numPods int) (pods []runtime.Object, client kubernetes.Interface) {
+	pods = make([]runtime.Object, numPods)
+	for i := 1; i <= numPods; i++ {
+		pods[i-1] = newPod(i)
 	}
+	return pods, fake.NewSimpleClientset(pods...)
+}
 
-	t.Run("should receive events in the correct order", func(t *testing.T) {
-		reset(100)
-		lw := &cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				return clientset.CoreV1().Pods(corev1.NamespaceAll).List(context.TODO(), options)
-			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				return clientset.CoreV1().Pods(corev1.NamespaceAll).Watch(context.TODO(), options)
-			},
+func newPod(id int) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("test-pod-%d", id),
+		},
+	}
+}
+
+func pagedListWatcherFromClient(client kubernetes.Interface, pageSize int64) ListWatcher {
+	lw := &cache.ListWatch{
+		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			return client.CoreV1().Pods(corev1.NamespaceAll).List(context.TODO(), options)
+		},
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			return client.CoreV1().Pods(corev1.NamespaceAll).Watch(context.TODO(), options)
+		},
+	}
+	return NewPagedListWatcher(lw, 10)
+}
+
+func waitForFirstEndSync(eventCh chan Event) {
+	for event := range eventCh {
+		if event.Type == EndSync {
+			break
 		}
-		listwatcher := NewPagedListWatcher("test", lw, 10)
+	}
+}
+
+func TestPagedListWatcher(t *testing.T) {
+	t.Run("should handle events from the initial list correctly", func(t *testing.T) {
+		_, client := setupFakeClient(100)
+		listwatcher := pagedListWatcherFromClient(client, 10)
 
 		testCh := make(chan Event)
 		listwatcher.AddReceiver(testCh)
@@ -89,43 +104,28 @@ func TestPagedListWatcher(t *testing.T) {
 		}
 	})
 
-	t.Run("should receive add, update and delete events", func(t *testing.T) {
-		reset(100)
-		lw := &cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				return clientset.CoreV1().Pods(corev1.NamespaceAll).List(context.TODO(), options)
-			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				return clientset.CoreV1().Pods(corev1.NamespaceAll).Watch(context.TODO(), options)
-			},
-		}
-		listwatcher := NewPagedListWatcher("test", lw, 10)
+	t.Run("should handle create, update and delete events correctly", func(t *testing.T) {
+		_, client := setupFakeClient(100)
+		listwatcher := pagedListWatcherFromClient(client, 10)
 
 		testCh := make(chan Event)
 		listwatcher.AddReceiver(testCh)
 		listwatcher.Start(context.TODO())
-
-		for event := range testCh {
-			if event.Type == EndSync {
-				break
-			}
-		}
+		waitForFirstEndSync(testCh)
 
 		var err error
-		testPod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "pod-test",
-			},
-		}
+		testPod := newPod(rand.Int() + 100)
 
-		// Test add event
-		if testPod, err = clientset.CoreV1().Pods(corev1.NamespaceAll).Create(
+		// test add event
+
+		if testPod, err = client.CoreV1().Pods(corev1.NamespaceAll).Create(
 			context.TODO(),
 			testPod,
 			metav1.CreateOptions{},
 		); err != nil {
 			t.Fatalf("Unexpected error when creating pod: %v", err)
 		}
+
 		event := <-testCh
 		if event.Type != Add {
 			t.Errorf("Expected event to be Add, but got %s", event.Type)
@@ -138,17 +138,17 @@ func TestPagedListWatcher(t *testing.T) {
 			t.Errorf("Expected event to contain pod %s, but got %s", testPod.Name, obj.Name)
 		}
 
-		// Test update event
-		testPod.Annotations = map[string]string{
-			"test": "test",
-		}
-		if testPod, err = clientset.CoreV1().Pods(corev1.NamespaceAll).Update(
+		// test update event
+
+		testPod.Annotations = map[string]string{"test": "test"}
+		if testPod, err = client.CoreV1().Pods(corev1.NamespaceAll).Update(
 			context.TODO(),
 			testPod,
 			metav1.UpdateOptions{},
 		); err != nil {
 			t.Fatalf("Unexpected error when updating pod: %v", err)
 		}
+
 		event = <-testCh
 		if event.Type != Update {
 			t.Errorf("Expected event to be Update, but got %s", event.Type)
@@ -161,17 +161,19 @@ func TestPagedListWatcher(t *testing.T) {
 			t.Errorf("Expected event to contain pod %s, but got %s", testPod.Name, obj.Name)
 		}
 		if obj.Annotations == nil || obj.Annotations["test"] != "test" {
-			t.Errorf("Expected event to contain latest pod %s, but got %v+", testPod.Name, obj)
+			t.Errorf("Expected event to contain latest pod version, but got %v+", obj)
 		}
 
-		// Test delete event
-		if err := clientset.CoreV1().Pods(corev1.NamespaceAll).Delete(
+		// test delete event
+
+		if err := client.CoreV1().Pods(corev1.NamespaceAll).Delete(
 			context.TODO(),
 			testPod.Name,
 			metav1.DeleteOptions{},
 		); err != nil {
 			t.Fatalf("Unexpected error when deleting pod: %v", err)
 		}
+
 		event = <-testCh
 		if event.Type != Delete {
 			t.Errorf("Expected event to be Delete, but got %s", event.Type)
@@ -186,16 +188,16 @@ func TestPagedListWatcher(t *testing.T) {
 	})
 
 	t.Run("list should respect page size", func(t *testing.T) {
-		numPods := 100
+		pods, client := setupFakeClient(100)
 		pageSize := int64(10)
-		numReqs := numPods / int(pageSize)
+		expectedNumReqs := 10                                    // 100 / 10 = 10
+		listCh := make(chan metav1.ListOptions, expectedNumReqs) // listCh is used to receive notifications of list requests
 
-		reset(numPods)
-		listCh := make(chan metav1.ListOptions, numReqs)
-
+		// we implement our own paging mechanism as the fake client does not support it
+		// this mechanism simply returns the next index to read as the continue token
+		// this mechanism does not guarantee consistency if the client is used during a list
 		lw := &cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				// we implement our own paging mechanism as the fake client does not support it
 				startIdx := 0
 				if len(options.Continue) > 0 {
 					var err error
@@ -222,81 +224,94 @@ func TestPagedListWatcher(t *testing.T) {
 					result.Continue = strconv.Itoa(endIdx)
 				}
 
+				// send a notification to listCh to record the number of lists
 				listCh <- options
+
 				return result, nil
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				return clientset.CoreV1().Pods(corev1.NamespaceAll).Watch(context.TODO(), options)
+				return client.CoreV1().Pods(corev1.NamespaceAll).Watch(context.TODO(), options)
 			},
 		}
-		listwatcher := NewPagedListWatcher("test", lw, pageSize)
+		listwatcher := NewPagedListWatcher(lw, pageSize)
 
 		testCh := make(chan Event)
 		listwatcher.AddReceiver(testCh)
 		listwatcher.Start(context.TODO())
+		waitForFirstEndSync(testCh)
 
-		for event := range testCh {
-			if event.Type == EndSync {
-				break
-			}
-		}
-
+		// now that a full list is completed, we can close listCh to not receive anymore notifications
 		close(listCh)
-		// At this stage, we should expect to see 10 list requests
+
 		counter := 0
 		for opt := range listCh {
 			counter++
+			// ensure that request was sent with the correct page size
 			if opt.Limit != pageSize {
 				t.Errorf("Expected limit to be %d, got %d", pageSize, opt.Limit)
 			}
 		}
-		if counter != numReqs {
-			t.Errorf("Expected %d list requests, got %d", numReqs, counter)
+		// ensure that we recieved the correct number of list notifications
+		if counter != expectedNumReqs {
+			t.Errorf("Expected %d list requests, got %d", expectedNumReqs, counter)
 		}
 	})
 
 	t.Run("should handle relists correctly", func(t *testing.T) {
-		reset(0)
+		_, client := setupFakeClient(100)
+
 		failedWatches := 0
+
 		lw := &cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				return clientset.CoreV1().Pods(corev1.NamespaceAll).List(context.TODO(), options)
+				return client.CoreV1().Pods(corev1.NamespaceAll).List(context.TODO(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				// Fail the watch 3 times
-				if failedWatches < 3 {
-					failedWatches++
-					return nil, fmt.Errorf("watch failed")
-				}
+				w, err := client.CoreV1().Pods(corev1.NamespaceAll).Watch(context.TODO(), options)
+				time.AfterFunc(time.Microsecond*5, func() {
+					// close the watch 3 times
+					if failedWatches < 3 {
+						failedWatches++
+						w.Stop()
+					}
 
-				return clientset.CoreV1().Pods(corev1.NamespaceAll).Watch(context.TODO(), options)
+				})
+				return w, err
 			},
 		}
-		listwatcher := NewPagedListWatcher("test", lw, 10)
+		listwatcher := NewPagedListWatcher(lw, 10)
 
 		testCh := make(chan Event)
 		listwatcher.AddReceiver(testCh)
 		listwatcher.Start(context.TODO())
 
-		// We should expect 3 relists since we configured the watch to fail 3 times
+		// we should expect 1 + 3 list requests since we configured the watch to fail 3 times
 		for i := 0; i < 4; i++ {
 			event := <-testCh
 			if event.Type != StartSync {
 				t.Errorf("Expected event to be ListStart, got %s", event.Type)
 			}
+
+			for i := 0; i < 100; i++ {
+				event = <-testCh
+				if event.Type != Add {
+					t.Errorf("Expected event to be Add, but got %s", event.Type)
+				}
+				if event.Object == nil {
+					t.Errorf("Expected Add event to contain object, but got nil")
+				}
+			}
+
 			event = <-testCh
 			if event.Type != EndSync {
 				t.Errorf("Expected event to be ListSuccess, got %s", event.Type)
 			}
 		}
 
-		if _, err := clientset.CoreV1().Pods(corev1.NamespaceAll).Create(
+		testPod := newPod(rand.Int() + 100)
+		if _, err := client.CoreV1().Pods(corev1.NamespaceAll).Create(
 			context.TODO(),
-			&corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "pod-test",
-				},
-			},
+			testPod,
 			metav1.CreateOptions{},
 		); err != nil {
 			t.Fatalf("Unexpected error when creating pod: %v", err)
@@ -306,26 +321,34 @@ func TestPagedListWatcher(t *testing.T) {
 		if event.Type != Add {
 			t.Errorf("Expected event to be Add, got %s", event.Type)
 		}
+		obj, ok := event.Object.(*corev1.Pod)
+		if !ok {
+			t.Errorf("Expected event to contain pod, but got %v", reflect.TypeOf(obj))
+		}
+		if obj.Name != testPod.Name {
+			t.Errorf("Expected event to contain pod %s, but got %s", testPod.Name, obj.Name)
+		}
 	})
 
 	t.Run("should handle failed lists correctly", func(t *testing.T) {
-		reset(0)
+		_, client := setupFakeClient(100)
+
 		failedLists := 0
 		lw := &cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				// Fail the list 3 times
+				// fail the list 3 times
 				if failedLists < 3 {
 					failedLists++
-					return nil, fmt.Errorf("List failed")
+					return nil, fmt.Errorf("list failed")
 				}
 
-				return clientset.CoreV1().Pods(corev1.NamespaceAll).List(context.TODO(), options)
+				return client.CoreV1().Pods(corev1.NamespaceAll).List(context.TODO(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				return clientset.CoreV1().Pods(corev1.NamespaceAll).Watch(context.TODO(), options)
+				return client.CoreV1().Pods(corev1.NamespaceAll).Watch(context.TODO(), options)
 			},
 		}
-		listwatcher := NewPagedListWatcher("test", lw, 10)
+		listwatcher := NewPagedListWatcher(lw, 10)
 
 		testCh := make(chan Event)
 		listwatcher.AddReceiver(testCh)
@@ -339,9 +362,19 @@ func TestPagedListWatcher(t *testing.T) {
 			}
 		}
 
+		// the subsequent list should succeed
 		event := <-testCh
 		if event.Type != StartSync {
 			t.Errorf("Expected event to be StartSync, got %s", event.Type)
+		}
+		for i := 0; i < 100; i++ {
+			event = <-testCh
+			if event.Type != Add {
+				t.Errorf("Expected event to be Add, but got %s", event.Type)
+			}
+			if event.Object == nil {
+				t.Errorf("Expected Add event to contain object, but got nil")
+			}
 		}
 		event = <-testCh
 		if event.Type != EndSync {
