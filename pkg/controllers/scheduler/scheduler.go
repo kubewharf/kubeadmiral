@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
@@ -278,21 +279,21 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 	}
 
 	if shouldSkipScheduling {
-		if err := s.updatePendingControllers(fedObject, false); err != nil {
+		if updated, err := s.updatePendingControllers(fedObject, false); err != nil {
 			keyedLogger.Error(err, "Failed to update pending controllers")
 			return worker.StatusError
-		}
-
-		if _, err := s.federatedObjectClient.Namespace(qualifiedName.Namespace).Update(
-			context.TODO(),
-			fedObject,
-			metav1.UpdateOptions{},
-		); err != nil {
-			keyedLogger.Error(err, "Failed to update pending controllers")
-			if apierrors.IsConflict(err) {
-				return worker.StatusConflict
+		} else if updated {
+			if _, err := s.federatedObjectClient.Namespace(qualifiedName.Namespace).Update(
+				context.TODO(),
+				fedObject,
+				metav1.UpdateOptions{},
+			); err != nil {
+				keyedLogger.Error(err, "Failed to update pending controllers")
+				if apierrors.IsConflict(err) {
+					return worker.StatusConflict
+				}
+				return worker.StatusError
 			}
-			return worker.StatusError
 		}
 
 		return worker.StatusAllOK
@@ -370,7 +371,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		followerSchedulingEnabled = !policy.GetSpec().DisableFollowerScheduling
 	}
 
-	updated, err := s.applySchedulingResult(fedObject, result, followerSchedulingEnabled)
+	schedulingResultsChanged, err := s.applySchedulingResult(fedObject, result, followerSchedulingEnabled)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to apply scheduling result")
 		s.eventRecorder.Eventf(
@@ -382,7 +383,8 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		)
 		return worker.StatusError
 	}
-	if err := s.updatePendingControllers(fedObject, updated); err != nil {
+	pendingControllersChanged, err := s.updatePendingControllers(fedObject, schedulingResultsChanged)
+	if err != nil {
 		keyedLogger.Error(err, "Failed to update pending controllers")
 		s.eventRecorder.Eventf(
 			fedObject,
@@ -392,6 +394,11 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 			fmt.Errorf("failed update pending controllers: %w", err),
 		)
 		return worker.StatusError
+	}
+
+	needsUpdate := schedulingResultsChanged || pendingControllersChanged
+	if !needsUpdate {
+		return worker.StatusAllOK
 	}
 
 	updateLogger := keyedLogger.WithValues(
@@ -464,9 +471,8 @@ func (s *Scheduler) policyFromStore(qualifiedName common.QualifiedName) (fedcore
 // updatePendingControllers removes the scheduler from the object's pending controller annotation. If wasModified is true (the scheduling
 // result was not modified), it will additionally set the downstream processors to notify them to reconcile the changes made by the
 // scheduler.
-func (s *Scheduler) updatePendingControllers(fedObject *unstructured.Unstructured, wasModified bool) error {
-	// we ignore the first value, since the trigger hash is always updated when this method is called and an update will be needed
-	_, err := pendingcontrollers.UpdatePendingControllers(
+func (s *Scheduler) updatePendingControllers(fedObject *unstructured.Unstructured, wasModified bool) (bool, error) {
+	return pendingcontrollers.UpdatePendingControllers(
 		fedObject,
 		PrefixedGlobalSchedulerName,
 		wasModified,
