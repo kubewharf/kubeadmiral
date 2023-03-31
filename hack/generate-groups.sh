@@ -27,8 +27,8 @@ CODEGEN_VERSION=${CODEGEN_VERSION:-"v0.19.0"}
 CONTROLLERGEN_VERSION=${CONTROLLERGEN_VERSION:-"v0.11.1"}
 MODULE_NAME=${MODULE_NAME:-"github.com/kubewharf/kubeadmiral"}
 groups=(
-    core/v1alpha1
-    types/v1alpha1
+  core/v1alpha1
+  types/v1alpha1
 )
 
 # install code-generator binaries
@@ -46,7 +46,7 @@ INPUT_BASE="${MODULE_NAME}/pkg/apis"
 
 INPUT_DIRS=()
 for group in "${groups[@]}"; do
-    INPUT_DIRS+=("${INPUT_BASE}/${group}")
+  INPUT_DIRS+=("${INPUT_BASE}/${group}")
 done
 
 # generate code
@@ -59,29 +59,29 @@ ${GOBIN}/controller-gen crd paths=$(codegen::join ";" "${INPUT_DIRS[@]}") output
 # generate deepcopy
 echo "Generating deepcopy funcs"
 ${GOBIN}/deepcopy-gen -h ${HEADER_FILE} -o ${OUTPUT_DIR} \
-    --input-dirs=$(codegen::join , "${INPUT_DIRS[@]}") \
-    --output-file-base="zz_generated.deepcopy" \
-    "$@"
+  --input-dirs=$(codegen::join , "${INPUT_DIRS[@]}") \
+  --output-file-base="zz_generated.deepcopy" \
+  "$@"
 
 # generate client
 CLIENT_OUTPUT_PACKAGE="${MODULE_NAME}/pkg/client/clientset"
 
 echo "Generating clientsets"
 ${GOBIN}/client-gen -h ${HEADER_FILE} -o ${OUTPUT_DIR} \
-    --clientset-name="versioned" \
-    --input-base="" \
-    --input=$(codegen::join , "${INPUT_DIRS[@]}") \
-    --output-package=${CLIENT_OUTPUT_PACKAGE} \
-    "$@"
+  --clientset-name="versioned" \
+  --input-base="" \
+  --input=$(codegen::join , "${INPUT_DIRS[@]}") \
+  --output-package=${CLIENT_OUTPUT_PACKAGE} \
+  "$@"
 
 # generate lister
 LISTER_OUTPUT_PACKAGE="${MODULE_NAME}/pkg/client/listers"
 
 echo "Generating listers"
 ${GOBIN}/lister-gen -h ${HEADER_FILE} -o ${OUTPUT_DIR} \
-    --input-dirs=$(codegen::join , "${INPUT_DIRS[@]}") \
-    --output-package=${LISTER_OUTPUT_PACKAGE} \
-    "$@"
+  --input-dirs=$(codegen::join , "${INPUT_DIRS[@]}") \
+  --output-package=${LISTER_OUTPUT_PACKAGE} \
+  "$@"
 
 # generate informer
 INFORMER_OUTPUT_PACKAGE="${MODULE_NAME}/pkg/client/informers"
@@ -89,11 +89,11 @@ VERSIONED_CLIENTSET_PACKAGE="${CLIENT_OUTPUT_PACKAGE}/versioned"
 
 echo "Generating informers"
 ${GOBIN}/informer-gen -h ${HEADER_FILE} -o ${OUTPUT_DIR} \
-    --input-dirs=$(codegen::join , "${INPUT_DIRS[@]}") \
-    --output-package=${INFORMER_OUTPUT_PACKAGE} \
-    --versioned-clientset-package=${VERSIONED_CLIENTSET_PACKAGE} \
-    --listers-package=${LISTER_OUTPUT_PACKAGE} \
-    "$@"
+  --input-dirs=$(codegen::join , "${INPUT_DIRS[@]}") \
+  --output-package=${INFORMER_OUTPUT_PACKAGE} \
+  --versioned-clientset-package=${VERSIONED_CLIENTSET_PACKAGE} \
+  --listers-package=${LISTER_OUTPUT_PACKAGE} \
+  "$@"
 
 # copy files to proper location
 files=($(find ${OUTPUT_DIR} -type f))
