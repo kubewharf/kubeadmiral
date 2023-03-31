@@ -24,6 +24,8 @@ import (
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/automigration"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
@@ -186,6 +188,39 @@ func startFederateController(
 	)
 	if err != nil {
 		return fmt.Errorf("error creating federate controller: %w", err)
+	}
+	go federateController.Run(ctx)
+	return nil
+}
+
+func startAutoMigrationController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+	typeConfig *fedcorev1a1.FederatedTypeConfig,
+) error {
+	if typeConfig.Spec.AutoMigration == nil || !typeConfig.Spec.AutoMigration.Enabled {
+		klog.Infof("Auto migration controller disabled for FederatedTypeConfig %s", typeConfig.Name)
+		return nil
+	}
+
+	genericClient, err := generic.New(controllerCtx.RestConfig)
+	if err != nil {
+		return fmt.Errorf("error creating generic client: %w", err)
+	}
+
+	federatedAPIResource := typeConfig.GetFederatedType()
+	federatedGVR := schemautil.APIResourceToGVR(&federatedAPIResource)
+
+	federateController, err := automigration.NewAutoMigrationController(
+		controllerConfigFromControllerContext(controllerCtx),
+		typeConfig,
+		genericClient,
+		controllerCtx.KubeClientset,
+		controllerCtx.DynamicClientset.Resource(federatedGVR),
+		controllerCtx.DynamicInformerFactory.ForResource(federatedGVR),
+	)
+	if err != nil {
+		return fmt.Errorf("error creating auto-migration controller: %w", err)
 	}
 	go federateController.Run(ctx)
 	return nil
