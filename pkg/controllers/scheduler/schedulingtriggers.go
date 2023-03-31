@@ -95,8 +95,6 @@ type schedulingTriggers struct {
 	PolicyName       string `json:"policyName"`
 	PolicyGeneration int64  `json:"policyGeneration"`
 
-	// a map from each cluster to its ready condition
-	ClusterReady []keyValue[string, bool] `json:"clusterReady"`
 	// a map from each cluster to its labels
 	ClusterLabels []keyValue[string, []keyValue[string, string]] `json:"clusterLabels"`
 	// a map from each cluster to its taints
@@ -129,7 +127,6 @@ func (s *Scheduler) computeSchedulingTriggerHash(
 		}
 	}
 
-	trigger.ClusterReady = getClusterReady(clusters)
 	trigger.ClusterLabels = getClusterLabels(clusters)
 	trigger.ClusterTaints = getClusterTaints(clusters)
 
@@ -188,14 +185,6 @@ func getReplicaCount(typeConfig *fedcorev1a1.FederatedTypeConfig, fedObject *uns
 func getResourceRequest(fedObject *unstructured.Unstructured) framework.Resource {
 	// TODO: update once we have a proper way to obtian resource request from federated objects
 	return framework.Resource{}
-}
-
-func getClusterReady(clusters []*fedcorev1a1.FederatedCluster) []keyValue[string, bool] {
-	ret := make(map[string]bool, len(clusters))
-	for _, cluster := range clusters {
-		ret[cluster.Name] = util.IsClusterReady(&cluster.Status)
-	}
-	return sortMap(ret)
 }
 
 func getClusterLabels(clusters []*fedcorev1a1.FederatedCluster) []keyValue[string, []keyValue[string, string]] {
