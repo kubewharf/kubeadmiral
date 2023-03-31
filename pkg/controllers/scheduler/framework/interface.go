@@ -24,13 +24,11 @@ import (
 	"context"
 
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/dynamic/dynamicinformer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
 type Framework interface {
-	FrameworkHandle
 	RunFilterPlugins(context.Context, *SchedulingUnit, *fedcorev1a1.FederatedCluster) *Result
 	RunScorePlugins(context.Context, *SchedulingUnit, []*fedcorev1a1.FederatedCluster) (PluginToClusterScore, *Result)
 	RunSelectClustersPlugin(context.Context, *SchedulingUnit, ClusterScoreList) ([]*fedcorev1a1.FederatedCluster, *Result)
@@ -85,8 +83,6 @@ type ReplicasPlugin interface {
 	ReplicaScheduling(context.Context, *SchedulingUnit, []*fedcorev1a1.FederatedCluster) (ClusterReplicasList, *Result)
 }
 
-type FrameworkHandle interface {
+type Handle interface {
 	DynamicClient() dynamic.Interface
-	DynamicSharedInformerFactory() dynamicinformer.DynamicSharedInformerFactory
-	ClusterDynamicClients() func(clusterName string) dynamic.Interface
 }

@@ -31,7 +31,7 @@ const (
 
 type MaxCluster struct{}
 
-func NewMaxCluster(_ framework.FrameworkHandle) (framework.Plugin, error) {
+func NewMaxCluster(_ framework.Handle) (framework.Plugin, error) {
 	return &MaxCluster{}, nil
 }
 

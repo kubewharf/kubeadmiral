@@ -19,7 +19,7 @@ func (pl *APIResources) Name() string {
 	return APIResourcesName
 }
 
-func NewAPIResources(_ framework.FrameworkHandle) (framework.Plugin, error) {
+func NewAPIResources(_ framework.Handle) (framework.Plugin, error) {
 	return &APIResources{}, nil
 }
 

@@ -60,7 +60,7 @@ type ClusterCapacityWeight struct{}
 
 var _ framework.ReplicasPlugin = &ClusterCapacityWeight{}
 
-func NewClusterCapacityWeight(frameworkHandle framework.FrameworkHandle) (framework.Plugin, error) {
+func NewClusterCapacityWeight(frameworkHandle framework.Handle) (framework.Plugin, error) {
 	return &ClusterCapacityWeight{}, nil
 }
 

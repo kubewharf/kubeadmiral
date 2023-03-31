@@ -40,7 +40,7 @@ const (
 
 type ClusterAffinity struct{}
 
-func NewClusterAffinity(_ framework.FrameworkHandle) (framework.Plugin, error) {
+func NewClusterAffinity(_ framework.Handle) (framework.Plugin, error) {
 	return &ClusterAffinity{}, nil
 }
 

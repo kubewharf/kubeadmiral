@@ -327,7 +327,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 			)
 			return worker.StatusError
 		}
-		profile, err := s.profileForFedObject(fedObject)
+		profile, err := s.profileForFedObject(fedObject, s.buildFrameworkHandle())
 		if err != nil {
 			keyedLogger.Error(err, "Failed to get scheduling profile")
 			s.eventRecorder.Eventf(
