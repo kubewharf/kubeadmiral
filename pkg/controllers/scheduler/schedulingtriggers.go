@@ -185,7 +185,7 @@ func getReplicaCount(typeConfig *fedcorev1a1.FederatedTypeConfig, fedObject *uns
 		return 0, nil
 	}
 
-	value, err := utilunstructured.GetInt64Path(
+	value, err := utilunstructured.GetInt64FromPath(
 		fedObject,
 		typeConfig.Spec.PathDefinition.ReplicasSpec,
 		common.TemplatePath,

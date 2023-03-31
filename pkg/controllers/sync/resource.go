@@ -109,7 +109,7 @@ func (r *federatedResource) TypeConfig() *fedcorev1a1.FederatedTypeConfig {
 }
 
 func (r *federatedResource) Replicas() (*int64, error) {
-	return utilunstructured.GetInt64Path(
+	return utilunstructured.GetInt64FromPath(
 		r.federatedResource,
 		r.typeConfig.Spec.PathDefinition.ReplicasSpec,
 		common.TemplatePath,
