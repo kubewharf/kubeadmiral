@@ -94,9 +94,11 @@ spec:
     - - kubeadmiral.io/overridepolicy-controller
     - - kubeadmiral.io/follower-controller
   pathDefinition:
+    labelSelector: spec.selector
     replicasSpec: spec.replicas
     replicasStatus: status.replicas
     availableReplicasStatus: status.availableReplicas
+    readyReplicasStatus: status.readyReplicas
   statusCollection:
     fields:
       - metadata.creationTimestamp
@@ -466,8 +468,10 @@ spec:
     - - kubeadmiral.io/overridepolicy-controller
     - - kubeadmiral.io/follower-controller
   pathDefinition:
+    labelSelector: spec.selector
     replicasSpec: spec.replicas
     replicasStatus: status.replicas
+    readyReplicasStatus: status.readyReplicas
   statusCollection:
     fields:
       - metadata.creationTimestamp
