@@ -62,7 +62,6 @@ type ClusterCollector struct {
 
 func NewClusterCollector(clusterName string, client kubernetes.Interface, nodeInformer corev1informers.NodeInformer) *ClusterCollector {
 	listWatcher := listwatcher.NewPagedListWatcher(
-		fmt.Sprintf("%s-collector", clusterName),
 		&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				return client.CoreV1().Pods(corev1.NamespaceAll).List(context.TODO(), options)
