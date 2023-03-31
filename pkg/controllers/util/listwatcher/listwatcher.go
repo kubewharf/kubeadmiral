@@ -33,13 +33,14 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// ListWatcher repeatedly lists and watches a given resource, emitting events to registered receivers. Objects obtained
-// from a successful list should be emitted as Add events. After the initial list, the relevant watch events should be
-// emitted as Add, Update or Delete events accordingly.
+// ListWatcher lists and watches a given resource, emitting events to registered receivers. This allows receivers to
+// track changes to a resource starting from a consistent snapshot.
 //
-// Before any list request, ListWatcher should emit a StartSync event to notify receivers to perform a resync should
-// they require a consistent view of the resource. After all the objects from a successful list request is emitted, a
-// ListWatcher should emit EndSync event to notify receivers that they can finish their resync.
+// Before any list request, ListWatcher must emit a StartSync event to notify receivers. This allows receivers to start
+// performing a resync if required. After all the objects from a succesful list request is emitted, ListWatcher must
+// also emit a EndSync event to notify receivers.
+//
+// The design of ListWatcher and its implementations is loosely based on client-go's reflector.
 type ListWatcher interface {
 	Start(ctx context.Context)
 	AddReceiver(chan<- Event)
@@ -53,16 +54,22 @@ type Event struct {
 type EventType string
 
 const (
+	// StartSync is emmited when a ListWatcher starts a new list. Receivers should use this as a signal to start a
+	// resync should they require a consistent view of the resource.
 	StartSync EventType = "StartSync"
-	EndSync   EventType = "EndSync"
+	// EndSync is emmited when a ListWatcher successfully completes a list. Receivers can use all the Add events
+	// received since the last StartSync to construct a consistent snapshot of the resource.
+	EndSync EventType = "EndSync"
 
-	Add    EventType = "Add"
+	// Add is emmited for each object in a list request, and any subsequent Added watch events.
+	Add EventType = "Add"
+	// Update is emmited for any Modified watch events.
 	Update EventType = "Update"
+	// Delete is emmited for any Deleted watch events.
 	Delete EventType = "Delete"
 )
 
 type pagedListWatcher struct {
-	name      string
 	lw        cache.ListerWatcher
 	mux       chan Event
 	receivers []chan<- Event
@@ -73,9 +80,8 @@ type pagedListWatcher struct {
 
 // NewPagedListWatcher returns a ListWatcher implementation that uses paging when listing from the apiserver. Each page
 // is processed immediately to allow the allocated memory to be potentially garbage collected before the next request.
-func NewPagedListWatcher(name string, lw cache.ListerWatcher, pageSize int64) ListWatcher {
+func NewPagedListWatcher(lw cache.ListerWatcher, pageSize int64) ListWatcher {
 	return &pagedListWatcher{
-		name:      name,
 		lw:        lw,
 		mux:       make(chan Event, 100),
 		receivers: []chan<- Event{},
@@ -92,7 +98,7 @@ func (p *pagedListWatcher) AddReceiver(receiver chan<- Event) {
 }
 
 func (p *pagedListWatcher) Start(ctx context.Context) {
-	logger := klog.FromContext(ctx).WithValues("paged-list-watcher", p.name)
+	logger := klog.FromContext(ctx).WithValues("component", "paged-list-watcher")
 	listCh := make(chan string, 1)
 
 	go func() {
@@ -195,7 +201,11 @@ func (p *pagedListWatcher) watch(ctx context.Context, resourceVersion string) er
 		select {
 		case <-ctx.Done():
 			return nil
-		case event := <-watcher.ResultChan():
+		case event, ok := <-watcher.ResultChan():
+			if !ok {
+				return nil
+			}
+
 			switch event.Type {
 			case watch.Added:
 				p.mux <- Event{
@@ -212,6 +222,8 @@ func (p *pagedListWatcher) watch(ctx context.Context, resourceVersion string) er
 					Type:   Delete,
 					Object: event.Object,
 				}
+			case watch.Error:
+				return fmt.Errorf("watch channel closed unexpectedly: %w", err)
 			default:
 				continue
 			}
