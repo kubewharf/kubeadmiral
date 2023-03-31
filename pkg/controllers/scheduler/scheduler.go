@@ -366,12 +366,19 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 	}
 	keyedLogger.V(3).Info("Scheduling result obtained", "result", result.String())
 
-	var followerSchedulingEnabled bool
+	auxInfo := &auxiliarySchedulingInformation{
+		enableFollowerScheduling: false,
+		unschedulableThreshold:   nil,
+	}
 	if policy != nil {
-		followerSchedulingEnabled = !policy.GetSpec().DisableFollowerScheduling
+		spec := policy.GetSpec()
+		auxInfo.enableFollowerScheduling = !spec.DisableFollowerScheduling
+		if autoMigration := spec.AutoMigration; autoMigration != nil {
+			auxInfo.unschedulableThreshold = pointer.Duration(autoMigration.Trigger.PodUnschedulableDuration.Duration)
+		}
 	}
 
-	schedulingResultsChanged, err := s.applySchedulingResult(fedObject, result, followerSchedulingEnabled)
+	schedulingResultsChanged, err := s.applySchedulingResult(fedObject, result, auxInfo)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to apply scheduling result")
 		s.eventRecorder.Eventf(
@@ -478,7 +485,11 @@ func (s *Scheduler) updatePendingControllers(fedObject *unstructured.Unstructure
 		wasModified,
 		s.typeConfig.GetControllers(),
 	)
-	return err
+}
+
+type auxiliarySchedulingInformation struct {
+	enableFollowerScheduling bool
+	unschedulableThreshold   *time.Duration
 }
 
 // applySchedulingResult updates the federated object with the scheduling result and the enableFollowerScheduling annotation, it returns a
@@ -486,7 +497,7 @@ func (s *Scheduler) updatePendingControllers(fedObject *unstructured.Unstructure
 func (s *Scheduler) applySchedulingResult(
 	fedObject *unstructured.Unstructured,
 	result core.ScheduleResult,
-	enableFollowerScheduling bool,
+	auxInfo *auxiliarySchedulingInformation,
 ) (bool, error) {
 	objectModified := false
 	clusterSet := result.ClusterSet()
@@ -511,20 +522,39 @@ func (s *Scheduler) applySchedulingResult(
 	}
 	objectModified = objectModified || overridesUpdated
 
-	// set enableFollowerScheduling annotation
+	// set annotations
+	annotations := fedObject.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string, 2)
+	}
+	annotationsModified := false
+
 	enableFollowerSchedulingAnnotationValue := common.AnnotationValueTrue
-	if !enableFollowerScheduling {
+	if !auxInfo.enableFollowerScheduling {
 		enableFollowerSchedulingAnnotationValue = common.AnnotationValueFalse
 	}
-	annotationsUpdated, err := annotationutil.AddAnnotation(
-		fedObject,
-		common.EnableFollowerSchedulingAnnotation,
-		enableFollowerSchedulingAnnotationValue,
-	)
-	if err != nil {
-		return false, err
+	if annotations[common.EnableFollowerSchedulingAnnotation] != enableFollowerSchedulingAnnotationValue {
+		annotations[common.EnableFollowerSchedulingAnnotation] = enableFollowerSchedulingAnnotationValue
+		annotationsModified = true
 	}
-	objectModified = objectModified || annotationsUpdated
+
+	if auxInfo.unschedulableThreshold == nil {
+		if _, ok := annotations[common.PodUnschedulableThresholdAnnotation]; ok {
+			delete(annotations, common.PodUnschedulableThresholdAnnotation)
+			annotationsModified = true
+		}
+	} else {
+		unschedulableThresholdAnnotationValue := auxInfo.unschedulableThreshold.String()
+		if annotations[common.PodUnschedulableThresholdAnnotation] != unschedulableThresholdAnnotationValue {
+			annotations[common.PodUnschedulableThresholdAnnotation] = unschedulableThresholdAnnotationValue
+			annotationsModified = true
+		}
+	}
+
+	if annotationsModified {
+		fedObject.SetAnnotations(annotations)
+		objectModified = true
+	}
 
 	return objectModified, nil
 }
