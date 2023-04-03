@@ -140,7 +140,7 @@ func (c *FederatedClusterController) getResourceCollectorForCluster(
 
 	timeout, cancel := context.WithTimeout(context.TODO(), time.Second*5)
 	defer cancel()
-	if cache.WaitForCacheSync(timeout.Done(), collector.HasSynced) {
+	if !cache.WaitForCacheSync(timeout.Done(), collector.HasSynced) {
 		return nil, fmt.Errorf("timed out waiting for resource collector to sync")
 	}
 
