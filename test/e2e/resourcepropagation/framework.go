@@ -73,15 +73,20 @@ type resourceClient[T k8sObject] interface {
 }
 
 type resourceStatusCollectionTestConfig struct {
-	gvr  schema.GroupVersionResource
+	// GVR of the federatedstatus.
+	gvr schema.GroupVersionResource
+	// Path to a field in the resource whose value should be collected by status collection.
 	path string
 }
 
 type resourcePropagationTestConfig[T k8sObject] struct {
-	gvr                         schema.GroupVersionResource
-	statusCollection            *resourceStatusCollectionTestConfig
-	objectFactory               func(name string) T
-	clientGetter                func(client kubernetes.Interface, namespace string) resourceClient[T]
+	gvr              schema.GroupVersionResource
+	statusCollection *resourceStatusCollectionTestConfig
+	// Returns an object template with the given name.
+	objectFactory func(name string) T
+	// Given a Kubernetes client interface and namespace, returns a client that can be used to perform operations on T in the host apiserver.
+	clientGetter func(client kubernetes.Interface, namespace string) resourceClient[T]
+	// Checks whether the given resource is working properly in the given cluster.
 	isPropagatedResourceWorking func(kubernetes.Interface, dynamic.Interface, T) (bool, error)
 }
 
