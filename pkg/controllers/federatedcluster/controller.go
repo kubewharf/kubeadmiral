@@ -48,6 +48,7 @@ import (
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustercollector"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
 	finalizerutils "github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
@@ -454,6 +455,8 @@ func (c *FederatedClusterController) enqueueAllJoinedClusters() {
 	// delete cached collectors for stale clusters
 	c.resourceCollectors.Range(func(key, value any) bool {
 		if _, ok := joinedClusters[key.(string)]; !ok {
+			collector := value.(*clustercollector.ClusterCollector)
+			collector.Stop()
 			c.resourceCollectors.Delete(key)
 		}
 		return true
