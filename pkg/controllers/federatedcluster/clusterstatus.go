@@ -30,16 +30,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextv1b1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustercollector"
 )
 
 const (
@@ -54,28 +51,18 @@ const (
 	ClusterNotReachableMsg    = "cluster is not reachable"
 )
 
-func collectIndividualClusterStatus(
+func (c *FederatedClusterController) collectIndividualClusterStatus(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
-	fedClient fedclient.Interface,
-	federatedClient federatedclient.FederatedClientFactory,
-	logger klog.Logger,
 ) error {
-	logger = logger.WithValues("sub-process", "status-collection")
+	logger := klog.FromContext(ctx)
 
-	clusterKubeClient, exists, err := federatedClient.KubeClientsetForCluster(cluster.Name)
+	clusterKubeClient, exists, err := c.federatedClient.KubeClientsetForCluster(cluster.Name)
 	if !exists {
 		return fmt.Errorf("federated client is not yet up to date")
 	}
 	if err != nil {
 		return fmt.Errorf("failed to get federated kube client: %w", err)
-	}
-	clusterKubeInformer, exists, err := federatedClient.KubeSharedInformerFactoryForCluster(cluster.Name)
-	if !exists {
-		return fmt.Errorf("federated client is not yet up to date")
-	}
-	if err != nil {
-		return fmt.Errorf("failed to get federated kube informer factory: %w", err)
 	}
 
 	discoveryClient := clusterKubeClient.Discovery()
@@ -93,8 +80,13 @@ func collectIndividualClusterStatus(
 	}
 
 	if !skip {
-		if err := updateClusterResources(ctx, &cluster.Status, clusterKubeInformer); err != nil {
-			return fmt.Errorf("failed to get cluster node levels: %w", err)
+		collector, err := c.getResourceCollectorForCluster(cluster)
+		if err != nil {
+			return fmt.Errorf("failed to start resource collector: %w", err)
+		}
+
+		if err := updateClusterResources(ctx, &cluster.Status, collector); err != nil {
+			return fmt.Errorf("failed to get cluster resources: %w", err)
 		}
 
 		if err := updateClusterAPIResources(ctx, &cluster.Status, discoveryClient); err != nil {
@@ -103,18 +95,56 @@ func collectIndividualClusterStatus(
 	}
 
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		latestCluster, err := fedClient.CoreV1alpha1().FederatedClusters().Get(context.TODO(), cluster.Name, metav1.GetOptions{})
+		latestCluster, err := c.client.CoreV1alpha1().FederatedClusters().Get(context.TODO(), cluster.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 		cluster.Status.DeepCopyInto(&latestCluster.Status)
-		_, err = fedClient.CoreV1alpha1().FederatedClusters().UpdateStatus(context.TODO(), latestCluster, metav1.UpdateOptions{})
+		_, err = c.client.CoreV1alpha1().FederatedClusters().UpdateStatus(context.TODO(), latestCluster, metav1.UpdateOptions{})
 		return err
 	}); err != nil {
 		return fmt.Errorf("failed to update cluster status: %w", err)
 	}
 
 	return nil
+}
+
+func (c *FederatedClusterController) getResourceCollectorForCluster(
+	cluster *fedcorev1a1.FederatedCluster,
+) (*clustercollector.ClusterCollector, error) {
+	var collector *clustercollector.ClusterCollector
+
+	if cached, ok := c.resourceCollectors.Load(cluster.Name); ok {
+		collector = cached.(*clustercollector.ClusterCollector)
+	} else {
+		clusterKubeClient, exists, err := c.federatedClient.KubeClientsetForCluster(cluster.Name)
+		if !exists {
+			return nil, fmt.Errorf("federated client not up to date")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to get federated kube client: %w", err)
+		}
+
+		clusterKubeInformers, exists, err := c.federatedClient.KubeSharedInformerFactoryForCluster(cluster.Name)
+		if !exists {
+			return nil, fmt.Errorf("federated client not up to date")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to get federated kube informer factory: %w", err)
+		}
+
+		collector = clustercollector.NewClusterCollector(cluster.Name, clusterKubeClient, clusterKubeInformers.Core().V1().Nodes())
+		collector.Start(context.TODO())
+		c.resourceCollectors.Store(cluster.Name, collector)
+	}
+
+	timeout, cancel := context.WithTimeout(context.TODO(), time.Second*5)
+	defer cancel()
+	if cache.WaitForCacheSync(timeout.Done(), collector.HasSynced) {
+		return nil, fmt.Errorf("timed out waiting for resource collector to sync")
+	}
+
+	return collector, nil
 }
 
 func updateClusterHealthConditions(
@@ -155,40 +185,17 @@ func updateClusterHealthConditions(
 func updateClusterResources(
 	ctx context.Context,
 	clusterStatus *fedcorev1a1.FederatedClusterStatus,
-	clusterKubeInformer informers.SharedInformerFactory,
+	clusterCollector *clustercollector.ClusterCollector,
 ) error {
-	podLister := clusterKubeInformer.Core().V1().Pods().Lister()
-	podsSynced := clusterKubeInformer.Core().V1().Pods().Informer().HasSynced
-	nodeLister := clusterKubeInformer.Core().V1().Nodes().Lister()
-	nodesSynced := clusterKubeInformer.Core().V1().Nodes().Informer().HasSynced
-
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if !cache.WaitForNamedCacheSync("federated-cluster-controller-status-collect", ctx.Done(), podsSynced, nodesSynced) {
-		return fmt.Errorf("timeout waiting for node and pod informer sync")
-	}
-
-	nodes, err := nodeLister.List(labels.Everything())
+	resources, err := clusterCollector.GetClusterResources()
 	if err != nil {
-		return fmt.Errorf("failed to list nodes: %w", err)
-	}
-	pods, err := podLister.List(labels.Everything())
-	if err != nil {
-		return fmt.Errorf("failed to list pods: %w", err)
+		return fmt.Errorf("failed to get cluster resources from collector: %w", err)
 	}
 
-	schedulableNodes := int64(0)
-	for _, node := range nodes {
-		if isNodeSchedulable(node) {
-			schedulableNodes++
-		}
-	}
-
-	allocatable, available := aggregateResources(nodes, pods)
 	clusterStatus.Resources = fedcorev1a1.Resources{
-		SchedulableNodes: &schedulableNodes,
-		Allocatable:      allocatable,
-		Available:        available,
+		SchedulableNodes: &resources.SchedulableNodes,
+		Allocatable:      resources.Allocatable,
+		Available:        resources.Available,
 	}
 
 	return nil

@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -87,6 +88,8 @@ type FederatedClusterController struct {
 
 	worker              worker.ReconcileWorker
 	statusCollectWorker worker.ReconcileWorker
+
+	resourceCollectors sync.Map
 }
 
 func NewFederatedClusterController(
@@ -113,6 +116,7 @@ func NewFederatedClusterController(
 		clusterJoinTimeout: clusterJoinTimeout,
 		metrics:            metrics,
 		logger:             klog.LoggerWithName(klog.Background(), ControllerName),
+		resourceCollectors: sync.Map{},
 	}
 
 	broadcaster := record.NewBroadcaster()
@@ -201,13 +205,7 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 
 	if cluster.GetDeletionTimestamp() != nil {
 		keyedLogger.Info("Handle terminating cluster")
-		err := handleTerminatingCluster(
-			cluster,
-			c.client,
-			c.kubeClient,
-			c.eventRecorder,
-			c.fedSystemNamespace,
-		)
+		err := c.handleTerminatingCluster(cluster)
 		if err != nil {
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
@@ -278,7 +276,7 @@ func (c *FederatedClusterController) collectClusterStatus(qualifiedName common.Q
 
 	cluster = cluster.DeepCopy()
 	if shouldCollectClusterStatus(cluster, c.clusterHealthCheckConfig.Period) {
-		if err := collectIndividualClusterStatus(context.TODO(), cluster, c.client, c.federatedClient, keyedLogger); err != nil {
+		if err := c.collectIndividualClusterStatus(context.TODO(), cluster); err != nil {
 			keyedLogger.Error(err, "Failed to collect cluster status")
 			return worker.StatusError
 		}
@@ -308,13 +306,7 @@ func ensureFinalizer(
 	return cluster, nil
 }
 
-func handleTerminatingCluster(
-	cluster *fedcorev1a1.FederatedCluster,
-	client fedclient.Interface,
-	kubeClient kubeclient.Interface,
-	eventRecorder record.EventRecorder,
-	fedSystemNamespace string,
-) error {
+func (c *FederatedClusterController) handleTerminatingCluster(cluster *fedcorev1a1.FederatedCluster) error {
 	finalizers := sets.New(cluster.GetFinalizers()...)
 	if !finalizers.Has(FinalizerFederatedClusterController) {
 		return nil
@@ -323,7 +315,7 @@ func handleTerminatingCluster(
 	// we need to ensure that all other finalizers are removed before we start cleanup as other controllers may
 	// still rely on the credentials to do their own cleanup
 	if len(finalizers) > 1 {
-		eventRecorder.Eventf(
+		c.eventRecorder.Eventf(
 			cluster,
 			corev1.EventTypeNormal,
 			EventReasonHandleTerminatingClusterBlocked,
@@ -347,7 +339,7 @@ func handleTerminatingCluster(
 	if requireCleanup {
 		clusterSecretName := cluster.Spec.SecretRef.Name
 		if clusterSecretName == "" {
-			eventRecorder.Eventf(
+			c.eventRecorder.Eventf(
 				cluster,
 				corev1.EventTypeWarning,
 				EventReasonHandleTerminatingClusterFailed,
@@ -358,11 +350,11 @@ func handleTerminatingCluster(
 			return fmt.Errorf("cluster secret is not set")
 		}
 
-		clusterSecret, err := kubeClient.CoreV1().
-			Secrets(fedSystemNamespace).
+		clusterSecret, err := c.kubeClient.CoreV1().
+			Secrets(c.fedSystemNamespace).
 			Get(context.TODO(), clusterSecretName, metav1.GetOptions{})
 		if err != nil {
-			eventRecorder.Eventf(
+			c.eventRecorder.Eventf(
 				cluster,
 				corev1.EventTypeWarning,
 				EventReasonHandleTerminatingClusterFailed,
@@ -384,8 +376,8 @@ func handleTerminatingCluster(
 				delete(clusterSecret.Data, ServiceAccountTokenKey)
 				delete(clusterSecret.Data, ServiceAccountCAKey)
 
-				clusterSecret, err = kubeClient.CoreV1().
-					Secrets(fedSystemNamespace).
+				clusterSecret, err = c.kubeClient.CoreV1().
+					Secrets(c.fedSystemNamespace).
 					Update(context.TODO(), clusterSecret, metav1.UpdateOptions{})
 				if err != nil {
 					return fmt.Errorf(
@@ -401,7 +393,7 @@ func handleTerminatingCluster(
 		restConfig := &rest.Config{Host: cluster.Spec.APIEndpoint}
 
 		if err := util.PopulateAuthDetailsFromSecret(restConfig, cluster.Spec.Insecure, clusterSecret, false); err != nil {
-			eventRecorder.Eventf(
+			c.eventRecorder.Eventf(
 				cluster,
 				corev1.EventTypeWarning,
 				EventReasonHandleTerminatingClusterFailed,
@@ -420,9 +412,9 @@ func handleTerminatingCluster(
 
 		err = clusterKubeClient.CoreV1().
 			Namespaces().
-			Delete(context.TODO(), fedSystemNamespace, metav1.DeleteOptions{})
+			Delete(context.TODO(), c.fedSystemNamespace, metav1.DeleteOptions{})
 		if err != nil && !apierrors.IsNotFound(err) {
-			eventRecorder.Eventf(
+			c.eventRecorder.Eventf(
 				cluster,
 				corev1.EventTypeWarning,
 				EventReasonHandleTerminatingClusterFailed,
@@ -436,7 +428,7 @@ func handleTerminatingCluster(
 
 	// we have already checked that we are the last finalizer so we can simply set finalizers to be empty
 	cluster.SetFinalizers(nil)
-	_, err := client.CoreV1alpha1().
+	_, err := c.client.CoreV1alpha1().
 		FederatedClusters().
 		Update(context.TODO(), cluster, metav1.UpdateOptions{})
 	if err != nil {
@@ -452,9 +444,22 @@ func (c *FederatedClusterController) enqueueAllJoinedClusters() {
 		c.logger.Error(err, "Failed to enqueue all clusters")
 	}
 
+	joinedClusters := map[string]*fedcorev1a1.FederatedCluster{}
 	for _, cluster := range clusters {
 		if util.IsClusterJoined(&cluster.Status) {
-			c.statusCollectWorker.EnqueueObject(cluster)
+			joinedClusters[cluster.Name] = cluster
 		}
+	}
+
+	// delete cached collectors for stale clusters
+	c.resourceCollectors.Range(func(key, value any) bool {
+		if _, ok := joinedClusters[key.(string)]; !ok {
+			c.resourceCollectors.Delete(key)
+		}
+		return true
+	})
+
+	for _, cluster := range joinedClusters {
+		c.statusCollectWorker.EnqueueObject(cluster)
 	}
 }
