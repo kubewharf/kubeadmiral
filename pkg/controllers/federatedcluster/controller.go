@@ -48,7 +48,6 @@ import (
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustercollector"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
 	finalizerutils "github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
@@ -266,13 +265,14 @@ func (c *FederatedClusterController) collectClusterStatus(qualifiedName common.Q
 	}()
 
 	cluster, err := c.clusterLister.Get(qualifiedName.Name)
-	if err != nil && apierrors.IsNotFound(err) {
-		keyedLogger.Info("Observed cluster deletion")
-		return worker.StatusAllOK
-	}
-	if err != nil {
+	if err != nil && !apierrors.IsNotFound(err) {
 		keyedLogger.Error(err, "Failed to get cluster from store")
 		return worker.StatusError
+	}
+	if err != nil || cluster.GetDeletionTimestamp() != nil {
+		keyedLogger.Info("Observed cluster deletion")
+		c.deleteResourceCollectorForCluster(qualifiedName.Name)
+		return worker.StatusAllOK
 	}
 
 	cluster = cluster.DeepCopy()
@@ -436,6 +436,8 @@ func (c *FederatedClusterController) handleTerminatingCluster(cluster *fedcorev1
 		return fmt.Errorf("failed to update cluster for finalizer removal: %w", err)
 	}
 
+	c.statusCollectWorker.Enqueue(common.NewQualifiedName(cluster))
+
 	return nil
 }
 
@@ -451,16 +453,6 @@ func (c *FederatedClusterController) enqueueAllJoinedClusters() {
 			joinedClusters[cluster.Name] = cluster
 		}
 	}
-
-	// delete cached collectors for stale clusters
-	c.resourceCollectors.Range(func(key, value any) bool {
-		if _, ok := joinedClusters[key.(string)]; !ok {
-			collector := value.(*clustercollector.ClusterCollector)
-			collector.Stop()
-			c.resourceCollectors.Delete(key)
-		}
-		return true
-	})
 
 	for _, cluster := range joinedClusters {
 		c.statusCollectWorker.EnqueueObject(cluster)
