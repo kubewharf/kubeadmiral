@@ -30,9 +30,10 @@ type ClientUpdateHandler func(cluster string, factory FederatedClientFactory)
 // FederatedClientFactory allows users to get shared clientsets and informer factories for joined member clusters.
 // Note that in the context of a FederatedClientFactory, a cluster will only "exist" when it becomes "Joined".
 // If a cluster is not "Joined", we may not have the necessary information to connect to the member cluster.
+// For now, FederatedClientFactory assumes that the connection details of a cluster cannot change, i.e it will not
+// handle updates to a cluster's endpoint, certs, etc.
 type FederatedClientFactory interface {
 	Start(ctx context.Context)
-	AddClientUpdateHandler(handler ClientUpdateHandler)
 
 	KubeClientsetForCluster(cluster string) (client kubeclient.Interface, exists bool, err error)
 	DynamicClientsetForCluster(cluster string) (client dynamicclient.Interface, exists bool, err error)
