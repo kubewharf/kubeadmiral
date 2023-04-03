@@ -17,12 +17,46 @@ limitations under the License.
 package utilunstructured
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/pointer"
 )
+
+// GetInt64FromPath returns value at path (optionally under prefixFields) in the unstructured object as a metav1.LabelSelector.
+// The field value must be a string or a map[string]interface{}, both of which must be convertable into a metav1.LabelSelector.
+func GetLabelSelectorFromPath(obj *unstructured.Unstructured, path string, prefixFields []string) (*metav1.LabelSelector, error) {
+	unsLabelSelector, exists, err := unstructured.NestedFieldNoCopy(
+		obj.Object,
+		SplitDotPath(path, prefixFields)...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
+	}
+
+	labelSelector := metav1.LabelSelector{}
+	switch unsLabelSelector := unsLabelSelector.(type) {
+	case map[string]interface{}:
+		if err := pkgruntime.DefaultUnstructuredConverter.FromUnstructured(unsLabelSelector, &labelSelector); err != nil {
+			return nil, fmt.Errorf("field value cannot be unmarshalled into metav1.LabelSelector: %w", err)
+		}
+		return &labelSelector, nil
+	case string:
+		if err := json.Unmarshal([]byte(unsLabelSelector), &labelSelector); err != nil {
+			return nil, fmt.Errorf("field value cannot be unmarshalled into metav1.LabelSelector: %w", err)
+		}
+		return &labelSelector, nil
+	default:
+		return nil, fmt.Errorf("field value is not a string or a map[string]interface{}")
+	}
+}
 
 // GetInt64FromPath gets an int64 value at path of an unstructured object, optionally wrapped under prefixFields.
 func GetInt64FromPath(value *unstructured.Unstructured, path string, prefixFields []string) (*int64, error) {
