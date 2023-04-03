@@ -111,7 +111,7 @@ func NewFederatedClusterController(
 		federatedClient:    federatedClient,
 		fedSystemNamespace: fedsystemNamespace,
 		clusterHealthCheckConfig: &ClusterHealthCheckConfig{
-			Period: time.Minute,
+			Period: time.Second * 10,
 		},
 		clusterJoinTimeout: clusterJoinTimeout,
 		metrics:            metrics,
@@ -308,6 +308,9 @@ func ensureFinalizer(
 }
 
 func (c *FederatedClusterController) handleTerminatingCluster(cluster *fedcorev1a1.FederatedCluster) error {
+	// we also enqueue to statusCollectWorker in order to perform necessary cleanup
+	c.statusCollectWorker.Enqueue(common.NewQualifiedName(cluster))
+
 	finalizers := sets.New(cluster.GetFinalizers()...)
 	if !finalizers.Has(FinalizerFederatedClusterController) {
 		return nil
@@ -435,8 +438,6 @@ func (c *FederatedClusterController) handleTerminatingCluster(cluster *fedcorev1
 	if err != nil {
 		return fmt.Errorf("failed to update cluster for finalizer removal: %w", err)
 	}
-
-	c.statusCollectWorker.Enqueue(common.NewQualifiedName(cluster))
 
 	return nil
 }

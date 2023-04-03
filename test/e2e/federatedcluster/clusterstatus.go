@@ -23,7 +23,6 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework"
@@ -76,7 +75,7 @@ var _ = ginkgo.Describe("Cluster Status", federatedClusterTestLabels, func() {
 		ginkgo.Context("Without service account", func() {
 			ginkgo.It("Should succeed", func(ctx ginkgo.SpecContext) {
 				ginkgo.By("Creating cluster")
-				cluster, _ = f.NewCluster(ctx, framework.WithTaints)
+				cluster, _, _ = f.NewCluster(ctx, framework.WithTaints)
 
 				start := time.Now()
 
@@ -96,7 +95,7 @@ var _ = ginkgo.Describe("Cluster Status", federatedClusterTestLabels, func() {
 		ginkgo.Context("With service account", func() {
 			ginkgo.It("Should succeed", func(ctx ginkgo.SpecContext) {
 				ginkgo.By("Creating cluster")
-				cluster, _ = f.NewCluster(ctx, framework.WithTaints, framework.WithServiceAccount)
+				cluster, _, _ = f.NewCluster(ctx, framework.WithTaints, framework.WithServiceAccount)
 
 				start := time.Now()
 
@@ -115,6 +114,8 @@ var _ = ginkgo.Describe("Cluster Status", federatedClusterTestLabels, func() {
 	})
 
 	ginkgo.Context("Unhealthy cluster", func() {
+		var stopClusterFn func(context.Context)
+
 		waitForStatusConvergence := func(ctx context.Context) {
 			gomega.Eventually(func(g gomega.Gomega, ctx context.Context) {
 				var err error
@@ -124,18 +125,10 @@ var _ = ginkgo.Describe("Cluster Status", federatedClusterTestLabels, func() {
 			}).WithTimeout(clusterStatusUpdateInterval*2).WithContext(ctx).Should(gomega.Succeed(), "Timed out waiting for status convergence")
 		}
 
-		makeClusterUnreachable := func(ctx context.Context) {
-			_, err := f.HostFedClient().
-				CoreV1alpha1().
-				FederatedClusters().
-				Patch(ctx, cluster.Name, types.JSONPatchType, invalidClusterEndpointPatchData, metav1.PatchOptions{})
-			gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
-		}
-
 		ginkgo.Context("Without service account", func() {
 			ginkgo.It("Should succeed", func(ctx ginkgo.SpecContext) {
 				ginkgo.By("Creating cluster")
-				cluster, _ = f.NewCluster(ctx, framework.WithTaints)
+				cluster, _, stopClusterFn = f.NewCluster(ctx, framework.WithTaints)
 
 				start := time.Now()
 
@@ -147,7 +140,7 @@ var _ = ginkgo.Describe("Cluster Status", federatedClusterTestLabels, func() {
 				ginkgo.GinkgoLogr.Info("initial cluster status collected", "duration", time.Since(start))
 
 				ginkgo.By("Making cluster unreachable")
-				makeClusterUnreachable(ctx)
+				stopClusterFn(ctx)
 
 				ginkgo.By("Waiting for status to converge to expected state")
 				waitForStatusConvergence(ctx)
@@ -158,7 +151,7 @@ var _ = ginkgo.Describe("Cluster Status", federatedClusterTestLabels, func() {
 		ginkgo.Context("With service account", func() {
 			ginkgo.It("Should succeed", func(ctx ginkgo.SpecContext) {
 				ginkgo.By("Creating cluster")
-				cluster, _ = f.NewCluster(ctx, framework.WithTaints, framework.WithServiceAccount)
+				cluster, _, stopClusterFn = f.NewCluster(ctx, framework.WithTaints, framework.WithServiceAccount)
 
 				start := time.Now()
 
@@ -170,7 +163,7 @@ var _ = ginkgo.Describe("Cluster Status", federatedClusterTestLabels, func() {
 				ginkgo.GinkgoLogr.Info("initial cluster status collected", "duration", time.Since(start))
 
 				ginkgo.By("Making cluster unhealthy")
-				makeClusterUnreachable(ctx)
+				stopClusterFn(ctx)
 
 				ginkgo.By("Waiting for status to converge to expected state")
 				waitForStatusConvergence(ctx)

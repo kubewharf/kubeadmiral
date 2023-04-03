@@ -60,7 +60,7 @@ var _ = ginkgo.Describe("Cluster Join", federatedClusterTestLabels, func() {
 	ginkgo.Context("Without service account", func() {
 		ginkgo.It("Should succeed", func(ctx ginkgo.SpecContext) {
 			ginkgo.By("Creating cluster")
-			cluster, secret = f.NewCluster(ctx, framework.WithTaints)
+			cluster, secret, _ = f.NewCluster(ctx, framework.WithTaints)
 
 			ginkgo.By("Waiting for cluster join")
 			start := time.Now()
@@ -82,7 +82,7 @@ var _ = ginkgo.Describe("Cluster Join", federatedClusterTestLabels, func() {
 	ginkgo.Context("With service account", func() {
 		ginkgo.It("Should succeed", func(ctx ginkgo.SpecContext) {
 			ginkgo.By("Creating cluster")
-			cluster, secret = f.NewCluster(ctx, framework.WithServiceAccount, framework.WithTaints)
+			cluster, secret, _ = f.NewCluster(ctx, framework.WithServiceAccount, framework.WithTaints)
 
 			ginkgo.By("Waiting for cluster join")
 			start := time.Now()
@@ -131,7 +131,7 @@ var _ = ginkgo.Describe("Cluster Join", federatedClusterTestLabels, func() {
 
 		ginkgo.It("Should timeout if cluster faulty", func(ctx ginkgo.SpecContext) {
 			ginkgo.By("Creating cluster")
-			cluster, _ := f.NewCluster(ctx, framework.WithServiceAccount, framework.WithInvalidEndpoint, framework.WithTaints)
+			cluster, _, _ := f.NewCluster(ctx, framework.WithServiceAccount, framework.WithInvalidEndpoint, framework.WithTaints)
 
 			ginkgo.By("Waiting for cluster join timeout")
 			start := time.Now()

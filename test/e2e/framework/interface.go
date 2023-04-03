@@ -39,7 +39,9 @@ type Framework interface {
 	Name() string
 	TestNamespace() *corev1.Namespace
 
-	NewCluster(ctx context.Context, clusterModifiers ...ClusterModifier) (*fedcorev1a1.FederatedCluster, *corev1.Secret)
+	// NewCluster returns a FederatedCluster object backed by an actual cluster created using a provider. It also
+	// returns the corresponding cluster secret and a function that can be called to stop the actual cluster.
+	NewCluster(ctx context.Context, clusterModifiers ...ClusterModifier) (*fedcorev1a1.FederatedCluster, *corev1.Secret, func(ctx context.Context))
 
 	ClusterKubeClient(ctx context.Context, cluster *fedcorev1a1.FederatedCluster) kubeclient.Interface
 	ClusterFedClient(ctx context.Context, cluster *fedcorev1a1.FederatedCluster) fedclient.Interface
