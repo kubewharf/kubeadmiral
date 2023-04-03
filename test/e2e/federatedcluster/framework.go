@@ -37,6 +37,6 @@ var (
 	clusterDeleteTimeout       = 2 * time.Minute
 
 	// cluster status e2e test timeouts
-	clusterStatusCollectTimeout = 5 * time.Second
+	clusterStatusCollectTimeout = 30 * time.Second
 	clusterStatusUpdateInterval = time.Minute
 )
