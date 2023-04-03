@@ -17,23 +17,51 @@ limitations under the License.
 package utilunstructured
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/pointer"
 )
 
-// GetInt64Path returns the field of an unstructured object, optionally wrapped under prefixFields.
-func GetInt64Path(value *unstructured.Unstructured, path string, prefixFields []string) (*int64, error) {
-	for _, pathComp := range strings.Split(path, ".") {
-		if pathComp != "" {
-			prefixFields = append(prefixFields, pathComp)
-		}
+// GetInt64FromPath returns value at path (optionally under prefixFields) in the unstructured object as a metav1.LabelSelector.
+// The field value must be a string or a map[string]interface{}, both of which must be convertable into a metav1.LabelSelector.
+func GetLabelSelectorFromPath(obj *unstructured.Unstructured, path string, prefixFields []string) (*metav1.LabelSelector, error) {
+	unsLabelSelector, exists, err := unstructured.NestedFieldNoCopy(
+		obj.Object,
+		SplitDotPath(path, prefixFields)...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
 	}
 
-	if v, exists, err := unstructured.NestedInt64(value.Object, prefixFields...); err != nil {
-		return nil, fmt.Errorf("cannot access %#v %v from %v %v: %w", prefixFields, path, value.GetKind(), value.GetName(), err)
+	labelSelector := metav1.LabelSelector{}
+	switch unsLabelSelector := unsLabelSelector.(type) {
+	case map[string]interface{}:
+		if err := pkgruntime.DefaultUnstructuredConverter.FromUnstructured(unsLabelSelector, &labelSelector); err != nil {
+			return nil, fmt.Errorf("field value cannot be unmarshalled into metav1.LabelSelector: %w", err)
+		}
+		return &labelSelector, nil
+	case string:
+		if err := json.Unmarshal([]byte(unsLabelSelector), &labelSelector); err != nil {
+			return nil, fmt.Errorf("field value cannot be unmarshalled into metav1.LabelSelector: %w", err)
+		}
+		return &labelSelector, nil
+	default:
+		return nil, fmt.Errorf("field value is not a string or a map[string]interface{}")
+	}
+}
+
+// GetInt64FromPath gets an int64 value at path of an unstructured object, optionally wrapped under prefixFields.
+func GetInt64FromPath(value *unstructured.Unstructured, path string, prefixFields []string) (*int64, error) {
+	if v, exists, err := unstructured.NestedInt64(value.Object, SplitDotPath(path, prefixFields)...); err != nil {
+		return nil, fmt.Errorf("cannot access %v: %w", prefixFields, err)
 	} else if exists {
 		return pointer.Int64(v), nil
 	} else {
@@ -41,31 +69,31 @@ func GetInt64Path(value *unstructured.Unstructured, path string, prefixFields []
 	}
 }
 
-// SetInt64Path sets the field of an unstructured object, optionally wrapped under prefixFields.
-func SetInt64Path(value *unstructured.Unstructured, path string, replicas *int64, prefixFields []string) error {
-	for _, pathComp := range strings.Split(path, ".") {
-		if pathComp != "" {
-			prefixFields = append(prefixFields, pathComp)
-		}
-	}
+// GetInt64FromPath sets an int64 value at path of an unstructured object, optionally wrapped under prefixFields.
+func SetInt64FromPath(value *unstructured.Unstructured, path string, replicas *int64, prefixFields []string) error {
+	pathSegments := SplitDotPath(path, prefixFields)
 
 	if replicas != nil {
-		if err := unstructured.SetNestedField(value.Object, *replicas, prefixFields...); err != nil {
-			return fmt.Errorf("cannot set %#v %v in %v %v: %w", prefixFields, path, value.GetKind(), value.GetName(), err)
+		if err := unstructured.SetNestedField(value.Object, *replicas, pathSegments...); err != nil {
+			return fmt.Errorf("cannot set %v: %w", prefixFields, err)
 		}
 	} else {
-		unstructured.RemoveNestedField(value.Object, prefixFields...)
+		unstructured.RemoveNestedField(value.Object, pathSegments...)
 	}
 
 	return nil
 }
 
-func ToSlashPath(dotPath string) (output string) {
+func SplitDotPath(dotPath string, prefixFields []string) []string {
+	result := prefixFields
 	for _, pathComp := range strings.Split(dotPath, ".") {
 		if pathComp != "" {
-			output += "/"
-			output += pathComp
+			result = append(result, pathComp)
 		}
 	}
-	return output
+	return result
+}
+
+func ToSlashPath(dotPath string) (output string) {
+	return "/" + strings.Join(SplitDotPath(dotPath, nil), "/")
 }

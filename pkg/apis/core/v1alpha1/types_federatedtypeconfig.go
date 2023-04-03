@@ -104,6 +104,11 @@ type FederatedTypeConfigSpec struct {
 }
 
 type PathDefinition struct {
+	// Path to a metav1.LabelSelector field that selects the replicas for this object.
+	// E.g. `spec.selector` for Deployment and ReplicaSet.
+	// +optional
+	LabelSelector string `json:"labelSelector,omitempty"`
+
 	// Path to a numeric field that indicates the number of replicas that an object can be divided into.
 	// E.g. `spec.replicas` for Deployment and ReplicaSet.
 	// +optional
@@ -118,6 +123,11 @@ type PathDefinition struct {
 	// E.g. `status.availableReplicas` for Deployment and ReplicaSet.
 	// +optional
 	AvailableReplicasStatus string `json:"availableReplicasStatus,omitempty"`
+
+	// Path to a numeric field that reflects the number of ready replicas that the object currently has.
+	// E.g. `status.readyReplicas` for Deployment and ReplicaSet.
+	// +optional
+	ReadyReplicasStatus string `json:"readyReplicasStatus,omitempty"`
 }
 
 // FederatedTypeConfigStatus defines the observed state of FederatedTypeConfig

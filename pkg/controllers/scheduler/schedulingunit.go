@@ -52,7 +52,7 @@ func (s *Scheduler) schedulingUnitForFedObject(
 		schedulingMode = fedcorev1a1.SchedulingModeDuplicate
 	}
 	if schedulingMode == fedcorev1a1.SchedulingModeDivide {
-		value, err := utilunstructured.GetInt64Path(
+		value, err := utilunstructured.GetInt64FromPath(
 			fedObject,
 			s.typeConfig.Spec.PathDefinition.ReplicasSpec,
 			common.TemplatePath,

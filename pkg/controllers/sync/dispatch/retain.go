@@ -269,13 +269,13 @@ func retainReplicas(desiredObj, clusterObj, fedObj *unstructured.Unstructured, t
 		return err
 	}
 	if retain {
-		replicas, err := utilunstructured.GetInt64Path(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
+		replicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
 		if err != nil {
 			return err
 		}
 
 		if replicas != nil {
-			if err := utilunstructured.SetInt64Path(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, replicas, nil); err != nil {
+			if err := utilunstructured.SetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, replicas, nil); err != nil {
 				return err
 			}
 		}
@@ -335,12 +335,12 @@ func retainTemplate(
 	}
 
 	if keepRolloutSettings {
-		replicas, err := utilunstructured.GetInt64Path(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
+		replicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
 		if err != nil {
 			return err
 		}
 
-		if err := utilunstructured.SetInt64Path(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, replicas, nil); err != nil {
+		if err := utilunstructured.SetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, replicas, nil); err != nil {
 			return err
 		}
 	}
