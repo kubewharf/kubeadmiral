@@ -162,6 +162,7 @@ func (p *kwokClusterProvider) NewCluster(ctx context.Context, name string) (*fed
 func (p *kwokClusterProvider) StopCluster(ctx context.Context, name string) {
 	if _, ok := p.clusters.Load(name); ok {
 		p.stopCluster(ctx, name)
+		p.clusters.Delete(name)
 	}
 }
 
