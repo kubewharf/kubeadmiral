@@ -24,13 +24,16 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 )
 
 // ListWatcher lists and watches a given resource, emitting events to registered receivers. This allows receivers to
@@ -71,11 +74,12 @@ const (
 
 type pagedListWatcher struct {
 	lw        cache.ListerWatcher
-	mux       chan Event
 	receivers []chan<- Event
 	pageSize  int64
 
-	mu sync.Mutex
+	mu      sync.Mutex
+	mux     chan Event
+	backoff wait.BackoffManager
 }
 
 // NewPagedListWatcher returns a ListWatcher implementation that uses paging when listing from the apiserver. Each page
@@ -83,10 +87,11 @@ type pagedListWatcher struct {
 func NewPagedListWatcher(lw cache.ListerWatcher, pageSize int64) ListWatcher {
 	return &pagedListWatcher{
 		lw:        lw,
-		mux:       make(chan Event, 100),
 		receivers: []chan<- Event{},
 		pageSize:  pageSize,
 		mu:        sync.Mutex{},
+		mux:       make(chan Event, 100),
+		backoff:   wait.NewExponentialBackoffManager(800*time.Millisecond, 30*time.Second, 2*time.Minute, 2.0, 1.0, &clock.RealClock{}),
 	}
 }
 
@@ -112,7 +117,8 @@ func (p *pagedListWatcher) Start(ctx context.Context) {
 
 				resourceVersion, err := p.list(ctx)
 				if err != nil {
-					logger.Error(err, "Failed to list resource, will retry")
+					logger.Error(err, "Failed to list resource, will retry after backoff")
+					<-p.backoff.Backoff().C()
 					continue
 				}
 
@@ -126,9 +132,10 @@ func (p *pagedListWatcher) Start(ctx context.Context) {
 				return
 			case resourceVersion := <-listCh:
 				if err := p.watch(ctx, resourceVersion); err != nil {
-					logger.Error(err, "Watch resource ended with error, relist will occur")
+					logger.Error(err, "Watch resource ended with error, will relist after backoff")
+					<-p.backoff.Backoff().C()
 				} else {
-					logger.V(4).Info("Watch resource ended gracefully, relist will occur")
+					logger.V(4).Info("Watch resource ended gracefully, will relist")
 				}
 			}
 		}
