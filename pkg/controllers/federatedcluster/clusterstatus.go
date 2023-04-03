@@ -80,9 +80,15 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	}
 
 	if !skip {
-		collector, err := c.getResourceCollectorForCluster(cluster)
+		collector, err := c.getResourceCollectorForCluster(cluster.Name)
 		if err != nil {
 			return fmt.Errorf("failed to start resource collector: %w", err)
+		}
+
+		timeout, cancel := context.WithTimeout(context.TODO(), time.Second*5)
+		defer cancel()
+		if !cache.WaitForCacheSync(timeout.Done(), collector.HasSynced) {
+			return fmt.Errorf("timed out waiting for resource collector to sync")
 		}
 
 		if err := updateClusterResources(ctx, &cluster.Status, collector); err != nil {
@@ -109,15 +115,13 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	return nil
 }
 
-func (c *FederatedClusterController) getResourceCollectorForCluster(
-	cluster *fedcorev1a1.FederatedCluster,
-) (*clustercollector.ClusterCollector, error) {
+func (c *FederatedClusterController) getResourceCollectorForCluster(clusterName string) (*clustercollector.ClusterCollector, error) {
 	var collector *clustercollector.ClusterCollector
 
-	if cached, ok := c.resourceCollectors.Load(cluster.Name); ok {
+	if cached, ok := c.resourceCollectors.Load(clusterName); ok {
 		collector = cached.(*clustercollector.ClusterCollector)
 	} else {
-		clusterKubeClient, exists, err := c.federatedClient.KubeClientsetForCluster(cluster.Name)
+		clusterKubeClient, exists, err := c.federatedClient.KubeClientsetForCluster(clusterName)
 		if !exists {
 			return nil, fmt.Errorf("federated client not up to date")
 		}
@@ -125,7 +129,7 @@ func (c *FederatedClusterController) getResourceCollectorForCluster(
 			return nil, fmt.Errorf("failed to get federated kube client: %w", err)
 		}
 
-		clusterKubeInformers, exists, err := c.federatedClient.KubeSharedInformerFactoryForCluster(cluster.Name)
+		clusterKubeInformers, exists, err := c.federatedClient.KubeSharedInformerFactoryForCluster(clusterName)
 		if !exists {
 			return nil, fmt.Errorf("federated client not up to date")
 		}
@@ -133,18 +137,23 @@ func (c *FederatedClusterController) getResourceCollectorForCluster(
 			return nil, fmt.Errorf("failed to get federated kube informer factory: %w", err)
 		}
 
-		collector = clustercollector.NewClusterCollector(cluster.Name, clusterKubeClient, clusterKubeInformers.Core().V1().Nodes())
+		collector = clustercollector.NewClusterCollector(clusterKubeClient, clusterKubeInformers.Core().V1().Nodes())
 		collector.Start(context.TODO())
-		c.resourceCollectors.Store(cluster.Name, collector)
-	}
-
-	timeout, cancel := context.WithTimeout(context.TODO(), time.Second*5)
-	defer cancel()
-	if !cache.WaitForCacheSync(timeout.Done(), collector.HasSynced) {
-		return nil, fmt.Errorf("timed out waiting for resource collector to sync")
+		c.resourceCollectors.Store(clusterName, collector)
 	}
 
 	return collector, nil
+}
+
+func (c *FederatedClusterController) deleteResourceCollectorForCluster(clusterName string) {
+	cached, ok := c.resourceCollectors.Load(clusterName)
+	if !ok {
+		return
+	}
+
+	collector := cached.(*clustercollector.ClusterCollector)
+	collector.Stop()
+	c.resourceCollectors.Delete(clusterName)
 }
 
 func updateClusterHealthConditions(
