@@ -239,8 +239,6 @@ func (f *federatedClientFactory) processQueueItem(ctx context.Context) {
 		return
 	}
 
-	defer f.sendClientUpdate(name)
-
 	if err != nil && apierrors.IsNotFound(err) {
 		// cluster was deleted so we clear the caches
 		f.clearCaches(name)
