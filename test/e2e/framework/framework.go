@@ -226,7 +226,7 @@ func (f *framework) TestNamespace() *corev1.Namespace {
 	return f.namespace
 }
 
-func (f *framework) NewCluster(ctx context.Context, clusterModifiers ...ClusterModifier) (*fedcorev1a1.FederatedCluster, *corev1.Secret) {
+func (f *framework) NewCluster(ctx context.Context, clusterModifiers ...ClusterModifier) (*fedcorev1a1.FederatedCluster, *corev1.Secret, func(context.Context)) {
 	clusterName := strings.ToLower(fmt.Sprintf("%s-%s", f.name, rand.String(12)))
 	cluster, secret := f.clusterProvider.NewCluster(ctx, clusterName)
 
@@ -263,7 +263,11 @@ func (f *framework) NewCluster(ctx context.Context, clusterModifiers ...ClusterM
 
 	ginkgo.GinkgoLogr.Info("cluster created", "cluster-name", cluster.Name, "kube-config", kubeConfigForTestClusters)
 
-	return cluster, secret
+	stopCluster := func(ctx context.Context) {
+		f.clusterProvider.StopCluster(ctx, clusterName)
+	}
+
+	return cluster, secret, stopCluster
 }
 
 func (f *framework) ClusterKubeClient(ctx context.Context, cluster *fedcorev1a1.FederatedCluster) kubeclient.Interface {

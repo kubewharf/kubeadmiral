@@ -45,7 +45,7 @@ var _ = ginkgo.Describe("Example", ginkgo.Label(framework.TestLabelNeedCreateClu
 	}
 
 	ginkgo.It("create cluster", func(ctx ginkgo.SpecContext) {
-		cluster, _ = f.NewCluster(ctx)
+		cluster, _, _ = f.NewCluster(ctx)
 		ginkgo.GinkgoWriter.Printf("Cluster: %+v\n", *cluster)
 
 		waitForClusterJoin(ctx)

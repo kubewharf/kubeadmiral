@@ -97,7 +97,7 @@ var _ = ginkgo.Describe("Cluster Delete", federatedClusterTestLabels, func() {
 		ginkgo.Context("Without service account", func() {
 			ginkgo.BeforeEach(func(ctx ginkgo.SpecContext) {
 				ginkgo.By("Creating cluster")
-				cluster, secret = f.NewCluster(ctx, framework.WithCascadingDelete, framework.WithTaints)
+				cluster, secret, _ = f.NewCluster(ctx, framework.WithCascadingDelete, framework.WithTaints)
 
 				ginkgo.By("Waiting for cluster ready")
 				waitForClusterReady(ctx)
@@ -118,7 +118,7 @@ var _ = ginkgo.Describe("Cluster Delete", federatedClusterTestLabels, func() {
 		ginkgo.Context("With service account", func() {
 			ginkgo.BeforeEach(func(ctx ginkgo.SpecContext) {
 				ginkgo.By("Creating cluster")
-				cluster, secret = f.NewCluster(ctx, framework.WithCascadingDelete, framework.WithTaints, framework.WithServiceAccount)
+				cluster, secret, _ = f.NewCluster(ctx, framework.WithCascadingDelete, framework.WithTaints, framework.WithServiceAccount)
 				waitForClusterReady(ctx)
 			})
 
@@ -206,7 +206,7 @@ var _ = ginkgo.Describe("Cluster Delete", federatedClusterTestLabels, func() {
 		ginkgo.Context("Without service account", func() {
 			ginkgo.BeforeEach(func(ctx ginkgo.SpecContext) {
 				ginkgo.By("Creating cluster")
-				cluster, secret = f.NewCluster(ctx, framework.WithCascadingDelete, framework.WithTaints)
+				cluster, secret, _ = f.NewCluster(ctx, framework.WithCascadingDelete, framework.WithTaints)
 
 				ginkgo.By("Waiting for cluster ready")
 				waitForClusterReady(ctx)
@@ -230,7 +230,7 @@ var _ = ginkgo.Describe("Cluster Delete", federatedClusterTestLabels, func() {
 		ginkgo.Context("With service account", func() {
 			ginkgo.BeforeEach(func(ctx ginkgo.SpecContext) {
 				ginkgo.By("Creating cluster")
-				cluster, secret = f.NewCluster(ctx, framework.WithCascadingDelete, framework.WithTaints, framework.WithServiceAccount)
+				cluster, secret, _ = f.NewCluster(ctx, framework.WithCascadingDelete, framework.WithTaints, framework.WithServiceAccount)
 
 				ginkgo.By("Waiting for cluster ready")
 				waitForClusterReady(ctx)
