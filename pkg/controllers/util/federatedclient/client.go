@@ -55,7 +55,6 @@ type federatedClientFactory struct {
 	fedSystemNamespace string
 	baseRestConfig     *rest.Config
 
-	clientUpdateHandlers []ClientUpdateHandler
 	queue                workqueue.Interface
 
 	clusterErrors         map[string]error
@@ -80,7 +79,6 @@ func NewFederatedClientsetFactory(
 		fedSystemNamespace:    fedSystemNamespace,
 		baseRestConfig:        baseRestConfig,
 		queue:                 workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
-		clientUpdateHandlers:  []ClientUpdateHandler{},
 		clusterErrors:         map[string]error{},
 		kubeClientsetCache:    map[string]kubeclient.Interface{},
 		dynamicClientsetCache: map[string]dynamicclient.Interface{},
@@ -97,8 +95,7 @@ func NewFederatedClientsetFactory(
 			newCluster := newObj.(*fedcorev1a1.FederatedCluster)
 
 			// only enqueue on generation change or cluster join condition changes
-			if oldCluster.Generation != newCluster.Generation ||
-				util.IsClusterJoined(&oldCluster.Status) != util.IsClusterJoined(&newCluster.Status) {
+			if util.IsClusterJoined(&oldCluster.Status) != util.IsClusterJoined(&newCluster.Status) {
 				factory.enqueueCluster(newCluster)
 			}
 		},
@@ -124,12 +121,6 @@ func (f *federatedClientFactory) Start(ctx context.Context) {
 
 	go wait.UntilWithContext(ctx, f.processQueueItem, 0)
 	go wait.UntilWithContext(ctx, f.startInformerFactories, 500*time.Millisecond)
-}
-
-func (f *federatedClientFactory) AddClientUpdateHandler(handler ClientUpdateHandler) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.clientUpdateHandlers = append(f.clientUpdateHandlers, handler)
 }
 
 func (f *federatedClientFactory) KubeClientsetForCluster(cluster string) (kubeclient.Interface, bool, error) {
@@ -332,15 +323,6 @@ func (f *federatedClientFactory) clearCaches(cluster string) {
 	delete(f.dynamicClientsetCache, cluster)
 	delete(f.kubeInformerCache, cluster)
 	delete(f.dynamicInformerCache, cluster)
-}
-
-func (f *federatedClientFactory) sendClientUpdate(cluster string) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
-	for _, handler := range f.clientUpdateHandlers {
-		handler(cluster, f)
-	}
 }
 
 func (f *federatedClientFactory) startInformerFactories(ctx context.Context) {
