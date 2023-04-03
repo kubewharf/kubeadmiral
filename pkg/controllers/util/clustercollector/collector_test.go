@@ -49,15 +49,20 @@ import (
 func setupFakeClient(
 	numPods, podResourceUnits, numNodes, nodeResourceUnits int,
 ) (pods []runtime.Object, nodes []runtime.Object, client kubernetes.Interface) {
+	podsAndNodes := make([]runtime.Object, numPods+numNodes)
+
 	pods = make([]runtime.Object, numPods)
 	for i := 1; i <= numPods; i++ {
 		pods[i-1] = newPod(i, 1)
+		podsAndNodes[i-1] = pods[i-1]
 	}
 	nodes = make([]runtime.Object, numNodes)
 	for i := 1; i <= numNodes; i++ {
 		nodes[i-1] = newNode(i, 10)
+		podsAndNodes[i+numPods-1] = nodes[i-1]
 	}
-	client = fake.NewSimpleClientset(append(pods, nodes...)...)
+
+	client = fake.NewSimpleClientset(podsAndNodes...)
 	return pods, nodes, client
 }
 
@@ -150,6 +155,7 @@ func completePod(pod *corev1.Pod, client kubernetes.Interface) error {
 	return err
 }
 
+//nolint:dupl
 func pollUntilResourceMatch(collector *ClusterCollector, expected ClusterResources, timeout time.Duration) (ClusterResources, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -183,6 +189,7 @@ func pollUntilResourceMatch(collector *ClusterCollector, expected ClusterResourc
 	return resources, true, err
 }
 
+//nolint:dupl
 func ensureReourceAlwaysMatch(
 	collector *ClusterCollector,
 	expected ClusterResources,
@@ -221,26 +228,106 @@ func ensureReourceAlwaysMatch(
 	return resources, false, err
 }
 
-func TestCollector(t *testing.T) {
-	t.Run("should handle initial list", func(t *testing.T) {
-		_, _, client := setupFakeClient(30, 1, 10, 10)
-		collector := newCollectorFromClient(client)
+func TestCollectorShouldHandleInitialList(t *testing.T) {
+	_, _, client := setupFakeClient(30, 1, 10, 10)
+	collector := newCollectorFromClient(client)
 
-		ctx := context.Background()
-		collector.Start(ctx)
-		if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
-			t.Fatal("Failed to wait for cache sync")
+	ctx := context.Background()
+	collector.Start(ctx)
+	if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
+		t.Fatal("Failed to wait for cache sync")
+	}
+
+	resources, err := collector.GetClusterResources()
+	if err != nil {
+		t.Fatalf("Unexpected error when getting cluster resources: %v", err)
+	}
+
+	expectedAllocatable := newResourceList(100)
+	expectedAvailable := newResourceList(70)
+	expectedSchedulableNodes := int64(10)
+
+	if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
+		t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
+	}
+	if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
+		t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
+	}
+	if expectedSchedulableNodes != resources.SchedulableNodes {
+		t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
+	}
+}
+
+func TestCollectorShouldHandleInitialListWithCompletedPods(t *testing.T) {
+	pods, _, client := setupFakeClient(30, 1, 10, 10)
+	for i := 0; i < 10; i++ {
+		pod := pods[i].(*corev1.Pod)
+		if err := completePod(pod, client); err != nil {
+			t.Fatalf("Unexpected error when updating pod: %v", err)
 		}
+	}
+	collector := newCollectorFromClient(client)
 
-		resources, err := collector.GetClusterResources()
-		if err != nil {
-			t.Fatalf("Unexpected error when getting cluster resources: %v", err)
+	ctx := context.Background()
+	collector.Start(ctx)
+	if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
+		t.Fatal("Failed to wait for cache sync")
+	}
+
+	resources, err := collector.GetClusterResources()
+	if err != nil {
+		t.Fatalf("Unexpected error when getting cluster resources: %v", err)
+	}
+
+	expectedAllocatable := newResourceList(100)
+	expectedAvailable := newResourceList(80)
+	expectedSchedulableNodes := int64(10)
+
+	if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
+		t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
+	}
+	if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
+		t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
+	}
+	if expectedSchedulableNodes != resources.SchedulableNodes {
+		t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
+	}
+}
+
+func TestCollectorShouldHandlePodCreation(t *testing.T) {
+	_, _, client := setupFakeClient(30, 1, 12, 10)
+	collector := newCollectorFromClient(client)
+
+	ctx := context.Background()
+	collector.Start(ctx)
+	if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
+		t.Fatal("Failed to wait for cache sync")
+	}
+
+	for i := 1; i <= 40; i++ {
+		if _, err := client.CoreV1().Pods(corev1.NamespaceAll).Create(
+			context.Background(),
+			newPod(i+30, 1),
+			metav1.CreateOptions{},
+		); err != nil {
+			t.Fatalf("Unexpected error when creating pods: %v", err)
 		}
+	}
 
-		expectedAllocatable := newResourceList(100)
-		expectedAvailable := newResourceList(70)
-		expectedSchedulableNodes := int64(10)
+	expectedAllocatable := newResourceList(120)
+	expectedAvailable := newResourceList(50)
+	expectedSchedulableNodes := int64(12)
+	expectedResources := ClusterResources{
+		Allocatable:      expectedAllocatable,
+		Available:        expectedAvailable,
+		SchedulableNodes: expectedSchedulableNodes,
+	}
 
+	resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
+	if err != nil {
+		t.Fatalf("Unexpected error when polling resources: %v", err)
+	}
+	if !match {
 		if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
 			t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
 		}
@@ -250,33 +337,40 @@ func TestCollector(t *testing.T) {
 		if expectedSchedulableNodes != resources.SchedulableNodes {
 			t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
 		}
-	})
+	}
+}
 
-	t.Run("should handle initial list with completed pods", func(t *testing.T) {
-		pods, _, client := setupFakeClient(30, 1, 10, 10)
-		for i := 0; i < 10; i++ {
-			pod := pods[i].(*corev1.Pod)
-			if err := completePod(pod, client); err != nil {
-				t.Fatalf("Unexpected error when updating pod: %v", err)
-			}
+func TestCollectorShouldHandlePodCompletions(t *testing.T) {
+	pods, _, client := setupFakeClient(80, 1, 15, 10)
+	collector := newCollectorFromClient(client)
+
+	ctx := context.Background()
+	collector.Start(ctx)
+	if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
+		t.Fatal("Failed to wait for cache sync")
+	}
+
+	for i := 0; i < 30; i++ {
+		pod := pods[i].(*corev1.Pod)
+		if err := completePod(pod, client); err != nil {
+			t.Fatalf("Unexpected error when updating pod: %v", err)
 		}
-		collector := newCollectorFromClient(client)
+	}
 
-		ctx := context.Background()
-		collector.Start(ctx)
-		if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
-			t.Fatal("Failed to wait for cache sync")
-		}
+	expectedAllocatable := newResourceList(150)
+	expectedAvailable := newResourceList(100)
+	expectedSchedulableNodes := int64(15)
+	expectedResources := ClusterResources{
+		Allocatable:      expectedAllocatable,
+		Available:        expectedAvailable,
+		SchedulableNodes: expectedSchedulableNodes,
+	}
 
-		resources, err := collector.GetClusterResources()
-		if err != nil {
-			t.Fatalf("Unexpected error when getting cluster resources: %v", err)
-		}
-
-		expectedAllocatable := newResourceList(100)
-		expectedAvailable := newResourceList(80)
-		expectedSchedulableNodes := int64(10)
-
+	resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
+	if err != nil {
+		t.Fatalf("Unexpected error when polling resources: %v", err)
+	}
+	if !match {
 		if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
 			t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
 		}
@@ -286,386 +380,311 @@ func TestCollector(t *testing.T) {
 		if expectedSchedulableNodes != resources.SchedulableNodes {
 			t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
 		}
-	})
+	}
+}
 
-	t.Run("should handle pod creation", func(t *testing.T) {
-		_, _, client := setupFakeClient(30, 1, 12, 10)
-		collector := newCollectorFromClient(client)
+func TestCollectorShouldIgnorePodUpdatesThatAreNotCompletions(t *testing.T) {
+	pods, _, client := setupFakeClient(80, 1, 15, 10)
+	collector := newCollectorFromClient(client)
 
-		ctx := context.Background()
-		collector.Start(ctx)
-		if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
-			t.Fatal("Failed to wait for cache sync")
+	ctx := context.Background()
+	collector.Start(ctx)
+	if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
+		t.Fatal("Failed to wait for cache sync")
+	}
+
+	for i := 0; i <= 30; i++ {
+		pod := pods[i].(*corev1.Pod)
+		pod.Annotations = map[string]string{"test": "test"}
+
+		if _, err := client.CoreV1().Pods(corev1.NamespaceAll).Update(
+			context.Background(),
+			pod,
+			metav1.UpdateOptions{},
+		); err != nil {
+			t.Fatalf("Unexpected error when updating pods: %v", err)
 		}
+	}
 
-		for i := 1; i <= 40; i++ {
-			if _, err := client.CoreV1().Pods(corev1.NamespaceAll).Create(
-				context.Background(),
-				newPod(i+30, 1),
-				metav1.CreateOptions{},
-			); err != nil {
-				t.Fatalf("Unexpected error when creating pods: %v", err)
-			}
+	var resources ClusterResources
+	expectedAllocatable := newResourceList(150)
+	expectedAvailable := newResourceList(70)
+	expectedSchedulableNodes := int64(15)
+	expectedResources := ClusterResources{
+		Allocatable:      expectedAllocatable,
+		Available:        expectedAvailable,
+		SchedulableNodes: expectedSchedulableNodes,
+	}
+
+	resources, match, err := ensureReourceAlwaysMatch(collector, expectedResources, 2*time.Second)
+	if err != nil {
+		t.Fatalf("Unexpected error when polling resources: %v", err)
+	}
+	if !match {
+		if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
+			t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
 		}
-
-		expectedAllocatable := newResourceList(120)
-		expectedAvailable := newResourceList(50)
-		expectedSchedulableNodes := int64(12)
-		expectedResources := ClusterResources{
-			Allocatable:      expectedAllocatable,
-			Available:        expectedAvailable,
-			SchedulableNodes: expectedSchedulableNodes,
+		if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
+			t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
 		}
-
-		resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
-		if err != nil {
-			t.Fatalf("Unexpected error when polling resources: %v", err)
+		if expectedSchedulableNodes != resources.SchedulableNodes {
+			t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
 		}
-		if !match {
-			if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
-				t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
-			}
-			if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
-				t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
-			}
-			if expectedSchedulableNodes != resources.SchedulableNodes {
-				t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
-			}
+	}
+}
+
+func TestCollectorShouldHandlePodDeletion(t *testing.T) {
+	pods, _, client := setupFakeClient(80, 1, 12, 10)
+	collector := newCollectorFromClient(client)
+
+	ctx := context.Background()
+	collector.Start(ctx)
+	if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
+		t.Fatal("Failed to wait for cache sync")
+	}
+
+	for i := 0; i < 10; i++ {
+		pod := pods[i].(*corev1.Pod).Name
+		if err := client.CoreV1().Pods(corev1.NamespaceAll).Delete(
+			context.Background(),
+			pod,
+			metav1.DeleteOptions{},
+		); err != nil {
+			t.Fatalf("Unexpected error when deleting pods: %v", err)
 		}
-	})
+	}
 
-	t.Run("should handle pod completions", func(t *testing.T) {
-		pods, _, client := setupFakeClient(80, 1, 15, 10)
-		collector := newCollectorFromClient(client)
+	var resources ClusterResources
+	expectedAllocatable := newResourceList(120)
+	expectedAvailable := newResourceList(50)
+	expectedSchedulableNodes := int64(12)
+	expectedResources := ClusterResources{
+		Allocatable:      expectedAllocatable,
+		Available:        expectedAvailable,
+		SchedulableNodes: expectedSchedulableNodes,
+	}
 
-		ctx := context.Background()
-		collector.Start(ctx)
-		if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
-			t.Fatal("Failed to wait for cache sync")
+	resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
+	if err != nil {
+		t.Fatalf("Unexpected error when polling resources: %v", err)
+	}
+	if !match {
+		if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
+			t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
 		}
-
-		for i := 0; i < 30; i++ {
-			pod := pods[i].(*corev1.Pod)
-			if err := completePod(pod, client); err != nil {
-				t.Fatalf("Unexpected error when updating pod: %v", err)
-			}
+		if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
+			t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
 		}
-
-		expectedAllocatable := newResourceList(150)
-		expectedAvailable := newResourceList(100)
-		expectedSchedulableNodes := int64(15)
-		expectedResources := ClusterResources{
-			Allocatable:      expectedAllocatable,
-			Available:        expectedAvailable,
-			SchedulableNodes: expectedSchedulableNodes,
+		if expectedSchedulableNodes != resources.SchedulableNodes {
+			t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
 		}
+	}
+}
 
-		resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
-		if err != nil {
-			t.Fatalf("Unexpected error when polling resources: %v", err)
+func TestCollectorShouldIgnoreDeletionOfCompletedPods(t *testing.T) {
+	pods, _, client := setupFakeClient(80, 1, 12, 10)
+	collector := newCollectorFromClient(client)
+
+	ctx := context.Background()
+	collector.Start(ctx)
+	if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
+		t.Fatal("Failed to wait for cache sync")
+	}
+
+	for i := 0; i < 10; i++ {
+		pod := pods[i].(*corev1.Pod)
+		if err := completePod(pod, client); err != nil {
+			t.Fatalf("Unexpected error when updating pod: %v", err)
 		}
-		if !match {
-			if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
-				t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
-			}
-			if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
-				t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
-			}
-			if expectedSchedulableNodes != resources.SchedulableNodes {
-				t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
-			}
+	}
+
+	for i := 0; i < 10; i++ {
+		pod := pods[i].(*corev1.Pod).Name
+		if err := client.CoreV1().Pods(corev1.NamespaceAll).Delete(
+			context.Background(),
+			pod,
+			metav1.DeleteOptions{},
+		); err != nil {
+			t.Fatalf("Unexpected error when deleting pods: %v", err)
 		}
-	})
+	}
 
-	t.Run("should ignore pod updates that are not pod completions", func(t *testing.T) {
-		pods, _, client := setupFakeClient(80, 1, 15, 10)
-		collector := newCollectorFromClient(client)
+	var resources ClusterResources
+	expectedAllocatable := newResourceList(120)
+	expectedAvailable := newResourceList(50)
+	expectedSchedulableNodes := int64(12)
+	expectedResources := ClusterResources{
+		Allocatable:      expectedAllocatable,
+		Available:        expectedAvailable,
+		SchedulableNodes: expectedSchedulableNodes,
+	}
 
-		ctx := context.Background()
-		collector.Start(ctx)
-		if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
-			t.Fatal("Failed to wait for cache sync")
+	resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
+	if err != nil {
+		t.Fatalf("Unexpected error when polling resources: %v", err)
+	}
+	if !match {
+		if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
+			t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
 		}
-
-		for i := 0; i <= 30; i++ {
-			pod := pods[i].(*corev1.Pod)
-			pod.Annotations = map[string]string{"test": "test"}
-
-			if _, err := client.CoreV1().Pods(corev1.NamespaceAll).Update(
-				context.Background(),
-				pod,
-				metav1.UpdateOptions{},
-			); err != nil {
-				t.Fatalf("Unexpected error when updating pods: %v", err)
-			}
+		if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
+			t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
 		}
-
-		var resources ClusterResources
-		expectedAllocatable := newResourceList(150)
-		expectedAvailable := newResourceList(70)
-		expectedSchedulableNodes := int64(15)
-		expectedResources := ClusterResources{
-			Allocatable:      expectedAllocatable,
-			Available:        expectedAvailable,
-			SchedulableNodes: expectedSchedulableNodes,
+		if expectedSchedulableNodes != resources.SchedulableNodes {
+			t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
 		}
+	}
 
-		resources, match, err := ensureReourceAlwaysMatch(collector, expectedResources, 2*time.Second)
-		if err != nil {
-			t.Fatalf("Unexpected error when polling resources: %v", err)
+	resources, match, err = ensureReourceAlwaysMatch(collector, expectedResources, 2*time.Second)
+	if err != nil {
+		t.Fatalf("Unexpected error when polling resources: %v", err)
+	}
+	if !match {
+		if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
+			t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
 		}
-		if !match {
-			if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
-				t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
-			}
-			if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
-				t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
-			}
-			if expectedSchedulableNodes != resources.SchedulableNodes {
-				t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
-			}
+		if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
+			t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
 		}
-	})
-
-	t.Run("should handle pod deletion", func(t *testing.T) {
-		pods, _, client := setupFakeClient(80, 1, 12, 10)
-		collector := newCollectorFromClient(client)
-
-		ctx := context.Background()
-		collector.Start(ctx)
-		if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
-			t.Fatal("Failed to wait for cache sync")
+		if expectedSchedulableNodes != resources.SchedulableNodes {
+			t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
 		}
+	}
+}
 
-		for i := 0; i < 10; i++ {
-			pod := pods[i].(*corev1.Pod).Name
-			if err := client.CoreV1().Pods(corev1.NamespaceAll).Delete(
-				context.Background(),
-				pod,
-				metav1.DeleteOptions{},
-			); err != nil {
-				t.Fatalf("Unexpected error when deleting pods: %v", err)
-			}
+func TestCollectorShouldHandleUnschedulableNodes(t *testing.T) {
+	_, nodes, client := setupFakeClient(0, 0, 10, 10)
+	collector := newCollectorFromClient(client)
+
+	ctx := context.Background()
+	collector.Start(ctx)
+	if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
+		t.Fatal("Failed to wait for cache sync")
+	}
+
+	for i := 0; i < 5; i++ {
+		node := nodes[i].(*corev1.Node)
+		node.Spec.Unschedulable = true
+
+		if _, err := client.CoreV1().Nodes().Update(
+			context.Background(),
+			node,
+			metav1.UpdateOptions{},
+		); err != nil {
+			t.Fatalf("Unexpected error when updating nodes: %v", err)
 		}
+	}
 
-		var resources ClusterResources
-		expectedAllocatable := newResourceList(120)
-		expectedAvailable := newResourceList(50)
-		expectedSchedulableNodes := int64(12)
-		expectedResources := ClusterResources{
-			Allocatable:      expectedAllocatable,
-			Available:        expectedAvailable,
-			SchedulableNodes: expectedSchedulableNodes,
+	var resources ClusterResources
+	expectedAllocatable := newResourceList(50)
+	expectedAvailable := newResourceList(50)
+	expectedSchedulableNodes := int64(5)
+	expectedResources := ClusterResources{
+		Allocatable:      expectedAllocatable,
+		Available:        expectedAvailable,
+		SchedulableNodes: expectedSchedulableNodes,
+	}
+
+	resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
+	if err != nil {
+		t.Fatalf("Unexpected error when polling resources: %v", err)
+	}
+	if !match {
+		if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
+			t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
 		}
-
-		resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
-		if err != nil {
-			t.Fatalf("Unexpected error when polling resources: %v", err)
+		if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
+			t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
 		}
-		if !match {
-			if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
-				t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
-			}
-			if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
-				t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
-			}
-			if expectedSchedulableNodes != resources.SchedulableNodes {
-				t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
-			}
+		if expectedSchedulableNodes != resources.SchedulableNodes {
+			t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
 		}
+	}
+}
 
-	})
+func TestCollectorShouldHandleRelists(t *testing.T) {
+	_, _, client := setupFakeClient(50, 1, 10, 10)
 
-	t.Run("should ignore deletion of completed pods", func(t *testing.T) {
-		pods, _, client := setupFakeClient(80, 1, 12, 10)
-		collector := newCollectorFromClient(client)
-
-		ctx := context.Background()
-		collector.Start(ctx)
-		if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
-			t.Fatal("Failed to wait for cache sync")
-		}
-
-		for i := 0; i < 10; i++ {
-			pod := pods[i].(*corev1.Pod)
-			if err := completePod(pod, client); err != nil {
-				t.Fatalf("Unexpected error when updating pod: %v", err)
-			}
-		}
-
-		for i := 0; i < 10; i++ {
-			pod := pods[i].(*corev1.Pod).Name
-			if err := client.CoreV1().Pods(corev1.NamespaceAll).Delete(
-				context.Background(),
-				pod,
-				metav1.DeleteOptions{},
-			); err != nil {
-				t.Fatalf("Unexpected error when deleting pods: %v", err)
-			}
-		}
-
-		var resources ClusterResources
-		expectedAllocatable := newResourceList(120)
-		expectedAvailable := newResourceList(50)
-		expectedSchedulableNodes := int64(12)
-		expectedResources := ClusterResources{
-			Allocatable:      expectedAllocatable,
-			Available:        expectedAvailable,
-			SchedulableNodes: expectedSchedulableNodes,
-		}
-
-		resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
-		if err != nil {
-			t.Fatalf("Unexpected error when polling resources: %v", err)
-		}
-		if !match {
-			if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
-				t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
-			}
-			if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
-				t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
-			}
-			if expectedSchedulableNodes != resources.SchedulableNodes {
-				t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
-			}
-		}
-
-	})
-
-	t.Run("should handle unschedulable nodes", func(t *testing.T) {
-		_, nodes, client := setupFakeClient(0, 0, 10, 10)
-		collector := newCollectorFromClient(client)
-
-		ctx := context.Background()
-		collector.Start(ctx)
-		if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
-			t.Fatal("Failed to wait for cache sync")
-		}
-
-		for i := 0; i < 5; i++ {
-			node := nodes[i].(*corev1.Node)
-			node.Spec.Unschedulable = true
-
-			if _, err := client.CoreV1().Nodes().Update(
-				context.Background(),
-				node,
-				metav1.UpdateOptions{},
-			); err != nil {
-				t.Fatalf("Unexpected error when updating nodes: %v", err)
-			}
-		}
-
-		var resources ClusterResources
-		expectedAllocatable := newResourceList(50)
-		expectedAvailable := newResourceList(50)
-		expectedSchedulableNodes := int64(5)
-		expectedResources := ClusterResources{
-			Allocatable:      expectedAllocatable,
-			Available:        expectedAvailable,
-			SchedulableNodes: expectedSchedulableNodes,
-		}
-
-		resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
-		if err != nil {
-			t.Fatalf("Unexpected error when polling resources: %v", err)
-		}
-		if !match {
-			if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
-				t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
-			}
-			if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
-				t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
-			}
-			if expectedSchedulableNodes != resources.SchedulableNodes {
-				t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
-			}
-		}
-	})
-
-	t.Run("should handle relists", func(t *testing.T) {
-		_, _, client := setupFakeClient(50, 1, 10, 10)
-
-		// listCh is used to receive notifications of list requests
-		listCh := make(chan struct{}, 100)
-		// watchCh is used to start termination of watch connections
-		watchCh := make(chan struct{})
-		collector := &ClusterCollector{
-			mu: sync.Mutex{},
-			listWatcher: listwatcher.NewPagedListWatcher(
-				&cache.ListWatch{
-					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-						listCh <- struct{}{}
-						return client.CoreV1().Pods(corev1.NamespaceAll).List(context.Background(), options)
-					},
-					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-						w, err := client.CoreV1().Pods(corev1.NamespaceAll).Watch(context.Background(), options)
-						// close watch connection to trigger relists
-						go func() {
-							<-watchCh
-							time.AfterFunc(5*time.Microsecond, func() {
-								w.Stop()
-							})
-						}()
-						return w, err
-					},
+	// listCh is used to receive notifications of list requests
+	listCh := make(chan struct{}, 100)
+	// watchCh is used to start termination of watch connections
+	watchCh := make(chan struct{})
+	collector := &ClusterCollector{
+		mu: sync.Mutex{},
+		listWatcher: listwatcher.NewPagedListWatcher(
+			&cache.ListWatch{
+				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					listCh <- struct{}{}
+					return client.CoreV1().Pods(corev1.NamespaceAll).List(context.Background(), options)
 				},
-				500,
-			),
-			receiver:         make(chan listwatcher.Event),
-			nodeLister:       &FakeNodeLister{clientset: client},
-			nodeListerSynced: func() bool { return true },
-		}
+				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					w, err := client.CoreV1().Pods(corev1.NamespaceAll).Watch(context.Background(), options)
+					// close watch connection to trigger relists
+					go func() {
+						<-watchCh
+						time.AfterFunc(5*time.Microsecond, func() {
+							w.Stop()
+						})
+					}()
+					return w, err
+				},
+			},
+			500,
+		),
+		receiver:         make(chan listwatcher.Event),
+		nodeLister:       &FakeNodeLister{clientset: client},
+		nodeListerSynced: func() bool { return true },
+	}
 
-		ctx := context.Background()
-		collector.Start(ctx)
-		if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
-			t.Fatal("Failed to wait for cache sync")
-		}
+	ctx := context.Background()
+	collector.Start(ctx)
+	if !cache.WaitForCacheSync(ctx.Done(), collector.HasSynced) {
+		t.Fatal("Failed to wait for cache sync")
+	}
 
-		close(watchCh)
+	close(watchCh)
 
-		// create some pods
-		for i := 1; i <= 20; i++ {
-			if _, err := client.CoreV1().Pods(corev1.NamespaceAll).Create(
-				context.Background(),
-				newPod(i+50, 1),
-				metav1.CreateOptions{},
-			); err != nil {
-				t.Fatalf("Unexpected error when creating pods: %v", err)
-			}
+	// create some pods
+	for i := 1; i <= 20; i++ {
+		if _, err := client.CoreV1().Pods(corev1.NamespaceAll).Create(
+			context.Background(),
+			newPod(i+50, 1),
+			metav1.CreateOptions{},
+		); err != nil {
+			t.Fatalf("Unexpected error when creating pods: %v", err)
 		}
+	}
 
-		// ensure a few relists have occured
-		for i := 0; i < 3; i++ {
-			<-listCh
-		}
+	// ensure a few relists have occurred
+	for i := 0; i < 3; i++ {
+		<-listCh
+	}
 
-		var resources ClusterResources
-		expectedAllocatable := newResourceList(100)
-		expectedAvailable := newResourceList(30)
-		expectedSchedulableNodes := int64(10)
-		expectedResources := ClusterResources{
-			Allocatable:      expectedAllocatable,
-			Available:        expectedAvailable,
-			SchedulableNodes: expectedSchedulableNodes,
-		}
+	var resources ClusterResources
+	expectedAllocatable := newResourceList(100)
+	expectedAvailable := newResourceList(30)
+	expectedSchedulableNodes := int64(10)
+	expectedResources := ClusterResources{
+		Allocatable:      expectedAllocatable,
+		Available:        expectedAvailable,
+		SchedulableNodes: expectedSchedulableNodes,
+	}
 
-		resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
-		if err != nil {
-			t.Fatalf("Unexpected error when polling resources: %v", err)
+	resources, match, err := pollUntilResourceMatch(collector, expectedResources, 2*time.Second)
+	if err != nil {
+		t.Fatalf("Unexpected error when polling resources: %v", err)
+	}
+	if !match {
+		if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
+			t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
 		}
-		if !match {
-			if !equality.Semantic.DeepEqual(expectedAllocatable, resources.Allocatable) {
-				t.Errorf("Expected allocatable %+v, got %+v", expectedAllocatable, resources.Allocatable)
-			}
-			if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
-				t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
-			}
-			if expectedSchedulableNodes != resources.SchedulableNodes {
-				t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
-			}
+		if !equality.Semantic.DeepEqual(expectedAvailable, resources.Available) {
+			t.Errorf("Expected available %+v, got %+v", expectedAvailable, resources.Available)
 		}
-	})
+		if expectedSchedulableNodes != resources.SchedulableNodes {
+			t.Errorf("Expected %d schedulable nodes but got %d", expectedSchedulableNodes, resources.SchedulableNodes)
+		}
+	}
 }
 
 type FakeNodeLister struct {

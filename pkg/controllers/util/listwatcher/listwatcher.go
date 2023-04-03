@@ -40,7 +40,7 @@ import (
 // track changes to a resource starting from a consistent snapshot.
 //
 // Before any list request, ListWatcher must emit a StartSync event to notify receivers. This allows receivers to start
-// performing a resync if required. After all the objects from a succesful list request is emitted, ListWatcher must
+// performing a resync if required. After all the objects from a successful list request is emitted, ListWatcher must
 // also emit a EndSync event to notify receivers.
 //
 // The design of ListWatcher and its implementations is loosely based on client-go's reflector.
@@ -57,18 +57,18 @@ type Event struct {
 type EventType string
 
 const (
-	// StartSync is emmited when a ListWatcher starts a new list. Receivers should use this as a signal to start a
+	// StartSync is emitted when a ListWatcher starts a new list. Receivers should use this as a signal to start a
 	// resync should they require a consistent view of the resource.
 	StartSync EventType = "StartSync"
-	// EndSync is emmited when a ListWatcher successfully completes a list. Receivers can use all the Add events
+	// EndSync is emitted when a ListWatcher successfully completes a list. Receivers can use all the Add events
 	// received since the last StartSync to construct a consistent snapshot of the resource.
 	EndSync EventType = "EndSync"
 
-	// Add is emmited for each object in a list request, and any subsequent Added watch events.
+	// Add is emitted for each object in a list request, and any subsequent Added watch events.
 	Add EventType = "Add"
-	// Update is emmited for any Modified watch events.
+	// Update is emitted for any Modified watch events.
 	Update EventType = "Update"
-	// Delete is emmited for any Deleted watch events.
+	// Delete is emitted for any Deleted watch events.
 	Delete EventType = "Delete"
 )
 
@@ -153,7 +153,7 @@ func (p *pagedListWatcher) Start(ctx context.Context) {
 }
 
 func (p *pagedListWatcher) list(ctx context.Context) (rv string, err error) {
-	resourceVersion := ""
+	var resourceVersion string
 	listOpts := metav1.ListOptions{
 		Limit:    p.pageSize,
 		Continue: "",
