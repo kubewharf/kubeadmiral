@@ -48,6 +48,7 @@ type ClusterCollector struct {
 	mu          sync.Mutex
 	listWatcher listwatcher.ListWatcher
 	receiver    chan listwatcher.Event
+	cancel      context.CancelFunc
 
 	nodeLister       corev1listers.NodeLister
 	nodeListerSynced cache.InformerSynced
@@ -124,20 +125,35 @@ func (c *ClusterCollector) HasSynced() bool {
 }
 
 func (c *ClusterCollector) Start(ctx context.Context) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.started {
+		return
+	}
+
 	if !cache.WaitForCacheSync(ctx.Done(), c.nodeListerSynced) {
 		return
 	}
 
+	ctx, c.cancel = context.WithCancel(ctx)
+
+	c.listWatcher.AddReceiver(c.receiver)
+	c.listWatcher.Start(ctx)
+
+	go c.startProcessing(ctx)
+	c.started = true
+}
+
+func (c *ClusterCollector) Stop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if !c.started {
-		c.listWatcher.AddReceiver(c.receiver)
-		c.listWatcher.Start(ctx)
-
-		go c.startProcessing(ctx)
-		c.started = true
+		return
 	}
+
+	c.cancel()
 }
 
 func (c *ClusterCollector) startProcessing(ctx context.Context) {
