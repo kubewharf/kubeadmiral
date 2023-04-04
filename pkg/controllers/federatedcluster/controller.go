@@ -448,14 +448,9 @@ func (c *FederatedClusterController) enqueueAllJoinedClusters() {
 		c.logger.Error(err, "Failed to enqueue all clusters")
 	}
 
-	joinedClusters := map[string]*fedcorev1a1.FederatedCluster{}
 	for _, cluster := range clusters {
 		if util.IsClusterJoined(&cluster.Status) {
-			joinedClusters[cluster.Name] = cluster
+			c.statusCollectWorker.EnqueueObject(cluster)
 		}
-	}
-
-	for _, cluster := range joinedClusters {
-		c.statusCollectWorker.EnqueueObject(cluster)
 	}
 }
