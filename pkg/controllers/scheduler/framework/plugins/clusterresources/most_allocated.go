@@ -33,7 +33,7 @@ const (
 
 type ClusterResourcesMostAllocated struct{}
 
-func NewClusterResourcesMostAllocated(_ framework.FrameworkHandle) (framework.Plugin, error) {
+func NewClusterResourcesMostAllocated(_ framework.Handle) (framework.Plugin, error) {
 	return &ClusterResourcesMostAllocated{}, nil
 }
 func (pl *ClusterResourcesMostAllocated) Name() string {

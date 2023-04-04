@@ -80,7 +80,7 @@ func (n *naiveReplicasPlugin) ReplicaScheduling(
 	return res, framework.NewResult(framework.Success)
 }
 
-func newNaiveReplicas(_ framework.FrameworkHandle) (framework.Plugin, error) {
+func newNaiveReplicas(_ framework.Handle) (framework.Plugin, error) {
 	return &naiveReplicasPlugin{}, nil
 }
 

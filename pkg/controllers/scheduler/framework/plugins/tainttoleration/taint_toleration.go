@@ -36,7 +36,7 @@ const (
 
 type TaintToleration struct{}
 
-func NewTaintToleration(_ framework.FrameworkHandle) (framework.Plugin, error) {
+func NewTaintToleration(_ framework.Handle) (framework.Plugin, error) {
 	return &TaintToleration{}, nil
 }
 

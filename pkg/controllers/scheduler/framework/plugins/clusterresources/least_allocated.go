@@ -33,7 +33,7 @@ const (
 
 type ClusterResourcesLeastAllocated struct{}
 
-func NewClusterResourcesLeastAllocated(_ framework.FrameworkHandle) (framework.Plugin, error) {
+func NewClusterResourcesLeastAllocated(_ framework.Handle) (framework.Plugin, error) {
 	return &ClusterResourcesLeastAllocated{}, nil
 }
 

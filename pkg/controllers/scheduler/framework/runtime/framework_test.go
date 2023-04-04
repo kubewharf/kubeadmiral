@@ -45,7 +45,7 @@ func (n *naiveFilterPlugin) Filter(
 }
 
 func getNaiveFilterPluginFactory(result bool) PluginFactory {
-	return func(_ framework.FrameworkHandle) (framework.Plugin, error) {
+	return func(_ framework.Handle) (framework.Plugin, error) {
 		return &naiveFilterPlugin{result: result}, nil
 	}
 }
