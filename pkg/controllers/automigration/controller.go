@@ -299,6 +299,7 @@ func (c *Controller) estimateCapacity(
 	for _, clusterObj := range clusterObjs {
 		unsObj := clusterObj.Object.(*unstructured.Unstructured)
 
+		// NOTE: these should follow Deployment's status semantics and should not include terminating pods
 		totalReplicas, readyReplicas, err := c.getTotalAndReadyReplicas(unsObj)
 		if err != nil {
 			keyedLogger.Error(err, "Failed to get total and ready replicas from object", "cluster", clusterObj.ClusterName)
@@ -321,13 +322,14 @@ func (c *Controller) estimateCapacity(
 		}
 
 		unschedulable, nextCrossIn := countUnschedulablePods(pods, time.Now(), unschedulableThreshold)
+		keyedLogger.V(3).Info("Analyzed pods",
+			"cluster", clusterObj.ClusterName,
+			"total", totalReplicas,
+			"ready", readyReplicas,
+			"unschedulable", unschedulable,
+		)
 		if unschedulable > 0 {
 			estimatedCapacity[clusterObj.ClusterName] = totalReplicas - int64(unschedulable)
-			keyedLogger.V(3).Info("Cluster has unschedulable pods",
-				"cluster", clusterObj.ClusterName,
-				"total", totalReplicas,
-				"unschedulable", unschedulable,
-			)
 		}
 		if nextCrossIn != nil && (retryAfter == nil || *nextCrossIn < *retryAfter) {
 			retryAfter = nextCrossIn

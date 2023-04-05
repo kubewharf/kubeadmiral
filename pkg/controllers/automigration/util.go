@@ -34,6 +34,10 @@ func countUnschedulablePods(
 	for i := range podList.Items {
 		pod := &podList.Items[i]
 
+		if pod.GetDeletionTimestamp() != nil {
+			continue
+		}
+
 		var scheduledCondition *corev1.PodCondition
 		for i := range pod.Status.Conditions {
 			condition := &pod.Status.Conditions[i]
@@ -58,5 +62,5 @@ func countUnschedulablePods(
 		}
 	}
 
-	return
+	return unschedulableCount, nextCrossIn
 }

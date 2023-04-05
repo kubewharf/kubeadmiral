@@ -48,10 +48,11 @@ func TestCountUnschedulablePods(t *testing.T) {
 	now := time.Now()
 	threshold := time.Minute
 
-	okPod := newPod(true, now)
-	unschedulablePod := newPod(false, now.Add(-2*threshold))
-	crossingIn10s := newPod(false, now.Add(10*time.Second-threshold))
-	crossingIn20s := newPod(false, now.Add(20*time.Second-threshold))
+	okPod := newPod(false, true, now)
+	unschedulablePod := newPod(false, false, now.Add(-2*threshold))
+	unschedulableTerminatingPod := newPod(true, false, now.Add(-2*threshold))
+	crossingIn10s := newPod(false, false, now.Add(10*time.Second-threshold))
+	crossingIn20s := newPod(false, false, now.Add(20*time.Second-threshold))
 
 	doCheck(t, now, time.Minute, []corev1.Pod{
 		*okPod,
@@ -87,9 +88,18 @@ func TestCountUnschedulablePods(t *testing.T) {
 		*crossingIn20s,
 	}, 2, pointer.Duration(10*time.Second))
 
+	doCheck(t, now, time.Minute, []corev1.Pod{
+		*okPod,
+		*okPod,
+		*unschedulablePod,
+		*unschedulableTerminatingPod,
+		*crossingIn10s,
+		*crossingIn20s,
+	}, 1, pointer.Duration(10*time.Second))
+
 }
 
-func newPod(schedulable bool, lastTransitionTimestamp time.Time) *corev1.Pod {
+func newPod(terminating bool, schedulable bool, lastTransitionTimestamp time.Time) *corev1.Pod {
 	condition := corev1.PodCondition{
 		Type:               corev1.PodScheduled,
 		Status:             corev1.ConditionTrue,
@@ -99,7 +109,7 @@ func newPod(schedulable bool, lastTransitionTimestamp time.Time) *corev1.Pod {
 		condition.Status = corev1.ConditionFalse
 		condition.Reason = corev1.PodReasonUnschedulable
 	}
-	return &corev1.Pod{
+	pod := &corev1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "pod",
 			APIVersion: "v1",
@@ -108,4 +118,8 @@ func newPod(schedulable bool, lastTransitionTimestamp time.Time) *corev1.Pod {
 			Conditions: []corev1.PodCondition{condition},
 		},
 	}
+	if terminating {
+		pod.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+	}
+	return pod
 }
