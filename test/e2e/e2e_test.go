@@ -24,6 +24,8 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 
+	// Remember to import the package for tests to be discovered by ginkgo
+	_ "github.com/kubewharf/kubeadmiral/test/e2e/automigration"
 	_ "github.com/kubewharf/kubeadmiral/test/e2e/federatedcluster"
 	_ "github.com/kubewharf/kubeadmiral/test/e2e/resourcepropagation"
 	// _ "github.com/kubewharf/kubeadmiral/test/e2e/example"

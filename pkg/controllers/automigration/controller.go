@@ -88,8 +88,7 @@ func NewAutoMigrationController(
 	federatedObjectClient dynamicclient.NamespaceableResourceInterface,
 	federatedObjectInformer informers.GenericInformer,
 ) (*Controller, error) {
-	targetType := typeConfig.GetTargetType()
-	controllerName := fmt.Sprintf("%s-auto-migration", targetType.Name)
+	controllerName := fmt.Sprintf("%s-auto-migration", typeConfig.Name)
 
 	c := &Controller{
 		typeConfig: typeConfig,
@@ -125,6 +124,7 @@ func NewAutoMigrationController(
 	})
 
 	var err error
+	targetType := typeConfig.GetTargetType()
 	c.federatedInformer, err = util.NewFederatedInformer(
 		controllerConfig,
 		genericFedClient,
