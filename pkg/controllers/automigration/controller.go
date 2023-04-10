@@ -403,6 +403,9 @@ func (c *Controller) getPodsFromCluster(
 		&runtimeclient.ListOptions{
 			Namespace:     unsObj.GetNamespace(),
 			LabelSelector: selector,
+			Raw: &metav1.ListOptions{
+				ResourceVersion: "0",
+			},
 		})
 	if err != nil {
 		return nil, true, fmt.Errorf("failed to list pods: %w", err)
