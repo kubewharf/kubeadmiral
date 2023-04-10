@@ -121,7 +121,7 @@ func (s *Scheduler) computeSchedulingTriggerHash(
 		trigger.PolicyGeneration = policy.GetGeneration()
 		if policy.GetSpec().AutoMigration != nil {
 			// Only consider auto-migration annotation when auto-migration is enabled in the policy.
-			if value, exists := fedObject.GetAnnotations()[common.AutoMigrationAnnotation]; exists {
+			if value, exists := fedObject.GetAnnotations()[common.AutoMigrationInfoAnnotation]; exists {
 				trigger.AutoMigrationInfo = &value
 			}
 		}

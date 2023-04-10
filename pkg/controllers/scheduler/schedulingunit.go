@@ -89,7 +89,7 @@ func (s *Scheduler) schedulingUnitForFedObject(
 		if err != nil {
 			return nil, err
 		}
-		schedulingUnit.AutoMigration = &framework.AutoMigrationConfig{
+		schedulingUnit.AutoMigration = &framework.AutoMigrationSpec{
 			Info:                      info,
 			KeepUnschedulableReplicas: autoMigration.KeepUnschedulableReplicas,
 		}
@@ -235,16 +235,16 @@ func getSchedulingModeFromObject(object *unstructured.Unstructured) (fedcorev1a1
 }
 
 func getAutoMigrationInfo(fedObject *unstructured.Unstructured) (*framework.AutoMigrationInfo, error) {
-	value, exists := fedObject.GetAnnotations()[common.AutoMigrationAnnotation]
+	value, exists := fedObject.GetAnnotations()[common.AutoMigrationInfoAnnotation]
 	if !exists {
 		return nil, nil
 	}
 
-	autoMigration := new(framework.AutoMigrationInfo)
-	if err := json.Unmarshal([]byte(value), autoMigration); err != nil {
+	autoMigrationInfo := new(framework.AutoMigrationInfo)
+	if err := json.Unmarshal([]byte(value), autoMigrationInfo); err != nil {
 		return nil, err
 	}
-	return autoMigration, nil
+	return autoMigrationInfo, nil
 }
 
 func getIsStickyClusterFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) bool {

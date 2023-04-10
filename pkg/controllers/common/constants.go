@@ -124,8 +124,8 @@ const (
 
 	// When a pod remains unschedulable beyond this threshold, it becomes eligible for automatic migration.
 	PodUnschedulableThresholdAnnotation = InternalPrefix + "pod-unschedulable-threshold"
-	// AutoMigrationAnnotation contains auto migration information.
-	AutoMigrationAnnotation = DefaultPrefix + "auto-migration"
+	// AutoMigrationInfoAnnotation contains auto migration information.
+	AutoMigrationInfoAnnotation = DefaultPrefix + "auto-migration-info"
 )
 
 // The following consts are keys used to store information in the federated cluster secret

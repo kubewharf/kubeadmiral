@@ -213,9 +213,9 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) (status worke
 	if unschedulableThreshold == nil {
 		// Clean up the annotation if auto migration is disabled.
 		keyedLogger.V(3).Info("Auto migration is disabled")
-		_, exists := annotations[common.AutoMigrationAnnotation]
+		_, exists := annotations[common.AutoMigrationInfoAnnotation]
 		if exists {
-			delete(annotations, common.AutoMigrationAnnotation)
+			delete(annotations, common.AutoMigrationInfoAnnotation)
 			needsUpdate = true
 		}
 	} else {
@@ -228,25 +228,25 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) (status worke
 		}
 
 		estimatedCapacity, result = c.estimateCapacity(ctx, clusterObjs, *unschedulableThreshold)
-		autoMigration := &framework.AutoMigrationInfo{EstimatedCapacity: estimatedCapacity}
+		autoMigrationInfo := &framework.AutoMigrationInfo{EstimatedCapacity: estimatedCapacity}
 
 		// Compare with the existing autoMigration annotation
-		existingAutoMigration := &framework.AutoMigrationInfo{EstimatedCapacity: nil}
-		if existingAutoMigrationBytes, exists := annotations[common.AutoMigrationAnnotation]; exists {
-			err := json.Unmarshal([]byte(existingAutoMigrationBytes), existingAutoMigration)
+		existingAutoMigrationInfo := &framework.AutoMigrationInfo{EstimatedCapacity: nil}
+		if existingAutoMigrationInfoBytes, exists := annotations[common.AutoMigrationInfoAnnotation]; exists {
+			err := json.Unmarshal([]byte(existingAutoMigrationInfoBytes), existingAutoMigrationInfo)
 			if err != nil {
 				keyedLogger.Error(err, "Existing auto migration annotation is invalid, ignoring")
 				// we treat invalid existing annotation as if it doesn't exist
 			}
 		}
 
-		if !equality.Semantic.DeepEqual(existingAutoMigration, autoMigration) {
-			autoMigrationBytes, err := json.Marshal(autoMigration)
+		if !equality.Semantic.DeepEqual(existingAutoMigrationInfo, autoMigrationInfo) {
+			autoMigrationInfoBytes, err := json.Marshal(autoMigrationInfo)
 			if err != nil {
 				keyedLogger.Error(err, "Failed to marshal auto migration")
 				return worker.StatusAllOK
 			}
-			annotations[common.AutoMigrationAnnotation] = string(autoMigrationBytes)
+			annotations[common.AutoMigrationInfoAnnotation] = string(autoMigrationInfoBytes)
 			needsUpdate = true
 		}
 	}

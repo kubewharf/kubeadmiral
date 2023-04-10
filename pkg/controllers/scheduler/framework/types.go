@@ -46,7 +46,7 @@ type SchedulingUnit struct {
 
 	// Describes the current scheduling state
 	CurrentClusters map[string]*int64
-	AutoMigration   *AutoMigrationConfig
+	AutoMigration   *AutoMigrationSpec
 
 	// Controls the scheduling behavior
 	SchedulingMode  fedcorev1a1.SchedulingMode
@@ -64,7 +64,7 @@ type SchedulingUnit struct {
 	Weights         map[string]int64
 }
 
-type AutoMigrationConfig struct {
+type AutoMigrationSpec struct {
 	Info                      *AutoMigrationInfo
 	KeepUnschedulableReplicas bool
 }
