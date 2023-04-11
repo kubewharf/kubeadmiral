@@ -19,15 +19,69 @@ package util
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	errorutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework"
 )
+
+type failure[T any] struct {
+	t       T
+	message string
+}
+
+// Runs fn for each item in items and fails the test if any of the fn calls fail.
+func AssertForItems[T any](
+	items []T,
+	fn func(g gomega.Gomega, t T),
+) {
+	ginkgo.GinkgoHelper()
+
+	mu := sync.Mutex{}
+	failures := make([]failure[T], 0, len(items))
+
+	wg := sync.WaitGroup{}
+	for _, item := range items {
+		wg.Add(1)
+		go func(item T) {
+			defer wg.Done()
+			g := gomega.NewWithT(ginkgo.GinkgoT())
+			g.ConfigureWithFailHandler(func(message string, callerSkip ...int) {
+				mu.Lock()
+				defer mu.Unlock()
+				failures = append(failures, failure[T]{t: item, message: message})
+			})
+			fn(g, item)
+		}(item)
+	}
+
+	wg.Wait()
+
+	if len(failures) == 0 {
+		return
+	}
+
+	buf := strings.Builder{}
+	for _, failure := range failures {
+		buf.WriteString("\n")
+		buf.WriteString(fmt.Sprintf("For item `%v`:", failure.t))
+		buf.WriteString("\n")
+		for _, line := range strings.Split(failure.message, "\n") {
+			buf.WriteString("    ")
+			buf.WriteString(line)
+			buf.WriteString("\n")
+		}
+	}
+	ginkgo.Fail(buf.String())
+}
 
 func PollUntilForItems[T any](
 	ctx context.Context,

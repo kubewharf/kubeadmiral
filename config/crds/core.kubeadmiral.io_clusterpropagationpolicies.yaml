@@ -13,243 +13,221 @@ spec:
     listKind: ClusterPropagationPolicyList
     plural: clusterpropagationpolicies
     shortNames:
-    - cpp
+      - cpp
     singular: clusterpropagationpolicy
   scope: Cluster
   versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: ClusterPropagationPolicy describes the scheduling rules for a
-          resource.
-        properties:
-          apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-            type: string
-          kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-            type: string
-          metadata:
-            type: object
-          spec:
-            properties:
-              clusterAffinity:
-                description: ClusterAffinity is a list of cluster selector terms,
-                  the terms are ORed. A empty or nil ClusterAffinity selects everything.
-                items:
+    - name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: ClusterPropagationPolicy describes the scheduling rules for a resource.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                autoMigration:
+                  description: Configures behaviors related to auto migration. If absent, auto migration will be disabled.
                   properties:
-                    matchExpressions:
-                      description: A list of cluster selector requirements by cluster
-                        labels.
-                      items:
-                        description: ClusterSelectorRequirement is a selector that
-                          contains values, a key, and an operator that relates the
-                          values and keys
-                        properties:
-                          key:
-                            type: string
-                          operator:
-                            description: ClusterSelectorOperator is the set of operators
-                              that can be used in a cluster selector requirement.
-                            enum:
-                            - In
-                            - NotIn
-                            - Exists
-                            - DoesNotExist
-                            - Gt
-                            - Lt
-                            type: string
-                          values:
-                            items:
-                              type: string
-                            type: array
-                        required:
-                        - key
-                        - operator
-                        - values
-                        type: object
-                      type: array
-                    matchFields:
-                      description: A list of cluster selector requirements by cluster
-                        fields.
-                      items:
-                        description: ClusterSelectorRequirement is a selector that
-                          contains values, a key, and an operator that relates the
-                          values and keys
-                        properties:
-                          key:
-                            type: string
-                          operator:
-                            description: ClusterSelectorOperator is the set of operators
-                              that can be used in a cluster selector requirement.
-                            enum:
-                            - In
-                            - NotIn
-                            - Exists
-                            - DoesNotExist
-                            - Gt
-                            - Lt
-                            type: string
-                          values:
-                            items:
-                              type: string
-                            type: array
-                        required:
-                        - key
-                        - operator
-                        - values
-                        type: object
-                      type: array
-                  type: object
-                type: array
-              clusterSelector:
-                additionalProperties:
-                  type: string
-                description: ClusterSelector is a label query over clusters to consider
-                  for scheduling. An empty or nil ClusterSelector selects everything.
-                type: object
-              disableFollowerScheduling:
-                description: DisableFollowerScheduling is a boolean that determines
-                  if follower scheduling is disabled. Resources that depend on other
-                  resources (e.g. deployments) are called leaders, and resources that
-                  are depended on (e.g. configmaps and secrets) are called followers.
-                  If a leader enables follower scheduling, its followers will additionally
-                  be scheduled to clusters where the leader is scheduled.
-                type: boolean
-              maxClusters:
-                description: MaxClusters is the maximum number of replicas that the
-                  federated object can be propagated to The maximum number of clusters
-                  is unbounded if no value is provided.
-                format: int64
-                type: integer
-              placement:
-                description: Placement is an explicit list of clusters used to select
-                  member clusters to propagate resources
-                items:
-                  description: Placement describes a cluster that a federated object
-                    can be propagated to and its propagation preferences.
-                  properties:
-                    clusterName:
-                      description: ClusterName is the name of the cluster to propgate
-                        to.
-                      type: string
-                    preferences:
-                      description: Preferences contains the cluster's propagation
-                        preferences.
+                    keepUnschedulableReplicas:
+                      default: false
+                      description: Besides starting new replicas in other cluster(s), whether to keep the unschedulable replicas in the original cluster so we can go back to the desired state when the cluster recovers.
+                      type: boolean
+                    when:
+                      default:
+                        podUnschedulableFor: 1m
+                      description: When a replica should be subject to auto migration.
+                      minProperties: 1
                       properties:
-                        maxReplicas:
-                          description: Maximum number of replicas that should be assigned
-                            to this cluster workload object. Unbounded if no value
-                            provided (default).
-                          format: int64
-                          minimum: 0
-                          type: integer
-                        minReplicas:
-                          description: Minimum number of replicas that should be assigned
-                            to this cluster workload object. 0 by default.
-                          format: int64
-                          minimum: 0
-                          type: integer
-                        weight:
-                          description: A number expressing the preference to put an
-                            additional replica to this cluster workload object.
-                          format: int64
-                          minimum: 0
-                          type: integer
+                        podUnschedulableFor:
+                          description: A pod will be subject to auto migration if it remains unschedulable beyond this duration. Duration should be specified in a format that can be parsed by Go's time.ParseDuration.
+                          format: duration
+                          type: string
                       type: object
-                  required:
-                  - clusterName
                   type: object
-                type: array
-              schedulingMode:
-                description: SchedulingMode determines the mode used for scheduling.
-                enum:
-                - Duplicate
-                - Divide
-                type: string
-              schedulingProfile:
-                description: Profile determines the scheduling profile to be used
-                  for scheduling
-                type: string
-              stickyCluster:
-                description: StickyCluster determines if a federated object can be
-                  rescheduled.
-                type: boolean
-              tolerations:
-                description: Tolerations describe a set of cluster taints that the
-                  policy tolerates
-                items:
-                  description: The pod this Toleration is attached to tolerates any
-                    taint that matches the triple <key,value,effect> using the matching
-                    operator <operator>.
+                clusterAffinity:
+                  description: ClusterAffinity is a list of cluster selector terms, the terms are ORed. A empty or nil ClusterAffinity selects everything.
+                  items:
+                    properties:
+                      matchExpressions:
+                        description: A list of cluster selector requirements by cluster labels.
+                        items:
+                          description: ClusterSelectorRequirement is a selector that contains values, a key, and an operator that relates the values and keys
+                          properties:
+                            key:
+                              type: string
+                            operator:
+                              description: ClusterSelectorOperator is the set of operators that can be used in a cluster selector requirement.
+                              enum:
+                                - In
+                                - NotIn
+                                - Exists
+                                - DoesNotExist
+                                - Gt
+                                - Lt
+                              type: string
+                            values:
+                              items:
+                                type: string
+                              type: array
+                          required:
+                            - key
+                            - operator
+                            - values
+                          type: object
+                        type: array
+                      matchFields:
+                        description: A list of cluster selector requirements by cluster fields.
+                        items:
+                          description: ClusterSelectorRequirement is a selector that contains values, a key, and an operator that relates the values and keys
+                          properties:
+                            key:
+                              type: string
+                            operator:
+                              description: ClusterSelectorOperator is the set of operators that can be used in a cluster selector requirement.
+                              enum:
+                                - In
+                                - NotIn
+                                - Exists
+                                - DoesNotExist
+                                - Gt
+                                - Lt
+                              type: string
+                            values:
+                              items:
+                                type: string
+                              type: array
+                          required:
+                            - key
+                            - operator
+                            - values
+                          type: object
+                        type: array
+                    type: object
+                  type: array
+                clusterSelector:
+                  additionalProperties:
+                    type: string
+                  description: ClusterSelector is a label query over clusters to consider for scheduling. An empty or nil ClusterSelector selects everything.
+                  type: object
+                disableFollowerScheduling:
+                  description: DisableFollowerScheduling is a boolean that determines if follower scheduling is disabled. Resources that depend on other resources (e.g. deployments) are called leaders, and resources that are depended on (e.g. configmaps and secrets) are called followers. If a leader enables follower scheduling, its followers will additionally be scheduled to clusters where the leader is scheduled.
+                  type: boolean
+                maxClusters:
+                  description: MaxClusters is the maximum number of replicas that the federated object can be propagated to The maximum number of clusters is unbounded if no value is provided.
+                  format: int64
+                  type: integer
+                placement:
+                  description: Placement is an explicit list of clusters used to select member clusters to propagate resources
+                  items:
+                    description: Placement describes a cluster that a federated object can be propagated to and its propagation preferences.
+                    properties:
+                      clusterName:
+                        description: ClusterName is the name of the cluster to propgate to.
+                        type: string
+                      preferences:
+                        description: Preferences contains the cluster's propagation preferences.
+                        properties:
+                          maxReplicas:
+                            description: Maximum number of replicas that should be assigned to this cluster workload object. Unbounded if no value provided (default).
+                            format: int64
+                            minimum: 0
+                            type: integer
+                          minReplicas:
+                            description: Minimum number of replicas that should be assigned to this cluster workload object. 0 by default.
+                            format: int64
+                            minimum: 0
+                            type: integer
+                          weight:
+                            description: A number expressing the preference to put an additional replica to this cluster workload object.
+                            format: int64
+                            minimum: 0
+                            type: integer
+                        type: object
+                    required:
+                      - clusterName
+                    type: object
+                  type: array
+                replicaRescheduling:
+                  description: Configures behaviors related to replica rescheduling. Default set via a post-generation patch. See patch file for details.
                   properties:
-                    effect:
-                      description: Effect indicates the taint effect to match. Empty
-                        means match all taint effects. When specified, allowed values
-                        are NoSchedule, PreferNoSchedule and NoExecute.
-                      type: string
-                    key:
-                      description: Key is the taint key that the toleration applies
-                        to. Empty means match all taint keys. If the key is empty,
-                        operator must be Exists; this combination means to match all
-                        values and all keys.
-                      type: string
-                    operator:
-                      description: Operator represents a key's relationship to the
-                        value. Valid operators are Exists and Equal. Defaults to Equal.
-                        Exists is equivalent to wildcard for value, so that a pod
-                        can tolerate all taints of a particular category.
-                      type: string
-                    tolerationSeconds:
-                      description: TolerationSeconds represents the period of time
-                        the toleration (which must be of effect NoExecute, otherwise
-                        this field is ignored) tolerates the taint. By default, it
-                        is not set, which means tolerate the taint forever (do not
-                        evict). Zero and negative values will be treated as 0 (evict
-                        immediately) by the system.
-                      format: int64
-                      type: integer
-                    value:
-                      description: Value is the taint value the toleration matches
-                        to. If the operator is Exists, the value should be empty,
-                        otherwise just a regular string.
-                      type: string
+                    avoidDisruption:
+                      default: true
+                      description: If set to true, the scheduler will attempt to prevent migrating existing replicas during rescheduling. In order to do so, replica scheduling preferences might not be fully respected. If set to false, the scheduler will always rebalance the replicas based on the specified preferences, which might cause temporary service disruption.
+                      type: boolean
                   type: object
-                type: array
-            required:
-            - schedulingMode
-            type: object
-          status:
-            properties:
-              refCount:
-                format: int64
-                minimum: 0
-                type: integer
-              typedRefCount:
-                items:
-                  properties:
-                    count:
-                      format: int64
-                      minimum: 0
-                      type: integer
-                    group:
-                      type: string
-                    resource:
-                      type: string
-                  required:
-                  - count
-                  - resource
-                  type: object
-                type: array
-            type: object
-        required:
-        - spec
-        type: object
-    served: true
-    storage: true
-    subresources:
-      status: {}
+                  default: {}
+                schedulingMode:
+                  description: SchedulingMode determines the mode used for scheduling.
+                  enum:
+                    - Duplicate
+                    - Divide
+                  type: string
+                schedulingProfile:
+                  description: Profile determines the scheduling profile to be used for scheduling
+                  type: string
+                stickyCluster:
+                  description: StickyCluster determines if a federated object can be rescheduled.
+                  type: boolean
+                tolerations:
+                  description: Tolerations describe a set of cluster taints that the policy tolerates
+                  items:
+                    description: The pod this Toleration is attached to tolerates any taint that matches the triple <key,value,effect> using the matching operator <operator>.
+                    properties:
+                      effect:
+                        description: Effect indicates the taint effect to match. Empty means match all taint effects. When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                        type: string
+                      key:
+                        description: Key is the taint key that the toleration applies to. Empty means match all taint keys. If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                        type: string
+                      operator:
+                        description: Operator represents a key's relationship to the value. Valid operators are Exists and Equal. Defaults to Equal. Exists is equivalent to wildcard for value, so that a pod can tolerate all taints of a particular category.
+                        type: string
+                      tolerationSeconds:
+                        description: TolerationSeconds represents the period of time the toleration (which must be of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default, it is not set, which means tolerate the taint forever (do not evict). Zero and negative values will be treated as 0 (evict immediately) by the system.
+                        format: int64
+                        type: integer
+                      value:
+                        description: Value is the taint value the toleration matches to. If the operator is Exists, the value should be empty, otherwise just a regular string.
+                        type: string
+                    type: object
+                  type: array
+              required:
+                - schedulingMode
+              type: object
+            status:
+              properties:
+                refCount:
+                  format: int64
+                  minimum: 0
+                  type: integer
+                typedRefCount:
+                  items:
+                    properties:
+                      count:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      group:
+                        type: string
+                      resource:
+                        type: string
+                    required:
+                      - count
+                      - resource
+                    type: object
+                  type: array
+              type: object
+          required:
+            - spec
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}

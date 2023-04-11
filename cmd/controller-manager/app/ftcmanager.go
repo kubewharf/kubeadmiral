@@ -34,13 +34,15 @@ import (
 )
 
 const (
-	FederateControllerName = "federate-controller"
-	GlobalSchedulerName    = "global-scheduler"
+	FederateControllerName      = "federate-controller"
+	GlobalSchedulerName         = "global-scheduler"
+	AutoMigrationControllerName = "auto-migration-controller"
 )
 
 var knownFTCSubControllers = map[string]StartFTCSubControllerFunc{
-	GlobalSchedulerName:    startGlobalScheduler,
-	FederateControllerName: startFederateController,
+	GlobalSchedulerName:         startGlobalScheduler,
+	FederateControllerName:      startFederateController,
+	AutoMigrationControllerName: startAutoMigrationController,
 }
 
 // StartFTCSubControllerFunc is responsible for constructing and starting a FTC subcontroller. A FTC subcontroller is started/stopped
@@ -162,6 +164,7 @@ func (m *FederatedTypeConfigManager) processQueueItem(ctx context.Context) {
 			continue
 		}
 
+		// TODO[ftcmanager]: handle controllers that do not need to be started for certain FTCs
 		if err := startFunc(subControllerCtx, m.controllerCtx, typeConfig); err != nil {
 			keyedLogger.Error(err, "Failed to start subcontrolelr")
 		} else {

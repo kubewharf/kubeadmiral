@@ -35,7 +35,6 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/planner"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/refinedplanner"
 )
 
 const (
@@ -121,13 +120,6 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 	if su.DesiredReplicas != nil {
 		totalReplicas = *su.DesiredReplicas
 	}
-	clusterPreference := &refinedplanner.ReplicaSchedulingPreference{
-		TotalReplicas: totalReplicas,
-		Clusters:      clusterPreferences,
-		Rebalance:     true,
-	}
-
-	planner := refinedplanner.NewPlanner(clusterPreference)
 
 	currentReplicas := map[string]int64{}
 	for cluster, replicas := range su.CurrentClusters {
@@ -135,37 +127,47 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 			currentReplicas[cluster] = *replicas
 			continue
 		}
-		currentReplicas[cluster] = *su.DesiredReplicas
+		currentReplicas[cluster] = totalReplicas
+	}
+
+	var estimatedCapacity map[string]int64
+	keepUnschedulableReplicas := false
+	if autoMigration := su.AutoMigration; autoMigration != nil {
+		keepUnschedulableReplicas = autoMigration.KeepUnschedulableReplicas
+		if info := autoMigration.Info; info != nil {
+			estimatedCapacity = info.EstimatedCapacity
+		}
 	}
 
 	scheduleResult, overflow, err := planner.Plan(
+		&planner.ReplicaSchedulingPreference{
+			Clusters: clusterPreferences,
+		},
+		totalReplicas,
 		ExtractClusterNames(clusters),
 		currentReplicas,
-		map[string]int64{},
-		"",
+		estimatedCapacity,
+		su.Key(),
+		su.AvoidDisruption,
+		keepUnschedulableReplicas,
 	)
 	if err != nil {
 		return clusterReplicasList, framework.NewResult(framework.Error)
 	}
 
 	klog.V(4).Infof(
-		"[scheduling] for %q clusterPreferences: %s, currentReplicas: %s, result: %s",
-		su.Key(), spew.Sprint(clusterPreference), spew.Sprint(currentReplicas), spew.Sprint(scheduleResult),
+		"[scheduling] for %q clusterPreferences: %s, estimatedCapacity: %v, currentReplicas: %v, result: %v",
+		su.Key(), spew.Sprint(clusterPreferences), estimatedCapacity, currentReplicas, scheduleResult,
 	)
 
-	// TODO: Check if we really need to place the federated type in clusters
-	// with 0 replicas. Override replicas would be set to 0 in this case.
 	result := make(map[string]int64)
-	// for clusterName := range currentReplicasPerCluster {
-	//	result[clusterName] = 0
-	// }
-
 	for clusterName, replicas := range scheduleResult {
 		result[clusterName] = replicas
 	}
 	for clusterName, replicas := range overflow {
 		result[clusterName] += replicas
 	}
+
 	for _, cluster := range clusters {
 		replicas, ok := result[cluster.Name]
 		if !ok || replicas == 0 {

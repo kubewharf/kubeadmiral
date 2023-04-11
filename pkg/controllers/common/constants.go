@@ -121,6 +121,11 @@ const (
 	FollowersAnnotation = DefaultPrefix + "followers"
 	// EnableFollowerSchedulingAnnotation indicates whether follower scheduling should be enabled for the leader object.
 	EnableFollowerSchedulingAnnotation = InternalPrefix + "enable-follower-scheduling"
+
+	// When a pod remains unschedulable beyond this threshold, it becomes eligible for automatic migration.
+	PodUnschedulableThresholdAnnotation = InternalPrefix + "pod-unschedulable-threshold"
+	// AutoMigrationInfoAnnotation contains auto migration information.
+	AutoMigrationInfoAnnotation = DefaultPrefix + "auto-migration-info"
 )
 
 // The following consts are keys used to store information in the federated cluster secret

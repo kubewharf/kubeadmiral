@@ -1,5 +1,3 @@
-//go:build e2e
-
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -16,22 +14,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package e2e
+package util
 
 import (
-	"testing"
-
-	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
-
-	// Remember to import the package for tests to be discovered by ginkgo
-	_ "github.com/kubewharf/kubeadmiral/test/e2e/automigration"
-	_ "github.com/kubewharf/kubeadmiral/test/e2e/federatedcluster"
-	_ "github.com/kubewharf/kubeadmiral/test/e2e/resourcepropagation"
-	// _ "github.com/kubewharf/kubeadmiral/test/e2e/example"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/tools/cache"
 )
 
-func TestMain(t *testing.T) {
-	gomega.RegisterFailHandler(ginkgo.Fail)
-	ginkgo.RunSpecs(t, "KubeAdmiral E2E Tests")
+func UnstructuredFromStore(store cache.Store, key string) (*unstructured.Unstructured, error) {
+	obj, exists, err := store.GetByKey(key)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
+	}
+	return obj.(*unstructured.Unstructured), nil
 }

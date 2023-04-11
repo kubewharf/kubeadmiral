@@ -25,6 +25,8 @@ set -o pipefail
 
 CODEGEN_VERSION=${CODEGEN_VERSION:-"v0.19.0"}
 CONTROLLERGEN_VERSION=${CONTROLLERGEN_VERSION:-"v0.11.1"}
+YQ_VERSION=${YQ_VERSION:-"v4.33.1"}
+
 MODULE_NAME=${MODULE_NAME:-"github.com/kubewharf/kubeadmiral"}
 groups=(
   core/v1alpha1
@@ -34,6 +36,7 @@ groups=(
 # install code-generator binaries
 go install k8s.io/code-generator/cmd/{client-gen,lister-gen,informer-gen,deepcopy-gen}@${CODEGEN_VERSION}
 go install sigs.k8s.io/controller-tools/cmd/controller-gen@${CONTROLLERGEN_VERSION}
+go install github.com/mikefarah/yq/v4@${YQ_VERSION}
 
 # define variables
 GOBIN="$(go env GOBIN)"
@@ -55,6 +58,16 @@ function codegen::join() { local IFS="$1"; shift; echo "$*"; }
 # generate manifests
 echo "Generating manifests"
 ${GOBIN}/controller-gen crd paths=$(codegen::join ";" "${INPUT_DIRS[@]}") output:crd:artifacts:config=config/crds
+# apply CRD patches
+for patch_file in config/crds/patches/*.yaml; do
+    crd_file="config/crds/$(basename "${patch_file}")"
+    if [[ ! -f "$crd_file" ]]; then
+        echo "CRD patch file $patch_file does not have a corresponding CRD file" >&2
+        exit 1
+    fi
+    # the patch file should be an array of yq assignment commands
+    "${GOBIN}"/yq eval '.[]' "$patch_file" | xargs -I{} "${GOBIN}"/yq -i '{}' "$crd_file"
+done
 
 # generate deepcopy
 echo "Generating deepcopy funcs"

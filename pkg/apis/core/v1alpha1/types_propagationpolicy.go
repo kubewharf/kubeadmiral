@@ -97,6 +97,16 @@ type PropagationPolicySpec struct {
 	// to clusters where the leader is scheduled.
 	// +optional
 	DisableFollowerScheduling bool `json:"disableFollowerScheduling,omitempty"`
+
+	// Configures behaviors related to auto migration. If absent, auto migration will be disabled.
+	// +optional
+	AutoMigration *AutoMigration `json:"autoMigration,omitempty"`
+
+	// Configures behaviors related to replica rescheduling.
+	// +optional
+	// Default set via a post-generation patch.
+	// See patch file for details.
+	ReplicaRescheduling *ReplicaRescheduling `json:"replicaRescheduling,omitempty"`
 }
 
 type PropagationPolicyStatus struct {
@@ -141,4 +151,39 @@ type Preferences struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	Weight *int64 `json:"weight,omitempty"`
+}
+
+// Preferences regarding auto migration.
+type AutoMigration struct {
+	// When a replica should be subject to auto migration.
+	// +optional
+	// +kubebuilder:default:={podUnschedulableFor:"1m"}
+	Trigger AutoMigrationTrigger `json:"when"`
+
+	// Besides starting new replicas in other cluster(s), whether to keep the unschedulable replicas
+	// in the original cluster so we can go back to the desired state when the cluster recovers.
+	// +optional
+	// +kubebuilder:default:=false
+	KeepUnschedulableReplicas bool `json:"keepUnschedulableReplicas"`
+}
+
+// Criteria for determining when a replica is subject to auto migration.
+// +kubebuilder:validation:MinProperties:=1
+type AutoMigrationTrigger struct {
+	// A pod will be subject to auto migration if it remains unschedulable beyond this duration.
+	// Duration should be specified in a format that can be parsed by Go's time.ParseDuration.
+	// +optional
+	// +kubebuilder:validation:Format:=duration
+	PodUnschedulableDuration *metav1.Duration `json:"podUnschedulableFor,omitempty"`
+}
+
+// Preferences regarding replica rescheduling.
+type ReplicaRescheduling struct {
+	// If set to true, the scheduler will attempt to prevent migrating existing replicas during rescheduling.
+	// In order to do so, replica scheduling preferences might not be fully respected.
+	// If set to false, the scheduler will always rebalance the replicas based on the specified preferences, which might
+	// cause temporary service disruption.
+	// +optional
+	// +kubebuilder:default:=true
+	AvoidDisruption bool `json:"avoidDisruption"`
 }

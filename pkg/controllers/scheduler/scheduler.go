@@ -24,6 +24,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -35,6 +36,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
@@ -141,7 +143,17 @@ func NewScheduler(
 
 	s.clusterLister = clusterInformer.Lister()
 	s.clusterSynced = clusterInformer.Informer().HasSynced
-	clusterInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(s.enqueueFederatedObjectsForCluster))
+	clusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj interface{}) { s.enqueueFederatedObjectsForCluster(obj.(pkgruntime.Object)) },
+		DeleteFunc: func(obj interface{}) { s.enqueueFederatedObjectsForCluster(obj.(pkgruntime.Object)) },
+		UpdateFunc: func(oldUntyped, newUntyped interface{}) {
+			oldCluster, newCluster := oldUntyped.(*fedcorev1a1.FederatedCluster), newUntyped.(*fedcorev1a1.FederatedCluster)
+			if !equality.Semantic.DeepEqual(oldCluster.Labels, newCluster.Labels) ||
+				!equality.Semantic.DeepEqual(oldCluster.Spec.Taints, newCluster.Spec.Taints) {
+				s.enqueueFederatedObjectsForCluster(newCluster)
+			}
+		},
+	})
 
 	s.schedulingProfileLister = schedulingProfileInformer.Lister()
 	s.schedulingProfileSynced = schedulingProfileInformer.Informer().HasSynced
@@ -179,10 +191,10 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 	keyedLogger := s.logger.WithValues("control-loop", "reconcile", "key", key)
 	startTime := time.Now()
 
-	keyedLogger.Info("Start reconcile")
+	keyedLogger.V(3).Info("Start reconcile")
 	defer func() {
 		s.metrics.Duration(fmt.Sprintf("%s.latency", s.name), startTime)
-		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcile")
+		keyedLogger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcile")
 	}()
 
 	fedObject, err := s.federatedObjectFromStore(qualifiedName)
@@ -191,7 +203,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		return worker.StatusError
 	}
 	if apierrors.IsNotFound(err) || fedObject.GetDeletionTimestamp() != nil {
-		keyedLogger.Info("Observed object deletion")
+		keyedLogger.V(3).Info("Observed object deletion")
 		return worker.StatusAllOK
 	}
 
@@ -201,7 +213,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		keyedLogger.Error(err, "Failed to check controller dependencies")
 		return worker.StatusError
 	} else if !ok {
-		keyedLogger.Info("Controller dependencies not fulfilled")
+		keyedLogger.V(3).Info("Controller dependencies not fulfilled")
 		return worker.StatusAllOK
 	}
 
@@ -220,7 +232,6 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 
 	if hasSchedulingPolicy {
 		if policy, err = s.policyFromStore(policyKey); err != nil {
-			keyedLogger.WithValues("policy", policyKey.String()).Error(err, "Failed to find matched policy")
 			if apierrors.IsNotFound(err) {
 				// do not retry since the object will be reenqueued after the policy is subsequently created
 				// emit an event to warn users that the assigned propagation policy does not exist
@@ -233,6 +244,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 				)
 				return worker.Result{Success: false, RequeueAfter: nil}
 			}
+			keyedLogger.WithValues("policy", policyKey.String()).Error(err, "Failed to find matched policy")
 			return worker.StatusError
 		}
 	}
@@ -253,11 +265,11 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 	if !triggersChanged {
 		// scheduling triggers have not changed, skip scheduling
 		shouldSkipScheduling = true
-		keyedLogger.Info("Scheduling triggers not changed, skip scheduling")
+		keyedLogger.V(3).Info("Scheduling triggers not changed, skip scheduling")
 	} else if len(fedObject.GetAnnotations()[common.NoSchedulingAnnotation]) > 0 {
 		// skip scheduling if no-scheduling annotation is found
 		shouldSkipScheduling = true
-		keyedLogger.Info("No-scheduling annotation found, skip scheduling")
+		keyedLogger.V(3).Info("No-scheduling annotation found, skip scheduling")
 		s.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeNormal,
@@ -267,21 +279,21 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 	}
 
 	if shouldSkipScheduling {
-		if err := s.updatePendingControllers(fedObject, false); err != nil {
+		if updated, err := s.updatePendingControllers(fedObject, false); err != nil {
 			keyedLogger.Error(err, "Failed to update pending controllers")
 			return worker.StatusError
-		}
-
-		if _, err := s.federatedObjectClient.Namespace(qualifiedName.Namespace).Update(
-			context.TODO(),
-			fedObject,
-			metav1.UpdateOptions{},
-		); err != nil {
-			keyedLogger.Error(err, "Failed to update pending controllers")
-			if apierrors.IsConflict(err) {
-				return worker.StatusConflict
+		} else if updated {
+			if _, err := s.federatedObjectClient.Namespace(qualifiedName.Namespace).Update(
+				context.TODO(),
+				fedObject,
+				metav1.UpdateOptions{},
+			); err != nil {
+				keyedLogger.Error(err, "Failed to update pending controllers")
+				if apierrors.IsConflict(err) {
+					return worker.StatusConflict
+				}
+				return worker.StatusError
 			}
-			return worker.StatusError
 		}
 
 		return worker.StatusAllOK
@@ -293,7 +305,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 
 	if !hasSchedulingPolicy {
 		// deschedule the federated object if there is no policy attached
-		keyedLogger.Info("No policy specified, scheduling to no clusters")
+		keyedLogger.V(3).Info("No policy specified, scheduling to no clusters")
 		s.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeNormal,
@@ -306,7 +318,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		}
 	} else {
 		// schedule according to matched policy
-		keyedLogger.WithValues("policy", policyKey.String()).Info("Matched policy found, start scheduling")
+		keyedLogger.WithValues("policy", policyKey.String()).V(3).Info("Matched policy found, start scheduling")
 		s.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeNormal,
@@ -351,16 +363,22 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 			)
 			return worker.StatusError
 		}
-
-		keyedLogger.Info(fmt.Sprintf("Scheduling result obtained: %s", result.String()))
 	}
+	keyedLogger.V(3).Info("Scheduling result obtained", "result", result.String())
 
-	var followerSchedulingEnabled bool
+	auxInfo := &auxiliarySchedulingInformation{
+		enableFollowerScheduling: false,
+		unschedulableThreshold:   nil,
+	}
 	if policy != nil {
-		followerSchedulingEnabled = !policy.GetSpec().DisableFollowerScheduling
+		spec := policy.GetSpec()
+		auxInfo.enableFollowerScheduling = !spec.DisableFollowerScheduling
+		if autoMigration := spec.AutoMigration; autoMigration != nil {
+			auxInfo.unschedulableThreshold = pointer.Duration(autoMigration.Trigger.PodUnschedulableDuration.Duration)
+		}
 	}
 
-	updated, err := s.applySchedulingResult(fedObject, result, followerSchedulingEnabled)
+	schedulingResultsChanged, err := s.applySchedulingResult(fedObject, result, auxInfo)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to apply scheduling result")
 		s.eventRecorder.Eventf(
@@ -372,7 +390,8 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		)
 		return worker.StatusError
 	}
-	if err := s.updatePendingControllers(fedObject, updated); err != nil {
+	pendingControllersChanged, err := s.updatePendingControllers(fedObject, schedulingResultsChanged)
+	if err != nil {
 		keyedLogger.Error(err, "Failed to update pending controllers")
 		s.eventRecorder.Eventf(
 			fedObject,
@@ -383,12 +402,31 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		)
 		return worker.StatusError
 	}
+
+	needsUpdate := schedulingResultsChanged || pendingControllersChanged
+	if !needsUpdate {
+		return worker.StatusAllOK
+	}
+
+	updateLogger := keyedLogger.WithValues(
+		"result", result.String(),
+		"policy", policyKey.String(),
+		"trigger-hash", triggerHash,
+		"enableFollowerScheduling", auxInfo.enableFollowerScheduling,
+	)
+	if auxInfo.unschedulableThreshold != nil {
+		updateLogger = updateLogger.WithValues("unschedulableThreshold", auxInfo.unschedulableThreshold.String())
+	} else {
+		updateLogger = updateLogger.WithValues("unschedulableThreshold", "nil")
+	}
+
+	updateLogger.V(1).Info("Updating federated object")
 	if _, err := s.federatedObjectClient.Namespace(qualifiedName.Namespace).Update(
 		context.TODO(),
 		fedObject,
 		metav1.UpdateOptions{},
 	); err != nil {
-		keyedLogger.Error(err, "Failed to update federated object")
+		updateLogger.Error(err, "Failed to update federated object")
 		s.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeWarning,
@@ -402,8 +440,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		return worker.StatusError
 	}
 
-	keyedLogger.WithValues("result", result.String(), "policy", policyKey.String(), "trigger-hash", triggerHash).
-		Info("Scheduling success")
+	updateLogger.V(1).Info("Updated federated object")
 	s.eventRecorder.Eventf(
 		fedObject,
 		corev1.EventTypeNormal,
@@ -441,15 +478,18 @@ func (s *Scheduler) policyFromStore(qualifiedName common.QualifiedName) (fedcore
 // updatePendingControllers removes the scheduler from the object's pending controller annotation. If wasModified is true (the scheduling
 // result was not modified), it will additionally set the downstream processors to notify them to reconcile the changes made by the
 // scheduler.
-func (s *Scheduler) updatePendingControllers(fedObject *unstructured.Unstructured, wasModified bool) error {
-	// we ignore the first value, since the trigger hash is always updated when this method is called and an update will be needed
-	_, err := pendingcontrollers.UpdatePendingControllers(
+func (s *Scheduler) updatePendingControllers(fedObject *unstructured.Unstructured, wasModified bool) (bool, error) {
+	return pendingcontrollers.UpdatePendingControllers(
 		fedObject,
 		PrefixedGlobalSchedulerName,
 		wasModified,
 		s.typeConfig.GetControllers(),
 	)
-	return err
+}
+
+type auxiliarySchedulingInformation struct {
+	enableFollowerScheduling bool
+	unschedulableThreshold   *time.Duration
 }
 
 // applySchedulingResult updates the federated object with the scheduling result and the enableFollowerScheduling annotation, it returns a
@@ -457,7 +497,7 @@ func (s *Scheduler) updatePendingControllers(fedObject *unstructured.Unstructure
 func (s *Scheduler) applySchedulingResult(
 	fedObject *unstructured.Unstructured,
 	result core.ScheduleResult,
-	enableFollowerScheduling bool,
+	auxInfo *auxiliarySchedulingInformation,
 ) (bool, error) {
 	objectModified := false
 	clusterSet := result.ClusterSet()
@@ -482,20 +522,39 @@ func (s *Scheduler) applySchedulingResult(
 	}
 	objectModified = objectModified || overridesUpdated
 
-	// set enableFollowerScheduling annotation
+	// set annotations
+	annotations := fedObject.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string, 2)
+	}
+	annotationsModified := false
+
 	enableFollowerSchedulingAnnotationValue := common.AnnotationValueTrue
-	if !enableFollowerScheduling {
+	if !auxInfo.enableFollowerScheduling {
 		enableFollowerSchedulingAnnotationValue = common.AnnotationValueFalse
 	}
-	annotationsUpdated, err := annotationutil.AddAnnotation(
-		fedObject,
-		common.EnableFollowerSchedulingAnnotation,
-		enableFollowerSchedulingAnnotationValue,
-	)
-	if err != nil {
-		return false, err
+	if annotations[common.EnableFollowerSchedulingAnnotation] != enableFollowerSchedulingAnnotationValue {
+		annotations[common.EnableFollowerSchedulingAnnotation] = enableFollowerSchedulingAnnotationValue
+		annotationsModified = true
 	}
-	objectModified = objectModified || annotationsUpdated
+
+	if auxInfo.unschedulableThreshold == nil {
+		if _, ok := annotations[common.PodUnschedulableThresholdAnnotation]; ok {
+			delete(annotations, common.PodUnschedulableThresholdAnnotation)
+			annotationsModified = true
+		}
+	} else {
+		unschedulableThresholdAnnotationValue := auxInfo.unschedulableThreshold.String()
+		if annotations[common.PodUnschedulableThresholdAnnotation] != unschedulableThresholdAnnotationValue {
+			annotations[common.PodUnschedulableThresholdAnnotation] = unschedulableThresholdAnnotationValue
+			annotationsModified = true
+		}
+	}
+
+	if annotationsModified {
+		fedObject.SetAnnotations(annotations)
+		objectModified = true
+	}
 
 	return objectModified, nil
 }

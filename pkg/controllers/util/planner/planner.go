@@ -25,28 +25,6 @@ import (
 	"sort"
 )
 
-type ReplicaSchedulingPreference struct {
-
-	// Total number of pods desired across federated clusters.
-	// Replicas specified in the spec for target deployment template or replicaset
-	// template will be discarded/overridden when scheduling preferences are
-	// specified.
-	TotalReplicas int64
-
-	// If set to true then already scheduled and running replicas may be moved to other clusters
-	// in order to match current state to the specified preferences. Otherwise, if set to false,
-	// up and running replicas will not be moved.
-	// +optional
-	Rebalance bool
-
-	// A mapping between cluster names and preferences regarding a local workload object (dep, rs, .. ) in
-	// these clusters.
-	// "*" (if provided) applies to all clusters if an explicit mapping is not provided.
-	// If omitted, clusters without explicit preferences should not have any replicas scheduled.
-	// +optional
-	Clusters map[string]ClusterPreferences
-}
-
 // Preferences regarding number of replicas assigned to a cluster workload object (dep, rs, ..) within
 // a federated workload object.
 type ClusterPreferences struct {
@@ -62,10 +40,12 @@ type ClusterPreferences struct {
 	Weight int64
 }
 
-// Planner decides how many out of the given replicas should be placed in each of the
-// federated clusters.
-type Planner struct {
-	preferences *ReplicaSchedulingPreference
+type ReplicaSchedulingPreference struct {
+	// A mapping between cluster names and preferences regarding a local workload object (dep, rs, .. ) in
+	// these clusters.
+	// "*" (if provided) applies to all clusters if an explicit mapping is not provided.
+	// If omitted, clusters without explicit preferences should not have any replicas scheduled.
+	Clusters map[string]ClusterPreferences
 }
 
 type namedClusterPreferences struct {
@@ -85,12 +65,6 @@ func (a byWeight) Less(i, j int) bool {
 	return (a[i].Weight > a[j].Weight) || (a[i].Weight == a[j].Weight && a[i].hash < a[j].hash)
 }
 
-func NewPlanner(preferences *ReplicaSchedulingPreference) *Planner {
-	return &Planner{
-		preferences: preferences,
-	}
-}
-
 // Distribute the desired number of replicas among the given cluster according to the planner preferences.
 // The function tries its best to assign each cluster the preferred number of replicas, however if
 // sum of MinReplicas for all cluster is bigger than replicasToDistribute (TotalReplicas) then some cluster
@@ -103,15 +77,108 @@ func NewPlanner(preferences *ReplicaSchedulingPreference) *Planner {
 //   - a map that contains information how many replicas will be possible to run in a cluster.
 //   - a map that contains information how many extra replicas would be nice to schedule in a cluster so,
 //     if by chance, they are scheduled we will be closer to the desired replicas layout.
-func (p *Planner) Plan(availableClusters []string, currentReplicaCount map[string]int64,
-	estimatedCapacity map[string]int64, replicaSetKey string) (map[string]int64, map[string]int64, error) {
+func Plan(
+	rsp *ReplicaSchedulingPreference,
+	totalReplicas int64,
+	availableClusters []string,
+	currentReplicaCount map[string]int64,
+	estimatedCapacity map[string]int64,
+	replicaSetKey string,
+	avoidDisruption bool,
+	keepUnschedulableReplicas bool,
+) (map[string]int64, map[string]int64, error) {
+	preferences := make(map[string]*ClusterPreferences, len(availableClusters))
 
-	preferences := make([]*namedClusterPreferences, 0, len(availableClusters))
-	plan := make(map[string]int64, len(preferences))
-	overflow := make(map[string]int64, len(preferences))
+	for _, cluster := range availableClusters {
+		if preference, found := rsp.Clusters[cluster]; found {
+			preferences[cluster] = &preference
+		} else if preference, found := rsp.Clusters["*"]; found {
+			preferences[cluster] = &preference
+		}
+	}
 
-	named := func(name string, pref ClusterPreferences) (*namedClusterPreferences, error) {
-		// Seems to work better than addler for our case.
+	namedPreferences, err := getNamedPreferences(preferences, replicaSetKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// If keepUnschedulableReplicas is false,
+	// the resultant plan will likely violate the preferences
+	// if any cluster has limited capacity.
+	// If avoidDisruption is also false, a subsequent reschedule will restore
+	// the replica distribution to the state before we moved the unschedulable
+	// replicas. This leads to a infinite reschedule loop and is undesirable.
+	// Therefore we default to keeping the unschedulable replicas if avoidDisruption
+	// is false.
+	if !avoidDisruption {
+		keepUnschedulableReplicas = true
+	}
+
+	desiredPlan, desiredOverflow := getDesiredPlan(
+		namedPreferences,
+		estimatedCapacity,
+		totalReplicas,
+		keepUnschedulableReplicas,
+	)
+
+	// If we don't want to avoid migration, just return the plan computed from preferences
+	if !avoidDisruption {
+		return desiredPlan, desiredOverflow, nil
+	}
+
+	// Try to avoid instance migration between clusters
+
+	var currentTotalOkReplicas int64
+	// currentPlan should only contain clusters in availableClusters
+	currentPlan := make(map[string]int64, len(namedPreferences))
+	for _, preference := range namedPreferences {
+		replicas := currentReplicaCount[preference.clusterName]
+		if capacity, exists := estimatedCapacity[preference.clusterName]; exists && capacity < replicas {
+			replicas = capacity
+		}
+		currentPlan[preference.clusterName] = replicas
+
+		currentTotalOkReplicas += replicas
+	}
+
+	var desiredTotalReplicas int64
+	for _, replicas := range desiredPlan {
+		desiredTotalReplicas += replicas
+	}
+
+	switch {
+	case currentTotalOkReplicas == desiredTotalReplicas:
+		return currentPlan, desiredOverflow, nil
+	case currentTotalOkReplicas > desiredTotalReplicas:
+		plan, err := scaleDown(
+			currentPlan, desiredPlan,
+			currentTotalOkReplicas-desiredTotalReplicas,
+			replicaSetKey,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		return plan, desiredOverflow, nil
+	default:
+		plan, err := scaleUp(
+			rsp,
+			currentPlan, desiredPlan,
+			desiredTotalReplicas-currentTotalOkReplicas,
+			replicaSetKey,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		return plan, desiredOverflow, nil
+	}
+}
+
+func getNamedPreferences(
+	preferences map[string]*ClusterPreferences,
+	replicaSetKey string,
+) ([]*namedClusterPreferences, error) {
+	namedPreferences := make([]*namedClusterPreferences, 0, len(preferences))
+	named := func(name string, pref *ClusterPreferences) (*namedClusterPreferences, error) {
 		hasher := fnv.New32()
 		if _, err := hasher.Write([]byte(name)); err != nil {
 			return nil, err
@@ -123,165 +190,176 @@ func (p *Planner) Plan(availableClusters []string, currentReplicaCount map[strin
 		return &namedClusterPreferences{
 			clusterName:        name,
 			hash:               hasher.Sum32(),
-			ClusterPreferences: pref,
+			ClusterPreferences: *pref,
 		}, nil
 	}
 
-	for _, cluster := range availableClusters {
-		if localRSP, found := p.preferences.Clusters[cluster]; found {
-			preference, err := named(cluster, localRSP)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			preferences = append(preferences, preference)
-		} else {
-			if localRSP, found := p.preferences.Clusters["*"]; found {
-				preference, err := named(cluster, localRSP)
-				if err != nil {
-					return nil, nil, err
-				}
-
-				preferences = append(preferences, preference)
-			} else {
-				plan[cluster] = int64(0)
-			}
+	for name, preference := range preferences {
+		namedPreference, err := named(name, preference)
+		if err != nil {
+			return nil, err
 		}
+		namedPreferences = append(namedPreferences, namedPreference)
 	}
-	sort.Sort(byWeight(preferences))
+	sort.Sort(byWeight(namedPreferences))
+	return namedPreferences, nil
+}
 
-	// This is the requested total replicas in preferences
-	remainingReplicas := int64(p.preferences.TotalReplicas)
+func getDesiredPlan(
+	preferences []*namedClusterPreferences,
+	estimatedCapacity map[string]int64,
+	totalReplicas int64,
+	keepUnschedulableReplicas bool,
+) (map[string]int64, map[string]int64) {
+	remainingReplicas := totalReplicas
+	plan := make(map[string]int64, len(preferences))
+	overflow := make(map[string]int64, len(preferences))
 
 	// Assign each cluster the minimum number of replicas it requested.
 	for _, preference := range preferences {
 		min := minInt64(preference.MinReplicas, remainingReplicas)
-		if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity {
-			min = minInt64(min, capacity)
+		if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity && capacity < min {
+			overflow[preference.clusterName] = min - capacity
+			min = capacity
 		}
 		remainingReplicas -= min
 		plan[preference.clusterName] = min
 	}
 
-	// This map contains information how many replicas were assigned to
-	// the cluster based only on the current replica count and
-	// rebalance=false preference. It will be later used in remaining replica
-	// distribution code.
-	preallocated := make(map[string]int64)
-
-	if !p.preferences.Rebalance {
-		for _, preference := range preferences {
-			planned := plan[preference.clusterName]
-			count, hasSome := currentReplicaCount[preference.clusterName]
-			if hasSome && count > planned {
-				target := count
-				if preference.MaxReplicas != nil {
-					target = minInt64(*preference.MaxReplicas, target)
-				}
-				if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity {
-					target = minInt64(capacity, target)
-				}
-				extra := minInt64(target-planned, remainingReplicas)
-				if extra < 0 {
-					extra = 0
-				}
-				remainingReplicas -= extra
-				preallocated[preference.clusterName] = extra
-				plan[preference.clusterName] = extra + planned
-			}
-		}
-	}
-
 	modified := true
-
 	// It is possible single pass of the loop is not enough to distribute all replicas among clusters due
 	// to weight, max and rounding corner cases. In such case we iterate until either
-	// there is no replicas or no cluster gets any more replicas or the number
-	// of attempts is less than available cluster count. If there is no preallocated pods
-	// every loop either distributes all remainingReplicas or maxes out at least one cluster.
-	// If there are preallocated then the replica spreading may take longer.
-	// We reduce the number of pending preallocated replicas by at least half with each iteration so
-	// we may need log(replicasAtStart) iterations.
-	// TODO: Prove that clusterCount * log(replicas) iterations solves the problem or adjust the number.
-	// TODO: This algorithm is O(clusterCount^2 * log(replicas)) which is good for up to 100 clusters.
-	// Find something faster.
-	for trial := 0; modified && remainingReplicas > 0; trial++ {
-
+	// there is no replicas or no cluster gets any more replicas. Every loop either distributes all remainingReplicas
+	// or maxes out at least one cluster.
+	for modified && remainingReplicas > 0 {
 		modified = false
 		weightSum := int64(0)
 		for _, preference := range preferences {
 			weightSum += preference.Weight
 		}
+		if weightSum <= 0 {
+			break
+		}
 		newPreferences := make([]*namedClusterPreferences, 0, len(preferences))
 
 		distributeInThisLoop := remainingReplicas
-
 		for _, preference := range preferences {
-			if weightSum > 0 {
-				start := plan[preference.clusterName]
-				// Distribute the remaining replicas, rounding fractions always up.
-				extra := (distributeInThisLoop*preference.Weight + weightSum - 1) / weightSum
-				extra = minInt64(extra, remainingReplicas)
+			start := plan[preference.clusterName]
+			// Distribute the remaining replicas, rounding fractions always up.
+			extra := (distributeInThisLoop*preference.Weight + weightSum - 1) / weightSum
+			extra = minInt64(extra, remainingReplicas)
 
-				// Account preallocated.
-				prealloc := preallocated[preference.clusterName]
-				usedPrealloc := minInt64(extra, prealloc)
-				preallocated[preference.clusterName] = prealloc - usedPrealloc
-				extra = extra - usedPrealloc
-				if usedPrealloc > 0 {
-					modified = true
-				}
+			// In total there should be the amount that was there at start plus whatever is due
+			// in this iteration
+			total := start + extra
 
-				// In total there should be the amount that was there at start plus whatever is due
-				// in this iteration
-				total := start + extra
+			// Check if we don't overflow the cluster, and if yes don't consider this cluster
+			// in any of the following iterations.
+			full := false
+			if preference.MaxReplicas != nil && total > *preference.MaxReplicas {
+				total = *preference.MaxReplicas
+				full = true
+			}
+			if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity && total > capacity {
+				overflow[preference.clusterName] += total - capacity
+				total = capacity
+				full = true
+			}
+			if !full {
+				newPreferences = append(newPreferences, preference)
+			}
 
-				// Check if we don't overflow the cluster, and if yes don't consider this cluster
-				// in any of the following iterations.
-				full := false
-				if preference.MaxReplicas != nil && total > *preference.MaxReplicas {
-					total = *preference.MaxReplicas
-					full = true
-				}
-				if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity && total > capacity {
-					overflow[preference.clusterName] = total - capacity
-					total = capacity
-					full = true
-				}
+			// Only total-start replicas were actually taken.
+			remainingReplicas -= total - start
+			plan[preference.clusterName] = total
 
-				if !full {
-					newPreferences = append(newPreferences, preference)
-				}
-
-				// Only total-start replicas were actually taken.
-				remainingReplicas -= (total - start)
-				plan[preference.clusterName] = total
-
-				// Something extra got scheduled on this cluster.
-				if total > start {
-					modified = true
-				}
-			} else {
-				break
+			// Something extra got scheduled on this cluster.
+			if total > start {
+				modified = true
 			}
 		}
 		preferences = newPreferences
 	}
 
-	if p.preferences.Rebalance {
-		return plan, overflow, nil
-	} else {
-		// If rebalance = false then overflow is trimmed at the level
-		// of replicas that it failed to place somewhere.
-		newOverflow := make(map[string]int64)
-		for key, value := range overflow {
-			value = minInt64(value, remainingReplicas)
-			if value > 0 {
-				newOverflow[key] = value
+	// If we want to keep the unschedulable replicas in their original
+	// clusters, we return the overflow (which contains these
+	// unschedulable replicas) as is.
+	if keepUnschedulableReplicas {
+		return plan, overflow
+	}
+
+	// Otherwise, trim overflow at the level
+	// of replicas that the algorithm failed to place anywhere.
+	newOverflow := make(map[string]int64)
+	for key, value := range overflow {
+		value = minInt64(value, remainingReplicas)
+		if value > 0 {
+			newOverflow[key] = value
+		}
+	}
+	return plan, newOverflow
+}
+
+func scaleUp(
+	rsp *ReplicaSchedulingPreference,
+	currentReplicaCount, desiredReplicaCount map[string]int64,
+	scaleUpCount int64,
+	replicaSetKey string,
+) (map[string]int64, error) {
+	preferences := make(map[string]*ClusterPreferences, len(desiredReplicaCount))
+	for cluster, desired := range desiredReplicaCount {
+		// only pick clusters which have less replicas than desired to sale up, thus replica migration between clusters can be avoid
+		current := currentReplicaCount[cluster]
+		if desired > current {
+			preferences[cluster] = &ClusterPreferences{
+				Weight: desired - current,
+			}
+			if rsp.Clusters[cluster].MaxReplicas != nil {
+				// note that max is always positive because MaxReplicas >= desired > current
+				max := *rsp.Clusters[cluster].MaxReplicas - current
+				preferences[cluster].MaxReplicas = &max
 			}
 		}
-		return plan, newOverflow, nil
 	}
+
+	named, err := getNamedPreferences(preferences, replicaSetKey)
+	if err != nil {
+		return nil, err
+	}
+	// no estimatedCapacity and hence no overflow
+	replicasToScaleUp, _ := getDesiredPlan(named, nil, scaleUpCount, false)
+	for cluster, count := range replicasToScaleUp {
+		currentReplicaCount[cluster] += count
+	}
+	return currentReplicaCount, nil
+}
+
+func scaleDown(
+	currentReplicaCount, desiredReplicaCount map[string]int64,
+	scaleDownCount int64,
+	replicaSetKey string,
+) (map[string]int64, error) {
+	preferences := make(map[string]*ClusterPreferences, len(desiredReplicaCount))
+	for cluster, desired := range desiredReplicaCount {
+		// only pick clusters which have more replicas than desired to scale down, thus replica migration between clusters can be avoid
+		current := currentReplicaCount[cluster]
+		if desired < current {
+			preferences[cluster] = &ClusterPreferences{
+				Weight:      current - desired,
+				MaxReplicas: &current,
+			}
+		}
+	}
+	named, err := getNamedPreferences(preferences, replicaSetKey)
+	if err != nil {
+		return nil, err
+	}
+	// no estimatedCapacity and hence no overflow
+	replicasToScaleDown, _ := getDesiredPlan(named, nil, scaleDownCount, false)
+	for cluster, count := range replicasToScaleDown {
+		currentReplicaCount[cluster] -= count
+	}
+	return currentReplicaCount, nil
 }
 
 func minInt64(a int64, b int64) int64 {

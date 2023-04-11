@@ -17,7 +17,6 @@ limitations under the License.
 package utilunstructured
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -41,18 +40,19 @@ func GetLabelSelectorFromPath(obj *unstructured.Unstructured, path string, prefi
 		return nil, nil
 	}
 
-	labelSelector := metav1.LabelSelector{}
 	switch unsLabelSelector := unsLabelSelector.(type) {
 	case map[string]interface{}:
+		labelSelector := metav1.LabelSelector{}
 		if err := pkgruntime.DefaultUnstructuredConverter.FromUnstructured(unsLabelSelector, &labelSelector); err != nil {
 			return nil, fmt.Errorf("field value cannot be unmarshalled into metav1.LabelSelector: %w", err)
 		}
 		return &labelSelector, nil
 	case string:
-		if err := json.Unmarshal([]byte(unsLabelSelector), &labelSelector); err != nil {
+		if labelSelector, err := metav1.ParseToLabelSelector(unsLabelSelector); err != nil {
 			return nil, fmt.Errorf("field value cannot be unmarshalled into metav1.LabelSelector: %w", err)
+		} else {
+			return labelSelector, nil
 		}
-		return &labelSelector, nil
 	default:
 		return nil, fmt.Errorf("field value is not a string or a map[string]interface{}")
 	}
