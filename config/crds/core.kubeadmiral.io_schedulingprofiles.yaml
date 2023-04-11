@@ -37,24 +37,201 @@ spec:
             type: object
           spec:
             properties:
-              plugins:
-                description: Plugins is the list of plugins to use when scheduling
-                  a resource
+              pluginConfig:
+                description: PluginConfig is an optional set of custom plugin arguments
+                  for each plugin. Omitting config args for a plugin is equivalent
+                  to using the default config for that plugin.
                 items:
+                  description: PluginConfig specifies arguments that should be passed
+                    to a plugin at the time of initialization. A plugin that is invoked
+                    at multiple extension points is initialized once. Args can have
+                    arbitrary structure. It is up to the plugin to process these Args.
                   properties:
+                    args:
+                      description: Args defines the arguments passed to the plugins
+                        at the time of initialization. Args can have arbitrary structure.
+                      x-kubernetes-preserve-unknown-fields: true
                     name:
-                      description: Name is the name of the scheduler plugin
+                      description: Name defines the name of plugin being configured.
                       type: string
-                    parameters:
-                      additionalProperties:
-                        x-kubernetes-preserve-unknown-fields: true
-                      description: Parameters is a map of custom parameters that is
-                        passed to the plugin
-                      type: object
                   required:
                   - name
                   type: object
                 type: array
+              plugins:
+                description: Plugins specify the set of plugins that should be enabled
+                  or disabled. Enabled plugins are the ones that should be enabled
+                  in addition to the default plugins. Disabled plugins are any of
+                  the default plugins that should be disabled. When no enabled or
+                  disabled plugin is specified for an extension point, default plugins
+                  for that extension point will be used if there is any.
+                properties:
+                  filter:
+                    description: Filter is the list of plugins that should be invoked
+                      during the filter phase.
+                    properties:
+                      disabled:
+                        description: Disabled specifies default plugins that should
+                          be disabled.
+                        items:
+                          description: Plugin specifies a plugin type, name and its
+                            weight when applicable. Weight is used only for Score
+                            plugins. Type should be ommited when referencing in-tree
+                            plugins.
+                          properties:
+                            name:
+                              description: Name defines the name of the plugin.
+                              type: string
+                            type:
+                              description: Type defines the type of the plugin.
+                              enum:
+                              - Webhook
+                              type: string
+                            wait:
+                              description: Weight defines the weight of the plugin.
+                              format: int64
+                              type: integer
+                          type: object
+                        type: array
+                      enabled:
+                        description: Enabled specifies plugins that should be enabled
+                          in addition to the default plugins. Enabled plugins are
+                          called in the order specified here, after default plugins.
+                          If they need to be invoked before default plugins, default
+                          plugins must be disabled and re-enabled here in desired
+                          order.
+                        items:
+                          description: Plugin specifies a plugin type, name and its
+                            weight when applicable. Weight is used only for Score
+                            plugins. Type should be ommited when referencing in-tree
+                            plugins.
+                          properties:
+                            name:
+                              description: Name defines the name of the plugin.
+                              type: string
+                            type:
+                              description: Type defines the type of the plugin.
+                              enum:
+                              - Webhook
+                              type: string
+                            wait:
+                              description: Weight defines the weight of the plugin.
+                              format: int64
+                              type: integer
+                          type: object
+                        type: array
+                    type: object
+                  score:
+                    description: Score is the list of plugins that should be invoked
+                      during the score phase.
+                    properties:
+                      disabled:
+                        description: Disabled specifies default plugins that should
+                          be disabled.
+                        items:
+                          description: Plugin specifies a plugin type, name and its
+                            weight when applicable. Weight is used only for Score
+                            plugins. Type should be ommited when referencing in-tree
+                            plugins.
+                          properties:
+                            name:
+                              description: Name defines the name of the plugin.
+                              type: string
+                            type:
+                              description: Type defines the type of the plugin.
+                              enum:
+                              - Webhook
+                              type: string
+                            wait:
+                              description: Weight defines the weight of the plugin.
+                              format: int64
+                              type: integer
+                          type: object
+                        type: array
+                      enabled:
+                        description: Enabled specifies plugins that should be enabled
+                          in addition to the default plugins. Enabled plugins are
+                          called in the order specified here, after default plugins.
+                          If they need to be invoked before default plugins, default
+                          plugins must be disabled and re-enabled here in desired
+                          order.
+                        items:
+                          description: Plugin specifies a plugin type, name and its
+                            weight when applicable. Weight is used only for Score
+                            plugins. Type should be ommited when referencing in-tree
+                            plugins.
+                          properties:
+                            name:
+                              description: Name defines the name of the plugin.
+                              type: string
+                            type:
+                              description: Type defines the type of the plugin.
+                              enum:
+                              - Webhook
+                              type: string
+                            wait:
+                              description: Weight defines the weight of the plugin.
+                              format: int64
+                              type: integer
+                          type: object
+                        type: array
+                    type: object
+                  select:
+                    description: Select is the list of plugins that should be invoked
+                      during the select phase.
+                    properties:
+                      disabled:
+                        description: Disabled specifies default plugins that should
+                          be disabled.
+                        items:
+                          description: Plugin specifies a plugin type, name and its
+                            weight when applicable. Weight is used only for Score
+                            plugins. Type should be ommited when referencing in-tree
+                            plugins.
+                          properties:
+                            name:
+                              description: Name defines the name of the plugin.
+                              type: string
+                            type:
+                              description: Type defines the type of the plugin.
+                              enum:
+                              - Webhook
+                              type: string
+                            wait:
+                              description: Weight defines the weight of the plugin.
+                              format: int64
+                              type: integer
+                          type: object
+                        type: array
+                      enabled:
+                        description: Enabled specifies plugins that should be enabled
+                          in addition to the default plugins. Enabled plugins are
+                          called in the order specified here, after default plugins.
+                          If they need to be invoked before default plugins, default
+                          plugins must be disabled and re-enabled here in desired
+                          order.
+                        items:
+                          description: Plugin specifies a plugin type, name and its
+                            weight when applicable. Weight is used only for Score
+                            plugins. Type should be ommited when referencing in-tree
+                            plugins.
+                          properties:
+                            name:
+                              description: Name defines the name of the plugin.
+                              type: string
+                            type:
+                              description: Type defines the type of the plugin.
+                              enum:
+                              - Webhook
+                              type: string
+                            wait:
+                              description: Weight defines the weight of the plugin.
+                              format: int64
+                              type: integer
+                          type: object
+                        type: array
+                    type: object
+                type: object
             required:
             - plugins
             type: object

@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // +genclient
@@ -46,15 +47,74 @@ type SchedulingProfileList struct {
 }
 
 type SchedulingProfileSpec struct {
-	// Plugins is the list of plugins to use when scheduling a resource
-	Plugins []SchedulingPlugin `json:"plugins"`
+	// Plugins specify the set of plugins that should be enabled or disabled.
+	// Enabled plugins are the ones that should be enabled in addition to the
+	// default plugins. Disabled plugins are any of the default plugins that
+	// should be disabled.
+	// When no enabled or disabled plugin is specified for an extension point,
+	// default plugins for that extension point will be used if there is any.
+	Plugins Plugins `json:"plugins"`
+	// PluginConfig is an optional set of custom plugin arguments for each plugin.
+	// Omitting config args for a plugin is equivalent to using the default config
+	// for that plugin.
+	// +optional
+	PluginConfig []PluginConfig `json:"pluginConfig,omitempty"`
 }
 
-type SchedulingPlugin struct {
-	// Name is the name of the scheduler plugin
-	Name string `json:"name"`
-
-	// Parameters is a map of custom parameters that is passed to the plugin
+// Plugins include multiple extension points. When specified, the list of plugins for
+// a particular extension point are the only ones enabled. If an extension point is
+// omitted from the config, then the default set of plugins is used for that extension point.
+type Plugins struct {
+	// Filter is the list of plugins that should be invoked during the filter phase.
 	// +optional
-	Parameters map[string]apiextensionsv1.JSON `json:"parameters,omitempty"`
+	Filter PluginSet `json:"filter,omitempty"`
+	// Score is the list of plugins that should be invoked during the score phase.
+	// +optional
+	Score  PluginSet `json:"score,omitempty"`
+	// Select is the list of plugins that should be invoked during the select phase.
+	// +optional
+	Select PluginSet `json:"select,omitempty"`
+}
+
+// PluginSet contains the list of enabled and disabled plugins.
+type PluginSet struct {
+	// Enabled specifies plugins that should be enabled in addition to the default plugins.
+	// Enabled plugins are called in the order specified here, after default plugins. If they need to
+	// be invoked before default plugins, default plugins must be disabled and re-enabled here in desired order.
+	// +optional
+	Enabled []Plugin `json:"enabled,omitempty"`
+	// Disabled specifies default plugins that should be disabled.
+	// +optional
+	Disabled []Plugin `json:"disabled,omitempty"`
+}
+
+// Plugin specifies a plugin type, name and its weight when applicable. Weight is used only for Score plugins. Type
+// should be ommited when referencing in-tree plugins.
+type Plugin struct {
+	// Type defines the type of the plugin.
+	// +kubebuilder:validation:Enum=Webhook
+	// +optional
+	Type PluginType `json:"type,omitempty"`
+	// Name defines the name of the plugin.
+	Name string `json:"name,omitempty"`
+	// Weight defines the weight of the plugin.
+	// +optional
+	Weight int64 `json:"wait,omitempty"`
+}
+
+type PluginType string
+
+const (
+	WebhookPlugin PluginType = "Webhook"
+)
+
+// PluginConfig specifies arguments that should be passed to a plugin at the time of initialization.
+// A plugin that is invoked at multiple extension points is initialized once. Args can have arbitrary structure.
+// It is up to the plugin to process these Args.
+type PluginConfig struct {
+	// Name defines the name of plugin being configured.
+	Name string `json:"name"`
+	// Args defines the arguments passed to the plugins at the time of initialization. Args can have arbitrary structure.
+	// +optional
+	Args apiextensionsv1.JSON `json:"args"`
 }
