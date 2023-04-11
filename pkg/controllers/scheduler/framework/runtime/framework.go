@@ -66,23 +66,23 @@ func WithClusterDynamicClients(clusterDynamicClients ClusterDynamicClients) Opti
 }
 
 type EnabledPlugins struct {
-	FilterPlugins   sets.Set[string]
-	ScorePlugins    sets.Set[string]
-	SelectPlugins   sets.Set[string]
-	ReplicasPlugins sets.Set[string]
+	FilterPlugins   []string
+	ScorePlugins    []string
+	SelectPlugins   []string
+	ReplicasPlugins []string
 }
 
 func (ep EnabledPlugins) isPluginEnabled(pluginName string) bool {
-	if ep.FilterPlugins.Has(pluginName) {
+	if sets.New(ep.FilterPlugins...).Has(pluginName) {
 		return true
 	}
-	if ep.ScorePlugins.Has(pluginName) {
+	if sets.New(ep.ScorePlugins...).Has(pluginName) {
 		return true
 	}
-	if ep.SelectPlugins.Has(pluginName) {
+	if sets.New(ep.SelectPlugins...).Has(pluginName) {
 		return true
 	}
-	if ep.ReplicasPlugins.Has(pluginName) {
+	if sets.New(ep.ReplicasPlugins...).Has(pluginName) {
 		return true
 	}
 
@@ -99,7 +99,7 @@ type frameworkImpl struct {
 
 var _ framework.Framework = &frameworkImpl{}
 
-func NewFramework(registry Registry, enabledPlugins EnabledPlugins, opts ...Option) (framework.Framework, error) {
+func NewFramework(registry Registry, enabledPlugins *EnabledPlugins, opts ...Option) (framework.Framework, error) {
 	options := defaultFrameworkOptions
 	for _, opt := range opts {
 		opt(&options)
@@ -133,11 +133,12 @@ func NewFramework(registry Registry, enabledPlugins EnabledPlugins, opts ...Opti
 	return fwk, nil
 }
 
-func addPlugins(pluginList interface{}, enabledPlugins sets.Set[string], pluginsMap map[string]framework.Plugin) error {
+func addPlugins(pluginList interface{}, enabledPlugins []string, pluginsMap map[string]framework.Plugin) error {
 	plugins := reflect.ValueOf(pluginList).Elem()
 	pluginType := plugins.Type().Elem()
 
-	for plugin := range enabledPlugins {
+	registeredPlugins := sets.New[string]()
+	for _, plugin := range enabledPlugins {
 		pg, ok := pluginsMap[plugin]
 		if !ok {
 			return fmt.Errorf("%s %s does not exist", pluginType.Name(), plugin)
@@ -145,6 +146,10 @@ func addPlugins(pluginList interface{}, enabledPlugins sets.Set[string], plugins
 
 		if !reflect.TypeOf(pg).Implements(pluginType) {
 			return fmt.Errorf("plugin %s does not extend %s", plugin, pluginType.Name())
+		}
+
+		if registeredPlugins.Has(plugin) {
+			return fmt.Errorf("plugin %s already registerd as %s", plugin, pluginType.Name())
 		}
 
 		newPlugins := reflect.Append(plugins, reflect.ValueOf(pg))
@@ -157,12 +162,12 @@ func addPlugins(pluginList interface{}, enabledPlugins sets.Set[string], plugins
 // extensionPoint encapsulates desired and applied set of plugins at a specific extension point.
 type extensionPoint struct {
 	// the set of plugins to be configured at this extension point.
-	plugins sets.Set[string]
+	plugins []string
 	// a pointer to the slice storing plugins implmentations that will run at this extension point.
 	slicePtr interface{}
 }
 
-func (f *frameworkImpl) getExtensionPoints(enabledPlugins EnabledPlugins) []extensionPoint {
+func (f *frameworkImpl) getExtensionPoints(enabledPlugins *EnabledPlugins) []extensionPoint {
 	return []extensionPoint{
 		{plugins: enabledPlugins.FilterPlugins, slicePtr: &f.filterPlugins},
 		{plugins: enabledPlugins.ScorePlugins, slicePtr: &f.scorePlugins},
