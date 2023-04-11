@@ -19,7 +19,6 @@ package v1alpha1
 import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // +genclient
@@ -53,7 +52,7 @@ type SchedulingProfileSpec struct {
 	// should be disabled.
 	// When no enabled or disabled plugin is specified for an extension point,
 	// default plugins for that extension point will be used if there is any.
-	Plugins Plugins `json:"plugins"`
+	Plugins *Plugins `json:"plugins"`
 	// PluginConfig is an optional set of custom plugin arguments for each plugin.
 	// Omitting config args for a plugin is equivalent to using the default config
 	// for that plugin.

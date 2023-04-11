@@ -44,5 +44,9 @@ func (s *Scheduler) profileForFedObject(_ *unstructured.Unstructured, handle fra
 		maxcluster.MaxClusterName:                               maxcluster.NewMaxCluster,
 	}
 
-	return runtime.NewFramework(DefaultRegistry, handle)
+	return runtime.NewFramework(
+		DefaultRegistry,
+		profile fedcorev1a1.SchedulingProfile,
+		runtime.WithDynamicClient(s.dynamicClient),
+	)
 }

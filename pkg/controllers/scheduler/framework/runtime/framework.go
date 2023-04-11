@@ -25,11 +25,69 @@ import (
 	"fmt"
 	"reflect"
 
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
+
+// Option for the framework.
+type Option func(*frameworkOptions)
+
+type frameworkOptions struct {
+	dynamicClient          dynamic.Interface
+	dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory
+	clusterDynamicClients  ClusterDynamicClients
+}
+
+type ClusterDynamicClients interface {
+	Get(string) dynamic.Interface
+}
+
+func WithDynamicClient(dynamicClient dynamic.Interface) Option {
+	return func(o *frameworkOptions) {
+		o.dynamicClient = dynamicClient
+	}
+}
+
+func WithDynamicInformerFactory(dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory) Option {
+	return func(o *frameworkOptions) {
+		o.dynamicInformerFactory = dynamicInformerFactory
+	}
+}
+
+func WithClusterDynamicClients(clusterDynamicClients ClusterDynamicClients) Option {
+	return func(o *frameworkOptions) {
+		o.clusterDynamicClients = clusterDynamicClients
+	}
+}
+
+type EnabledPlugins struct {
+	FilterPlugins   sets.Set[string]
+	ScorePlugins    sets.Set[string]
+	SelectPlugins   sets.Set[string]
+	ReplicasPlugins sets.Set[string]
+}
+
+func (ep EnabledPlugins) isPluginEnabled(pluginName string) bool {
+	if ep.FilterPlugins.Has(pluginName) {
+		return true
+	}
+	if ep.ScorePlugins.Has(pluginName) {
+		return true
+	}
+	if ep.SelectPlugins.Has(pluginName) {
+		return true
+	}
+	if ep.ReplicasPlugins.Has(pluginName) {
+		return true
+	}
+
+	return false
+}
 
 type frameworkImpl struct {
 	scorePluginsWeightMap map[string]int
@@ -41,21 +99,33 @@ type frameworkImpl struct {
 
 var _ framework.Framework = &frameworkImpl{}
 
-func NewFramework(registry Registry, handle framework.Handle) (framework.Framework, error) {
-	fwk := &frameworkImpl{}
+func NewFramework(registry Registry, enabledPlugins EnabledPlugins, opts ...Option) (framework.Framework, error) {
+	options := defaultFrameworkOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	fwk := &frameworkImpl{
+		dynamicInformerFactory: options.dynamicInformerFactory,
+		clusterDynamicClients:  options.clusterDynamicClients,
+		dynamicClient:          options.dynamicClient,
+	}
 
 	pluginsMap := make(map[string]framework.Plugin)
 
 	for name, factory := range registry {
-		plugin, err := factory(handle)
+		if !enabledPlugins.isPluginEnabled(name) {
+			continue
+		}
+		plugin, err := factory(fwk)
 		if err != nil {
 			return nil, fmt.Errorf("error initializing plugin %q: %w", name, err)
 		}
 		pluginsMap[name] = plugin
 	}
 
-	for _, e := range fwk.getExtensionPoints() {
-		if err := addPlugins(e.slicePtr, pluginsMap); err != nil {
+	for _, e := range fwk.getExtensionPoints(enabledPlugins) {
+		if err := addPlugins(e.slicePtr, e.plugins, pluginsMap); err != nil {
 			return nil, err
 		}
 	}
@@ -63,31 +133,41 @@ func NewFramework(registry Registry, handle framework.Handle) (framework.Framewo
 	return fwk, nil
 }
 
-func addPlugins(pluginList interface{}, pluginsMap map[string]framework.Plugin) error {
+func addPlugins(pluginList interface{}, enabledPlugins sets.Set[string], pluginsMap map[string]framework.Plugin) error {
 	plugins := reflect.ValueOf(pluginList).Elem()
 	pluginType := plugins.Type().Elem()
 
-	for _, plugin := range pluginsMap {
-		if !reflect.TypeOf(plugin).Implements(pluginType) {
-			// klog.Infof("plugin %q does not extend %s plugin", name, pluginType.Name())
-			continue
+	for plugin := range enabledPlugins {
+		pg, ok := pluginsMap[plugin]
+		if !ok {
+			return fmt.Errorf("%s %s does not exist", pluginType.Name(), plugin)
 		}
-		newPlugins := reflect.Append(plugins, reflect.ValueOf(plugin))
+
+		if !reflect.TypeOf(pg).Implements(pluginType) {
+			return fmt.Errorf("plugin %s does not extend %s", plugin, pluginType.Name())
+		}
+
+		newPlugins := reflect.Append(plugins, reflect.ValueOf(pg))
 		plugins.Set(newPlugins)
 	}
+
 	return nil
 }
 
+// extensionPoint encapsulates desired and applied set of plugins at a specific extension point.
 type extensionPoint struct {
+	// the set of plugins to be configured at this extension point.
+	plugins sets.Set[string]
+	// a pointer to the slice storing plugins implmentations that will run at this extension point.
 	slicePtr interface{}
 }
 
-func (f *frameworkImpl) getExtensionPoints() []extensionPoint {
+func (f *frameworkImpl) getExtensionPoints(enabledPlugins EnabledPlugins) []extensionPoint {
 	return []extensionPoint{
-		{slicePtr: &f.filterPlugins},
-		{slicePtr: &f.scorePlugins},
-		{slicePtr: &f.selectPlugins},
-		{slicePtr: &f.replicasPlugins},
+		{plugins: enabledPlugins.FilterPlugins, slicePtr: &f.filterPlugins},
+		{plugins: enabledPlugins.ScorePlugins, slicePtr: &f.scorePlugins},
+		{plugins: enabledPlugins.SelectPlugins, slicePtr: &f.selectPlugins},
+		{plugins: enabledPlugins.ReplicasPlugins, slicePtr: &f.replicasPlugins},
 	}
 }
 
