@@ -24,6 +24,8 @@ type Interface interface {
 	PropagatedVersions() PropagatedVersionInformer
 	// PropagationPolicies returns a PropagationPolicyInformer.
 	PropagationPolicies() PropagationPolicyInformer
+	// SchedulerPluginWebhookConfigurations returns a SchedulerPluginWebhookConfigurationInformer.
+	SchedulerPluginWebhookConfigurations() SchedulerPluginWebhookConfigurationInformer
 	// SchedulingProfiles returns a SchedulingProfileInformer.
 	SchedulingProfiles() SchedulingProfileInformer
 }
@@ -77,6 +79,11 @@ func (v *version) PropagatedVersions() PropagatedVersionInformer {
 // PropagationPolicies returns a PropagationPolicyInformer.
 func (v *version) PropagationPolicies() PropagationPolicyInformer {
 	return &propagationPolicyInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// SchedulerPluginWebhookConfigurations returns a SchedulerPluginWebhookConfigurationInformer.
+func (v *version) SchedulerPluginWebhookConfigurations() SchedulerPluginWebhookConfigurationInformer {
+	return &schedulerPluginWebhookConfigurationInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // SchedulingProfiles returns a SchedulingProfileInformer.

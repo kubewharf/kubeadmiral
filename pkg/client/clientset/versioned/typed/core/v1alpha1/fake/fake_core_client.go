@@ -44,6 +44,10 @@ func (c *FakeCoreV1alpha1) PropagationPolicies(namespace string) v1alpha1.Propag
 	return &FakePropagationPolicies{c, namespace}
 }
 
+func (c *FakeCoreV1alpha1) SchedulerPluginWebhookConfigurations() v1alpha1.SchedulerPluginWebhookConfigurationInterface {
+	return &FakeSchedulerPluginWebhookConfigurations{c}
+}
+
 func (c *FakeCoreV1alpha1) SchedulingProfiles() v1alpha1.SchedulingProfileInterface {
 	return &FakeSchedulingProfiles{c}
 }

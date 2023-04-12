@@ -69,6 +69,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&OverridePolicyList{},
 		&ClusterOverridePolicy{},
 		&ClusterOverridePolicyList{},
+		&SchedulerPluginWebhookConfiguration{},
+		&SchedulerPluginWebhookConfigurationList{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil
