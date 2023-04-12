@@ -276,3 +276,53 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster pkgruntime.Object)
 		s.worker.EnqueueObject(fedObject)
 	}
 }
+
+// enqueueFederatedObjectsForProfile enqueues all federated objects that match the profile
+func (s *Scheduler) enqueueFederatedObjectsForProfile(profile pkgruntime.Object) {
+	profileObj := profile.(*fedcorev1a1.SchedulingProfile)
+
+	s.logger.WithValues("profile", profileObj.GetName()).V(2).Info("Enqueue federated objects for profile")
+
+	matchedPolicies := sets.New[string]()
+
+	policies, err := s.propagationPolicyLister.List(labels.Everything())
+	if err != nil {
+		s.logger.Error(err, "Failed to enqueue federated object for profile")
+		return
+	}
+	for _, policy := range policies {
+		if policy.Spec.SchedulingProfile == profileObj.GetName() {
+			qualifedName := common.NewQualifiedName(policy).String()
+			matchedPolicies.Insert(qualifedName)
+		}
+	}
+
+	clusterPolicies, err := s.propagationPolicyLister.List(labels.Everything())
+	if err != nil {
+		s.logger.Error(err, "Failed to enqueue federated object for profile")
+		return
+	}
+	for _, policy := range clusterPolicies {
+		if policy.Spec.SchedulingProfile == profileObj.GetName() {
+			qualifedName := common.NewQualifiedName(policy).String()
+			matchedPolicies.Insert(qualifedName)
+		}
+	}
+
+	fedObjects, err := s.federatedObjectLister.List(labels.Everything())
+	if err != nil {
+		s.logger.Error(err, "Failed to enqueue federated object for profile")
+		return
+	}
+	for _, fedObject := range fedObjects {
+		fedObject := fedObject.(*unstructured.Unstructured)
+		policyKey, found := MatchedPolicyKey(fedObject, s.typeConfig.GetNamespaced())
+		if !found {
+			continue
+		}
+
+		if matchedPolicies.Has(policyKey.String()) {
+			s.worker.EnqueueObject(fedObject)
+		}
+	}
+}

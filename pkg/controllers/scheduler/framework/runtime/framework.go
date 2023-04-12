@@ -26,44 +26,12 @@ import (
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
 
-// Option for the framework.
-type Option func(*frameworkOptions)
-
-type frameworkOptions struct {
-	dynamicClient          dynamic.Interface
-	dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory
-	clusterDynamicClients  ClusterDynamicClients
-}
-
-type ClusterDynamicClients interface {
-	Get(string) dynamic.Interface
-}
-
-func WithDynamicClient(dynamicClient dynamic.Interface) Option {
-	return func(o *frameworkOptions) {
-		o.dynamicClient = dynamicClient
-	}
-}
-
-func WithDynamicInformerFactory(dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory) Option {
-	return func(o *frameworkOptions) {
-		o.dynamicInformerFactory = dynamicInformerFactory
-	}
-}
-
-func WithClusterDynamicClients(clusterDynamicClients ClusterDynamicClients) Option {
-	return func(o *frameworkOptions) {
-		o.clusterDynamicClients = clusterDynamicClients
-	}
-}
 
 type EnabledPlugins struct {
 	FilterPlugins   []string
@@ -99,25 +67,16 @@ type frameworkImpl struct {
 
 var _ framework.Framework = &frameworkImpl{}
 
-func NewFramework(registry Registry, enabledPlugins *EnabledPlugins, opts ...Option) (framework.Framework, error) {
-	options := defaultFrameworkOptions
-	for _, opt := range opts {
-		opt(&options)
-	}
-
-	fwk := &frameworkImpl{
-		dynamicInformerFactory: options.dynamicInformerFactory,
-		clusterDynamicClients:  options.clusterDynamicClients,
-		dynamicClient:          options.dynamicClient,
-	}
+func NewFramework(registry Registry, handle framework.Handle, enabledPlugins *EnabledPlugins) (framework.Framework, error) {
+	fwk := &frameworkImpl{}
 
 	pluginsMap := make(map[string]framework.Plugin)
 
 	for name, factory := range registry {
-		if !enabledPlugins.isPluginEnabled(name) {
+	if !enabledPlugins.isPluginEnabled(name) {
 			continue
 		}
-		plugin, err := factory(fwk)
+		plugin, err := factory(handle)
 		if err != nil {
 			return nil, fmt.Errorf("error initializing plugin %q: %w", name, err)
 		}

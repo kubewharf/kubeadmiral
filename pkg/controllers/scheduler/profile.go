@@ -91,7 +91,7 @@ func applyProfile(enabledPlugins *runtime.EnabledPlugins, profile *fedcorev1a1.S
 	enabledPlugins.SelectPlugins = reconcileExtPoint(enabledPlugins.SelectPlugins, profile.Spec.Plugins.Select)
 }
 
-func (s *Scheduler) profileForFedObject(_ *unstructured.Unstructured, profile *fedcorev1a1.SchedulingProfile) (framework.Framework, error) {
+func (s *Scheduler) profileForFedObject(_ *unstructured.Unstructured, profile *fedcorev1a1.SchedulingProfile, handle framework.Handle) (framework.Framework, error) {
 	// inTreeRegistry should contain all known in-tree plugins
 	inTreeRegistry := runtime.Registry{
 		apiresources.APIResourcesName:                           apiresources.NewAPIResources,
@@ -107,11 +107,13 @@ func (s *Scheduler) profileForFedObject(_ *unstructured.Unstructured, profile *f
 	}
 
 	enabledPlugins := getDefaultEnabledPlugins()
-	applyProfile(enabledPlugins, profile)
+	if profile != nil {
+		applyProfile(enabledPlugins, profile)
+	}
 
 	return runtime.NewFramework(
 		inTreeRegistry,
+		handle,
 		enabledPlugins,
-		runtime.WithDynamicClient(s.dynamicClient),
 	)
 }

@@ -62,4 +62,7 @@ var (
 	// StatusConflict indicates that reconciliation could not be completed due to a conflict
 	// (e.g., AlreadyExists or Conflict), and the object should be requeued with a small delay.
 	StatusConflict = Result{Success: false, RequeueAfter: pointer.Duration(500 * time.Millisecond), Backoff: false}
+	// StatusErrorNoRetry indicates that the reconciliation could not be completed due to an error, but the object
+	// should not be reenqueued
+	StatusErrorNoRetry = Result{Success: false, RequeueAfter: nil, Backoff: false}
 )
