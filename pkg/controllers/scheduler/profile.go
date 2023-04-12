@@ -32,6 +32,20 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/runtime"
 )
 
+// inTreeRegistry should contain all known in-tree plugins
+var inTreeRegistry = runtime.Registry{
+	apiresources.APIResourcesName:                           apiresources.NewAPIResources,
+	clusteraffinity.ClusterAffinityName:                     clusteraffinity.NewClusterAffinity,
+	clusterresources.ClusterResourcesFitName:                clusterresources.NewClusterResourcesFit,
+	placement.PlacementFilterName:                           placement.NewPlacementFilter,
+	tainttoleration.TaintTolerationName:                     tainttoleration.NewTaintToleration,
+	clusterresources.ClusterResourcesBalancedAllocationName: clusterresources.NewClusterResourcesBalancedAllocation,
+	clusterresources.ClusterResourcesLeastAllocatedName:     clusterresources.NewClusterResourcesLeastAllocated,
+	clusterresources.ClusterResourcesMostAllocatedName:      clusterresources.NewClusterResourcesMostAllocated,
+	maxcluster.MaxClusterName:                               maxcluster.NewMaxCluster,
+	rsp.ClusterCapacityWeightName:                           rsp.NewClusterCapacityWeight,
+}
+
 func getDefaultEnabledPlugins() *runtime.EnabledPlugins {
 	filterPlugins := []string{
 		apiresources.APIResourcesName,
@@ -59,57 +73,49 @@ func getDefaultEnabledPlugins() *runtime.EnabledPlugins {
 	}
 }
 
-func applyProfile(enabledPlugins *runtime.EnabledPlugins, profile *fedcorev1a1.SchedulingProfile) {
+func applyProfile(base *runtime.EnabledPlugins, profile *fedcorev1a1.SchedulingProfile) {
 	if profile.Spec.Plugins == nil {
 		return
 	}
 
-	reconcileExtPoint := func(enabled []string, pluginSet fedcorev1a1.PluginSet) []string {
-		disabledSet := sets.New[string]()
-		for _, p := range pluginSet.Disabled {
-			disabledSet.Insert(p.Name)
-		}
-
-		result := []string{}
-		if !disabledSet.Has("*") {
-			for _, e := range enabled {
-				if !disabledSet.Has(e) {
-					result = append(result, e)
-				}
-			}
-		}
-
-		for _, p := range pluginSet.Enabled {
-			result = append(result, p.Name)
-		}
-
-		return result
-	}
-
-	enabledPlugins.FilterPlugins = reconcileExtPoint(enabledPlugins.FilterPlugins, profile.Spec.Plugins.Filter)
-	enabledPlugins.ScorePlugins = reconcileExtPoint(enabledPlugins.ScorePlugins, profile.Spec.Plugins.Score)
-	enabledPlugins.SelectPlugins = reconcileExtPoint(enabledPlugins.SelectPlugins, profile.Spec.Plugins.Select)
+	base.FilterPlugins = reconcileExtPoint(base.FilterPlugins, profile.Spec.Plugins.Filter)
+	base.ScorePlugins = reconcileExtPoint(base.ScorePlugins, profile.Spec.Plugins.Score)
+	base.SelectPlugins = reconcileExtPoint(base.SelectPlugins, profile.Spec.Plugins.Select)
 }
 
-func (s *Scheduler) profileForFedObject(_ *unstructured.Unstructured, profile *fedcorev1a1.SchedulingProfile, handle framework.Handle) (framework.Framework, error) {
-	// inTreeRegistry should contain all known in-tree plugins
-	inTreeRegistry := runtime.Registry{
-		apiresources.APIResourcesName:                           apiresources.NewAPIResources,
-		clusteraffinity.ClusterAffinityName:                     clusteraffinity.NewClusterAffinity,
-		clusterresources.ClusterResourcesFitName:                clusterresources.NewClusterResourcesFit,
-		placement.PlacementFilterName:                           placement.NewPlacementFilter,
-		tainttoleration.TaintTolerationName:                     tainttoleration.NewTaintToleration,
-		clusterresources.ClusterResourcesBalancedAllocationName: clusterresources.NewClusterResourcesBalancedAllocation,
-		clusterresources.ClusterResourcesLeastAllocatedName:     clusterresources.NewClusterResourcesLeastAllocated,
-		clusterresources.ClusterResourcesMostAllocatedName:      clusterresources.NewClusterResourcesMostAllocated,
-		maxcluster.MaxClusterName:                               maxcluster.NewMaxCluster,
-		rsp.ClusterCapacityWeightName:                           rsp.NewClusterCapacityWeight,
+func reconcileExtPoint(enabled []string, pluginSet fedcorev1a1.PluginSet) []string {
+	disabledSet := sets.New[string]()
+	for _, p := range pluginSet.Disabled {
+		disabledSet.Insert(p.Name)
 	}
 
+	result := []string{}
+	if !disabledSet.Has("*") {
+		for _, e := range enabled {
+			if !disabledSet.Has(e) {
+				result = append(result, e)
+			}
+		}
+	}
+
+	for _, p := range pluginSet.Enabled {
+		result = append(result, p.Name)
+	}
+
+	return result
+}
+
+func (s *Scheduler) profileForFedObject(
+	_ *unstructured.Unstructured,
+	profile *fedcorev1a1.SchedulingProfile,
+	handle framework.Handle,
+) (framework.Framework, error) {
 	enabledPlugins := getDefaultEnabledPlugins()
 	if profile != nil {
 		applyProfile(enabledPlugins, profile)
 	}
+
+	// TODO: merge the inTree registry with a dynamically generated webhook registry when supporting webhook plugins
 
 	return runtime.NewFramework(
 		inTreeRegistry,

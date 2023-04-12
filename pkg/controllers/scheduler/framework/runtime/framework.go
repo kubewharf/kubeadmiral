@@ -113,6 +113,7 @@ func addPlugins(pluginList interface{}, enabledPlugins []string, pluginsMap map[
 
 		newPlugins := reflect.Append(plugins, reflect.ValueOf(pg))
 		plugins.Set(newPlugins)
+		registeredPlugins.Insert(plugin)
 	}
 
 	return nil

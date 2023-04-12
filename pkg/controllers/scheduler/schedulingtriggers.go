@@ -285,19 +285,21 @@ func (s *Scheduler) enqueueFederatedObjectsForProfile(profile pkgruntime.Object)
 
 	matchedPolicies := sets.New[string]()
 
-	policies, err := s.propagationPolicyLister.List(labels.Everything())
-	if err != nil {
-		s.logger.Error(err, "Failed to enqueue federated object for profile")
-		return
-	}
-	for _, policy := range policies {
-		if policy.Spec.SchedulingProfile == profileObj.GetName() {
-			qualifedName := common.NewQualifiedName(policy).String()
-			matchedPolicies.Insert(qualifedName)
+	if s.typeConfig.GetNamespaced() {
+		policies, err := s.propagationPolicyLister.List(labels.Everything())
+		if err != nil {
+			s.logger.Error(err, "Failed to enqueue federated object for profile")
+			return
+		}
+		for _, policy := range policies {
+			if policy.Spec.SchedulingProfile == profileObj.GetName() {
+				qualifedName := common.NewQualifiedName(policy).String()
+				matchedPolicies.Insert(qualifedName)
+			}
 		}
 	}
 
-	clusterPolicies, err := s.propagationPolicyLister.List(labels.Everything())
+	clusterPolicies, err := s.clusterPropagationPolicyLister.List(labels.Everything())
 	if err != nil {
 		s.logger.Error(err, "Failed to enqueue federated object for profile")
 		return

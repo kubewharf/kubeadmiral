@@ -88,7 +88,7 @@ func getFramework() framework.Framework {
 	DefaultRegistry := runtime.Registry{
 		"NaiveReplicas": newNaiveReplicas,
 	}
-	f, _ := runtime.NewFramework(DefaultRegistry, nil)
+	f, _ := runtime.NewFramework(DefaultRegistry, nil, &runtime.EnabledPlugins{ReplicasPlugins: []string{"NaiveReplicas"}})
 	return f
 }
 

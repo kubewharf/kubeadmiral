@@ -34,6 +34,7 @@ import (
 // +kubebuilder:printcolumn:name=ready,type=string,JSONPath=.status.conditions[?(@.type=='Ready')].status
 // +kubebuilder:printcolumn:name=joined,type=string,JSONPath=.status.conditions[?(@.type=='Joined')].status
 // +kubebuilder:printcolumn:name=age,type=date,JSONPath=.metadata.creationTimestamp
+// +kubebuilder:object:root=true
 
 // FederatedCluster is the Schema for the federatedclusters API
 type FederatedCluster struct {
