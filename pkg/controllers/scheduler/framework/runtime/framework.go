@@ -208,7 +208,7 @@ func (f *frameworkImpl) RunReplicasPlugin(
 	if len(f.replicasPlugins) == 0 {
 		return clusterReplicasList, framework.NewResult(
 			framework.Success,
-			fmt.Sprintf("no replicas plugin register for this type %s", schedulingUnit.GroupVersionKind),
+			fmt.Sprintf("no replicas plugin registered in the framework"),
 		)
 	}
 	for _, plugin := range f.replicasPlugins {

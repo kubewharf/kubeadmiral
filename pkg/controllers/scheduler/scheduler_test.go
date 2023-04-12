@@ -17,26 +17,29 @@ limitations under the License.
 package scheduler
 
 import (
-	"reflect"
 	"testing"
 
+	"github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/pointer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
 
 func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 	tests := []struct {
-		name           string
-		policy         fedcorev1a1.GenericPropagationPolicy
-		annotations    map[string]string
-		expectedResult *framework.SchedulingUnit
+		name               string
+		policy             fedcorev1a1.GenericPropagationPolicy
+		annotations        map[string]string
+		templateObjectMeta *metav1.ObjectMeta
+		expectedResult     *framework.SchedulingUnit
 	}{
 		{
 			name: "scheduling mode override",
@@ -197,7 +200,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 					ClusterSelector: map[string]string{
 						"label": "value1",
 					},
-					MaxClusters: pointer.Int64Ptr(5),
+					MaxClusters: pointer.Int64(5),
 				},
 			},
 			annotations: map[string]string{
@@ -208,7 +211,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 				ClusterSelector: map[string]string{
 					"label": "value1",
 				},
-				MaxClusters: pointer.Int64Ptr(10),
+				MaxClusters: pointer.Int64(10),
 			},
 		},
 		{
@@ -218,7 +221,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 					ClusterSelector: map[string]string{
 						"label": "value1",
 					},
-					MaxClusters: pointer.Int64Ptr(5),
+					MaxClusters: pointer.Int64(5),
 					Placements: []fedcorev1a1.Placement{
 						{
 							ClusterName: "cluster1",
@@ -250,7 +253,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 				ClusterSelector: map[string]string{
 					"label": "value1",
 				},
-				MaxClusters: pointer.Int64Ptr(5),
+				MaxClusters: pointer.Int64(5),
 				ClusterNames: map[string]struct{}{
 					"cluster1": {},
 					"cluster2": {},
@@ -260,7 +263,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 					"cluster2": 2,
 				},
 				MaxReplicas: map[string]int64{
-					"cluster1": *pointer.Int64Ptr(10),
+					"cluster1": 10,
 				},
 				Weights: map[string]int64{
 					"cluster1": 2,
@@ -268,9 +271,32 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "template object meta",
+			policy: &fedcorev1a1.PropagationPolicy{
+				Spec: fedcorev1a1.PropagationPolicySpec{
+					SchedulingMode: fedcorev1a1.SchedulingModeDivide,
+				},
+			},
+			templateObjectMeta: &metav1.ObjectMeta{
+				Namespace:   metav1.NamespaceDefault,
+				Name:        "test",
+				Labels:      map[string]string{"label": "value1"},
+				Annotations: map[string]string{"annotation": "value1"},
+			},
+			expectedResult: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDivide,
+				Namespace:      metav1.NamespaceDefault,
+				Name:           "test",
+				Labels:         map[string]string{"label": "value1"},
+				Annotations:    map[string]string{"annotation": "value1"},
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			g := gomega.NewWithT(t)
+
 			scheduler := Scheduler{
 				typeConfig: &fedcorev1a1.FederatedTypeConfig{
 					Spec: fedcorev1a1.FederatedTypeConfigSpec{
@@ -280,25 +306,35 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 					},
 				},
 			}
-			obj := &unstructured.Unstructured{}
-			obj.SetAnnotations(test.annotations)
-			su, err := scheduler.schedulingUnitForFedObject(obj, test.policy)
-			if err != nil {
-				t.Errorf("unexpected error when getting scheduling unit: %v", err)
+			templateObjectMeta := test.templateObjectMeta
+			if templateObjectMeta == nil {
+				templateObjectMeta = &metav1.ObjectMeta{}
 			}
+			templateObjectMetaUns, err := runtime.DefaultUnstructuredConverter.ToUnstructured(templateObjectMeta)
+			g.Expect(err).NotTo(gomega.HaveOccurred())
+
+			obj := &unstructured.Unstructured{Object: make(map[string]interface{})}
+			obj.SetAnnotations(test.annotations)
+			err = unstructured.SetNestedMap(obj.Object, templateObjectMetaUns, common.TemplatePath...)
+			g.Expect(err).NotTo(gomega.HaveOccurred())
+
+			su, err := scheduler.schedulingUnitForFedObject(obj, test.policy)
+			g.Expect(err).NotTo(gomega.HaveOccurred())
 
 			// override fields we don't want to test
+			su.GroupVersion = test.expectedResult.GroupVersion
+			su.Kind = test.expectedResult.Kind
+			su.Resource = test.expectedResult.Resource
 			su.Name = test.expectedResult.Name
 			su.Namespace = test.expectedResult.Namespace
-			su.GroupVersionKind = test.expectedResult.GroupVersionKind
-			su.GroupVersionResource = test.expectedResult.GroupVersionResource
+			su.Labels = test.expectedResult.Labels
+			su.Annotations = test.expectedResult.Annotations
 			su.DesiredReplicas = test.expectedResult.DesiredReplicas
 			su.CurrentClusters = test.expectedResult.CurrentClusters
 			su.ResourceRequest = test.expectedResult.ResourceRequest
+			su.AvoidDisruption = test.expectedResult.AvoidDisruption
 
-			if !reflect.DeepEqual(su, test.expectedResult) {
-				t.Errorf("unexpected scheduling unit: %v want %v", su, test.expectedResult)
-			}
+			g.Expect(su).To(gomega.Equal(test.expectedResult))
 		})
 	}
 }
@@ -309,7 +345,6 @@ func TestSchedulingMode(t *testing.T) {
 		gvk              schema.GroupVersionKind
 		replicasSpecPath string
 		expectedResult   fedcorev1a1.SchedulingMode
-		expectedError    string
 	}{
 		"deployments should be able to use divide mode": {
 			policy: &fedcorev1a1.PropagationPolicy{
@@ -345,6 +380,7 @@ func TestSchedulingMode(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
+			g := gomega.NewWithT(t)
 			scheduler := Scheduler{
 				typeConfig: &fedcorev1a1.FederatedTypeConfig{
 					ObjectMeta: metav1.ObjectMeta{
@@ -362,15 +398,14 @@ func TestSchedulingMode(t *testing.T) {
 					},
 				},
 			}
-			obj := &unstructured.Unstructured{}
+			obj := &unstructured.Unstructured{Object: make(map[string]interface{})}
+			templateObjectMetaUns, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&metav1.ObjectMeta{})
+			g.Expect(err).NotTo(gomega.HaveOccurred())
+			err = unstructured.SetNestedMap(obj.Object, templateObjectMetaUns, common.TemplatePath...)
+			g.Expect(err).NotTo(gomega.HaveOccurred())
 			su, err := scheduler.schedulingUnitForFedObject(obj, test.policy)
-			if err != nil && err.Error() != test.expectedError {
-				t.Errorf("unexpected error when getting scheduling unit: %v", err)
-			} else if err == nil {
-				if su.SchedulingMode != test.expectedResult {
-					t.Fatalf("expected schedulingMode to be %v, but got %v", test.expectedResult, su.SchedulingMode)
-				}
-			}
+			g.Expect(err).NotTo(gomega.HaveOccurred())
+			g.Expect(su.SchedulingMode).To(gomega.Equal(test.expectedResult))
 		})
 	}
 }

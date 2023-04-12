@@ -18,11 +18,13 @@ package scheduler
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
 
@@ -38,7 +40,11 @@ func (s *Scheduler) schedulingUnitForFedObject(
 	policy fedcorev1a1.GenericPropagationPolicy,
 ) (*framework.SchedulingUnit, error) {
 	targetType := s.typeConfig.GetTargetType()
-	targetGVK := strings.Join([]string{targetType.Group, targetType.Version, targetType.Kind}, "/")
+
+	objectMeta, err := getTemplateObjectMeta(fedObject)
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving object meta from template: %w", err)
+	}
 
 	schedulingMode := getSchedulingModeFromPolicy(policy)
 	schedulingModeOverride, exists := getSchedulingModeFromObject(fedObject)
@@ -70,18 +76,16 @@ func (s *Scheduler) schedulingUnitForFedObject(
 	}
 
 	schedulingUnit := &framework.SchedulingUnit{
-		Name:             fedObject.GetName(),
-		Namespace:        fedObject.GetNamespace(),
-		GroupVersionKind: targetGVK,
-		GroupVersionResource: schema.GroupVersionResource{
-			Resource: targetType.Name,
-			Group:    targetType.Group,
-			Version:  targetType.Version,
-		},
-
+		GroupVersion:    schema.GroupVersion{Group: targetType.Group, Version: targetType.Version},
+		Kind:            targetType.Kind,
+		Resource:        targetType.Name,
+		Namespace:       objectMeta.GetNamespace(),
+		Name:            objectMeta.GetName(),
+		Labels:          objectMeta.GetLabels(),
+		Annotations:     objectMeta.GetAnnotations(),
 		DesiredReplicas: desiredReplicasOption,
 		CurrentClusters: currentReplicas,
-		AvoidDisruption: policy.GetSpec().ReplicaRescheduling.AvoidDisruption,
+		AvoidDisruption: true,
 	}
 
 	if autoMigration := policy.GetSpec().AutoMigration; autoMigration != nil {
@@ -93,6 +97,10 @@ func (s *Scheduler) schedulingUnitForFedObject(
 			Info:                      info,
 			KeepUnschedulableReplicas: autoMigration.KeepUnschedulableReplicas,
 		}
+	}
+
+	if replicaRescheduling := policy.GetSpec().ReplicaRescheduling; replicaRescheduling != nil {
+		schedulingUnit.AvoidDisruption = replicaRescheduling.AvoidDisruption
 	}
 
 	schedulingUnit.SchedulingMode = schedulingMode
@@ -152,6 +160,22 @@ func (s *Scheduler) schedulingUnitForFedObject(
 	}
 
 	return schedulingUnit, nil
+}
+
+func getTemplateObjectMeta(fedObject *unstructured.Unstructured) (*metav1.ObjectMeta, error) {
+	templateContent, exists, err := unstructured.NestedMap(fedObject.Object, common.TemplatePath...)
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving template: %w", err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("template not found")
+	}
+	objectMeta := metav1.ObjectMeta{}
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(templateContent, &objectMeta)
+	if err != nil {
+		return nil, fmt.Errorf("template cannot be converted to unstructured: %w", err)
+	}
+	return &objectMeta, nil
 }
 
 func getCurrentReplicasFromObject(

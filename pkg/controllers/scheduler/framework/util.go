@@ -449,10 +449,6 @@ func getFilteredTaints(taints []corev1.Taint, inclusionFilter taintsFilterFunc) 
 	return filteredTaints
 }
 
-func GVKString(r fedcorev1a1.APIResource) string {
-	return strings.Join([]string{r.Group, r.Version, r.Kind}, "/")
-}
-
 // DefaultNormalizeScore generates a Normalize Score function that can normalize the
 // scores to [0, maxPriority]. If reverse is set to true, it reverses the scores by
 // subtracting it from maxPriority.
