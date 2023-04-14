@@ -59,14 +59,18 @@ function codegen::join() { local IFS="$1"; shift; echo "$*"; }
 echo "Generating manifests"
 ${GOBIN}/controller-gen crd paths=$(codegen::join ";" "${INPUT_DIRS[@]}") output:crd:artifacts:config=config/crds
 # apply CRD patches
-for patch_file in config/crds/patches/*.yaml; do
-    crd_file="config/crds/$(basename "${patch_file}")"
-    if [[ ! -f "$crd_file" ]]; then
-        echo "CRD patch file $patch_file does not have a corresponding CRD file" >&2
-        exit 1
-    fi
-    # the patch file should be an array of yq assignment commands
-    "${GOBIN}"/yq eval '.[]' "$patch_file" | xargs -I{} "${GOBIN}"/yq -i '{}' "$crd_file"
+for patch_file in config/crds/patches/*.sh; do
+  if [[ $patch_file == *.src.sh ]]; then
+    continue
+  fi
+
+  crd_file="config/crds/$(basename "${patch_file}" .sh)".yaml
+  if [[ ! -f "$crd_file" ]]; then
+    echo "CRD patch file $patch_file does not have a corresponding CRD file" >&2
+    exit 1
+  fi
+
+  PATH="$GOBIN:$PATH" bash $patch_file $crd_file
 done
 
 # generate deepcopy

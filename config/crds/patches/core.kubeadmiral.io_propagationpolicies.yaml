@@ -1,3 +1,0 @@
-# controller-gen does not respect {} as default value for a struct field
-# issue: https://github.com/kubernetes-sigs/controller-tools/issues/622
-- .spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.replicaRescheduling.default = {}
