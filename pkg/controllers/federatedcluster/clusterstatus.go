@@ -43,10 +43,17 @@ import (
 )
 
 const (
-	ClusterReadyReason     = "ClusterReady"
-	ClusterReadyMessage    = "/healthz responded with ok"
-	ClusterNotReadyReason  = "ClusterNotReady"
-	ClusterNotReadyMessage = "/healthz responded without ok"
+	ClusterReadyReason  = "ClusterReady"
+	ClusterReadyMessage = "/healthz responded with ok"
+
+	ClusterHealthzNotOKReason  = "HealthzNotOK"
+	ClusterHealthzNotOKMessage = "/healthz responded without ok"
+
+	ClusterResourceCollectionFailedReason          = "ClusterResourceCollectionFailed"
+	ClusterResourceCollectionFailedMessageTemplate = "Failed to collect cluster resources: %v"
+
+	ClusterAPIDiscoveryFailedReason          = "ClusterAPIDiscoveryFailed"
+	ClusterAPIDiscoveryFailedMessageTemplate = "Failed to discover cluster API resources: %v"
 
 	ClusterReachableReason    = "ClusterReachable"
 	ClusterReachableMsg       = "cluster is reachable"
@@ -81,26 +88,41 @@ func collectIndividualClusterStatus(
 	discoveryClient := clusterKubeClient.Discovery()
 	cluster = cluster.DeepCopy()
 
-	if err := updateClusterHealthConditions(ctx, &cluster.Status, discoveryClient, logger); err != nil {
-		return fmt.Errorf("failed to get cluster health conditions: %w", err)
+	conditionTime := metav1.Now()
+
+	offlineStatus, readyStatus := checkReadyByHealthz(ctx, discoveryClient, logger)
+	var readyReason, readyMessage string
+	switch readyStatus {
+	case corev1.ConditionTrue:
+		readyReason = ClusterReadyReason
+		readyMessage = ClusterReadyMessage
+	case corev1.ConditionFalse:
+		readyReason = ClusterHealthzNotOKReason
+		readyMessage = ClusterHealthzNotOKMessage
+	case corev1.ConditionUnknown:
+		readyReason = ClusterNotReachableReason
+		readyMessage = ClusterNotReachableMsg
 	}
 
-	skip := false
-	if readyCond := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterReady); readyCond != nil &&
-		readyCond.Status != corev1.ConditionTrue {
-		// we skip updating node levels and api resources if cluster is not ready
-		skip = true
-	}
-
-	if !skip {
+	// we skip updating cluster resources and api resources if cluster is not ready
+	if readyStatus == corev1.ConditionTrue {
 		if err := updateClusterResources(ctx, &cluster.Status, clusterKubeInformer); err != nil {
-			return fmt.Errorf("failed to get cluster node levels: %w", err)
-		}
-
-		if err := updateClusterAPIResources(ctx, &cluster.Status, discoveryClient); err != nil {
-			return fmt.Errorf("failed to get cluster api resources: %w", err)
+			logger.Error(err, "Failed to update cluster resources")
+			readyStatus = corev1.ConditionFalse
+			readyReason = ClusterResourceCollectionFailedReason
+			readyMessage = fmt.Sprintf(ClusterResourceCollectionFailedMessageTemplate, err.Error())
+		} else if err := updateClusterAPIResources(ctx, &cluster.Status, discoveryClient); err != nil {
+			logger.Error(err, "Failed to update cluster api resources")
+			readyStatus = corev1.ConditionFalse
+			readyReason = ClusterAPIDiscoveryFailedReason
+			readyMessage = fmt.Sprintf(ClusterAPIDiscoveryFailedMessageTemplate, err.Error())
 		}
 	}
+
+	offlineCondition := getNewClusterOfflineCondition(offlineStatus, conditionTime)
+	setClusterCondition(&cluster.Status, &offlineCondition)
+	readyCondition := getNewClusterReadyCondition(readyStatus, readyReason, readyMessage, conditionTime)
+	setClusterCondition(&cluster.Status, &readyCondition)
 
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		latestCluster, err := fedClient.CoreV1alpha1().FederatedClusters().Get(context.TODO(), cluster.Name, metav1.GetOptions{})
@@ -117,39 +139,24 @@ func collectIndividualClusterStatus(
 	return nil
 }
 
-func updateClusterHealthConditions(
+func checkReadyByHealthz(
 	ctx context.Context,
-	clusterStatus *fedcorev1a1.FederatedClusterStatus,
 	clusterDiscoveryClient discovery.DiscoveryInterface,
 	logger klog.Logger,
-) error {
-	conditionTime := metav1.Now()
-
+) (offline, ready corev1.ConditionStatus) {
 	body, err := clusterDiscoveryClient.RESTClient().Get().AbsPath("/healthz").Do(ctx).Raw()
 	if err != nil {
 		logger.Error(err, "Cluster health check failed")
-		offlineCondition := getNewClusterOfflineCondition(corev1.ConditionTrue, conditionTime)
-		setClusterCondition(clusterStatus, &offlineCondition)
-		readyCondition := getNewClusterReadyCondition(corev1.ConditionUnknown, conditionTime)
-		setClusterCondition(clusterStatus, &readyCondition)
-	} else {
-		offlineCondition := getNewClusterOfflineCondition(corev1.ConditionFalse, conditionTime)
-		setClusterCondition(clusterStatus, &offlineCondition)
-
-		var clusterReadyStatus corev1.ConditionStatus
-		if strings.EqualFold(string(body), "ok") {
-			logger.Info("Cluster is ready")
-			clusterReadyStatus = corev1.ConditionTrue
-		} else {
-			logger.Info("Cluster is unready")
-			clusterReadyStatus = corev1.ConditionFalse
-		}
-
-		readyCondition := getNewClusterReadyCondition(clusterReadyStatus, conditionTime)
-		setClusterCondition(clusterStatus, &readyCondition)
+		return corev1.ConditionTrue, corev1.ConditionUnknown
 	}
 
-	return nil
+	var clusterReadyStatus corev1.ConditionStatus
+	if strings.EqualFold(string(body), "ok") {
+		clusterReadyStatus = corev1.ConditionTrue
+	} else {
+		clusterReadyStatus = corev1.ConditionFalse
+	}
+	return corev1.ConditionFalse, clusterReadyStatus
 }
 
 func updateClusterResources(
