@@ -157,6 +157,9 @@ linters-settings:
         alias: ${group}${s1}${s2}${s3}
       - pkg: "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
         alias: apiextensionsv1
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/apis/schedulerwebhook/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
+        # schedwebhookv1a1
+        alias: schedwebhook${s1}${s2}${s3}
       - pkg: github.com/kubewharf/kubeadmiral/pkg/apis/(?P<group>[\w\d]+)/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
         # fedcorev1a1
         alias: fed${group}${s1}${s2}${s3}
