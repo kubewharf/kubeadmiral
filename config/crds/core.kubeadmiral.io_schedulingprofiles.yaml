@@ -76,20 +76,21 @@ spec:
                         items:
                           description: Plugin specifies a plugin type, name and its
                             weight when applicable. Weight is used only for Score
-                            plugins. Type should be ommited when referencing in-tree
                             plugins.
                           properties:
                             name:
                               description: Name defines the name of the plugin.
                               type: string
                             type:
-                              description: Type defines the type of the plugin.
+                              description: Type defines the type of the plugin. Type
+                                should be omitted when referencing in-tree plugins.
                               enum:
                               - Webhook
                               type: string
                             wait:
                               description: Weight defines the weight of the plugin.
                               format: int64
+                              minimum: 0
                               type: integer
                           type: object
                         type: array
@@ -103,20 +104,21 @@ spec:
                         items:
                           description: Plugin specifies a plugin type, name and its
                             weight when applicable. Weight is used only for Score
-                            plugins. Type should be ommited when referencing in-tree
                             plugins.
                           properties:
                             name:
                               description: Name defines the name of the plugin.
                               type: string
                             type:
-                              description: Type defines the type of the plugin.
+                              description: Type defines the type of the plugin. Type
+                                should be omitted when referencing in-tree plugins.
                               enum:
                               - Webhook
                               type: string
                             wait:
                               description: Weight defines the weight of the plugin.
                               format: int64
+                              minimum: 0
                               type: integer
                           type: object
                         type: array
@@ -131,20 +133,21 @@ spec:
                         items:
                           description: Plugin specifies a plugin type, name and its
                             weight when applicable. Weight is used only for Score
-                            plugins. Type should be ommited when referencing in-tree
                             plugins.
                           properties:
                             name:
                               description: Name defines the name of the plugin.
                               type: string
                             type:
-                              description: Type defines the type of the plugin.
+                              description: Type defines the type of the plugin. Type
+                                should be omitted when referencing in-tree plugins.
                               enum:
                               - Webhook
                               type: string
                             wait:
                               description: Weight defines the weight of the plugin.
                               format: int64
+                              minimum: 0
                               type: integer
                           type: object
                         type: array
@@ -158,20 +161,21 @@ spec:
                         items:
                           description: Plugin specifies a plugin type, name and its
                             weight when applicable. Weight is used only for Score
-                            plugins. Type should be ommited when referencing in-tree
                             plugins.
                           properties:
                             name:
                               description: Name defines the name of the plugin.
                               type: string
                             type:
-                              description: Type defines the type of the plugin.
+                              description: Type defines the type of the plugin. Type
+                                should be omitted when referencing in-tree plugins.
                               enum:
                               - Webhook
                               type: string
                             wait:
                               description: Weight defines the weight of the plugin.
                               format: int64
+                              minimum: 0
                               type: integer
                           type: object
                         type: array
@@ -186,20 +190,21 @@ spec:
                         items:
                           description: Plugin specifies a plugin type, name and its
                             weight when applicable. Weight is used only for Score
-                            plugins. Type should be ommited when referencing in-tree
                             plugins.
                           properties:
                             name:
                               description: Name defines the name of the plugin.
                               type: string
                             type:
-                              description: Type defines the type of the plugin.
+                              description: Type defines the type of the plugin. Type
+                                should be omitted when referencing in-tree plugins.
                               enum:
                               - Webhook
                               type: string
                             wait:
                               description: Weight defines the weight of the plugin.
                               format: int64
+                              minimum: 0
                               type: integer
                           type: object
                         type: array
@@ -213,27 +218,26 @@ spec:
                         items:
                           description: Plugin specifies a plugin type, name and its
                             weight when applicable. Weight is used only for Score
-                            plugins. Type should be ommited when referencing in-tree
                             plugins.
                           properties:
                             name:
                               description: Name defines the name of the plugin.
                               type: string
                             type:
-                              description: Type defines the type of the plugin.
+                              description: Type defines the type of the plugin. Type
+                                should be omitted when referencing in-tree plugins.
                               enum:
                               - Webhook
                               type: string
                             wait:
                               description: Weight defines the weight of the plugin.
                               format: int64
+                              minimum: 0
                               type: integer
                           type: object
                         type: array
                     type: object
                 type: object
-            required:
-            - plugins
             type: object
         required:
         - spec

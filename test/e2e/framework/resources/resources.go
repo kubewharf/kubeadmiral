@@ -45,7 +45,6 @@ var (
 	}
 )
 
-
 func init() {
 	flag.StringVar(
 		&DefaultPodImage,

@@ -17,6 +17,7 @@ limitations under the License.
 package scheduler
 
 import (
+	"reflect"
 	"testing"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -608,24 +609,24 @@ func TestApplyProfile(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			applyProfile(test.base, test.profile)
 
-			if !checkPluginsEqual(test.base.FilterPlugins, test.expectedResult.FilterPlugins) {
+			if !reflect.DeepEqual(test.base.FilterPlugins, test.expectedResult.FilterPlugins) {
 				t.Errorf(
 					"expected filter plugins to be %v, but got %v",
 					test.base.FilterPlugins,
 					test.expectedResult.FilterPlugins,
 				)
 			}
-			if !checkPluginsEqual(test.base.ScorePlugins, test.expectedResult.ScorePlugins) {
+			if !reflect.DeepEqual(test.base.ScorePlugins, test.expectedResult.ScorePlugins) {
 				t.Errorf("expected score plugins to be %v, but got %v", test.base.ScorePlugins, test.expectedResult.ScorePlugins)
 			}
-			if !checkPluginsEqual(test.base.SelectPlugins, test.expectedResult.SelectPlugins) {
+			if !reflect.DeepEqual(test.base.SelectPlugins, test.expectedResult.SelectPlugins) {
 				t.Errorf(
 					"expected select plugins to be %v, but got %v",
 					test.base.SelectPlugins,
 					test.expectedResult.SelectPlugins,
 				)
 			}
-			if !checkPluginsEqual(test.base.ReplicasPlugins, test.expectedResult.ReplicasPlugins) {
+			if !reflect.DeepEqual(test.base.ReplicasPlugins, test.expectedResult.ReplicasPlugins) {
 				t.Errorf(
 					"expected replicas plugins to be %v, but got %v",
 					test.base.ReplicasPlugins,
@@ -634,17 +635,4 @@ func TestApplyProfile(t *testing.T) {
 			}
 		})
 	}
-}
-
-func checkPluginsEqual(result []string, expected []string) bool {
-	if len(result) != len(expected) {
-		return false
-	}
-	for i := range result {
-		if result[i] != expected[i] {
-			return false
-		}
-	}
-
-	return true
 }

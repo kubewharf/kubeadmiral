@@ -161,8 +161,6 @@ func NewScheduler(
 		},
 	})
 
-	schedulingProfileInformer.Informer().AddEventHandler(util.NewTriggerOnGenerationChanges(s.enqueueFederatedObjectsForProfile))
-
 	s.schedulingProfileLister = schedulingProfileInformer.Lister()
 	s.schedulingProfileSynced = schedulingProfileInformer.Informer().HasSynced
 
@@ -371,27 +369,27 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		var schedulingProfile *fedcorev1a1.SchedulingProfile
 		profileName := policy.GetSpec().SchedulingProfile
 		if len(profileName) > 0 {
+			keyedLogger = keyedLogger.WithValues("profile", profileName)
 			schedulingProfile, err = s.schedulingProfileLister.Get(profileName)
 			if err != nil {
-				// TODO(hawjia): handle error - should we retry if not found?
 				keyedLogger.Error(err, "Failed to get scheduling profile")
 				s.eventRecorder.Eventf(
 					fedObject,
 					corev1.EventTypeWarning,
 					EventReasonScheduleFederatedObject,
 					"failed to schedule object: %v",
-					fmt.Errorf("failed to get scheduling profile: %w", err),
+					fmt.Errorf("failed to get scheduling profile %s: %w", profileName, err),
 				)
 
 				if apierrors.IsNotFound(err) {
-					return worker.StatusErrorNoRetry
+					return worker.StatusAllOK
 				}
 
 				return worker.StatusError
 			}
 		}
 
-		profile, err := s.profileForFedObject(fedObject, schedulingProfile, s.buildFrameworkHandle())
+		profile, err := s.createFramework(fedObject, schedulingProfile, s.buildFrameworkHandle())
 		if err != nil {
 			keyedLogger.Error(err, "Failed to construct scheduling profile")
 			s.eventRecorder.Eventf(

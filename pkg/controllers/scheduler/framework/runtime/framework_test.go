@@ -193,7 +193,7 @@ func TestRunFilterPlugins(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			fwk, err := NewFramework(test.plugins, nil, test.enabledPlugins)
 			if err != nil {
-				t.Errorf("unexpected error when creating framework: %v", err)
+				t.Fatalf("unexpected error when creating framework: %v", err)
 			}
 
 			result := fwk.RunFilterPlugins(context.Background(), nil, nil)
@@ -296,7 +296,7 @@ func TestNewFramework(t *testing.T) {
 			fwk, err := NewFramework(registry, nil, &test.enabledPlugins)
 			if test.shouldError {
 				if err == nil {
-					t.Errorf("expected error when creating framework but got nil")
+					t.Fatal("expected error when creating framework but got nil")
 				}
 				t.Logf("got expected error: %v", err)
 				return

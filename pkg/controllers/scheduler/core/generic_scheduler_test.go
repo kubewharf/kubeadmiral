@@ -124,7 +124,7 @@ func TestSchedulingWithSchedulingMode(t *testing.T) {
 	t.Run("Duplicate mode should skip replicas scheduling", func(t *testing.T) {
 		schedulingUnit := &framework.SchedulingUnit{
 			StickyCluster:   true,
-			DesiredReplicas: pointer.Int64Ptr(10),
+			DesiredReplicas: pointer.Int64(10),
 			SchedulingMode:  fedcorev1a1.SchedulingModeDuplicate,
 		}
 		result, err := scheduler.Schedule(context.TODO(), getFramework(), *schedulingUnit)
@@ -144,7 +144,7 @@ func TestSchedulingWithSchedulingMode(t *testing.T) {
 	t.Run("Divide mode should do replicas scheduling", func(t *testing.T) {
 		schedulingUnit := &framework.SchedulingUnit{
 			StickyCluster:   true,
-			DesiredReplicas: pointer.Int64Ptr(10),
+			DesiredReplicas: pointer.Int64(10),
 			SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
 		}
 		result, err := scheduler.Schedule(context.TODO(), getFramework(), *schedulingUnit)
@@ -194,7 +194,7 @@ func TestSchedulingWithStickyCluster(t *testing.T) {
 	t.Run("should schedule the first time", func(t *testing.T) {
 		schedulingUnit := &framework.SchedulingUnit{
 			StickyCluster:   true,
-			DesiredReplicas: pointer.Int64Ptr(10),
+			DesiredReplicas: pointer.Int64(10),
 			SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
 		}
 		result, err := scheduler.Schedule(context.TODO(), getFramework(), *schedulingUnit)

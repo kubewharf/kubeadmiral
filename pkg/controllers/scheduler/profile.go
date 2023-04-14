@@ -105,7 +105,7 @@ func reconcileExtPoint(enabled []string, pluginSet fedcorev1a1.PluginSet) []stri
 	return result
 }
 
-func (s *Scheduler) profileForFedObject(
+func (s *Scheduler) createFramework(
 	_ *unstructured.Unstructured,
 	profile *fedcorev1a1.SchedulingProfile,
 	handle framework.Handle,

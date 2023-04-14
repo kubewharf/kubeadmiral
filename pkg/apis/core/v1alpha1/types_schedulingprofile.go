@@ -52,7 +52,8 @@ type SchedulingProfileSpec struct {
 	// should be disabled.
 	// When no enabled or disabled plugin is specified for an extension point,
 	// default plugins for that extension point will be used if there is any.
-	Plugins *Plugins `json:"plugins"`
+	// +optional
+	Plugins *Plugins `json:"plugins,omitempty"`
 	// PluginConfig is an optional set of custom plugin arguments for each plugin.
 	// Omitting config args for a plugin is equivalent to using the default config
 	// for that plugin.
@@ -69,7 +70,7 @@ type Plugins struct {
 	Filter PluginSet `json:"filter,omitempty"`
 	// Score is the list of plugins that should be invoked during the score phase.
 	// +optional
-	Score  PluginSet `json:"score,omitempty"`
+	Score PluginSet `json:"score,omitempty"`
 	// Select is the list of plugins that should be invoked during the select phase.
 	// +optional
 	Select PluginSet `json:"select,omitempty"`
@@ -87,20 +88,20 @@ type PluginSet struct {
 	Disabled []Plugin `json:"disabled,omitempty"`
 }
 
-// Plugin specifies a plugin type, name and its weight when applicable. Weight is used only for Score plugins. Type
-// should be ommited when referencing in-tree plugins.
+// Plugin specifies a plugin type, name and its weight when applicable. Weight is used only for Score plugins.
 type Plugin struct {
-	// Type defines the type of the plugin.
-	// +kubebuilder:validation:Enum=Webhook
+	// Type defines the type of the plugin. Type should be omitted when referencing in-tree plugins.
 	// +optional
 	Type PluginType `json:"type,omitempty"`
 	// Name defines the name of the plugin.
 	Name string `json:"name,omitempty"`
 	// Weight defines the weight of the plugin.
+	// +kubebuilder:validation:Minimum=0
 	// +optional
 	Weight int64 `json:"wait,omitempty"`
 }
 
+// +kubebuilder:validation:Enum=Webhook
 type PluginType string
 
 const (

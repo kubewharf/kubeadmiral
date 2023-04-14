@@ -32,7 +32,6 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
 
-
 type EnabledPlugins struct {
 	FilterPlugins   []string
 	ScorePlugins    []string
@@ -73,7 +72,7 @@ func NewFramework(registry Registry, handle framework.Handle, enabledPlugins *En
 	pluginsMap := make(map[string]framework.Plugin)
 
 	for name, factory := range registry {
-	if !enabledPlugins.isPluginEnabled(name) {
+		if !enabledPlugins.isPluginEnabled(name) {
 			continue
 		}
 		plugin, err := factory(handle)
@@ -92,28 +91,28 @@ func NewFramework(registry Registry, handle framework.Handle, enabledPlugins *En
 	return fwk, nil
 }
 
-func addPlugins(pluginList interface{}, enabledPlugins []string, pluginsMap map[string]framework.Plugin) error {
+func addPlugins(pluginList interface{}, enabledPluginNames []string, pluginsMap map[string]framework.Plugin) error {
 	plugins := reflect.ValueOf(pluginList).Elem()
 	pluginType := plugins.Type().Elem()
 
 	registeredPlugins := sets.New[string]()
-	for _, plugin := range enabledPlugins {
-		pg, ok := pluginsMap[plugin]
+	for _, pluginName := range enabledPluginNames {
+		pg, ok := pluginsMap[pluginName]
 		if !ok {
-			return fmt.Errorf("%s %s does not exist", pluginType.Name(), plugin)
+			return fmt.Errorf("%s %s does not exist", pluginType.Name(), pluginName)
 		}
 
 		if !reflect.TypeOf(pg).Implements(pluginType) {
-			return fmt.Errorf("plugin %s does not extend %s", plugin, pluginType.Name())
+			return fmt.Errorf("plugin %s does not implement %s", pluginName, pluginType.Name())
 		}
 
-		if registeredPlugins.Has(plugin) {
-			return fmt.Errorf("plugin %s already registerd as %s", plugin, pluginType.Name())
+		if registeredPlugins.Has(pluginName) {
+			return fmt.Errorf("plugin %s already registered as %s", pluginName, pluginType.Name())
 		}
 
 		newPlugins := reflect.Append(plugins, reflect.ValueOf(pg))
 		plugins.Set(newPlugins)
-		registeredPlugins.Insert(plugin)
+		registeredPlugins.Insert(pluginName)
 	}
 
 	return nil

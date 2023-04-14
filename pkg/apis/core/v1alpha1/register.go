@@ -24,7 +24,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/apis/core"
 )
 
-// GroupVersion is the identifier for the API which includes
+// SchemeGroupVersion is the identifier for the API which includes
 // the name of the group and the version of the API
 var SchemeGroupVersion = schema.GroupVersion{
 	Group:   core.GroupName,
