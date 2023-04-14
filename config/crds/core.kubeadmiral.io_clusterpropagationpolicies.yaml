@@ -30,6 +30,10 @@ spec:
               type: string
             metadata:
               type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 63
             spec:
               properties:
                 autoMigration:
