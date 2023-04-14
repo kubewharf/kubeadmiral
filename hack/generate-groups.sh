@@ -1,4 +1,4 @@
-#o/usr/bin/env bash
+#!/usr/bin/env bash
 
 # This file is based on https://github.com/kubernetes/code-generator/blob/master/generate-groups.sh
 # Copyright 2017 The Kubernetes Authors.
@@ -70,7 +70,7 @@ for patch_file in config/crds/patches/*.sh; do
     exit 1
   fi
 
-  PATH="$GOBIN:$PATH" bash -x $patch_file $crd_file
+  PATH="$GOBIN:$PATH" bash $patch_file $crd_file
 done
 
 # generate deepcopy
