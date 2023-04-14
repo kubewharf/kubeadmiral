@@ -44,7 +44,7 @@ import (
 
 const (
 	ClusterReadyReason  = "ClusterReady"
-	ClusterReadyMessage = "/healthz responded with ok"
+	ClusterReadyMessage = "Cluster is ready"
 
 	ClusterHealthzNotOKReason  = "HealthzNotOK"
 	ClusterHealthzNotOKMessage = "/healthz responded without ok"
@@ -56,9 +56,9 @@ const (
 	ClusterAPIDiscoveryFailedMessageTemplate = "Failed to discover cluster API resources: %v"
 
 	ClusterReachableReason    = "ClusterReachable"
-	ClusterReachableMsg       = "cluster is reachable"
+	ClusterReachableMsg       = "Cluster is reachable"
 	ClusterNotReachableReason = "ClusterNotReachable"
-	ClusterNotReachableMsg    = "cluster is not reachable"
+	ClusterNotReachableMsg    = "Cluster is not reachable"
 )
 
 func collectIndividualClusterStatus(
