@@ -146,38 +146,44 @@ linters-settings:
       - pkg: "k8s.io/apimachinery/pkg/apis/meta/v1"
         alias: metav1
 
-      - pkg: k8s.io/api/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+      # regex for api version:
+      # (?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
+      # e.g. v1alpha2
+      # s1: v1
+      # s2: a
+      # s3: 2
+      - pkg: k8s.io/api/(?P<group>[\w\d]+)/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
         # corev1, appsv1...
-        alias: ${group}${v1}${v2}${v3}
+        alias: ${group}${s1}${s2}${s3}
       - pkg: "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
         alias: apiextensionsv1
-      - pkg: github.com/kubewharf/kubeadmiral/pkg/apis/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/apis/(?P<group>[\w\d]+)/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
         # fedcorev1a1
-        alias: fed${group}${v1}${v2}${v3}
+        alias: fed${group}${s1}${s2}${s3}
 
-      - pkg: k8s.io/client-go/kubernetes/typed/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
-        alias: ${group}${v1}${v2}${v3}client
+      - pkg: k8s.io/client-go/kubernetes/typed/(?P<group>[\w\d]+)/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
+        alias: ${group}${s1}${s2}${s3}client
       - pkg: github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned
         alias: fedclient
       - pkg: github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/scheme
         alias: fedscheme
-      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/(?P<group>[\w\d]+)/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
         # fedcorev1a1client
-        alias: fed${group}${v1}${v2}${v3}client
+        alias: fed${group}${s1}${s2}${s3}client
 
-      - pkg: k8s.io/client-go/informers/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
-        alias: ${group}${v1}${v2}${v3}informers
+      - pkg: k8s.io/client-go/informers/(?P<group>[\w\d]+)/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
+        alias: ${group}${s1}${s2}${s3}informers
       - pkg: github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions
         alias: fedinformers
-      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/(?P<group>[\w\d]+)/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
         # fedcorev1a1informers
-        alias: fed${group}${v1}${v2}${v3}informers
+        alias: fed${group}${s1}${s2}${s3}informers
 
-      - pkg: k8s.io/client-go/listers/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
-        alias: ${group}${v1}${v2}${v3}listers
-      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/listers/(?P<group>[\w\d]+)/(?P<v1>v\d+)((?P<v2>\w)\w+(?P<v3>\d+))?
+      - pkg: k8s.io/client-go/listers/(?P<group>[\w\d]+)/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
+        alias: ${group}${s1}${s2}${s3}listers
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/client/listers/(?P<group>[\w\d]+)/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
         # fedcorev1a1listers
-        alias: fed${group}${v1}${v2}${v3}listers
+        alias: fed${group}${s1}${s2}${s3}listers
   govet:
     # Settings per analyzer.
     settings:
