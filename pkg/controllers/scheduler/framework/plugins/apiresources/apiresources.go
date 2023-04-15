@@ -5,6 +5,8 @@ package apiresources
 import (
 	"context"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
@@ -29,24 +31,16 @@ func (pl *APIResources) Filter(ctx context.Context, su *framework.SchedulingUnit
 		return framework.NewResult(framework.Error, err.Error())
 	}
 
-	GVK := getGroupVersionKind(su)
-	enableGVKs := getEnabledGroupVersionKinds(cluster)
-	for _, enableGVK := range enableGVKs {
-		if enableGVK == GVK {
+	gvk := su.GroupVersion.WithKind(su.Kind)
+	for _, r := range cluster.Status.APIResourceTypes {
+		enabledGVK := schema.GroupVersionKind{
+			Group:   r.Group,
+			Version: r.Version,
+			Kind:    r.Kind,
+		}
+		if enabledGVK == gvk {
 			return framework.NewResult(framework.Success)
 		}
 	}
 	return framework.NewResult(framework.Unschedulable, "No matched group version kind.")
-}
-
-func getEnabledGroupVersionKinds(cluster *fedcorev1a1.FederatedCluster) []string {
-	gvks := []string{}
-	for _, r := range cluster.Status.APIResourceTypes {
-		gvks = append(gvks, framework.GVKString(r))
-	}
-	return gvks
-}
-
-func getGroupVersionKind(su *framework.SchedulingUnit) string {
-	return su.GroupVersionKind
 }

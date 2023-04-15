@@ -46,6 +46,10 @@ type PropagationPolicyListerExpansion interface{}
 // PropagationPolicyNamespaceLister.
 type PropagationPolicyNamespaceListerExpansion interface{}
 
+// SchedulerPluginWebhookConfigurationListerExpansion allows custom methods to be added to
+// SchedulerPluginWebhookConfigurationLister.
+type SchedulerPluginWebhookConfigurationListerExpansion interface{}
+
 // SchedulingProfileListerExpansion allows custom methods to be added to
 // SchedulingProfileLister.
 type SchedulingProfileListerExpansion interface{}

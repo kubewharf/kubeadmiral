@@ -53,6 +53,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().PropagatedVersions().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("propagationpolicies"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().PropagationPolicies().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("schedulerpluginwebhookconfigurations"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().SchedulerPluginWebhookConfigurations().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("schedulingprofiles"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().SchedulingProfiles().Informer()}, nil
 

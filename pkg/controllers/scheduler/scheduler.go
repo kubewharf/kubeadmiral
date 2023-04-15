@@ -21,6 +21,8 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -81,6 +83,9 @@ type Scheduler struct {
 	schedulingProfileLister fedcorev1a1listers.SchedulingProfileLister
 	schedulingProfileSynced cache.InformerSynced
 
+	webhookConfigurationSynced cache.InformerSynced
+	webhookPlugins             sync.Map
+
 	worker        worker.ReconcileWorker
 	eventRecorder record.EventRecorder
 
@@ -100,6 +105,7 @@ func NewScheduler(
 	clusterPropagationPolicyInformer fedcorev1a1informers.ClusterPropagationPolicyInformer,
 	clusterInformer fedcorev1a1informers.FederatedClusterInformer,
 	schedulingProfileInformer fedcorev1a1informers.SchedulingProfileInformer,
+	webhookConfigurationInformer fedcorev1a1informers.SchedulerPluginWebhookConfigurationInformer,
 	metrics stats.Metrics,
 	workerCount int,
 ) (*Scheduler, error) {
@@ -158,6 +164,25 @@ func NewScheduler(
 	s.schedulingProfileLister = schedulingProfileInformer.Lister()
 	s.schedulingProfileSynced = schedulingProfileInformer.Informer().HasSynced
 
+	s.webhookConfigurationSynced = webhookConfigurationInformer.Informer().HasSynced
+	webhookConfigurationInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			s.cacheWebhookPlugin(obj.(*fedcorev1a1.SchedulerPluginWebhookConfiguration))
+		},
+		UpdateFunc: func(oldUntyped, newUntyped interface{}) {
+			oldConfig := oldUntyped.(*fedcorev1a1.SchedulerPluginWebhookConfiguration)
+			newConfig := newUntyped.(*fedcorev1a1.SchedulerPluginWebhookConfiguration)
+			if oldConfig.Spec.URLPrefix != newConfig.Spec.URLPrefix ||
+				oldConfig.Spec.HTTPTimeout != newConfig.Spec.HTTPTimeout ||
+				!reflect.DeepEqual(oldConfig.Spec.TLSConfig, newConfig.Spec.TLSConfig) {
+				s.cacheWebhookPlugin(newConfig)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			s.webhookPlugins.Delete(obj.(*fedcorev1a1.SchedulerPluginWebhookConfiguration).Name)
+		},
+	})
+
 	s.algorithm = core.NewSchedulerAlgorithm(clusterInformer.Informer().GetStore())
 
 	return s, nil
@@ -172,6 +197,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 		s.clusterPropagationPolicySynced,
 		s.clusterSynced,
 		s.schedulingProfileSynced,
+		s.webhookConfigurationSynced,
 	}
 	if s.typeConfig.GetNamespaced() {
 		cachesSynced = append(cachesSynced, s.propagationPolicySynced)
@@ -188,7 +214,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
 	_ = s.metrics.Rate("scheduler.throughput", 1)
 	key := qualifiedName.String()
-	keyedLogger := s.logger.WithValues("control-loop", "reconcile", "key", key)
+	keyedLogger := s.logger.WithValues("origin", "reconcile", "key", key)
 	startTime := time.Now()
 
 	keyedLogger.V(3).Info("Start reconcile")

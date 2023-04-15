@@ -5,7 +5,9 @@ import (
 	"reflect"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
@@ -22,10 +24,11 @@ func clusterWithAPIResource(clusterName string, resources []fedcorev1a1.APIResou
 	}
 }
 
-func suWithAPIResource(suName, gvk string) *framework.SchedulingUnit {
+func suWithAPIResource(suName string, gvk schema.GroupVersionKind) *framework.SchedulingUnit {
 	return &framework.SchedulingUnit{
-		Name:             suName,
-		GroupVersionKind: gvk,
+		Name:         suName,
+		GroupVersion: gvk.GroupVersion(),
+		Kind:         gvk.Kind,
 	}
 }
 
@@ -38,7 +41,7 @@ func TestAPIResourcesFilter(t *testing.T) {
 	}{
 		{
 			name: "the cluster has the resources for schedulingUnit",
-			su:   suWithAPIResource("su1", "apps/v1/DaemonSet"),
+			su:   suWithAPIResource("su1", appsv1.SchemeGroupVersion.WithKind("DaemonSet")),
 			cluster: clusterWithAPIResource("clusterA", []fedcorev1a1.APIResource{
 				{
 					Group:   "apps",
@@ -50,7 +53,7 @@ func TestAPIResourcesFilter(t *testing.T) {
 		},
 		{
 			name: "the cluster does not have the resources for schedulingUnit",
-			su:   suWithAPIResource("su1", "apps/v1/DaemonSet"),
+			su:   suWithAPIResource("su1", appsv1.SchemeGroupVersion.WithKind("DaemonSet")),
 			cluster: clusterWithAPIResource("clusterA", []fedcorev1a1.APIResource{
 				{
 					Group:   "apps",

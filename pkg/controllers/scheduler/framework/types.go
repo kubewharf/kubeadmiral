@@ -31,10 +31,14 @@ import (
 )
 
 type SchedulingUnit struct {
-	Name                 string
-	Namespace            string
-	GroupVersionKind     string
-	GroupVersionResource schema.GroupVersionResource
+	GroupVersion schema.GroupVersion
+	Kind         string
+	Resource     string
+
+	Namespace   string
+	Name        string
+	Labels      map[string]string
+	Annotations map[string]string
 
 	// Only care about the requests resources
 	// TODO(all), limit resources, Best Effort resources

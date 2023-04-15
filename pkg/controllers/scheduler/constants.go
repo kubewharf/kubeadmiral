@@ -44,8 +44,9 @@ const (
 
 	DefaultSchedulingMode = fedcorev1a1.SchedulingModeDuplicate
 
-	EventReasonScheduleFederatedObject = "ScheduleFederatedObject"
-	EventReasonInvalidFollowsObject    = "InvalidFollowsObject"
+	EventReasonScheduleFederatedObject   = "ScheduleFederatedObject"
+	EventReasonInvalidFollowsObject      = "InvalidFollowsObject"
+	EventReasonWebhookConfigurationError = "WebhookConfigurationError"
 
 	SchedulingTriggerHashAnnotation = common.DefaultPrefix + "scheduling-trigger-hash"
 )

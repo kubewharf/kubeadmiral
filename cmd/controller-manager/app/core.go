@@ -150,6 +150,7 @@ func startGlobalScheduler(
 		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterPropagationPolicies(),
 		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedClusters(),
 		controllerCtx.FedInformerFactory.Core().V1alpha1().SchedulingProfiles(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().SchedulerPluginWebhookConfigurations(),
 		controllerCtx.Metrics,
 		controllerCtx.WorkerCount,
 	)

@@ -18,6 +18,7 @@ type CoreV1alpha1Interface interface {
 	OverridePoliciesGetter
 	PropagatedVersionsGetter
 	PropagationPoliciesGetter
+	SchedulerPluginWebhookConfigurationsGetter
 	SchedulingProfilesGetter
 }
 
@@ -56,6 +57,10 @@ func (c *CoreV1alpha1Client) PropagatedVersions(namespace string) PropagatedVers
 
 func (c *CoreV1alpha1Client) PropagationPolicies(namespace string) PropagationPolicyInterface {
 	return newPropagationPolicies(c, namespace)
+}
+
+func (c *CoreV1alpha1Client) SchedulerPluginWebhookConfigurations() SchedulerPluginWebhookConfigurationInterface {
+	return newSchedulerPluginWebhookConfigurations(c)
 }
 
 func (c *CoreV1alpha1Client) SchedulingProfiles() SchedulingProfileInterface {

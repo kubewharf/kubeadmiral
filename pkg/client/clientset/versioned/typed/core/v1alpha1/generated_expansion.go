@@ -18,4 +18,6 @@ type PropagatedVersionExpansion interface{}
 
 type PropagationPolicyExpansion interface{}
 
+type SchedulerPluginWebhookConfigurationExpansion interface{}
+
 type SchedulingProfileExpansion interface{}
