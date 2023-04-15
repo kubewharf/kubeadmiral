@@ -19,6 +19,7 @@ package runtime
 import (
 	"context"
 	"reflect"
+	"sync/atomic"
 	"testing"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -212,13 +213,56 @@ func TestNewFramework(t *testing.T) {
 	filterAndScorePlugin := &fakeFilterAndScorePlugin{}
 	scoreAndSelectPlugin := &fakeScoreAndSelectPlugin{}
 
-	registry := Registry{
-		"filter":         func(f framework.Handle) (framework.Plugin, error) { return filterPlugin, nil },
-		"score":          func(f framework.Handle) (framework.Plugin, error) { return scorePlugin, nil },
-		"select":         func(f framework.Handle) (framework.Plugin, error) { return selectPlugin, nil },
-		"replicas":       func(f framework.Handle) (framework.Plugin, error) { return replicasPlugin, nil },
-		"filterAndScore": func(f framework.Handle) (framework.Plugin, error) { return filterAndScorePlugin, nil },
-		"scoreAndSelect": func(f framework.Handle) (framework.Plugin, error) { return scoreAndSelectPlugin, nil },
+	newRegistry := func() Registry {
+		var filterConstructed, scoreConstructed, selectConstructed, replicasConstructed, filterAndScoreConstructed, scoreAndSelectConstructed atomic.Bool
+		return Registry{
+			"filter": func(f framework.Handle) (framework.Plugin, error) {
+				if filterConstructed.Load() {
+					t.Errorf("filter plugin constructed more than once")
+				}
+				filterConstructed.Store(true)
+				return filterPlugin, nil
+			},
+			"score": func(f framework.Handle) (framework.Plugin, error) {
+				if scoreConstructed.Load() {
+					t.Errorf("score plugin constructed more than once")
+				}
+				scoreConstructed.Store(true)
+				return scorePlugin, nil
+			},
+			"select": func(f framework.Handle) (framework.Plugin, error) {
+				if selectConstructed.Load() {
+					t.Error("select plugin constructed more than once")
+				}
+				selectConstructed.Store(true)
+				return selectPlugin, nil
+			},
+			"replicas": func(f framework.Handle) (framework.Plugin, error) {
+				if replicasConstructed.Load() {
+					t.Errorf("replicas constructed more than once")
+				}
+				replicasConstructed.Store(true)
+				return replicasPlugin, nil
+			},
+			"filterAndScore": func(f framework.Handle) (framework.Plugin, error) {
+				if filterAndScoreConstructed.Load() {
+					t.Errorf("filterAndScore constructed more than once")
+				}
+				filterAndScoreConstructed.Store(true)
+				return filterAndScorePlugin, nil
+			},
+			"scoreAndSelect": func(f framework.Handle) (framework.Plugin, error) {
+				if scoreAndSelectConstructed.Load() {
+					t.Errorf("scoreAndSelect constructed more than once")
+				}
+				scoreAndSelectConstructed.Store(true)
+				return scoreAndSelectPlugin, nil
+			},
+			"notEnabled": func(f framework.Handle) (framework.Plugin, error) {
+				t.Errorf("plugin not enabled should not be constructed")
+				return nil, nil
+			},
+		}
 	}
 	tests := []struct {
 		name           string
@@ -293,7 +337,7 @@ func TestNewFramework(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fwk, err := NewFramework(registry, nil, &test.enabledPlugins)
+			fwk, err := NewFramework(newRegistry(), nil, &test.enabledPlugins)
 			if test.shouldError {
 				if err == nil {
 					t.Fatal("expected error when creating framework but got nil")
@@ -303,7 +347,7 @@ func TestNewFramework(t *testing.T) {
 			}
 
 			if err != nil {
-				t.Errorf("unexpected error when creating framework: %v", err)
+				t.Fatalf("unexpected error when creating framework: %v", err)
 			}
 
 			if !reflect.DeepEqual(fwk, test.expected) {

@@ -387,7 +387,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 
 				return worker.StatusError
 			}
-		}
+}
 
 		profile, err := s.createFramework(fedObject, schedulingProfile, s.buildFrameworkHandle())
 		if err != nil {
