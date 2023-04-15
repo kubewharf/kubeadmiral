@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-	http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,7 +18,7 @@ package resourcepropagation
 
 import (
 	"github.com/onsi/ginkgo/v2"
-	batchv1b1 "k8s.io/api/batch/v1beta1"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
@@ -27,26 +27,26 @@ import (
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework/resources"
 )
 
-var _ = ginkgo.Describe("CronJob Propagation", func() {
-	f := framework.NewFramework("cronjob-propagation", framework.FrameworkOptions{CreateNamespace: true})
+var _ = ginkgo.Describe("Deployment Propagation", func() {
+	f := framework.NewFramework("deployment-propagation", framework.FrameworkOptions{CreateNamespace: true})
 
 	resourcePropagationTest(
 		f,
-		&resourcePropagationTestConfig[*batchv1b1.CronJob]{
-			gvr:           batchv1b1.SchemeGroupVersion.WithResource("jobs"),
-			objectFactory: resources.GetSimpleCronJob,
-			clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*batchv1b1.CronJob] {
-				return client.BatchV1beta1().CronJobs(namespace)
+		&resourcePropagationTestConfig[*appsv1.Deployment]{
+			gvr:           appsv1.SchemeGroupVersion.WithResource("deployments"),
+			objectFactory: resources.GetSimpleDeployment,
+			clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*appsv1.Deployment] {
+				return client.AppsV1().Deployments(namespace)
 			},
 			isPropagatedResourceWorking: func(
 				_ kubernetes.Interface,
 				_ dynamic.Interface,
-				cronjob *batchv1b1.CronJob,
+				deployment *appsv1.Deployment,
 			) (bool, error) {
-				return resources.IsCronJobScheduledOnce(cronjob), nil
+				return resources.IsDeploymentProgressing(deployment), nil
 			},
 			statusCollection: &resourceStatusCollectionTestConfig{
-				gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federatedcronjobstatuses"),
+				gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federateddeploymentstatuses"),
 				path: "status",
 			},
 		},

@@ -30,6 +30,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/utils/pointer"
+
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
 var DefaultPodImage = "ealen/echo-server:latest"
@@ -47,6 +49,10 @@ func GetSimpleDeployment(baseName string) *appsv1.Deployment {
 	name := fmt.Sprintf("%s-%s", baseName, rand.String(12))
 
 	return &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: appsv1.SchemeGroupVersion.String(),
+			Kind:       common.DeploymentKind,
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
@@ -76,6 +82,18 @@ func GetSimpleDeployment(baseName string) *appsv1.Deployment {
 	}
 }
 
+func IsDeploymentProgressing(deployment *appsv1.Deployment) bool {
+	for _, c := range deployment.Status.Conditions {
+		if c.Type != appsv1.DeploymentProgressing {
+			continue
+		}
+
+		return c.Status == corev1.ConditionTrue
+	}
+
+	return false
+}
+
 func GetSimpleDaemonset() *appsv1.DaemonSet {
 	return nil
 }
@@ -88,6 +106,10 @@ func GetSimpleJob(baseName string) *batchv1.Job {
 	name := fmt.Sprintf("%s-%s", baseName, rand.String(12))
 
 	return &batchv1.Job{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: batchv1.SchemeGroupVersion.String(),
+			Kind:       common.JobKind,
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
@@ -121,6 +143,10 @@ func GetSimpleCronJob(baseName string) *batchv1b1.CronJob {
 	name := fmt.Sprintf("%s-%s", baseName, rand.String(12))
 
 	return &batchv1b1.CronJob{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: batchv1.SchemeGroupVersion.String(),
+			Kind:       common.CronJobKind,
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
