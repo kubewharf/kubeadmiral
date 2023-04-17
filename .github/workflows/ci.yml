@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - v*
+  pull_request:
+
+# TODO: coverage
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version:
+          - "1.19"
+          - "1.20"
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - run: make test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "1.19"
+          # https://github.com/golangci/golangci-lint-action/issues/244
+          # without `cache: false`, the action might intermittently fail
+          cache: false
+
+      - uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.52.2
+          only-new-issues: true
+          args: >
+            --timeout=5m
+            --max-issues-per-linter=0
+            --max-same-issues=0
+            --uniq-by-line=false
+
+  verify-codegen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "1.19"
+
+      - run: |
+          make generate -B
+          git diff --exit-code && exit 0
+          echo "Codegen is not up to date. Please run 'make generate' and commit the changes." >&2
+          exit 1
