@@ -188,10 +188,10 @@ func getPodResourceRequests(pod *corev1.Pod) corev1.ResourceList {
 	return reqs
 }
 
-// aggregateResources returns
+// AggregateResources returns
 //   - allocatable resources from the nodes and,
 //   - available resources after considering allocations to the given pods.
-func aggregateResources(
+func AggregateResources(
 	nodes []*corev1.Node,
 	pods []*corev1.Pod,
 ) (corev1.ResourceList, corev1.ResourceList) {
@@ -207,24 +207,36 @@ func aggregateResources(
 	// Don't consider pod resource for now
 	delete(allocatable, corev1.ResourcePods)
 
-	available := make(corev1.ResourceList)
-	for name, quantity := range allocatable {
-		available[name] = quantity.DeepCopy()
+	available := allocatable.DeepCopy()
+	usage := AggregatePodUsage(pods, func(pod *corev1.Pod) *corev1.Pod { return pod })
+
+	for name, quantity := range available {
+		// `quantity` is a copy here; pointer methods do not mutate `available[name]`
+		quantity.Sub(usage[name])
+		available[name] = quantity
 	}
 
+	return allocatable, available
+}
+
+func AggregatePodUsage[T any](pods []T, podFunc func(T) *corev1.Pod) corev1.ResourceList {
+	list := make(corev1.ResourceList)
+
 	for _, pod := range pods {
+		pod := podFunc(pod)
+
 		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
 			continue
 		}
 
 		podRequests := getPodResourceRequests(pod)
 		for name, requestedQuantity := range podRequests {
-			if availableQuantity, ok := available[name]; ok {
-				availableQuantity.Sub(requestedQuantity)
-				available[name] = availableQuantity
+			if q, exists := list[name]; exists {
+				requestedQuantity.Add(q)
 			}
+			list[name] = requestedQuantity
 		}
 	}
 
-	return allocatable, available
+	return list
 }

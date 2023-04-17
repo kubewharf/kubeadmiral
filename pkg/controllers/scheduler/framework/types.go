@@ -51,6 +51,7 @@ type SchedulingUnit struct {
 	// Describes the current scheduling state
 	CurrentClusters map[string]*int64
 	AutoMigration   *AutoMigrationSpec
+	CurrentUsage    map[string]Resource
 
 	// Controls the scheduling behavior
 	SchedulingMode  fedcorev1a1.SchedulingMode

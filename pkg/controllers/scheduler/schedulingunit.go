@@ -17,6 +17,7 @@ limitations under the License.
 package scheduler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -24,18 +25,21 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
 
 func (s *Scheduler) schedulingUnitForFedObject(
+	ctx context.Context,
 	fedObject *unstructured.Unstructured,
 	policy fedcorev1a1.GenericPropagationPolicy,
 ) (*framework.SchedulingUnit, error) {
@@ -75,6 +79,12 @@ func (s *Scheduler) schedulingUnitForFedObject(
 		return nil, err
 	}
 
+	var currentUsage map[string]framework.Resource
+	selectorPath := s.typeConfig.Spec.PathDefinition.LabelSelector
+	if selectorPath != "" {
+		currentUsage, err = s.getPodUsage(ctx, fedObject, selectorPath)
+	}
+
 	schedulingUnit := &framework.SchedulingUnit{
 		GroupVersion:    schema.GroupVersion{Group: targetType.Group, Version: targetType.Version},
 		Kind:            targetType.Kind,
@@ -85,6 +95,7 @@ func (s *Scheduler) schedulingUnitForFedObject(
 		Annotations:     objectMeta.GetAnnotations(),
 		DesiredReplicas: desiredReplicasOption,
 		CurrentClusters: currentReplicas,
+		CurrentUsage:    currentUsage,
 		AvoidDisruption: true,
 	}
 
@@ -160,6 +171,55 @@ func (s *Scheduler) schedulingUnitForFedObject(
 	}
 
 	return schedulingUnit, nil
+}
+
+func (s *Scheduler) getPodUsage(ctx context.Context, fedObject *unstructured.Unstructured, selectorPath string) (map[string]framework.Resource, error) {
+	clusters, err := s.clusterLister.List(labels.Everything())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get clusters from store: %w", err)
+	}
+
+	selector, err := utilunstructured.GetLabelSelectorFromPath(fedObject, selectorPath, common.TemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid label selector: %w", err)
+	}
+
+	currentUsage := make(map[string]framework.Resource, len(clusters))
+
+	// this loop is intentionally not parallelized to reduce memory overhead.
+	for _, cluster := range clusters {
+		if !util.IsClusterJoined(&cluster.Status) {
+			continue
+		}
+
+		currentUsage[cluster.Name], err = s.getClusterPodUsage(ctx, cluster, fedObject, selector)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get pod resource usage in cluster %q: %w", cluster.Name, err)
+		}
+	}
+
+	return currentUsage, nil
+}
+
+func (s *Scheduler) getClusterPodUsage(ctx context.Context, cluster *fedcorev1a1.FederatedCluster, fedObject *unstructured.Unstructured, selector *metav1.LabelSelector) (res framework.Resource, err error) {
+	client, exists, err := s.federatedClient.KubeClientsetForCluster(cluster.Name)
+	if err != nil {
+		return res, fmt.Errorf("get clientset: %w", err)
+	}
+	if !exists {
+		return res, fmt.Errorf("clientset does not exist yet") // wait for the clientset to get created
+	}
+
+	pods, err := client.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
+		ResourceVersion: "0",
+		LabelSelector:   metav1.FormatLabelSelector(selector),
+	})
+	if err != nil {
+		return res, fmt.Errorf("cannot list pods: %w", err)
+	}
+
+	usage := federatedcluster.AggregatePodUsage(pods.Items, func(pod corev1.Pod) *corev1.Pod { return &pod })
+	return *framework.NewResource(usage), nil
 }
 
 func getTemplateObjectMeta(fedObject *unstructured.Unstructured) (*metav1.ObjectMeta, error) {

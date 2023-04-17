@@ -260,7 +260,7 @@ func Test_aggregateResources(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			allocatable, available := aggregateResources(tc.nodes, tc.pods)
+			allocatable, available := AggregateResources(tc.nodes, tc.pods)
 			if len(allocatable) != len(tc.expectedAllocatable) {
 				t.Fatalf("expected allocatable %s differs from actual allocatable %s", spew.Sdump(tc.expectedAllocatable), spew.Sdump(allocatable))
 			}

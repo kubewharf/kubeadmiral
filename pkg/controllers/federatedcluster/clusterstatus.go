@@ -184,7 +184,7 @@ func updateClusterResources(
 		}
 	}
 
-	allocatable, available := aggregateResources(nodes, pods)
+	allocatable, available := AggregateResources(nodes, pods)
 	clusterStatus.Resources = fedcorev1a1.Resources{
 		SchedulableNodes: &schedulableNodes,
 		Allocatable:      allocatable,
