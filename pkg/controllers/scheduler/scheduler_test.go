@@ -17,6 +17,7 @@ limitations under the License.
 package scheduler
 
 import (
+	"context"
 	"testing"
 
 	"github.com/onsi/gomega"
@@ -318,7 +319,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 			err = unstructured.SetNestedMap(obj.Object, templateObjectMetaUns, common.TemplatePath...)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 
-			su, err := scheduler.schedulingUnitForFedObject(obj, test.policy)
+			su, err := scheduler.schedulingUnitForFedObject(context.Background(), obj, test.policy)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 
 			// override fields we don't want to test
@@ -403,7 +404,7 @@ func TestSchedulingMode(t *testing.T) {
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 			err = unstructured.SetNestedMap(obj.Object, templateObjectMetaUns, common.TemplatePath...)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
-			su, err := scheduler.schedulingUnitForFedObject(obj, test.policy)
+			su, err := scheduler.schedulingUnitForFedObject(context.Background(), obj, test.policy)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 			g.Expect(su.SchedulingMode).To(gomega.Equal(test.expectedResult))
 		})

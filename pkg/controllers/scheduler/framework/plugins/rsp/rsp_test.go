@@ -168,7 +168,7 @@ func TestAvailableToPercentage(t *testing.T) {
 	}
 	makeArgs := func(clusters ...*fedcorev1a1.FederatedCluster) args {
 		return args{
-			clusterAvailables: QueryAvailable(clusters),
+			clusterAvailables: QueryAvailable(clusters, nil),
 			weightLimit: func() map[string]int64 {
 				weightLimit, _ := CalcWeightLimit(clusters, 1.0)
 				return weightLimit
