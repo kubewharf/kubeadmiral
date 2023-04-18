@@ -389,7 +389,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 			}
 		}
 
-		profile, err := s.createFramework(fedObject, schedulingProfile, s.buildFrameworkHandle())
+		framework, err := s.createFramework(schedulingProfile, s.buildFrameworkHandle())
 		if err != nil {
 			keyedLogger.Error(err, "Failed to construct scheduling profile")
 			s.eventRecorder.Eventf(
@@ -402,7 +402,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 
 			return worker.StatusError
 		}
-		result, err = s.algorithm.Schedule(context.TODO(), profile, *schedulingUnit)
+		result, err = s.algorithm.Schedule(context.TODO(), framework, *schedulingUnit)
 		if err != nil {
 			keyedLogger.Error(err, "Failed to compute scheduling result")
 			s.eventRecorder.Eventf(

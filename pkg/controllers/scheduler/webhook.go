@@ -113,16 +113,16 @@ func makeTransport(config *fedcorev1a1.SchedulerPluginWebhookConfigurationSpec) 
 	return utilnet.SetTransportDefaults(&http.Transport{TLSClientConfig: tlsConfig}), nil
 }
 
-func (s *Scheduler) webhookPluginRegistry() runtime.Registry {
+func (s *Scheduler) webhookPluginRegistry() (runtime.Registry, error) {
 	registry := runtime.Registry{}
 
+	var err error
 	s.webhookPlugins.Range(func(name, plugin any) bool {
-		_ = registry.Register(name.(string), func(_ framework.Handle) (framework.Plugin, error) {
+		err = registry.Register(name.(string), func(_ framework.Handle) (framework.Plugin, error) {
 			return plugin.(framework.Plugin), nil
 		})
-
-		return true
+		return err == nil
 	})
 
-	return registry
+	return registry, err
 }
