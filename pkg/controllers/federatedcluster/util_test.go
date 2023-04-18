@@ -262,11 +262,19 @@ func Test_aggregateResources(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			allocatable, available := AggregateResources(tc.nodes, tc.pods)
 			if len(allocatable) != len(tc.expectedAllocatable) {
-				t.Fatalf("expected allocatable %s differs from actual allocatable %s", spew.Sdump(tc.expectedAllocatable), spew.Sdump(allocatable))
+				t.Fatalf(
+					"expected allocatable %s differs from actual allocatable %s",
+					spew.Sdump(tc.expectedAllocatable),
+					spew.Sdump(allocatable),
+				)
 			}
 			for name, actualQuantity := range allocatable {
 				if expectedQuantity, ok := tc.expectedAllocatable[name]; !ok || !actualQuantity.Equal(expectedQuantity) {
-					t.Fatalf("expected allocatable %s differs from actual allocatable %s", spew.Sdump(tc.expectedAllocatable), spew.Sdump(allocatable))
+					t.Fatalf(
+						"expected allocatable %s differs from actual allocatable %s",
+						spew.Sdump(tc.expectedAllocatable),
+						spew.Sdump(allocatable),
+					)
 				}
 			}
 
@@ -275,7 +283,11 @@ func Test_aggregateResources(t *testing.T) {
 			}
 			for name, actualQuantity := range available {
 				if expectedQuantity, ok := tc.expectedAvailable[name]; !ok || !actualQuantity.Equal(expectedQuantity) {
-					t.Fatalf("expected available %s differs from actual available %s", spew.Sdump(tc.expectedAvailable), spew.Sdump(available))
+					t.Fatalf(
+						"expected available %s differs from actual available %s",
+						spew.Sdump(tc.expectedAvailable),
+						spew.Sdump(available),
+					)
 				}
 			}
 		})

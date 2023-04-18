@@ -83,6 +83,9 @@ func (s *Scheduler) schedulingUnitForFedObject(
 	selectorPath := s.typeConfig.Spec.PathDefinition.LabelSelector
 	if selectorPath != "" {
 		currentUsage, err = s.getPodUsage(ctx, fedObject, selectorPath)
+		if err != nil {
+			return nil, fmt.Errorf("get pod resource usage: %w", err)
+		}
 	}
 
 	schedulingUnit := &framework.SchedulingUnit{
@@ -173,7 +176,11 @@ func (s *Scheduler) schedulingUnitForFedObject(
 	return schedulingUnit, nil
 }
 
-func (s *Scheduler) getPodUsage(ctx context.Context, fedObject *unstructured.Unstructured, selectorPath string) (map[string]framework.Resource, error) {
+func (s *Scheduler) getPodUsage(
+	ctx context.Context,
+	fedObject *unstructured.Unstructured,
+	selectorPath string,
+) (map[string]framework.Resource, error) {
 	clusters, err := s.clusterLister.List(labels.Everything())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get clusters from store: %w", err)
@@ -201,7 +208,12 @@ func (s *Scheduler) getPodUsage(ctx context.Context, fedObject *unstructured.Uns
 	return currentUsage, nil
 }
 
-func (s *Scheduler) getClusterPodUsage(ctx context.Context, cluster *fedcorev1a1.FederatedCluster, fedObject *unstructured.Unstructured, selector *metav1.LabelSelector) (res framework.Resource, err error) {
+func (s *Scheduler) getClusterPodUsage(
+	ctx context.Context,
+	cluster *fedcorev1a1.FederatedCluster,
+	fedObject *unstructured.Unstructured,
+	selector *metav1.LabelSelector,
+) (res framework.Resource, err error) {
 	client, exists, err := s.federatedClient.KubeClientsetForCluster(cluster.Name)
 	if err != nil {
 		return res, fmt.Errorf("get clientset: %w", err)
