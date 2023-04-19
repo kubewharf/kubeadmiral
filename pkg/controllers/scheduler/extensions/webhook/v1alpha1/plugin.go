@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -93,7 +94,7 @@ func (p *WebhookPlugin) doRequest(
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("User-Agent", "kubeadmiral-scheduler")
 
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(ctx).WithValues("url", url)
 	logger.V(4).Info("Sending request to webhook")
 	start := time.Now()
 
@@ -104,11 +105,21 @@ func (p *WebhookPlugin) doRequest(
 	}
 	defer httpResp.Body.Close()
 
+	if httpResp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(httpResp.Body)
+		if err != nil {
+			logger.Error(err, "Received non-200 response from webhook and failed to read body", "status", httpResp.StatusCode)
+			return fmt.Errorf("failed to read response body: %w", err)
+		}
+		logger.Error(nil, "Received non-200 response from webhook", "status", httpResp.StatusCode, "body", string(body))
+		return fmt.Errorf("unexpected status code: %d, body: %s", httpResp.StatusCode, string(body))
+	}
+
 	err = json.NewDecoder(httpResp.Body).Decode(response)
 	if err != nil {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
-	logger.V(6).WithValues("response", response, "duration", time.Since(start)).Info("Webhook response received")
+	logger.V(4).WithValues("duration", time.Since(start)).Info("Webhook response received")
 	return nil
 }
 
