@@ -160,9 +160,12 @@ linters-settings:
       - pkg: github.com/kubewharf/kubeadmiral/pkg/apis/schedulerwebhook/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
         # schedwebhookv1a1
         alias: schedwebhook${s1}${s2}${s3}
-      - pkg: github.com/kubewharf/kubeadmiral/pkg/apis/(?P<group>[\w\d]+)/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/apis/core/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
         # fedcorev1a1
-        alias: fed${group}${s1}${s2}${s3}
+        alias: fedcore${s1}${s2}${s3}
+      - pkg: github.com/kubewharf/kubeadmiral/pkg/apis/types/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
+        # fedtypesv1a1
+        alias: fedtypes${s1}${s2}${s3}
 
       - pkg: k8s.io/client-go/kubernetes/typed/(?P<group>[\w\d]+)/(?P<s1>v\d+)((?P<s2>\w)\w+(?P<s3>\d+))?
         alias: ${group}${s1}${s2}${s3}client
