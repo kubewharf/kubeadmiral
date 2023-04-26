@@ -22,10 +22,10 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 )
 
 const (
-	MaxClusterName      = "MaxCluster"
 	MaxClusterErrReason = "max cluster is less than 0"
 )
 
@@ -36,7 +36,7 @@ func NewMaxCluster(_ framework.Handle) (framework.Plugin, error) {
 }
 
 func (pl *MaxCluster) Name() string {
-	return MaxClusterName
+	return names.MaxCluster
 }
 
 func (pl *MaxCluster) SelectClusters(

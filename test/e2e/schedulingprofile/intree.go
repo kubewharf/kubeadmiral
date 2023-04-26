@@ -52,8 +52,8 @@ var _ = ginkgo.Describe("Scheduling Profile", func() {
 		clusters = util.FilterOutE2ETestObjects(clusters)
 
 		gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
-		if len(clusters) == 0 {
-			ginkgo.Fail("Test requires at least one federated cluster")
+		if len(clusters) <= 1 {
+			ginkgo.Fail("Test requires at least two federated clusters")
 		}
 
 		ginkgo.By("Creating scheduling profile")
@@ -80,42 +80,25 @@ var _ = ginkgo.Describe("Scheduling Profile", func() {
 		gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 
 		ginkgo.By("Verifying scheduling result")
-		if enabled {
-			gomega.Eventually(func(g gomega.Gomega, ctx context.Context) {
-				federatedConfigMap, err := f.HostDynamicClient().
-					Resource(resources.FederatedConfigMapGVR).
-					Namespace(f.TestNamespace().Name).
-					Get(ctx, configMap.Name, metav1.GetOptions{})
-				gomega.Expect(err).To(gomega.Or(gomega.BeNil(), gomega.Satisfy(apierrors.IsNotFound)))
-				g.Expect(err).ToNot(gomega.HaveOccurred())
+		gomega.Eventually(func(g gomega.Gomega, ctx context.Context) {
+			federatedConfigMap, err := f.HostDynamicClient().
+				Resource(resources.FederatedConfigMapGVR).
+				Namespace(f.TestNamespace().Name).
+				Get(ctx, configMap.Name, metav1.GetOptions{})
+			gomega.Expect(err).To(gomega.Or(gomega.BeNil(), gomega.Satisfy(apierrors.IsNotFound)))
+			g.Expect(err).ToNot(gomega.HaveOccurred())
 
-				placementObj, err := controllerutil.UnmarshalGenericPlacements(federatedConfigMap)
-				gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
+			placementObj, err := controllerutil.UnmarshalGenericPlacements(federatedConfigMap)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 
-				placement := placementObj.Spec.GetPlacementOrNil(scheduler.PrefixedGlobalSchedulerName)
-				g.Expect(placement).ToNot(gomega.BeNil())
+			placement := placementObj.Spec.GetPlacementOrNil(scheduler.PrefixedGlobalSchedulerName)
+			g.Expect(placement).ToNot(gomega.BeNil())
 
+			if enabled {
 				// only the first cluster should be selected since placement plugin was enabled
 				g.Expect(placement.Clusters).To(gomega.HaveLen(1))
 				g.Expect(placement.Clusters[0].Name).To(gomega.Equal(clusters[0].Name))
-
-				ginkgo.GinkgoLogr.Info("Obtained scheduling result", "result", placement.Clusters)
-			}).WithTimeout(scheduleTimeout).WithContext(ctx).Should(gomega.Succeed(), "Timed out waiting for scheduling")
-		} else {
-			gomega.Eventually(func(g gomega.Gomega, ctx context.Context) {
-				federatedConfigMap, err := f.HostDynamicClient().
-					Resource(resources.FederatedConfigMapGVR).
-					Namespace(f.TestNamespace().Name).
-					Get(ctx, configMap.Name, metav1.GetOptions{})
-				gomega.Expect(err).To(gomega.Or(gomega.BeNil(), gomega.Satisfy(apierrors.IsNotFound)))
-				g.Expect(err).ToNot(gomega.HaveOccurred())
-
-				placementObj, err := controllerutil.UnmarshalGenericPlacements(federatedConfigMap)
-				gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
-
-				placement := placementObj.Spec.GetPlacementOrNil(scheduler.PrefixedGlobalSchedulerName)
-				g.Expect(placement).ToNot(gomega.BeNil())
-
+			} else {
 				// all clusters should be selected since placement plugin was disabled
 				g.Expect(placement.Clusters).To(gomega.HaveLen(len(clusters)))
 				clusterSet := sets.New[string]()
@@ -125,10 +108,10 @@ var _ = ginkgo.Describe("Scheduling Profile", func() {
 				for _, cluster := range placement.Clusters {
 					gomega.Expect(clusterSet.Has(cluster.Name)).To(gomega.BeTrue())
 				}
+			}
 
-				ginkgo.GinkgoLogr.Info("Obtained scheduling result", "result", placement.Clusters)
-			}).WithTimeout(scheduleTimeout).WithContext(ctx).Should(gomega.Succeed(), "Timed out waiting for scheduling")
-		}
+			ginkgo.GinkgoLogr.Info("Obtained scheduling result", "result", placement.Clusters)
+		}).WithTimeout(scheduleTimeout).WithContext(ctx).Should(gomega.Succeed(), "Timed out waiting for scheduling")
 	}
 
 	ginkgo.It("disable no plugins", func(ctx ginkgo.SpecContext) {

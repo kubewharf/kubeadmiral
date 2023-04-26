@@ -27,13 +27,11 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clusterselector"
 )
 
 const (
-	// ClusterAffinityName is the name of the plugin used in the plugin registry and configurations.
-	ClusterAffinityName = "ClusterAffinity"
-
 	// ErrReason for node affinity/selector not matching.
 	ErrReason = "cluster(s) didn't match cluster selector"
 )
@@ -45,7 +43,7 @@ func NewClusterAffinity(_ framework.Handle) (framework.Plugin, error) {
 }
 
 func (pl *ClusterAffinity) Name() string {
-	return ClusterAffinityName
+	return names.ClusterAffinity
 }
 
 // Filter invoked at the filter extension point.

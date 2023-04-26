@@ -20,12 +20,14 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	fedcore "github.com/kubewharf/kubeadmiral/pkg/apis/core"
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/apiresources"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusteraffinity"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusterresources"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/maxcluster"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/placement"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/rsp"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/tainttoleration"
@@ -34,46 +36,19 @@ import (
 
 // inTreeRegistry should contain all known in-tree plugins
 var inTreeRegistry = runtime.Registry{
-	apiresources.APIResourcesName:                           apiresources.NewAPIResources,
-	clusteraffinity.ClusterAffinityName:                     clusteraffinity.NewClusterAffinity,
-	clusterresources.ClusterResourcesFitName:                clusterresources.NewClusterResourcesFit,
-	placement.PlacementFilterName:                           placement.NewPlacementFilter,
-	tainttoleration.TaintTolerationName:                     tainttoleration.NewTaintToleration,
-	clusterresources.ClusterResourcesBalancedAllocationName: clusterresources.NewClusterResourcesBalancedAllocation,
-	clusterresources.ClusterResourcesLeastAllocatedName:     clusterresources.NewClusterResourcesLeastAllocated,
-	clusterresources.ClusterResourcesMostAllocatedName:      clusterresources.NewClusterResourcesMostAllocated,
-	maxcluster.MaxClusterName:                               maxcluster.NewMaxCluster,
-	rsp.ClusterCapacityWeightName:                           rsp.NewClusterCapacityWeight,
+	names.APIResources:                       apiresources.NewAPIResources,
+	names.ClusterAffinity:                    clusteraffinity.NewClusterAffinity,
+	names.ClusterResourcesFit:                clusterresources.NewClusterResourcesFit,
+	names.PlacementFilter:                    placement.NewPlacementFilter,
+	names.TaintToleration:                    tainttoleration.NewTaintToleration,
+	names.ClusterResourcesBalancedAllocation: clusterresources.NewClusterResourcesBalancedAllocation,
+	names.ClusterResourcesLeastAllocated:     clusterresources.NewClusterResourcesLeastAllocated,
+	names.ClusterResourcesMostAllocated:      clusterresources.NewClusterResourcesMostAllocated,
+	names.MaxCluster:                         maxcluster.NewMaxCluster,
+	names.ClusterCapacityWeight:              rsp.NewClusterCapacityWeight,
 }
 
-func getDefaultEnabledPlugins() *runtime.EnabledPlugins {
-	filterPlugins := []string{
-		apiresources.APIResourcesName,
-		tainttoleration.TaintTolerationName,
-		clusterresources.ClusterResourcesFitName,
-		placement.PlacementFilterName,
-		clusteraffinity.ClusterAffinityName,
-	}
-
-	scorePlugins := []string{
-		tainttoleration.TaintTolerationName,
-		clusterresources.ClusterResourcesBalancedAllocationName,
-		clusterresources.ClusterResourcesLeastAllocatedName,
-		clusteraffinity.ClusterAffinityName,
-	}
-
-	selectPlugins := []string{maxcluster.MaxClusterName}
-	replicasPlugins := []string{rsp.ClusterCapacityWeightName}
-
-	return &runtime.EnabledPlugins{
-		FilterPlugins:   filterPlugins,
-		ScorePlugins:    scorePlugins,
-		SelectPlugins:   selectPlugins,
-		ReplicasPlugins: replicasPlugins,
-	}
-}
-
-func applyProfile(base *runtime.EnabledPlugins, profile *fedcorev1a1.SchedulingProfile) {
+func applyProfile(base *fedcore.EnabledPlugins, profile *fedcorev1a1.SchedulingProfile) {
 	if profile.Spec.Plugins == nil {
 		return
 	}
@@ -110,7 +85,7 @@ func (s *Scheduler) createFramework(
 	profile *fedcorev1a1.SchedulingProfile,
 	handle framework.Handle,
 ) (framework.Framework, error) {
-	enabledPlugins := getDefaultEnabledPlugins()
+	enabledPlugins := fedcorev1a1.GetDefaultEnabledPlugins()
 	if profile != nil {
 		applyProfile(enabledPlugins, profile)
 	}

@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/pointer"
 
+	fedcore "github.com/kubewharf/kubeadmiral/pkg/apis/core"
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/runtime"
@@ -88,7 +89,7 @@ func getFramework() framework.Framework {
 	DefaultRegistry := runtime.Registry{
 		"NaiveReplicas": newNaiveReplicas,
 	}
-	f, _ := runtime.NewFramework(DefaultRegistry, nil, &runtime.EnabledPlugins{ReplicasPlugins: []string{"NaiveReplicas"}})
+	f, _ := runtime.NewFramework(DefaultRegistry, nil, &fedcore.EnabledPlugins{ReplicasPlugins: []string{"NaiveReplicas"}})
 	return f
 }
 
@@ -202,8 +203,8 @@ func TestSchedulingWithStickyCluster(t *testing.T) {
 			t.Errorf("unexpected error when scheduling: %v", err)
 		}
 		expectedResult := map[string]*int64{
-			"cluster1": pointer.Int64Ptr(1),
-			"cluster2": pointer.Int64Ptr(1),
+			"cluster1": pointer.Int64(1),
+			"cluster2": pointer.Int64(1),
 		}
 		if !reflect.DeepEqual(result.SuggestedClusters, expectedResult) {
 			t.Errorf("expected stickycluster to schedule for the first time")
@@ -212,11 +213,11 @@ func TestSchedulingWithStickyCluster(t *testing.T) {
 
 	t.Run("should not reschedule after first time", func(t *testing.T) {
 		currentReplicas := map[string]*int64{
-			"cluster1": pointer.Int64Ptr(60),
+			"cluster1": pointer.Int64(60),
 		}
 		schedulingUnit := &framework.SchedulingUnit{
 			StickyCluster:   true,
-			DesiredReplicas: pointer.Int64Ptr(10),
+			DesiredReplicas: pointer.Int64(10),
 			SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
 			CurrentClusters: currentReplicas,
 		}
@@ -266,7 +267,7 @@ func TestSchedulingWithJoinedClusters(t *testing.T) {
 
 	schedulingUnit := &framework.SchedulingUnit{
 		StickyCluster:   false,
-		DesiredReplicas: pointer.Int64Ptr(10),
+		DesiredReplicas: pointer.Int64(10),
 		SchedulingMode:  fedcorev1a1.SchedulingModeDuplicate,
 	}
 	result, err := scheduler.Schedule(context.TODO(), getFramework(), *schedulingUnit)

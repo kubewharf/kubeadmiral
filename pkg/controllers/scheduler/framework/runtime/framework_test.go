@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	fedcore "github.com/kubewharf/kubeadmiral/pkg/apis/core"
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
@@ -139,7 +140,7 @@ func TestRunFilterPlugins(t *testing.T) {
 	tests := []struct {
 		name           string
 		plugins        map[string]PluginFactory
-		enabledPlugins *EnabledPlugins
+		enabledPlugins *fedcore.EnabledPlugins
 		expectedResult *framework.Result
 	}{
 		{
@@ -147,7 +148,7 @@ func TestRunFilterPlugins(t *testing.T) {
 			map[string]PluginFactory{
 				"a": getNaiveFilterPluginFactory(true),
 			},
-			&EnabledPlugins{FilterPlugins: []string{"a"}},
+			&fedcore.EnabledPlugins{FilterPlugins: []string{"a"}},
 			framework.NewResult(framework.Success),
 		},
 		{
@@ -155,7 +156,7 @@ func TestRunFilterPlugins(t *testing.T) {
 			map[string]PluginFactory{
 				"a": getNaiveFilterPluginFactory(false),
 			},
-			&EnabledPlugins{FilterPlugins: []string{"a"}},
+			&fedcore.EnabledPlugins{FilterPlugins: []string{"a"}},
 			framework.NewResult(framework.Error),
 		},
 		{
@@ -165,7 +166,7 @@ func TestRunFilterPlugins(t *testing.T) {
 				"b": getNaiveFilterPluginFactory(true),
 				"c": getNaiveFilterPluginFactory(true),
 			},
-			&EnabledPlugins{FilterPlugins: []string{"a", "b", "c"}},
+			&fedcore.EnabledPlugins{FilterPlugins: []string{"a", "b", "c"}},
 			framework.NewResult(framework.Success),
 		},
 		{
@@ -175,7 +176,7 @@ func TestRunFilterPlugins(t *testing.T) {
 				"b": getNaiveFilterPluginFactory(false),
 				"c": getNaiveFilterPluginFactory(true),
 			},
-			&EnabledPlugins{FilterPlugins: []string{"a", "b", "c"}},
+			&fedcore.EnabledPlugins{FilterPlugins: []string{"a", "b", "c"}},
 			framework.NewResult(framework.Error),
 		},
 		{
@@ -185,7 +186,7 @@ func TestRunFilterPlugins(t *testing.T) {
 				"b": getNaiveFilterPluginFactory(false),
 				"c": getNaiveFilterPluginFactory(false),
 			},
-			&EnabledPlugins{FilterPlugins: []string{"a", "b", "c"}},
+			&fedcore.EnabledPlugins{FilterPlugins: []string{"a", "b", "c"}},
 			framework.NewResult(framework.Error),
 		},
 	}
@@ -214,65 +215,72 @@ func TestNewFramework(t *testing.T) {
 	scoreAndSelectPlugin := &fakeScoreAndSelectPlugin{}
 
 	newRegistry := func() Registry {
-		var filterConstructed, scoreConstructed, selectConstructed, replicasConstructed, filterAndScoreConstructed, scoreAndSelectConstructed atomic.Bool
+		var (
+			filterConstructed         atomic.Bool
+			scoreConstructed          atomic.Bool
+			selectConstructed         atomic.Bool
+			replicasConstructed       atomic.Bool
+			filterAndScoreConstructed atomic.Bool
+			scoreAndSelectConstructed atomic.Bool
+		)
 		return Registry{
 			"filter": func(f framework.Handle) (framework.Plugin, error) {
 				if filterConstructed.Load() {
-					t.Errorf("filter plugin constructed more than once")
+					t.Fatalf("filter plugin constructed more than once")
 				}
 				filterConstructed.Store(true)
 				return filterPlugin, nil
 			},
 			"score": func(f framework.Handle) (framework.Plugin, error) {
 				if scoreConstructed.Load() {
-					t.Errorf("score plugin constructed more than once")
+					t.Fatalf("score plugin constructed more than once")
 				}
 				scoreConstructed.Store(true)
 				return scorePlugin, nil
 			},
 			"select": func(f framework.Handle) (framework.Plugin, error) {
 				if selectConstructed.Load() {
-					t.Error("select plugin constructed more than once")
+					t.Fatalf("select plugin constructed more than once")
 				}
 				selectConstructed.Store(true)
 				return selectPlugin, nil
 			},
 			"replicas": func(f framework.Handle) (framework.Plugin, error) {
 				if replicasConstructed.Load() {
-					t.Errorf("replicas constructed more than once")
+					t.Fatalf("replicas constructed more than once")
 				}
 				replicasConstructed.Store(true)
 				return replicasPlugin, nil
 			},
 			"filterAndScore": func(f framework.Handle) (framework.Plugin, error) {
 				if filterAndScoreConstructed.Load() {
-					t.Errorf("filterAndScore constructed more than once")
+					t.Fatalf("filterAndScore constructed more than once")
 				}
 				filterAndScoreConstructed.Store(true)
 				return filterAndScorePlugin, nil
 			},
 			"scoreAndSelect": func(f framework.Handle) (framework.Plugin, error) {
 				if scoreAndSelectConstructed.Load() {
-					t.Errorf("scoreAndSelect constructed more than once")
+					t.Fatalf("scoreAndSelect constructed more than once")
 				}
 				scoreAndSelectConstructed.Store(true)
 				return scoreAndSelectPlugin, nil
 			},
 			"notEnabled": func(f framework.Handle) (framework.Plugin, error) {
-				t.Errorf("plugin not enabled should not be constructed")
+				t.Fatalf("plugin not enabled should not be constructed")
 				return nil, nil
 			},
 		}
 	}
 	tests := []struct {
 		name           string
-		enabledPlugins EnabledPlugins
+		enabledPlugins fedcore.EnabledPlugins
 		expected       *frameworkImpl
 		shouldError    bool
 	}{
 		{
 			"enabled plugins are respected",
-			EnabledPlugins{
+			fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"filter"},
 				ScorePlugins:    []string{"score"},
 				SelectPlugins:   []string{"scoreAndSelect"},
@@ -288,7 +296,7 @@ func TestNewFramework(t *testing.T) {
 		},
 		{
 			"enabled plugins are respected 2",
-			EnabledPlugins{
+			fedcore.EnabledPlugins{
 				FilterPlugins: []string{"filter", "filterAndScore"},
 				ScorePlugins:  []string{"score", "scoreAndSelect"},
 				SelectPlugins: []string{"scoreAndSelect", "select"},
@@ -302,7 +310,7 @@ func TestNewFramework(t *testing.T) {
 		},
 		{
 			"repeated plugins returns error",
-			EnabledPlugins{
+			fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"filter"},
 				ScorePlugins:    []string{"score", "score"},
 				SelectPlugins:   []string{"scoreAndSelect"},
@@ -313,7 +321,7 @@ func TestNewFramework(t *testing.T) {
 		},
 		{
 			"incorrect type returns error",
-			EnabledPlugins{
+			fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"replicas"},
 				ScorePlugins:    []string{"score", "scoreAndSelect"},
 				SelectPlugins:   []string{"scoreAndSelect", "select"},
@@ -324,7 +332,7 @@ func TestNewFramework(t *testing.T) {
 		},
 		{
 			"plugins not found in registry returns error",
-			EnabledPlugins{
+			fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"filter"},
 				ScorePlugins:    []string{"score", "scoreAndSelect"},
 				SelectPlugins:   []string{"scoreAndSelect", "select", "notexists"},

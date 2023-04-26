@@ -28,51 +28,27 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 
+	fedcore "github.com/kubewharf/kubeadmiral/pkg/apis/core"
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
 
-type EnabledPlugins struct {
-	FilterPlugins   []string
-	ScorePlugins    []string
-	SelectPlugins   []string
-	ReplicasPlugins []string
-}
-
-func (ep EnabledPlugins) isPluginEnabled(pluginName string) bool {
-	if sets.New(ep.FilterPlugins...).Has(pluginName) {
-		return true
-	}
-	if sets.New(ep.ScorePlugins...).Has(pluginName) {
-		return true
-	}
-	if sets.New(ep.SelectPlugins...).Has(pluginName) {
-		return true
-	}
-	if sets.New(ep.ReplicasPlugins...).Has(pluginName) {
-		return true
-	}
-
-	return false
-}
-
 type frameworkImpl struct {
-	scorePluginsWeightMap map[string]int
-	filterPlugins         []framework.FilterPlugin
-	scorePlugins          []framework.ScorePlugin
-	selectPlugins         []framework.SelectPlugin
-	replicasPlugins       []framework.ReplicasPlugin
+	filterPlugins   []framework.FilterPlugin
+	scorePlugins    []framework.ScorePlugin
+	selectPlugins   []framework.SelectPlugin
+	replicasPlugins []framework.ReplicasPlugin
 }
 
 var _ framework.Framework = &frameworkImpl{}
 
-func NewFramework(registry Registry, handle framework.Handle, enabledPlugins *EnabledPlugins) (framework.Framework, error) {
+func NewFramework(registry Registry, handle framework.Handle, enabledPlugins *fedcore.EnabledPlugins) (framework.Framework, error) {
 	fwk := &frameworkImpl{}
 
 	pluginsMap := make(map[string]framework.Plugin)
 
 	for name, factory := range registry {
-		if !enabledPlugins.isPluginEnabled(name) {
+		if !enabledPlugins.IsPluginEnabled(name) {
 			continue
 		}
 		plugin, err := factory(handle)
@@ -126,7 +102,7 @@ type extensionPoint struct {
 	slicePtr interface{}
 }
 
-func (f *frameworkImpl) getExtensionPoints(enabledPlugins *EnabledPlugins) []extensionPoint {
+func (f *frameworkImpl) getExtensionPoints(enabledPlugins *fedcore.EnabledPlugins) []extensionPoint {
 	return []extensionPoint{
 		{plugins: enabledPlugins.FilterPlugins, slicePtr: &f.filterPlugins},
 		{plugins: enabledPlugins.ScorePlugins, slicePtr: &f.scorePlugins},
@@ -252,7 +228,7 @@ func (f *frameworkImpl) RunReplicasPlugin(
 	if len(f.replicasPlugins) == 0 {
 		return clusterReplicasList, framework.NewResult(
 			framework.Success,
-			fmt.Sprintf("no replicas plugin registered in the framework"),
+			"no replicas plugin registered in the framework",
 		)
 	}
 	for _, plugin := range f.replicasPlugins {

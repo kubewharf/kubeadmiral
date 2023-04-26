@@ -20,12 +20,12 @@ import (
 	"reflect"
 	"testing"
 
+	fedcore "github.com/kubewharf/kubeadmiral/pkg/apis/core"
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/runtime"
 )
 
-func getBase() *runtime.EnabledPlugins {
-	return &runtime.EnabledPlugins{
+func getBase() *fedcore.EnabledPlugins {
+	return &fedcore.EnabledPlugins{
 		FilterPlugins:   []string{"a", "b", "c"},
 		ScorePlugins:    []string{"a", "b", "c"},
 		SelectPlugins:   []string{"a", "b", "c"},
@@ -36,9 +36,9 @@ func getBase() *runtime.EnabledPlugins {
 func TestApplyProfile(t *testing.T) {
 	tests := []struct {
 		name           string
-		base           *runtime.EnabledPlugins
+		base           *fedcore.EnabledPlugins
 		profile        *fedcorev1a1.SchedulingProfile
-		expectedResult *runtime.EnabledPlugins
+		expectedResult *fedcore.EnabledPlugins
 	}{
 		{
 			name: "enable filter plugins",
@@ -59,7 +59,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c", "d", "e"},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{"a", "b", "c"},
@@ -85,7 +85,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"b"},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{"a", "b", "c"},
@@ -108,7 +108,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{"a", "b", "c"},
@@ -142,7 +142,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"b", "y", "z"},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{"a", "b", "c"},
@@ -173,7 +173,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"y", "z"},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{"a", "b", "c"},
@@ -199,7 +199,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{"a", "b", "c", "d", "e"},
 				SelectPlugins:   []string{"a", "b", "c"},
@@ -225,7 +225,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{"b"},
 				SelectPlugins:   []string{"a", "b", "c"},
@@ -248,7 +248,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{},
 				SelectPlugins:   []string{"a", "b", "c"},
@@ -282,7 +282,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{"b", "y", "z"},
 				SelectPlugins:   []string{"a", "b", "c"},
@@ -313,7 +313,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{"y", "z"},
 				SelectPlugins:   []string{"a", "b", "c"},
@@ -339,7 +339,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{"a", "b", "c", "d", "e"},
@@ -365,7 +365,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{"b"},
@@ -388,7 +388,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{},
@@ -422,7 +422,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{"b", "y", "z"},
@@ -453,7 +453,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{"y", "z"},
@@ -502,7 +502,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"h", "i", "j"},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{"b", "c", "y", "z"},
@@ -543,7 +543,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{"z"},
 				SelectPlugins:   []string{"a", "b"},
@@ -585,7 +585,7 @@ func TestApplyProfile(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c", "m"},
 				ScorePlugins:    []string{"a", "b", "z"},
 				SelectPlugins:   []string{"a", "b"},
@@ -596,7 +596,7 @@ func TestApplyProfile(t *testing.T) {
 			name:    "empty profile",
 			base:    getBase(),
 			profile: &fedcorev1a1.SchedulingProfile{},
-			expectedResult: &runtime.EnabledPlugins{
+			expectedResult: &fedcore.EnabledPlugins{
 				FilterPlugins:   []string{"a", "b", "c"},
 				ScorePlugins:    []string{"a", "b", "c"},
 				SelectPlugins:   []string{"a", "b", "c"},
