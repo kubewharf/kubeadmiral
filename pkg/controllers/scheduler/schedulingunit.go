@@ -35,12 +35,11 @@ import (
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
 
-func (s *Scheduler) schedulingUnitForFedObject(
+func schedulingUnitForFedObject(
+	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	fedObject *unstructured.Unstructured,
 	policy fedcorev1a1.GenericPropagationPolicy,
 ) (*framework.SchedulingUnit, error) {
-	targetType := s.typeConfig.GetTargetType()
-
 	objectMeta, err := getTemplateObjectMeta(fedObject)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving object meta from template: %w", err)
@@ -53,14 +52,14 @@ func (s *Scheduler) schedulingUnitForFedObject(
 	}
 
 	var desiredReplicasOption *int64
-	if schedulingMode == fedcorev1a1.SchedulingModeDivide && s.typeConfig.Spec.PathDefinition.ReplicasSpec == "" {
+	if schedulingMode == fedcorev1a1.SchedulingModeDivide && typeConfig.Spec.PathDefinition.ReplicasSpec == "" {
 		// TODO remove this check in favor of a DivideIfPossible mode
 		schedulingMode = fedcorev1a1.SchedulingModeDuplicate
 	}
 	if schedulingMode == fedcorev1a1.SchedulingModeDivide {
 		value, err := utilunstructured.GetInt64FromPath(
 			fedObject,
-			s.typeConfig.Spec.PathDefinition.ReplicasSpec,
+			typeConfig.Spec.PathDefinition.ReplicasSpec,
 			common.TemplatePath,
 		)
 		if err != nil {
@@ -70,11 +69,12 @@ func (s *Scheduler) schedulingUnitForFedObject(
 		desiredReplicasOption = value
 	}
 
-	currentReplicas, err := getCurrentReplicasFromObject(s.typeConfig, fedObject)
+	currentReplicas, err := getCurrentReplicasFromObject(typeConfig, fedObject)
 	if err != nil {
 		return nil, err
 	}
 
+	targetType := typeConfig.GetTargetType()
 	schedulingUnit := &framework.SchedulingUnit{
 		GroupVersion:    schema.GroupVersion{Group: targetType.Group, Version: targetType.Version},
 		Kind:            targetType.Kind,

@@ -297,15 +297,6 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			g := gomega.NewWithT(t)
 
-			scheduler := Scheduler{
-				typeConfig: &fedcorev1a1.FederatedTypeConfig{
-					Spec: fedcorev1a1.FederatedTypeConfigSpec{
-						PathDefinition: fedcorev1a1.PathDefinition{
-							ReplicasSpec: "spec.replicas",
-						},
-					},
-				},
-			}
 			templateObjectMeta := test.templateObjectMeta
 			if templateObjectMeta == nil {
 				templateObjectMeta = &metav1.ObjectMeta{}
@@ -318,7 +309,14 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 			err = unstructured.SetNestedMap(obj.Object, templateObjectMetaUns, common.TemplatePath...)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 
-			su, err := scheduler.schedulingUnitForFedObject(obj, test.policy)
+			typeConfig := &fedcorev1a1.FederatedTypeConfig{
+				Spec: fedcorev1a1.FederatedTypeConfigSpec{
+					PathDefinition: fedcorev1a1.PathDefinition{
+						ReplicasSpec: "spec.replicas",
+					},
+				},
+			}
+			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 
 			// override fields we don't want to test
@@ -381,20 +379,18 @@ func TestSchedulingMode(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := gomega.NewWithT(t)
-			scheduler := Scheduler{
-				typeConfig: &fedcorev1a1.FederatedTypeConfig{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "<ftc-name>",
+			typeConfig := &fedcorev1a1.FederatedTypeConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "<ftc-name>",
+				},
+				Spec: fedcorev1a1.FederatedTypeConfigSpec{
+					TargetType: fedcorev1a1.APIResource{
+						Group:   test.gvk.Group,
+						Version: test.gvk.Version,
+						Kind:    test.gvk.Kind,
 					},
-					Spec: fedcorev1a1.FederatedTypeConfigSpec{
-						TargetType: fedcorev1a1.APIResource{
-							Group:   test.gvk.Group,
-							Version: test.gvk.Version,
-							Kind:    test.gvk.Kind,
-						},
-						PathDefinition: fedcorev1a1.PathDefinition{
-							ReplicasSpec: test.replicasSpecPath,
-						},
+					PathDefinition: fedcorev1a1.PathDefinition{
+						ReplicasSpec: test.replicasSpecPath,
 					},
 				},
 			}
@@ -403,7 +399,7 @@ func TestSchedulingMode(t *testing.T) {
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 			err = unstructured.SetNestedMap(obj.Object, templateObjectMetaUns, common.TemplatePath...)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
-			su, err := scheduler.schedulingUnitForFedObject(obj, test.policy)
+			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 			g.Expect(su.SchedulingMode).To(gomega.Equal(test.expectedResult))
 		})

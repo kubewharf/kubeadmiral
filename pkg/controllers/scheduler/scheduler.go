@@ -353,7 +353,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 			policyKey.String(),
 		)
 
-		schedulingUnit, err := s.schedulingUnitForFedObject(fedObject, policy)
+		schedulingUnit, err := schedulingUnitForFedObject(s.typeConfig, fedObject, policy)
 		if err != nil {
 			keyedLogger.Error(err, "Failed to get scheduling unit")
 			s.eventRecorder.Eventf(
