@@ -40,9 +40,9 @@ func schedulingUnitForFedObject(
 	fedObject *unstructured.Unstructured,
 	policy fedcorev1a1.GenericPropagationPolicy,
 ) (*framework.SchedulingUnit, error) {
-	objectMeta, err := getTemplateObjectMeta(fedObject)
+	template, err := getTemplate(fedObject)
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving object meta from template: %w", err)
+		return nil, fmt.Errorf("error retrieving template: %w", err)
 	}
 
 	schedulingMode := getSchedulingModeFromPolicy(policy)
@@ -79,10 +79,10 @@ func schedulingUnitForFedObject(
 		GroupVersion:    schema.GroupVersion{Group: targetType.Group, Version: targetType.Version},
 		Kind:            targetType.Kind,
 		Resource:        targetType.Name,
-		Namespace:       objectMeta.GetNamespace(),
-		Name:            objectMeta.GetName(),
-		Labels:          objectMeta.GetLabels(),
-		Annotations:     objectMeta.GetAnnotations(),
+		Namespace:       template.GetNamespace(),
+		Name:            template.GetName(),
+		Labels:          template.GetLabels(),
+		Annotations:     template.GetAnnotations(),
 		DesiredReplicas: desiredReplicasOption,
 		CurrentClusters: currentReplicas,
 		AvoidDisruption: true,
@@ -162,7 +162,7 @@ func schedulingUnitForFedObject(
 	return schedulingUnit, nil
 }
 
-func getTemplateObjectMeta(fedObject *unstructured.Unstructured) (*metav1.ObjectMeta, error) {
+func getTemplate(fedObject *unstructured.Unstructured) (*metav1.PartialObjectMetadata, error) {
 	templateContent, exists, err := unstructured.NestedMap(fedObject.Object, common.TemplatePath...)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving template: %w", err)
@@ -170,12 +170,12 @@ func getTemplateObjectMeta(fedObject *unstructured.Unstructured) (*metav1.Object
 	if !exists {
 		return nil, fmt.Errorf("template not found")
 	}
-	objectMeta := metav1.ObjectMeta{}
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(templateContent, &objectMeta)
+	obj := metav1.PartialObjectMetadata{}
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(templateContent, &obj)
 	if err != nil {
-		return nil, fmt.Errorf("template cannot be converted to unstructured: %w", err)
+		return nil, fmt.Errorf("template cannot be converted from unstructured: %w", err)
 	}
-	return &objectMeta, nil
+	return &obj, nil
 }
 
 func getCurrentReplicasFromObject(
