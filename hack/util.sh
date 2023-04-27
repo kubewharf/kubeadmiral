@@ -17,6 +17,7 @@
 set -o errexit
 set -o nounset
 set -o pipefail
+set -x
 
 function util::create_host_cluster() {
   local HOST_CLUSTER_NAME=${1}
@@ -178,7 +179,7 @@ function util::join_member_cluster() {
     MEMBER_KEY=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-key-data:' | awk '{ print $2 }')
   elif [[ $CLUSTER_PROVIDER == "kwok" ]]; then
     MEMBER_API_ENDPOINT=$(kwokctl get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'server:' | awk '{ print $2 }')
-    MEMBER_CA=$(cat ${KWOK_WORKDIR:-"${HOME}/.kwok/clusters/${MEMBER_CLUSTER_NAME}/pki/ca.crt"} | base64)
+    MEMBER_CA=$(cat ${KWOK_WORKDIR:-"${HOME}/.kwok/clusters/${MEMBER_CLUSTER_NAME}/pki/ca.crt"} | base64 | tr -d '\n')
     MEMBER_CERT=$(kwokctl get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-certificate-data:' | awk '{ print $2 }')
     MEMBER_KEY=$(kwokctl get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-key-data:' | awk '{ print $2 }')
   else
