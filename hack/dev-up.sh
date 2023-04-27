@@ -26,17 +26,30 @@ MEMBER_CLUSTER_NAME=${MEMBER_CLUSTER_NAME:-"kubeadmiral-member"}
 MANIFEST_DIR=${MANIFEST_DIR:-"${REPO_ROOT}/config/crds"}
 CONFIG_DIR=${CONFIG_DIR:-"${REPO_ROOT}/config/sample/host"}
 NUM_MEMBER_CLUSTERS=${NUM_MEMBER_CLUSTERS:-"3"}
+export CLUSTER_PROVIDER=${CLUSTER_PROVIDER:-"kind"}
+
+if [[ $CLUSTER_PROVIDER == "kind" ]]; then
+  kind delete cluster --name=${HOST_CLUSTER_NAME}
+  for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
+    kind delete cluster --name="${MEMBER_CLUSTER_NAME}-${i}"
+  done
+elif [[ $CLUSTER_PROVIDER == "kwok" ]]; then
+  kwokctl delete cluster --name=${HOST_CLUSTER_NAME} || true
+  for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
+      kwokctl delete cluster --name="$MEMBER_CLUSTER_NAME-${i}" || true
+  done
+else
+  echo "Invalid provider, only kwok or kind allowed"
+  exit 1
+fi
 
 mkdir -p "$(dirname "${KUBECONFIG_PATH}")"
-
-kind delete clusters "${HOST_CLUSTER_NAME}" $(seq 1 "${NUM_MEMBER_CLUSTERS}" | xargs -I{} echo "${MEMBER_CLUSTER_NAME}-{}")
 
 # start host cluster
 util::create_host_cluster "${HOST_CLUSTER_NAME}" "${KUBECONFIG_PATH}" "${MANIFEST_DIR}" "${CONFIG_DIR}" &
 
 # start member clusters
 for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
-  echo
   util::create_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${KUBECONFIG_PATH}" &
 done
 
