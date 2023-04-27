@@ -104,7 +104,7 @@ componentPatches:
     value: "namespace,garbagecollector"
 EOF
 
-  kwokctl create cluster --name="${HOST_CLUSTER_NAME}" --config=${KWOK_CONFIG}
+  KUBECONFIG=${KUBECONFIG_PATH} kwokctl create cluster --name="${HOST_CLUSTER_NAME}" --config=${KWOK_CONFIG}
 
   rm "${KWOK_CONFIG}"
 }

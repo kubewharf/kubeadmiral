@@ -20,7 +20,7 @@ set -o pipefail
 REPO_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
 source "${REPO_ROOT}"/hack/util.sh
 
-KUBECONFIG_PATH=${KUBECONFIG_PATH:-"${HOME}/.kube/kubeadmiral/kubeconfig.yaml"}
+KUBECONFIG_DIR=${KUBECONFIG_DIR:-"${HOME}/.kube/kubeadmiral"}
 HOST_CLUSTER_NAME=${HOST_CLUSTER_NAME:-"kubeadmiral-host"}
 MEMBER_CLUSTER_NAME=${MEMBER_CLUSTER_NAME:-"kubeadmiral-member"}
 MANIFEST_DIR=${MANIFEST_DIR:-"${REPO_ROOT}/config/crds"}
@@ -43,19 +43,21 @@ else
   exit 1
 fi
 
-mkdir -p "$(dirname "${KUBECONFIG_PATH}")"
+mkdir -p "$(dirname "${KUBECONFIG_DIR}")"
 
 # start host cluster
-util::create_host_cluster "${HOST_CLUSTER_NAME}" "${KUBECONFIG_PATH}" "${MANIFEST_DIR}" "${CONFIG_DIR}" &
+util::create_host_cluster "${HOST_CLUSTER_NAME}" "${KUBECONFIG_DIR}/${HOST_CLUSTER_NAME}.yaml" "${MANIFEST_DIR}" "${CONFIG_DIR}" &
 
 # start member clusters
 for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
-  util::create_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${KUBECONFIG_PATH}" &
+    util::create_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${KUBECONFIG_DIR}/${MEMBER_CLUSTER_NAME}-${i}.yaml" &
 done
 
 wait
 
 # join the member clusters
 for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
-  util::join_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${HOST_CLUSTER_NAME}" "${KUBECONFIG_PATH}"
+  util::join_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${HOST_CLUSTER_NAME}" "${KUBECONFIG_DIR}/${HOST_CLUSTER_NAME}.yaml" &
 done
+
+wait
