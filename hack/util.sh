@@ -118,6 +118,47 @@ function util::create_member_cluster() {
   elif [[ $CLUSTER_PROVIDER == "kwok" ]]; then
     APISERVER_PORT=$(shuf -i 30000-40000 -n 1)
     KUBECONFIG=${KUBECONFIG_PATH} KWOK_KUBE_VERSION="v1.20.15" kwokctl create cluster --name=${MEMBER_CLUSTER_NAME} --kube-apiserver-port=${APISERVER_PORT} --kube-authorization
+    for i in $(seq 1 10); do
+      kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="kwok-${MEMBER_CLUSTER_NAME}" apply -f - <<EOF
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    node.alpha.kubernetes.io/ttl: "0"
+    kwok.x-k8s.io/node: fake
+  labels:
+    beta.kubernetes.io/arch: amd64
+    beta.kubernetes.io/os: linux
+    kubernetes.io/arch: amd64
+    kubernetes.io/hostname: kwok-node-0
+    kubernetes.io/os: linux
+    kubernetes.io/role: agent
+    node-role.kubernetes.io/agent: ""
+    type: kwok
+  name: kwok-node-${i}
+status:
+  allocatable:
+    cpu: 32
+    memory: 256Gi
+    pods: 110
+  capacity:
+    cpu: 32
+    memory: 256Gi
+    pods: 110
+  nodeInfo:
+    architecture: amd64
+    bootID: ""
+    containerRuntimeVersion: ""
+    kernelVersion: ""
+    kubeProxyVersion: fake
+    kubeletVersion: fake
+    machineID: ""
+    operatingSystem: linux
+    osImage: ""
+    systemUUID: ""
+  phase: Running
+EOF
+    done
   else
     echo "Invalid provider, only kwok or kind allowed"
     exit 1
