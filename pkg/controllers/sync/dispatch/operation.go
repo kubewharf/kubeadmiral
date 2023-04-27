@@ -53,7 +53,7 @@ type operationDispatcherImpl struct {
 	clientAccessor clientAccessorFunc
 
 	resultChan          chan bool
-	operationsInitiated int32
+	operationsInitiated atomic.Int32
 
 	timeout time.Duration
 
@@ -73,7 +73,7 @@ func (d *operationDispatcherImpl) Wait() (bool, error) {
 	ok := true
 	timedOut := false
 	start := time.Now()
-	for i := int32(0); i < atomic.LoadInt32(&d.operationsInitiated); i++ {
+	for i := int32(0); i < d.operationsInitiated.Load(); i++ {
 		now := time.Now()
 		if !now.Before(start.Add(d.timeout)) {
 			timedOut = true
@@ -91,7 +91,7 @@ func (d *operationDispatcherImpl) Wait() (bool, error) {
 		}
 	}
 	if timedOut {
-		return false, errors.Errorf("Failed to finish %d operations in %v", atomic.LoadInt32(&d.operationsInitiated), d.timeout)
+		return false, errors.Errorf("Failed to finish %d operations in %v", d.operationsInitiated.Load(), d.timeout)
 	}
 	return ok, nil
 }
@@ -116,5 +116,5 @@ func (d *operationDispatcherImpl) clusterOperation(clusterName, op string, opFun
 }
 
 func (d *operationDispatcherImpl) incrementOperationsInitiated() {
-	atomic.AddInt32(&d.operationsInitiated, 1)
+	d.operationsInitiated.Add(1)
 }
