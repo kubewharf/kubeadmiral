@@ -171,13 +171,15 @@ function util::join_member_cluster() {
   local HOST_CLUSTER_NAME=${2}
   local KUBECONFIG_PATH=${3}
 
-  local MEMBER_API_ENDPOINT MEMBER_CA MEMBER_CERT MEMBER_KEY
+  local HOST_CONTEXT MEMBER_API_ENDPOINT MEMBER_CA MEMBER_CERT MEMBER_KEY
   if [[ $CLUSTER_PROVIDER == "kind" ]]; then
+    HOST_CONTEXT="kind-${HOST_CLUSTER_NAME}"
     MEMBER_API_ENDPOINT=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'server:' | awk '{ print $2 }')
     MEMBER_CA=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'certificate-authority-data:' | awk '{ print $2 }')
     MEMBER_CERT=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-certificate-data:' | awk '{ print $2 }')
     MEMBER_KEY=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-key-data:' | awk '{ print $2 }')
   elif [[ $CLUSTER_PROVIDER == "kwok" ]]; then
+    HOST_CONTEXT="kwok-${HOST_CLUSTER_NAME}"
     MEMBER_API_ENDPOINT=$(kwokctl get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'server:' | awk '{ print $2 }')
     MEMBER_CA=$(cat ${KWOK_WORKDIR:-"${HOME}/.kwok/clusters/${MEMBER_CLUSTER_NAME}/pki/ca.crt"} | base64 | tr -d '\n')
     MEMBER_CERT=$(kwokctl get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-certificate-data:' | awk '{ print $2 }')
@@ -187,11 +189,19 @@ function util::join_member_cluster() {
     exit 1
   fi
 
-  local FCLUSTER FCLUSTER_SECRET
-  FCLUSTER=$(mktemp)
-  FCLUSTER_SECRET=$(mktemp)
-
-  cat <<EOF > "${FCLUSTER}"
+  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" create -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${MEMBER_CLUSTER_NAME}
+  namespace: kube-admiral-system
+type: Opaque
+data:
+  certificate-authority-data: "${MEMBER_CA}"
+  client-certificate-data: "${MEMBER_CERT}"
+  client-key-data: "${MEMBER_KEY}"
+EOF
+  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" create -f - <<EOF
 apiVersion: core.kubeadmiral.io/v1alpha1
 kind: FederatedCluster
 metadata:
@@ -208,33 +218,4 @@ spec:
   secretRef:
     name: ${MEMBER_CLUSTER_NAME}
 EOF
-
-  cat <<EOF > "${FCLUSTER_SECRET}"
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ${MEMBER_CLUSTER_NAME}
-  namespace: kube-admiral-system
-type: Opaque
-data:
-  certificate-authority-data: "${MEMBER_CA}"
-  client-certificate-data: "${MEMBER_CERT}"
-  client-key-data: "${MEMBER_KEY}"
-EOF
-
-  local HOST_CONTEXT
-  if [[ $CLUSTER_PROVIDER == "kind" ]]; then
-    HOST_CONTEXT="kind-${HOST_CLUSTER_NAME}"
-  elif [[ $CLUSTER_PROVIDER == "kwok" ]]; then
-    HOST_CONTEXT="kwok-${HOST_CLUSTER_NAME}"
-  else
-    echo "Invalid provider, only kwok or kind allowed"
-    exit 1
-  fi
-
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" create -f "${FCLUSTER_SECRET}"
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" create -f "${FCLUSTER}"
-
-  rm "${FCLUSTER}"
-  rm "${FCLUSTER_SECRET}"
 }
