@@ -116,6 +116,8 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 		fedInformerFactory.Core().V1alpha1().FederatedClusters(),
 		common.DefaultFedSystemNamespace,
 		restConfig,
+		opts.MaxPodListers,
+		opts.EnablePodPruning,
 	)
 
 	return &controllercontext.Context{
