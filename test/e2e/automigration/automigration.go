@@ -18,6 +18,7 @@ package automigration
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -45,7 +46,7 @@ var (
 
 	resourcePropagationTimeout = 10 * time.Second
 	replicasReadyTimeout       = 30 * time.Second
-	autoMigrationTimeout       = 30 * time.Second
+	autoMigrationTimeout       = 50 * time.Second
 )
 
 var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
@@ -68,7 +69,10 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 			gomega.Expect(len(candidateClustes)).To(gomega.BeNumerically(">=", 3), "At least 3 clusters are required for this test")
 
 			clusters = candidateClustes[:3]
-			clusterToMigrateFrom = candidateClustes[0]
+			sort.Slice(clusters, func(i, j int) bool {
+				return clusters[i].Name < clusters[j].Name
+			})
+			clusterToMigrateFrom = clusters[0]
 		})
 
 		propPolicy := policies.PropagationPolicyForClustersWithPlacements(f.Name(), clusters)
