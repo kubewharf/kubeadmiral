@@ -46,7 +46,8 @@ const (
 )
 
 var (
-	sampleHttpError    = fmt.Errorf("I'm a teapot")
+	// sample error that http.Client.Do might return
+	errClientSample    = fmt.Errorf("XXX")
 	sampleWebhookError = "rejected: kubeadmiral is too weak"
 )
 
@@ -68,7 +69,7 @@ func doTest[T any](
 	t *testing.T,
 	path string,
 	checkReq func(g gomega.Gomega, req *T),
-	httpErr error,
+	clientErr error,
 	resp any,
 	checkPluginResult func(g gomega.Gomega, plugin *WebhookPlugin),
 ) {
@@ -76,7 +77,7 @@ func doTest[T any](
 	g := gomega.NewWithT(t)
 
 	client := &fakeHTTPClient{
-		err: httpErr,
+		err: clientErr,
 		roundTrip: func(httpReq *http.Request) *http.Response {
 			g.Expect(httpReq.Method).To(gomega.Equal(http.MethodPost))
 			g.Expect(httpReq.Header.Get("Content-Type")).To(gomega.Equal("application/json"))
@@ -115,11 +116,11 @@ func doTest[T any](
 
 func TestFilter(t *testing.T) {
 	testCases := map[string]struct {
-		su       *framework.SchedulingUnit
-		cluster  *fedcorev1a1.FederatedCluster
-		httpErr  error
-		selected bool
-		err      string
+		su        *framework.SchedulingUnit
+		cluster   *fedcorev1a1.FederatedCluster
+		clientErr error
+		selected  bool
+		err       string
 	}{
 		"webhook selects cluster": {
 			su:       getSampleSchedulingUnit(),
@@ -140,9 +141,9 @@ func TestFilter(t *testing.T) {
 			err:      sampleWebhookError,
 		},
 		"http error": {
-			su:      getSampleSchedulingUnit(),
-			cluster: getSampleCluster("test"),
-			httpErr: sampleHttpError,
+			su:        getSampleSchedulingUnit(),
+			cluster:   getSampleCluster("test"),
+			clientErr: errClientSample,
 		},
 	}
 
@@ -155,15 +156,15 @@ func TestFilter(t *testing.T) {
 					g.Expect(req.SchedulingUnit).To(custommatchers.SemanticallyEqual(*ConvertSchedulingUnit(tc.su)))
 					g.Expect(req.Cluster).To(custommatchers.SemanticallyEqual(*tc.cluster))
 				},
-				tc.httpErr,
+				tc.clientErr,
 				schedwebhookv1a1.FilterResponse{
 					Selected: tc.selected,
 					Error:    tc.err,
 				},
 				func(g gomega.Gomega, plugin *WebhookPlugin) {
 					result := plugin.Filter(getPluginContext(), tc.su, tc.cluster)
-					if tc.httpErr != nil {
-						g.Expect(result.Message()).To(gomega.Equal(fmt.Errorf("request failed: %w", tc.httpErr).Error()))
+					if tc.clientErr != nil {
+						g.Expect(result.Message()).To(gomega.Equal(fmt.Errorf("request failed: %w", tc.clientErr).Error()))
 					} else {
 						g.Expect(result.Message()).To(gomega.Equal(tc.err))
 					}
@@ -176,11 +177,11 @@ func TestFilter(t *testing.T) {
 
 func TestScore(t *testing.T) {
 	testCases := map[string]struct {
-		su      *framework.SchedulingUnit
-		cluster *fedcorev1a1.FederatedCluster
-		httpErr error
-		score   int64
-		err     string
+		su        *framework.SchedulingUnit
+		cluster   *fedcorev1a1.FederatedCluster
+		clientErr error
+		score     int64
+		err       string
 	}{
 		"webhook returns score": {
 			su:      getSampleSchedulingUnit(),
@@ -194,9 +195,9 @@ func TestScore(t *testing.T) {
 			err:     sampleWebhookError,
 		},
 		"http error": {
-			su:      getSampleSchedulingUnit(),
-			cluster: getSampleCluster("test"),
-			httpErr: sampleHttpError,
+			su:        getSampleSchedulingUnit(),
+			cluster:   getSampleCluster("test"),
+			clientErr: errClientSample,
 		},
 	}
 
@@ -209,19 +210,19 @@ func TestScore(t *testing.T) {
 					g.Expect(req.SchedulingUnit).To(custommatchers.SemanticallyEqual(*ConvertSchedulingUnit(tc.su)))
 					g.Expect(req.Cluster).To(custommatchers.SemanticallyEqual(*tc.cluster))
 				},
-				tc.httpErr,
+				tc.clientErr,
 				schedwebhookv1a1.ScoreResponse{
 					Score: tc.score,
 					Error: tc.err,
 				},
 				func(g gomega.Gomega, plugin *WebhookPlugin) {
 					score, result := plugin.Score(getPluginContext(), tc.su, tc.cluster)
-					if tc.httpErr != nil {
-						g.Expect(result.Message()).To(gomega.Equal(fmt.Errorf("request failed: %w", tc.httpErr).Error()))
+					if tc.clientErr != nil {
+						g.Expect(result.Message()).To(gomega.Equal(fmt.Errorf("request failed: %w", tc.clientErr).Error()))
 					} else {
 						g.Expect(result.Message()).To(gomega.Equal(tc.err))
 					}
-					g.Expect(result.IsSuccess()).To(gomega.Equal(tc.httpErr == nil && tc.err == ""))
+					g.Expect(result.IsSuccess()).To(gomega.Equal(tc.clientErr == nil && tc.err == ""))
 					g.Expect(score).To(gomega.Equal(tc.score))
 				},
 			)
@@ -245,7 +246,7 @@ func TestSelect(t *testing.T) {
 
 	testCases := map[string]struct {
 		su               *framework.SchedulingUnit
-		httpErr          error
+		clientErr        error
 		expectedClusters []*fedcorev1a1.FederatedCluster
 		err              string
 	}{
@@ -262,7 +263,7 @@ func TestSelect(t *testing.T) {
 		"http error": {
 			su:               getSampleSchedulingUnit(),
 			expectedClusters: nil,
-			httpErr:          sampleHttpError,
+			clientErr:        errClientSample,
 		},
 	}
 
@@ -287,19 +288,19 @@ func TestSelect(t *testing.T) {
 					}
 					g.Expect(req.ClusterScores).To(custommatchers.SemanticallyEqual(expectedClusterScores))
 				},
-				tc.httpErr,
+				tc.clientErr,
 				schedwebhookv1a1.SelectResponse{
 					SelectedClusterNames: selectedClusterNames,
 					Error:                tc.err,
 				},
 				func(g gomega.Gomega, plugin *WebhookPlugin) {
 					selectedClusters, result := plugin.SelectClusters(getPluginContext(), tc.su, clusterScores)
-					if tc.httpErr != nil {
-						g.Expect(result.Message()).To(gomega.Equal(fmt.Errorf("request failed: %w", tc.httpErr).Error()))
+					if tc.clientErr != nil {
+						g.Expect(result.Message()).To(gomega.Equal(fmt.Errorf("request failed: %w", tc.clientErr).Error()))
 					} else {
 						g.Expect(result.Message()).To(gomega.Equal(tc.err))
 					}
-					g.Expect(result.IsSuccess()).To(gomega.Equal(tc.httpErr == nil && tc.err == ""))
+					g.Expect(result.IsSuccess()).To(gomega.Equal(tc.clientErr == nil && tc.err == ""))
 					g.Expect(selectedClusters).To(custommatchers.SemanticallyEqual(tc.expectedClusters))
 				},
 			)
