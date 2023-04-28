@@ -39,12 +39,12 @@ In order to achieve this, KubeAdmiral follows a set of logging conventions descr
 
     1. 0: reserved for errors, warnings and controller lifecycle logs
     2. 1: document "what happened" by describing effectual actions[^1] taken by a controller to reconcile an object (e.g. "Updating object placements")
-    3. 2: document "how it happened" by describing lower-level, non-effectual actions in a reconcile loop (e.g. "Creating scheduling profile", "Computing object placements")
+    3. 2: document "how it happened" by describing non-effectual actions in a reconcile loop (e.g. "Creating scheduling profile", "Computing object placements")
     4. 3: any additional reconciliation logs that do not correspond to an action but still provide useful information
     5. 4: logs for non-controller code such as utility packages
     6. &ge;=5: can be used for debugging purposes, but **MUST** be removed before committing
 
-[^1]: An effectual action is one that results in actual changes to the system. Take the scheduler logs as an example. Simply computing an object's placements is a non-effectual action. The system's state does not change until the placements are actually updated in the apiserver. Updates to apiserver objects such are stereotypical effectual actions.
+[^1]: An effectual action is one that results in actual changes to the system. Take the scheduler logs as an example. Simply computing an object's placements is a non-effectual action. The system's state does not change until the placements are actually updated in the apiserver. Such updates to apiserver objects are stereotypical effectual actions.
 
 8. Log levels **MUST** only be set at the log call site, to prevent unexpected log levels due to addition.
 
