@@ -99,27 +99,32 @@ func (p *WebhookPlugin) doRequest(
 	start := time.Now()
 
 	httpResp, err := p.client.Do(req)
+	logger = logger.WithValues("duration", time.Since(start))
 	if err != nil {
 		logger.Error(err, "Webhook request failed")
 		return fmt.Errorf("request failed: %w", err)
 	}
+	logger = logger.WithValues("status", httpResp.StatusCode)
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(httpResp.Body)
 		if err != nil {
-			logger.Error(err, "Received non-200 response from webhook and failed to read body", "status", httpResp.StatusCode)
+			logger.Error(err, "Received non-200 response from webhook and failed to read body")
 			return fmt.Errorf("failed to read response body: %w", err)
 		}
-		logger.Error(nil, "Received non-200 response from webhook", "status", httpResp.StatusCode, "body", string(body))
+		logger.Error(nil, "Received non-200 response from webhook", "body", string(body))
 		return fmt.Errorf("unexpected status code: %d, body: %s", httpResp.StatusCode, string(body))
 	}
 
 	err = json.NewDecoder(httpResp.Body).Decode(response)
 	if err != nil {
+		logger.Error(err, "Failed to decode response from webhook")
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
-	logger.V(4).WithValues("duration", time.Since(start)).Info("Webhook response received")
+	if logger.V(4).Enabled() {
+		logger.Info("Received response from webhook", "response", response)
+	}
 	return nil
 }
 
