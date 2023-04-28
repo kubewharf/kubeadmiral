@@ -533,6 +533,9 @@ func (s *Scheduler) persistSchedulingResult(
 		metav1.UpdateOptions{},
 	); err != nil {
 		keyedLogger.Error(err, "Failed to update federated object")
+		if apierrors.IsConflict(err) {
+			return worker.StatusConflict
+		}
 		s.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeWarning,
@@ -540,9 +543,6 @@ func (s *Scheduler) persistSchedulingResult(
 			"failed to schedule object: %v",
 			fmt.Errorf("failed to update federated object: %w", err),
 		)
-		if apierrors.IsConflict(err) {
-			return worker.StatusConflict
-		}
 		return worker.StatusError
 	}
 
