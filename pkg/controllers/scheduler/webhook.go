@@ -19,6 +19,7 @@ package scheduler
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
@@ -77,9 +78,14 @@ func (s *Scheduler) cacheWebhookPlugin(config *fedcorev1a1.SchedulerPluginWebhoo
 		)
 		return
 	}
+
+	timeout := config.Spec.HTTPTimeout.Duration
+	if timeout == 0 {
+		timeout = 5 * time.Second
+	}
 	client := &http.Client{
 		Transport: transport,
-		Timeout:   config.Spec.HTTPTimeout.Duration,
+		Timeout:   timeout,
 	}
 
 	var plugin framework.Plugin
