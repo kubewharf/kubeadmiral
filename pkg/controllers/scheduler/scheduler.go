@@ -183,7 +183,7 @@ func NewScheduler(
 		},
 	})
 
-	s.algorithm = core.NewSchedulerAlgorithm(clusterInformer.Informer().GetStore())
+	s.algorithm = core.NewSchedulerAlgorithm()
 
 	return s, nil
 }
@@ -247,10 +247,16 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 
 	// 2. check trigger conditions
 
-	clusters, err := s.clusterLister.List(labels.Everything())
+	allClusters, err := s.clusterLister.List(labels.Everything())
 	if err != nil {
 		keyedLogger.Error(err, "Failed to get clusters from store")
 		return worker.StatusError
+	}
+	clusters := make([]*fedcorev1a1.FederatedCluster, 0)
+	for _, cluster := range allClusters {
+		if util.IsClusterJoined(&cluster.Status) {
+			clusters = append(clusters, cluster)
+		}
 	}
 
 	var policy fedcorev1a1.GenericPropagationPolicy
@@ -402,7 +408,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 
 			return worker.StatusError
 		}
-		result, err = s.algorithm.Schedule(context.TODO(), framework, *schedulingUnit)
+		result, err = s.algorithm.Schedule(context.TODO(), framework, *schedulingUnit, clusters)
 		if err != nil {
 			keyedLogger.Error(err, "Failed to compute scheduling result")
 			s.eventRecorder.Eventf(
