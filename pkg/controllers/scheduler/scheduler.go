@@ -213,8 +213,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 
 func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
 	_ = s.metrics.Rate("scheduler.throughput", 1)
-	key := qualifiedName.String()
-	keyedLogger := s.logger.WithValues("origin", "reconcile", "key", key)
+	keyedLogger := s.logger.WithValues("origin", "reconcile", "object", qualifiedName.String())
 	ctx := klog.NewContext(context.TODO(), keyedLogger)
 	startTime := time.Now()
 
@@ -255,7 +254,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 	}
 
 	keyedLogger = keyedLogger.WithValues("result", result.String())
-	keyedLogger.V(3).Info("Scheduling result obtained")
+	keyedLogger.V(2).Info("Scheduling result obtained")
 
 	auxInfo := &auxiliarySchedulingInformation{
 		enableFollowerScheduling: false,
@@ -422,7 +421,7 @@ func (s *Scheduler) schedule(
 
 	if policy == nil {
 		// deschedule the federated object if there is no policy attached
-		keyedLogger.V(3).Info("No policy specified, scheduling to no clusters")
+		keyedLogger.V(2).Info("No policy specified, scheduling to no clusters")
 		s.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeNormal,
@@ -436,7 +435,7 @@ func (s *Scheduler) schedule(
 	}
 
 	// schedule according to matched policy
-	keyedLogger.V(3).Info("Matched policy found, start scheduling")
+	keyedLogger.V(2).Info("Matched policy found, start scheduling")
 	s.eventRecorder.Eventf(
 		fedObject,
 		corev1.EventTypeNormal,
@@ -472,6 +471,7 @@ func (s *Scheduler) schedule(
 		return nil, &worker.StatusError
 	}
 
+	ctx = klog.NewContext(ctx, keyedLogger)
 	result, err := s.algorithm.Schedule(ctx, framework, *schedulingUnit, clusters)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to compute scheduling result")
