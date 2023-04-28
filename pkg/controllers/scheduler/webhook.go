@@ -40,6 +40,7 @@ var SchedulerSupportedPayloadVersions = sets.New(
 
 func (s *Scheduler) cacheWebhookPlugin(config *fedcorev1a1.SchedulerPluginWebhookConfiguration) {
 	logger := s.logger.WithValues("origin", "webhookEventHandler", "name", config.Name)
+	logger.V(1).Info("Initializing webhook plugin")
 
 	// Find the most preferred payload version that is supported by the scheduler.
 	var payloadVersion string
@@ -95,6 +96,14 @@ func (s *Scheduler) cacheWebhookPlugin(config *fedcorev1a1.SchedulerPluginWebhoo
 		return
 	}
 	s.webhookPlugins.Store(config.Name, plugin)
+	logger.V(1).Info("Webhook plugin registered")
+	s.eventRecorder.Eventf(
+		config,
+		corev1.EventTypeNormal,
+		EventReasonWebhookRegistered,
+		"Webhook plugin %q registered",
+		config.Name,
+	)
 }
 
 func makeTransport(config *fedcorev1a1.SchedulerPluginWebhookConfigurationSpec) (http.RoundTripper, error) {
