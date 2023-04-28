@@ -215,6 +215,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 	_ = s.metrics.Rate("scheduler.throughput", 1)
 	key := qualifiedName.String()
 	keyedLogger := s.logger.WithValues("origin", "reconcile", "key", key)
+	ctx := klog.NewContext(context.TODO(), keyedLogger)
 	startTime := time.Now()
 
 	keyedLogger.V(3).Info("Start reconcile")
@@ -233,24 +234,76 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		return worker.StatusAllOK
 	}
 
-	// 1. check pending controllers
+	fedObject = fedObject.DeepCopy()
+
+	policy, clusters, schedulingProfile, earlyReturnResult := s.prepareToSchedule(ctx, fedObject)
+	if earlyReturnResult != nil {
+		return *earlyReturnResult
+	}
+
+	if policy != nil {
+		keyedLogger = keyedLogger.WithValues("policy", common.NewQualifiedName(policy).String())
+	}
+	if schedulingProfile != nil {
+		keyedLogger = keyedLogger.WithValues("schedulingProfile", common.NewQualifiedName(schedulingProfile).String())
+	}
+
+	ctx = klog.NewContext(ctx, keyedLogger)
+	result, earlyReturnWorkerResult := s.schedule(ctx, fedObject, policy, schedulingProfile, clusters)
+	if earlyReturnWorkerResult != nil {
+		return *earlyReturnWorkerResult
+	}
+
+	keyedLogger = keyedLogger.WithValues("result", result.String())
+	keyedLogger.V(3).Info("Scheduling result obtained")
+
+	auxInfo := &auxiliarySchedulingInformation{
+		enableFollowerScheduling: false,
+		unschedulableThreshold:   nil,
+	}
+	if policy != nil {
+		spec := policy.GetSpec()
+
+		auxInfo.enableFollowerScheduling = !spec.DisableFollowerScheduling
+		keyedLogger = keyedLogger.WithValues("enableFollowerScheduling", auxInfo.enableFollowerScheduling)
+
+		if autoMigration := spec.AutoMigration; autoMigration != nil {
+			auxInfo.unschedulableThreshold = pointer.Duration(autoMigration.Trigger.PodUnschedulableDuration.Duration)
+			keyedLogger = keyedLogger.WithValues("unschedulableThreshold", auxInfo.unschedulableThreshold.String())
+		}
+	}
+
+	ctx = klog.NewContext(ctx, keyedLogger)
+	return s.persistSchedulingResult(ctx, fedObject, *result, auxInfo)
+}
+
+func (s *Scheduler) prepareToSchedule(
+	ctx context.Context,
+	fedObject *unstructured.Unstructured,
+) (
+	fedcorev1a1.GenericPropagationPolicy,
+	[]*fedcorev1a1.FederatedCluster,
+	*fedcorev1a1.SchedulingProfile,
+	*worker.Result,
+) {
+	keyedLogger := klog.FromContext(ctx)
+
+	// check pending controllers
 
 	if ok, err := pendingcontrollers.ControllerDependenciesFulfilled(fedObject, PrefixedGlobalSchedulerName); err != nil {
 		keyedLogger.Error(err, "Failed to check controller dependencies")
-		return worker.StatusError
+		return nil, nil, nil, &worker.StatusError
 	} else if !ok {
 		keyedLogger.V(3).Info("Controller dependencies not fulfilled")
-		return worker.StatusAllOK
+		return nil, nil, nil, &worker.StatusAllOK
 	}
 
-	fedObject = fedObject.DeepCopy() // subsequent steps modify the federated object, we make a deepcopy to not modify the cached object
-
-	// 2. check trigger conditions
+	// check whether to skip scheduling
 
 	allClusters, err := s.clusterLister.List(labels.Everything())
 	if err != nil {
 		keyedLogger.Error(err, "Failed to get clusters from store")
-		return worker.StatusError
+		return nil, nil, nil, &worker.StatusError
 	}
 	clusters := make([]*fedcorev1a1.FederatedCluster, 0)
 	for _, cluster := range allClusters {
@@ -260,10 +313,15 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 	}
 
 	var policy fedcorev1a1.GenericPropagationPolicy
+	var schedulingProfile *fedcorev1a1.SchedulingProfile
+
 	policyKey, hasSchedulingPolicy := MatchedPolicyKey(fedObject, s.typeConfig.GetNamespaced())
 
 	if hasSchedulingPolicy {
+		keyedLogger = keyedLogger.WithValues("policy", policyKey.String())
+
 		if policy, err = s.policyFromStore(policyKey); err != nil {
+			keyedLogger.Error(err, "Failed to find matched policy")
 			if apierrors.IsNotFound(err) {
 				// do not retry since the object will be reenqueued after the policy is subsequently created
 				// emit an event to warn users that the assigned propagation policy does not exist
@@ -274,23 +332,44 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 					"object propagation policy %s not found",
 					policyKey.String(),
 				)
-				return worker.Result{Success: false, RequeueAfter: nil}
+				return nil, nil, nil, &worker.Result{Success: false, RequeueAfter: nil}
 			}
-			keyedLogger.WithValues("policy", policyKey.String()).Error(err, "Failed to find matched policy")
-			return worker.StatusError
+			return nil, nil, nil, &worker.StatusError
+		}
+
+		profileName := policy.GetSpec().SchedulingProfile
+		if len(profileName) > 0 {
+			keyedLogger = keyedLogger.WithValues("profile", profileName)
+			schedulingProfile, err = s.schedulingProfileLister.Get(profileName)
+			if err != nil {
+				keyedLogger.Error(err, "Failed to get scheduling profile")
+				s.eventRecorder.Eventf(
+					fedObject,
+					corev1.EventTypeWarning,
+					EventReasonScheduleFederatedObject,
+					"failed to schedule object: %v",
+					fmt.Errorf("failed to get scheduling profile %s: %w", profileName, err),
+				)
+
+				if apierrors.IsNotFound(err) {
+					return nil, nil, nil, &worker.StatusAllOK
+				}
+
+				return nil, nil, nil, &worker.StatusError
+			}
 		}
 	}
 
 	triggerHash, err := s.computeSchedulingTriggerHash(fedObject, policy, clusters)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to compute scheduling trigger hash")
-		return worker.StatusError
+		return nil, nil, nil, &worker.StatusError
 	}
 
 	triggersChanged, err := annotationutil.AddAnnotation(fedObject, SchedulingTriggerHashAnnotation, triggerHash)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to update scheduling trigger hash")
-		return worker.StatusError
+		return nil, nil, nil, &worker.StatusError
 	}
 
 	shouldSkipScheduling := false
@@ -313,29 +392,35 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 	if shouldSkipScheduling {
 		if updated, err := s.updatePendingControllers(fedObject, false); err != nil {
 			keyedLogger.Error(err, "Failed to update pending controllers")
-			return worker.StatusError
+			return nil, nil, nil, &worker.StatusError
 		} else if updated {
-			if _, err := s.federatedObjectClient.Namespace(qualifiedName.Namespace).Update(
-				context.TODO(),
-				fedObject,
-				metav1.UpdateOptions{},
+			if _, err := s.federatedObjectClient.Namespace(fedObject.GetNamespace()).Update(
+				ctx, fedObject, metav1.UpdateOptions{},
 			); err != nil {
 				keyedLogger.Error(err, "Failed to update pending controllers")
 				if apierrors.IsConflict(err) {
-					return worker.StatusConflict
+					return nil, nil, nil, &worker.StatusConflict
 				}
-				return worker.StatusError
+				return nil, nil, nil, &worker.StatusError
 			}
 		}
 
-		return worker.StatusAllOK
+		return nil, nil, nil, &worker.StatusAllOK
 	}
 
-	// 3. (re)scheduling triggered, start scheduling object
+	return policy, clusters, schedulingProfile, nil
+}
 
-	var result core.ScheduleResult
+func (s *Scheduler) schedule(
+	ctx context.Context,
+	fedObject *unstructured.Unstructured,
+	policy fedcorev1a1.GenericPropagationPolicy,
+	schedulingProfile *fedcorev1a1.SchedulingProfile,
+	clusters []*fedcorev1a1.FederatedCluster,
+) (*core.ScheduleResult, *worker.Result) {
+	keyedLogger := klog.FromContext(ctx)
 
-	if !hasSchedulingPolicy {
+	if policy == nil {
 		// deschedule the federated object if there is no policy attached
 		keyedLogger.V(3).Info("No policy specified, scheduling to no clusters")
 		s.eventRecorder.Eventf(
@@ -345,95 +430,71 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 			"no scheduling policy specified, will schedule object to no clusters",
 		)
 
-		result = core.ScheduleResult{
+		return &core.ScheduleResult{
 			SuggestedClusters: make(map[string]*int64),
-		}
-	} else {
-		// schedule according to matched policy
-		keyedLogger.WithValues("policy", policyKey.String()).V(3).Info("Matched policy found, start scheduling")
+		}, nil
+	}
+
+	// schedule according to matched policy
+	keyedLogger.V(3).Info("Matched policy found, start scheduling")
+	s.eventRecorder.Eventf(
+		fedObject,
+		corev1.EventTypeNormal,
+		EventReasonScheduleFederatedObject,
+		"scheduling policy %s specified, scheduling object",
+		common.NewQualifiedName(policy).String(),
+	)
+
+	schedulingUnit, err := schedulingUnitForFedObject(s.typeConfig, fedObject, policy)
+	if err != nil {
+		keyedLogger.Error(err, "Failed to get scheduling unit")
 		s.eventRecorder.Eventf(
 			fedObject,
-			corev1.EventTypeNormal,
+			corev1.EventTypeWarning,
 			EventReasonScheduleFederatedObject,
-			"scheduling policy %s specified, scheduling object",
-			policyKey.String(),
+			"failed to schedule object: %v",
+			fmt.Errorf("failed to get scheduling unit: %w", err),
+		)
+		return nil, &worker.StatusError
+	}
+
+	framework, err := s.createFramework(schedulingProfile, s.buildFrameworkHandle())
+	if err != nil {
+		keyedLogger.Error(err, "Failed to construct scheduling profile")
+		s.eventRecorder.Eventf(
+			fedObject,
+			corev1.EventTypeWarning,
+			EventReasonScheduleFederatedObject,
+			"failed to schedule object: %v",
+			fmt.Errorf("failed to construct scheduling profile: %w", err),
 		)
 
-		schedulingUnit, err := schedulingUnitForFedObject(s.typeConfig, fedObject, policy)
-		if err != nil {
-			keyedLogger.Error(err, "Failed to get scheduling unit")
-			s.eventRecorder.Eventf(
-				fedObject,
-				corev1.EventTypeWarning,
-				EventReasonScheduleFederatedObject,
-				"failed to schedule object: %v",
-				fmt.Errorf("failed to get scheduling unit: %w", err),
-			)
-			return worker.StatusError
-		}
-
-		var schedulingProfile *fedcorev1a1.SchedulingProfile
-		profileName := policy.GetSpec().SchedulingProfile
-		if len(profileName) > 0 {
-			keyedLogger = keyedLogger.WithValues("profile", profileName)
-			schedulingProfile, err = s.schedulingProfileLister.Get(profileName)
-			if err != nil {
-				keyedLogger.Error(err, "Failed to get scheduling profile")
-				s.eventRecorder.Eventf(
-					fedObject,
-					corev1.EventTypeWarning,
-					EventReasonScheduleFederatedObject,
-					"failed to schedule object: %v",
-					fmt.Errorf("failed to get scheduling profile %s: %w", profileName, err),
-				)
-
-				if apierrors.IsNotFound(err) {
-					return worker.StatusAllOK
-				}
-
-				return worker.StatusError
-			}
-		}
-
-		framework, err := s.createFramework(schedulingProfile, s.buildFrameworkHandle())
-		if err != nil {
-			keyedLogger.Error(err, "Failed to construct scheduling profile")
-			s.eventRecorder.Eventf(
-				fedObject,
-				corev1.EventTypeWarning,
-				EventReasonScheduleFederatedObject,
-				"failed to schedule object: %v",
-				fmt.Errorf("failed to construct scheduling profile: %w", err),
-			)
-
-			return worker.StatusError
-		}
-		result, err = s.algorithm.Schedule(context.TODO(), framework, *schedulingUnit, clusters)
-		if err != nil {
-			keyedLogger.Error(err, "Failed to compute scheduling result")
-			s.eventRecorder.Eventf(
-				fedObject,
-				corev1.EventTypeWarning,
-				EventReasonScheduleFederatedObject,
-				"failed to schedule object: %v",
-				fmt.Errorf("failed to compute scheduling result: %w", err),
-			)
-			return worker.StatusError
-		}
+		return nil, &worker.StatusError
 	}
-	keyedLogger.V(3).Info("Scheduling result obtained", "result", result.String())
 
-	auxInfo := &auxiliarySchedulingInformation{
-		enableFollowerScheduling: false,
-		unschedulableThreshold:   nil,
+	result, err := s.algorithm.Schedule(ctx, framework, *schedulingUnit, clusters)
+	if err != nil {
+		keyedLogger.Error(err, "Failed to compute scheduling result")
+		s.eventRecorder.Eventf(
+			fedObject,
+			corev1.EventTypeWarning,
+			EventReasonScheduleFederatedObject,
+			"failed to schedule object: %v",
+			fmt.Errorf("failed to compute scheduling result: %w", err),
+		)
+		return nil, &worker.StatusError
 	}
-	if policy != nil {
-		spec := policy.GetSpec()
-		auxInfo.enableFollowerScheduling = !spec.DisableFollowerScheduling
-		if autoMigration := spec.AutoMigration; autoMigration != nil {
-			auxInfo.unschedulableThreshold = pointer.Duration(autoMigration.Trigger.PodUnschedulableDuration.Duration)
-		}
-	}
+
+	return &result, nil
+}
+
+func (s *Scheduler) persistSchedulingResult(
+	ctx context.Context,
+	fedObject *unstructured.Unstructured,
+	result core.ScheduleResult,
+	auxInfo *auxiliarySchedulingInformation,
+) worker.Result {
+	keyedLogger := klog.FromContext(ctx)
 
 	schedulingResultsChanged, err := s.applySchedulingResult(fedObject, result, auxInfo)
 	if err != nil {
@@ -465,25 +526,13 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		return worker.StatusAllOK
 	}
 
-	updateLogger := keyedLogger.WithValues(
-		"result", result.String(),
-		"policy", policyKey.String(),
-		"trigger-hash", triggerHash,
-		"enableFollowerScheduling", auxInfo.enableFollowerScheduling,
-	)
-	if auxInfo.unschedulableThreshold != nil {
-		updateLogger = updateLogger.WithValues("unschedulableThreshold", auxInfo.unschedulableThreshold.String())
-	} else {
-		updateLogger = updateLogger.WithValues("unschedulableThreshold", "nil")
-	}
-
-	updateLogger.V(1).Info("Updating federated object")
-	if _, err := s.federatedObjectClient.Namespace(qualifiedName.Namespace).Update(
-		context.TODO(),
+	keyedLogger.V(1).Info("Updating federated object")
+	if _, err := s.federatedObjectClient.Namespace(fedObject.GetNamespace()).Update(
+		ctx,
 		fedObject,
 		metav1.UpdateOptions{},
 	); err != nil {
-		updateLogger.Error(err, "Failed to update federated object")
+		keyedLogger.Error(err, "Failed to update federated object")
 		s.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeWarning,
@@ -497,7 +546,7 @@ func (s *Scheduler) reconcile(qualifiedName common.QualifiedName) (status worker
 		return worker.StatusError
 	}
 
-	updateLogger.V(1).Info("Updated federated object")
+	keyedLogger.V(1).Info("Updated federated object")
 	s.eventRecorder.Eventf(
 		fedObject,
 		corev1.EventTypeNormal,
