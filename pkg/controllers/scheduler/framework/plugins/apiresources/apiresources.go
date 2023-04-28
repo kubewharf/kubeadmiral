@@ -9,16 +9,13 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
-)
-
-const (
-	APIResourcesName = "APIResources"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 )
 
 type APIResources struct{}
 
 func (pl *APIResources) Name() string {
-	return APIResourcesName
+	return names.APIResources
 }
 
 func NewAPIResources(_ framework.Handle) (framework.Plugin, error) {

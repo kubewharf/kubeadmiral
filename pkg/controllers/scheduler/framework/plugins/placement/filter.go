@@ -21,10 +21,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
-)
-
-const (
-	PlacementFilterName = "PlacementFilter"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 )
 
 type PlacementFilter struct{}
@@ -34,7 +31,7 @@ func NewPlacementFilter(_ framework.Handle) (framework.Plugin, error) {
 }
 
 func (pl *PlacementFilter) Name() string {
-	return PlacementFilterName
+	return names.PlacementFilter
 }
 
 func (pl *PlacementFilter) Filter(

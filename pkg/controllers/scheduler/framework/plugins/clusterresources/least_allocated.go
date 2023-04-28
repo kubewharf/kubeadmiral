@@ -25,10 +25,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
-)
-
-const (
-	ClusterResourcesLeastAllocatedName = "ClusterResourcesLeastAllocated"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 )
 
 type ClusterResourcesLeastAllocated struct{}
@@ -38,7 +35,7 @@ func NewClusterResourcesLeastAllocated(_ framework.Handle) (framework.Plugin, er
 }
 
 func (pl *ClusterResourcesLeastAllocated) Name() string {
-	return ClusterResourcesLeastAllocatedName
+	return names.ClusterResourcesLeastAllocated
 }
 
 // Score invoked at the score extension point.

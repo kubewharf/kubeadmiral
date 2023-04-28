@@ -28,13 +28,22 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/utils/pointer"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
-var DefaultPodImage = "ealen/echo-server:latest"
+var (
+	DefaultPodImage = "ealen/echo-server:latest"
+
+	FederatedConfigMapGVR = schema.GroupVersionResource{
+		Group:    "types.kubeadmiral.io",
+		Version:  "v1alpha1",
+		Resource: "federatedconfigmaps",
+	}
+)
 
 func init() {
 	flag.StringVar(
@@ -211,4 +220,14 @@ func GetSimpleClusterRole() *rbacv1.ClusterRole {
 
 func GetSimpleClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 	return nil
+}
+
+func GetSimpleConfigMap(baseName string) *corev1.ConfigMap {
+	name := fmt.Sprintf("%s-%s", baseName, rand.String(12))
+
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+	}
 }

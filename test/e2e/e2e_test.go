@@ -28,6 +28,7 @@ import (
 	_ "github.com/kubewharf/kubeadmiral/test/e2e/automigration"
 	_ "github.com/kubewharf/kubeadmiral/test/e2e/federatedcluster"
 	_ "github.com/kubewharf/kubeadmiral/test/e2e/resourcepropagation"
+	_ "github.com/kubewharf/kubeadmiral/test/e2e/schedulingprofile"
 	// _ "github.com/kubewharf/kubeadmiral/test/e2e/example"
 )
 

@@ -30,10 +30,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
-)
-
-const (
-	ClusterResourcesFitName = "ClusterResourcesFit"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 )
 
 type ClusterResourcesFit struct{}
@@ -43,7 +40,7 @@ func NewClusterResourcesFit(_ framework.Handle) (framework.Plugin, error) {
 }
 
 func (pl *ClusterResourcesFit) Name() string {
-	return ClusterResourcesFitName
+	return names.ClusterResourcesFit
 }
 
 // TODO(all), implement filter for socket and Best Effort resources.
