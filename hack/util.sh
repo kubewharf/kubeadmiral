@@ -17,7 +17,6 @@
 set -o errexit
 set -o nounset
 set -o pipefail
-set -x
 
 function util::create_host_cluster() {
   local HOST_CLUSTER_NAME=${1}
