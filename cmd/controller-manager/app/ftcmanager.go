@@ -33,6 +33,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager/healthcheck"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
