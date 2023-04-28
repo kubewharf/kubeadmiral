@@ -17,6 +17,8 @@ limitations under the License.
 package cluster
 
 import (
+	"strings"
+
 	corev1 "k8s.io/api/core/v1"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -25,42 +27,47 @@ import (
 
 func ClusterJoined(cluster *fedcorev1a1.FederatedCluster) bool {
 	cond := GetClusterJoinCondition(cluster.Status.Conditions)
-	return cond != nil && cond.Status == corev1.ConditionTrue
+	return cond != nil && cond.Status == corev1.ConditionTrue &&
+		cond.Reason != nil && *cond.Reason == federatedcluster.ClusterJoinedReason &&
+		cond.Message != nil && *cond.Message == federatedcluster.ClusterJoinedMessage
 }
 
 func ClusterReady(cluster *fedcorev1a1.FederatedCluster) bool {
 	cond := GetClusterReadyCondition(cluster.Status.Conditions)
-	return cond != nil && cond.Status == corev1.ConditionTrue
+	return cond != nil && cond.Status == corev1.ConditionTrue &&
+		cond.Reason != nil && *cond.Reason == federatedcluster.ClusterReadyReason &&
+		cond.Message != nil && *cond.Message == federatedcluster.ClusterReadyMessage
 }
 
 func ClusterTimedOut(cluster *fedcorev1a1.FederatedCluster) bool {
 	cond := GetClusterJoinCondition(cluster.Status.Conditions)
-	return cond != nil && cond.Status == corev1.ConditionFalse && cond.Reason != nil &&
-		*cond.Reason == federatedcluster.JoinTimeoutExceededReason
+	messagePrefix := strings.TrimSuffix(federatedcluster.JoinTimeoutExceededMessageTemplate, "%v")
+	return cond != nil && cond.Status == corev1.ConditionFalse &&
+		cond.Reason != nil && *cond.Reason == federatedcluster.JoinTimeoutExceededReason &&
+		cond.Message != nil && strings.HasPrefix(*cond.Message, messagePrefix)
 }
 
 func ClusterReachable(cluster *fedcorev1a1.FederatedCluster) bool {
-	conditions := cluster.Status.Conditions
-
-	joinCond := GetClusterJoinCondition(conditions)
-	readyCond := GetClusterReadyCondition(conditions)
-	offlineCond := GetClusterOfflineCondition(conditions)
-
-	return joinCond != nil && joinCond.Status == corev1.ConditionTrue &&
-		readyCond != nil && readyCond.Status == corev1.ConditionTrue &&
-		offlineCond != nil && offlineCond.Status == corev1.ConditionFalse
+	cond := GetClusterOfflineCondition(cluster.Status.Conditions)
+	return ClusterJoined(cluster) && ClusterReady(cluster) &&
+		cond != nil && cond.Status == corev1.ConditionFalse &&
+		cond.Reason != nil && *cond.Reason == federatedcluster.ClusterReachableReason &&
+		cond.Message != nil && *cond.Message == federatedcluster.ClusterReachableMsg
 }
 
 func ClusterUnreachable(cluster *fedcorev1a1.FederatedCluster) bool {
 	conditions := cluster.Status.Conditions
 
-	joinCond := GetClusterJoinCondition(conditions)
 	readyCond := GetClusterReadyCondition(conditions)
 	offlineCond := GetClusterOfflineCondition(conditions)
 
-	return joinCond != nil && joinCond.Status == corev1.ConditionTrue &&
+	return ClusterJoined(cluster) &&
 		readyCond != nil && readyCond.Status == corev1.ConditionUnknown &&
-		offlineCond != nil && offlineCond.Status == corev1.ConditionTrue
+		readyCond.Reason != nil && *readyCond.Reason == federatedcluster.ClusterNotReachableReason &&
+		readyCond.Message != nil && *readyCond.Message == federatedcluster.ClusterNotReachableMsg &&
+		offlineCond != nil && offlineCond.Status == corev1.ConditionTrue &&
+		offlineCond.Reason != nil && *offlineCond.Reason == federatedcluster.ClusterNotReachableReason &&
+		offlineCond.Message != nil && *offlineCond.Message == federatedcluster.ClusterNotReachableMsg
 }
 
 func GetClusterJoinCondition(conditions []fedcorev1a1.ClusterCondition) *fedcorev1a1.ClusterCondition {
