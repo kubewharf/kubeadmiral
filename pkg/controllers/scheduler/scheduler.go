@@ -96,6 +96,7 @@ type Scheduler struct {
 }
 
 func NewScheduler(
+	logger klog.Logger,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	kubeClient kubeclient.Interface,
 	fedClient fedclient.Interface,
@@ -117,7 +118,7 @@ func NewScheduler(
 		fedClient:     fedClient,
 		dynamicClient: dynamicClient,
 		metrics:       metrics,
-		logger:        klog.LoggerWithName(klog.Background(), schedulerName),
+		logger:        logger.WithValues("controller", GlobalSchedulerName, "ftc", typeConfig.Name),
 	}
 
 	s.worker = worker.NewReconcileWorker(

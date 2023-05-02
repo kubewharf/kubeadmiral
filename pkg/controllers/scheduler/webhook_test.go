@@ -25,18 +25,15 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
-	"flag"
 	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr/funcr"
 	"github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,7 +44,7 @@ import (
 	dynamicFake "k8s.io/client-go/dynamic/fake"
 	kubeFake "k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
-	"k8s.io/klog/v2"
+	"k8s.io/klog/v2/ktesting"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	schedwebhookv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/schedulerwebhook/v1alpha1"
@@ -60,15 +57,6 @@ import (
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
-
-func init() {
-	// set klog version
-	klogFlags := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	klog.InitFlags(klogFlags)
-	if err := klogFlags.Set("v", "3"); err != nil {
-		panic(err)
-	}
-}
 
 // Generate a self-signed certificate and key pair.
 // DO NOT USE FOR PRODUCTION.
@@ -296,6 +284,7 @@ func doTest(t *testing.T, clientTLS *fedcorev1a1.WebhookTLSConfig, serverTLS *tl
 	federatedType := typeConfig.GetFederatedType()
 	gvr := schemautil.APIResourceToGVR(&federatedType)
 	scheduler, err := NewScheduler(
+		ktesting.NewLogger(t, ktesting.NewConfig(ktesting.Verbosity(3))),
 		typeConfig, kubeClient, fedClient, dynamicClient,
 		dynInformerFactory.ForResource(gvr),
 		fedInformerFactory.Core().V1alpha1().PropagationPolicies(),
@@ -308,11 +297,7 @@ func doTest(t *testing.T, clientTLS *fedcorev1a1.WebhookTLSConfig, serverTLS *tl
 	)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
-	ctx := klog.NewContext(context.Background(), funcr.New(func(prefix, args string) {
-		// let klog write to the test logger
-		t.Logf("%s\n", args)
-	}, funcr.Options{}))
-
+	ctx := context.Background()
 	dynInformerFactory.Start(ctx.Done())
 	fedInformerFactory.Start(ctx.Done())
 
