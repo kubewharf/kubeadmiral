@@ -26,7 +26,7 @@ MEMBER_CLUSTER_NAME=${MEMBER_CLUSTER_NAME:-"kubeadmiral-member"}
 MANIFEST_DIR=${MANIFEST_DIR:-"${REPO_ROOT}/config/crds"}
 CONFIG_DIR=${CONFIG_DIR:-"${REPO_ROOT}/config/sample/host"}
 NUM_MEMBER_CLUSTERS=${NUM_MEMBER_CLUSTERS:-"3"}
-export CLUSTER_PROVIDER=${CLUSTER_PROVIDER:-"kind"}
+CLUSTER_PROVIDER=${CLUSTER_PROVIDER:-"kind"}
 
 if [[ $CLUSTER_PROVIDER == "kind" ]]; then
   kind delete cluster --name=${HOST_CLUSTER_NAME}

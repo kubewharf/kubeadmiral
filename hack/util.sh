@@ -55,9 +55,7 @@ function util::create_host_kind_cluster() {
   local HOST_CLUSTER_NAME=${1}
   local KUBECONFIG_PATH=${2}
 
-  local KIND_CONFIG
-  KIND_CONFIG=$(mktemp)
-  cat <<EOF > "${KIND_CONFIG}"
+  local KIND_CONFIG=(cat <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -72,22 +70,17 @@ nodes:
     apiServer:
       extraArgs:
         disable-admission-plugins: StorageObjectInUseProtection
-EOF
+EOF)
 
-  kind create cluster --config="${KIND_CONFIG}" --name="${HOST_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG_PATH}"
-
-  rm "${KIND_CONFIG}"
+  kind create cluster --config=<(echo "${KIND_CONFIG}") --name="${HOST_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG_PATH}"
 }
 
 function util::create_host_kwok_cluster() {
   local HOST_CLUSTER_NAME=${1}
   local KUBECONFIG_PATH=${2}
 
-  local KWOK_CONFIG
-  KWOK_CONFIG=$(mktemp)
-  APISERVER_PORT=$(shuf -i 30000-40000 -n 1)
-
-  cat <<EOF > "${KWOK_CONFIG}"
+  local APISERVER_PORT=$(shuf -i 30000-40000 -n 1)
+  local KWOK_CONFIG=(cat <<EOF
 kind: KwokctlConfiguration
 apiVersion: config.kwok.x-k8s.io/v1alpha1
 options:
@@ -102,11 +95,9 @@ componentPatches:
   extraArgs:
   - key: controllers
     value: "namespace,garbagecollector"
-EOF
+EOF)
 
-  KUBECONFIG=${KUBECONFIG_PATH} kwokctl create cluster --name="${HOST_CLUSTER_NAME}" --config=${KWOK_CONFIG}
-
-  rm "${KWOK_CONFIG}"
+  KUBECONFIG=${KUBECONFIG_PATH} kwokctl create cluster --name="${HOST_CLUSTER_NAME}" --config=<(echo "${KWOK_CONFIG}")
 }
 
 function util::create_member_cluster() {
