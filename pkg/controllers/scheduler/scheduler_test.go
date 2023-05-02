@@ -29,17 +29,146 @@ import (
 	"k8s.io/utils/pointer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
 
+func TestGetSchedulingUnit(t *testing.T) {
+	g := gomega.NewWithT(t)
+
+	fedObj := fedtypesv1a1.GenericObjectWithPlacements{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: fedtypesv1a1.SchemeGroupVersion.String(),
+			Kind:       "FederatedDeployment",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+		},
+		Spec: fedtypesv1a1.GenericSpecWithPlacements{
+			Placements: []fedtypesv1a1.PlacementWithController{
+				{
+					Controller: "test-controller",
+					Placement: fedtypesv1a1.Placement{
+						Clusters: []fedtypesv1a1.GenericClusterReference{
+							{Name: "cluster-1"},
+							{Name: "cluster-2"},
+							{Name: "cluster-3"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	template := appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: appsv1.SchemeGroupVersion.String(),
+			Kind:       common.DeploymentKind,
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"foo": "bar",
+			},
+			Annotations: map[string]string{
+				"baz": "qux",
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: pointer.Int32(10),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": "test",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"name": "test",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "main",
+							Image: "nginx",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	policy := fedcorev1a1.PropagationPolicy{
+		Spec: fedcorev1a1.PropagationPolicySpec{
+			SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+			AutoMigration: &fedcorev1a1.AutoMigration{
+				KeepUnschedulableReplicas: false,
+			},
+			ReplicaRescheduling: &fedcorev1a1.ReplicaRescheduling{
+				AvoidDisruption: false,
+			},
+		},
+	}
+
+	fedObjUns, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&fedObj)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	templateUns, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&template)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	err = unstructured.SetNestedMap(fedObjUns, templateUns, common.TemplatePath...)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	typeConfig := &fedcorev1a1.FederatedTypeConfig{
+		Spec: fedcorev1a1.FederatedTypeConfigSpec{
+			TargetType: fedcorev1a1.APIResource{
+				Group:      "apps",
+				Version:    "v1",
+				Kind:       "Deployment",
+				PluralName: "deployments",
+				Scope:      "Namespaced",
+			},
+			PathDefinition: fedcorev1a1.PathDefinition{
+				ReplicasSpec: "spec.replicas",
+			},
+		},
+	}
+
+	su, err := schedulingUnitForFedObject(typeConfig, &unstructured.Unstructured{Object: fedObjUns}, &policy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	g.Expect(su).To(gomega.Equal(&framework.SchedulingUnit{
+		GroupVersion: schema.GroupVersion{Group: "apps", Version: "v1"},
+		Kind:         "Deployment",
+		Resource:     "deployments",
+		Namespace:    "default",
+		Name:         "test",
+		Labels: map[string]string{
+			"foo": "bar",
+		},
+		Annotations: map[string]string{
+			"baz": "qux",
+		},
+		ResourceRequest: framework.Resource{},
+		CurrentClusters: map[string]*int64{},
+		AutoMigration: &framework.AutoMigrationSpec{
+			Info:                      nil,
+			KeepUnschedulableReplicas: false,
+		},
+		SchedulingMode:  fedcorev1a1.SchedulingModeDuplicate,
+		StickyCluster:   false,
+		AvoidDisruption: false,
+	}))
+}
+
 func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 	tests := []struct {
-		name               string
-		policy             fedcorev1a1.GenericPropagationPolicy
-		annotations        map[string]string
-		templateObjectMeta *metav1.ObjectMeta
-		expectedResult     *framework.SchedulingUnit
+		name           string
+		policy         fedcorev1a1.GenericPropagationPolicy
+		annotations    map[string]string
+		expectedResult *framework.SchedulingUnit
 	}{
 		{
 			name: "scheduling mode override",
@@ -271,54 +400,26 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "template object meta",
-			policy: &fedcorev1a1.PropagationPolicy{
-				Spec: fedcorev1a1.PropagationPolicySpec{
-					SchedulingMode: fedcorev1a1.SchedulingModeDivide,
-				},
-			},
-			templateObjectMeta: &metav1.ObjectMeta{
-				Namespace:   metav1.NamespaceDefault,
-				Name:        "test",
-				Labels:      map[string]string{"label": "value1"},
-				Annotations: map[string]string{"annotation": "value1"},
-			},
-			expectedResult: &framework.SchedulingUnit{
-				SchedulingMode: fedcorev1a1.SchedulingModeDivide,
-				Namespace:      metav1.NamespaceDefault,
-				Name:           "test",
-				Labels:         map[string]string{"label": "value1"},
-				Annotations:    map[string]string{"annotation": "value1"},
-			},
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := gomega.NewWithT(t)
 
-			scheduler := Scheduler{
-				typeConfig: &fedcorev1a1.FederatedTypeConfig{
-					Spec: fedcorev1a1.FederatedTypeConfigSpec{
-						PathDefinition: fedcorev1a1.PathDefinition{
-							ReplicasSpec: "spec.replicas",
-						},
-					},
-				},
-			}
-			templateObjectMeta := test.templateObjectMeta
-			if templateObjectMeta == nil {
-				templateObjectMeta = &metav1.ObjectMeta{}
-			}
-			templateObjectMetaUns, err := runtime.DefaultUnstructuredConverter.ToUnstructured(templateObjectMeta)
-			g.Expect(err).NotTo(gomega.HaveOccurred())
+			var err error
 
 			obj := &unstructured.Unstructured{Object: make(map[string]interface{})}
 			obj.SetAnnotations(test.annotations)
-			err = unstructured.SetNestedMap(obj.Object, templateObjectMetaUns, common.TemplatePath...)
+			err = unstructured.SetNestedMap(obj.Object, make(map[string]interface{}), common.TemplatePath...)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 
-			su, err := scheduler.schedulingUnitForFedObject(obj, test.policy)
+			typeConfig := &fedcorev1a1.FederatedTypeConfig{
+				Spec: fedcorev1a1.FederatedTypeConfigSpec{
+					PathDefinition: fedcorev1a1.PathDefinition{
+						ReplicasSpec: "spec.replicas",
+					},
+				},
+			}
+			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 
 			// override fields we don't want to test
@@ -381,29 +482,25 @@ func TestSchedulingMode(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := gomega.NewWithT(t)
-			scheduler := Scheduler{
-				typeConfig: &fedcorev1a1.FederatedTypeConfig{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "<ftc-name>",
+			typeConfig := &fedcorev1a1.FederatedTypeConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "<ftc-name>",
+				},
+				Spec: fedcorev1a1.FederatedTypeConfigSpec{
+					TargetType: fedcorev1a1.APIResource{
+						Group:   test.gvk.Group,
+						Version: test.gvk.Version,
+						Kind:    test.gvk.Kind,
 					},
-					Spec: fedcorev1a1.FederatedTypeConfigSpec{
-						TargetType: fedcorev1a1.APIResource{
-							Group:   test.gvk.Group,
-							Version: test.gvk.Version,
-							Kind:    test.gvk.Kind,
-						},
-						PathDefinition: fedcorev1a1.PathDefinition{
-							ReplicasSpec: test.replicasSpecPath,
-						},
+					PathDefinition: fedcorev1a1.PathDefinition{
+						ReplicasSpec: test.replicasSpecPath,
 					},
 				},
 			}
 			obj := &unstructured.Unstructured{Object: make(map[string]interface{})}
-			templateObjectMetaUns, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&metav1.ObjectMeta{})
+			err := unstructured.SetNestedMap(obj.Object, make(map[string]interface{}), common.TemplatePath...)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
-			err = unstructured.SetNestedMap(obj.Object, templateObjectMetaUns, common.TemplatePath...)
-			g.Expect(err).NotTo(gomega.HaveOccurred())
-			su, err := scheduler.schedulingUnitForFedObject(obj, test.policy)
+			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 			g.Expect(su.SchedulingMode).To(gomega.Equal(test.expectedResult))
 		})

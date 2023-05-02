@@ -19,6 +19,7 @@ package scheduler
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
@@ -40,6 +41,7 @@ var SchedulerSupportedPayloadVersions = sets.New(
 
 func (s *Scheduler) cacheWebhookPlugin(config *fedcorev1a1.SchedulerPluginWebhookConfiguration) {
 	logger := s.logger.WithValues("origin", "webhookEventHandler", "name", config.Name)
+	logger.V(1).Info("Initializing webhook plugin")
 
 	// Find the most preferred payload version that is supported by the scheduler.
 	var payloadVersion string
@@ -76,9 +78,14 @@ func (s *Scheduler) cacheWebhookPlugin(config *fedcorev1a1.SchedulerPluginWebhoo
 		)
 		return
 	}
+
+	timeout := config.Spec.HTTPTimeout.Duration
+	if timeout == 0 {
+		timeout = 5 * time.Second
+	}
 	client := &http.Client{
 		Transport: transport,
-		Timeout:   config.Spec.HTTPTimeout.Duration,
+		Timeout:   timeout,
 	}
 
 	var plugin framework.Plugin
@@ -95,6 +102,14 @@ func (s *Scheduler) cacheWebhookPlugin(config *fedcorev1a1.SchedulerPluginWebhoo
 		return
 	}
 	s.webhookPlugins.Store(config.Name, plugin)
+	logger.V(1).Info("Webhook plugin registered")
+	s.eventRecorder.Eventf(
+		config,
+		corev1.EventTypeNormal,
+		EventReasonWebhookRegistered,
+		"Webhook plugin %q registered",
+		config.Name,
+	)
 }
 
 func makeTransport(config *fedcorev1a1.SchedulerPluginWebhookConfigurationSpec) (http.RoundTripper, error) {
@@ -113,16 +128,16 @@ func makeTransport(config *fedcorev1a1.SchedulerPluginWebhookConfigurationSpec) 
 	return utilnet.SetTransportDefaults(&http.Transport{TLSClientConfig: tlsConfig}), nil
 }
 
-func (s *Scheduler) webhookPluginRegistry() runtime.Registry {
+func (s *Scheduler) webhookPluginRegistry() (runtime.Registry, error) {
 	registry := runtime.Registry{}
 
+	var err error
 	s.webhookPlugins.Range(func(name, plugin any) bool {
-		_ = registry.Register(name.(string), func(_ framework.Handle) (framework.Plugin, error) {
+		err = registry.Register(name.(string), func(_ framework.Handle) (framework.Plugin, error) {
 			return plugin.(framework.Plugin), nil
 		})
-
-		return true
+		return err == nil
 	})
 
-	return registry
+	return registry, err
 }

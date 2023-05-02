@@ -141,6 +141,7 @@ func startGlobalScheduler(
 	federatedGVR := schemautil.APIResourceToGVR(&federatedAPIResource)
 
 	scheduler, err := scheduler.NewScheduler(
+		klog.FromContext(ctx),
 		typeConfig,
 		controllerCtx.KubeClientset,
 		controllerCtx.FedClientset,

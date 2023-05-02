@@ -27,22 +27,23 @@ import (
 	"strings"
 
 	"github.com/davecgh/go-spew/spew"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 )
 
 type ScheduleAlgorithm interface {
-	Schedule(context.Context, framework.Framework, framework.SchedulingUnit) (result ScheduleResult, err error)
+	Schedule(
+		context.Context,
+		framework.Framework,
+		framework.SchedulingUnit,
+		[]*fedcorev1a1.FederatedCluster,
+	) (result ScheduleResult, err error)
 }
 
-type genericScheduler struct {
-	clusterStore cache.Store
-}
+type genericScheduler struct{}
 
 type ScheduleResult struct {
 	// SuggestedClusters is a map contains the recommended cluster placements and replica distribution.
@@ -84,16 +85,17 @@ func (result ScheduleResult) String() string {
 	return sb.String()
 }
 
-func NewSchedulerAlgorithm(clusterStore cache.Store) ScheduleAlgorithm {
-	return &genericScheduler{clusterStore: clusterStore}
+func NewSchedulerAlgorithm() ScheduleAlgorithm {
+	return &genericScheduler{}
 }
 
 func (g *genericScheduler) Schedule(
 	ctx context.Context,
 	fwk framework.Framework,
 	schedulingUnit framework.SchedulingUnit,
+	clusters []*fedcorev1a1.FederatedCluster,
 ) (result ScheduleResult, err error) {
-	klog.V(4).Infof("[scheduling] for %q try to schedule", schedulingUnit.Key())
+	logger := klog.FromContext(ctx)
 
 	// we do not reschedule if sticky cluster is enabled
 	if schedulingUnit.StickyCluster && len(schedulingUnit.CurrentClusters) > 0 {
@@ -101,41 +103,32 @@ func (g *genericScheduler) Schedule(
 		return result, nil
 	}
 
-	clusterObjs := g.clusterStore.List()
-	clusters := make([]*fedcorev1a1.FederatedCluster, 0)
-	for _, clusterObj := range clusterObjs {
-		cluster := clusterObj.(*fedcorev1a1.FederatedCluster)
-		if util.IsClusterJoined(&cluster.Status) {
-			clusters = append(clusters, cluster)
-		}
-	}
-
 	feasibleClusters, err := g.findClustersThatFitWorkload(ctx, fwk, schedulingUnit, clusters)
 	if err != nil {
-		return result, fmt.Errorf("[scheduling] failed to findClustersThatFitWorkload: %w", err)
+		return result, fmt.Errorf("failed to findClustersThatFitWorkload: %w", err)
 	}
-	klog.V(4).
-		Infof("[scheduling] for %q feasible clusters found: %s", schedulingUnit.Key(), spew.Sprint(feasibleClusters))
+	logger.V(2).
+		Info("Clusters filtered", "result", spew.Sprint(feasibleClusters))
 	if len(feasibleClusters) == 0 {
 		return result, nil
 	}
 
 	clusterScores, err := g.scoreClusters(ctx, fwk, schedulingUnit, feasibleClusters)
 	if err != nil {
-		return result, fmt.Errorf("[scheduling] failed to scoreClusters: %w", err)
+		return result, fmt.Errorf("failed to scoreClusters: %w", err)
 	}
-	klog.V(4).
-		Infof("[scheduling] for %q feasible clusters scores: %s", schedulingUnit.Key(), spew.Sprint(clusterScores))
+	logger.V(2).
+		Info("Clusters scored", "result", spew.Sprint(clusterScores))
 
 	selectedClusters, err := g.selectClusters(ctx, fwk, schedulingUnit, clusterScores)
 	if err != nil {
-		return result, fmt.Errorf("[scheduling] failed to selectClusters: %w", err)
+		return result, fmt.Errorf("failed to selectClusters: %w", err)
 	}
-	klog.V(4).Infof("[scheduling] for %q selected clusters: %s", schedulingUnit.Key(), spew.Sprint(selectedClusters))
+	logger.V(2).Info("Clusters selected", "clusters", spew.Sprint(selectedClusters))
 
 	// we skip replica scheduling if mode is Duplicate
 	if schedulingUnit.SchedulingMode == fedcorev1a1.SchedulingModeDuplicate {
-		klog.V(4).Infof("[scheduling] for %q Duplicate scheduling mode, skip replica scheduling", schedulingUnit.Key())
+		logger.V(3).Info("skip replica scheduling for Duplicate scheduling mode")
 		result.SuggestedClusters = make(map[string]*int64, len(selectedClusters))
 		for _, cluster := range selectedClusters {
 			result.SuggestedClusters[cluster.Name] = nil
@@ -145,10 +138,10 @@ func (g *genericScheduler) Schedule(
 
 	clusterReplicaList, err := g.replicaScheduling(ctx, fwk, schedulingUnit, selectedClusters)
 	if err != nil {
-		return result, fmt.Errorf("[scheduling] failed to replicaScheduling: %w", err)
+		return result, fmt.Errorf("failed to do replicaScheduling: %w", err)
 	}
-	klog.V(4).
-		Infof("[scheduling] for %q cluster replica list: %s", schedulingUnit.Key(), spew.Sprint(clusterReplicaList))
+	logger.V(2).
+		Info("Replicas assigned", "result", spew.Sprint(clusterReplicaList))
 	result.SuggestedClusters = make(map[string]*int64, len(clusterReplicaList))
 	for _, clusterReplica := range clusterReplicaList {
 		result.SuggestedClusters[clusterReplica.Cluster.Name] = pointer.Int64(clusterReplica.Replicas)
@@ -162,10 +155,12 @@ func (g *genericScheduler) findClustersThatFitWorkload(
 	schedulingUnit framework.SchedulingUnit,
 	clusters []*fedcorev1a1.FederatedCluster,
 ) ([]*fedcorev1a1.FederatedCluster, error) {
+	logger := klog.FromContext(ctx)
+
 	ret := make([]*fedcorev1a1.FederatedCluster, 0)
 	for _, cluster := range clusters {
 		if result := fwk.RunFilterPlugins(ctx, &schedulingUnit, cluster); !result.IsSuccess() {
-			klog.V(4).Infof("clusters %s doesn't fit, reason: %s", cluster.Name, result.AsError())
+			logger.V(2).Info("Cluster doesn't fit", "name", cluster.Name, "reason", result.AsError())
 		} else {
 			ret = append(ret, cluster)
 		}
