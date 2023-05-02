@@ -55,7 +55,7 @@ function util::create_host_kind_cluster() {
   local HOST_CLUSTER_NAME=${1}
   local KUBECONFIG_PATH=${2}
 
-  local KIND_CONFIG=(cat <<EOF
+  local KIND_CONFIG=$(cat <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -70,7 +70,8 @@ nodes:
     apiServer:
       extraArgs:
         disable-admission-plugins: StorageObjectInUseProtection
-EOF)
+EOF
+)
 
   kind create cluster --config=<(echo "${KIND_CONFIG}") --name="${HOST_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG_PATH}"
 }
@@ -78,9 +79,9 @@ EOF)
 function util::create_host_kwok_cluster() {
   local HOST_CLUSTER_NAME=${1}
   local KUBECONFIG_PATH=${2}
+  local APISERVER_PORT=$(( $RANDOM + 30000 ))
 
-  local APISERVER_PORT=$(shuf -i 30000-40000 -n 1)
-  local KWOK_CONFIG=(cat <<EOF
+  local KWOK_CONFIG=$(cat <<EOF
 kind: KwokctlConfiguration
 apiVersion: config.kwok.x-k8s.io/v1alpha1
 options:
@@ -95,7 +96,8 @@ componentPatches:
   extraArgs:
   - key: controllers
     value: "namespace,garbagecollector"
-EOF)
+EOF
+)
 
   KUBECONFIG=${KUBECONFIG_PATH} kwokctl create cluster --name="${HOST_CLUSTER_NAME}" --config=<(echo "${KWOK_CONFIG}")
 }
@@ -107,7 +109,7 @@ function util::create_member_cluster() {
   if [[ $CLUSTER_PROVIDER == "kind" ]]; then
     kind create cluster --image=kindest/node:v1.20.15 --name="${MEMBER_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG_PATH}"
   elif [[ $CLUSTER_PROVIDER == "kwok" ]]; then
-    APISERVER_PORT=$(shuf -i 30000-40000 -n 1)
+    local APISERVER_PORT=$(( $RANDOM + 30000 ))
     KUBECONFIG=${KUBECONFIG_PATH} KWOK_KUBE_VERSION="v1.20.15" kwokctl create cluster --name=${MEMBER_CLUSTER_NAME} --kube-apiserver-port=${APISERVER_PORT} --kube-authorization
     for i in $(seq 1 10); do
       kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="kwok-${MEMBER_CLUSTER_NAME}" apply -f - <<EOF
@@ -209,3 +211,4 @@ spec:
     name: ${MEMBER_CLUSTER_NAME}
 EOF
 }
+
