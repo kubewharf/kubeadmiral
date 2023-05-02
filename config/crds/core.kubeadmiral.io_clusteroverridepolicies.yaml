@@ -56,10 +56,13 @@ spec:
                                   omitted, defaults to "replace".
                                 type: string
                               path:
-                                description: Path specified the location within the
-                                  resource document where the operation is performed.
-                                  Each key in the path should be prefixed with "/",
-                                  for example, "/metadata/labels".
+                                description: Path is a JSON pointer (RFC 6901) specifying
+                                  the location within the resource document where
+                                  the operation is performed. Each key in the path
+                                  should be prefixed with "/", while "~" and "/" should
+                                  be escaped as "~0" and "~1" respectively. For example,
+                                  to add a label "kubeadmiral.io/label", the path
+                                  should be "/metadata/labels/kubeadmiral.io~1label".
                                 type: string
                               value:
                                 description: Value is the value(s) required by the
