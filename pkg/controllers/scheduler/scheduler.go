@@ -332,7 +332,7 @@ func (s *Scheduler) prepareToSchedule(
 					"object propagation policy %s not found",
 					policyKey.String(),
 				)
-				return nil, nil, nil, &worker.Result{Success: false, RequeueAfter: nil}
+				return nil, nil, nil, &worker.StatusAllOK
 			}
 			return nil, nil, nil, &worker.StatusError
 		}
