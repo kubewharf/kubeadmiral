@@ -19,18 +19,21 @@ package app
 import (
 	"context"
 	"sync"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
+	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
 const (
@@ -39,10 +42,24 @@ const (
 	AutoMigrationControllerName = "auto-migration-controller"
 )
 
-var knownFTCSubControllers = map[string]StartFTCSubControllerFunc{
-	GlobalSchedulerName:         startGlobalScheduler,
-	FederateControllerName:      startFederateController,
-	AutoMigrationControllerName: startAutoMigrationController,
+type ftcSubControllerInitFuncs struct {
+	startFunc     StartFTCSubControllerFunc
+	isEnabledFunc IsFTCSubControllerEnabledFunc
+}
+
+var knownFTCSubControllers = map[string]ftcSubControllerInitFuncs{
+	GlobalSchedulerName: {
+		startFunc:     startGlobalScheduler,
+		isEnabledFunc: isGlobalSchedulerEnabled,
+	},
+	FederateControllerName: {
+		startFunc:     startFederateController,
+		isEnabledFunc: nil,
+	},
+	AutoMigrationControllerName: {
+		startFunc:     startAutoMigrationController,
+		isEnabledFunc: nil,
+	},
 }
 
 // StartFTCSubControllerFunc is responsible for constructing and starting a FTC subcontroller. A FTC subcontroller is started/stopped
@@ -52,132 +69,150 @@ var knownFTCSubControllers = map[string]StartFTCSubControllerFunc{
 //nolint:lll
 type StartFTCSubControllerFunc func(ctx context.Context, controllerCtx *controllercontext.Context, typeConfig *fedcorev1a1.FederatedTypeConfig) error
 
+type IsFTCSubControllerEnabledFunc func(typeConfig *fedcorev1a1.FederatedTypeConfig) bool
+
 type FederatedTypeConfigManager struct {
 	informer fedcorev1a1informers.FederatedTypeConfigInformer
 	handle   cache.ResourceEventHandlerRegistration
 
-	lock                     sync.Mutex
-	registeredSubControllers map[string]StartFTCSubControllerFunc
-	subControllerCancelFuncs map[string]context.CancelFunc
-	workqueue                workqueue.Interface
+	lock                        sync.Mutex
+	registeredSubControllers    map[string]StartFTCSubControllerFunc
+	isSubControllerEnabledFuncs map[string]IsFTCSubControllerEnabledFunc
 
-	enabledControllers []string
+	subControllerContexts    map[string]context.Context
+	subControllerCancelFuncs map[string]context.CancelFunc
+	startedSubControllers    map[string]sets.Set[string]
+
+	worker             worker.ReconcileWorker
 	controllerCtx      *controllercontext.Context
 
-	logger klog.Logger
+	metrics stats.Metrics
+	logger  klog.Logger
 }
 
 func NewFederatedTypeConfigManager(
-	enabledControllers []string,
 	informer fedcorev1a1informers.FederatedTypeConfigInformer,
 	controllerCtx *controllercontext.Context,
+	metrics stats.Metrics,
 ) *FederatedTypeConfigManager {
 	m := &FederatedTypeConfigManager{
 		informer:                 informer,
 		lock:                     sync.Mutex{},
 		registeredSubControllers: map[string]StartFTCSubControllerFunc{},
 		subControllerCancelFuncs: map[string]context.CancelFunc{},
-		workqueue:                workqueue.New(),
-		enabledControllers:       enabledControllers,
 		controllerCtx:            controllerCtx,
-		logger:                   klog.LoggerWithName(klog.TODO(), "federated-type-config-manager"),
+		metrics:                  metrics,
+		logger:                   klog.LoggerWithValues(klog.Background(), "controller", "federated-type-config-manager"),
 	}
 
-	m.handle, _ = informer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(func(o runtime.Object) {
-		tc := o.(*fedcorev1a1.FederatedTypeConfig)
-		m.enqueueTypeConfig(tc)
-	}))
+	m.worker = worker.NewReconcileWorker(
+		m.reconcile,
+		worker.WorkerTiming{},
+		1,
+		metrics,
+		delayingdeliver.NewMetricTags("federated-type-config-manager", "FederatedTypeConfig"),
+	)
+
+	m.handle, _ = informer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(m.worker.EnqueueObject))
 
 	return m
 }
 
-func (m *FederatedTypeConfigManager) RegisterSubController(name string, startFunc StartFTCSubControllerFunc) {
+func (m *FederatedTypeConfigManager) RegisterSubController(
+	name string,
+	startFunc StartFTCSubControllerFunc,
+	isEnabledFunc IsFTCSubControllerEnabledFunc,
+) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	m.registeredSubControllers[name] = startFunc
+	m.isSubControllerEnabledFuncs[name] = isEnabledFunc
 }
 
-func (m *FederatedTypeConfigManager) Start(ctx context.Context) {
-	go func() {
-		m.logger.Info("Starting FederatedTypeConfig manager")
-		defer m.logger.Info("Stopping FederatedTypeConfig manager")
-		defer m.workqueue.ShutDown()
-		defer m.informer.Informer().RemoveEventHandler(m.handle)
+func (m *FederatedTypeConfigManager) Run(ctx context.Context) {
+	m.logger.Info("Starting FederatedTypeConfig manager")
+	defer m.logger.Info("Stopping FederatedTypeConfig manager")
 
-		if !cache.WaitForNamedCacheSync("federated-type-config-manager", ctx.Done(), m.informer.Informer().HasSynced) {
-			return
-		}
+	if !cache.WaitForNamedCacheSync("federated-type-config-manager", ctx.Done(), m.informer.Informer().HasSynced) {
+		return
+	}
 
-		go wait.UntilWithContext(ctx, m.processQueueItem, 0)
-		<-ctx.Done()
+	m.worker.Run(ctx.Done())
+	<-ctx.Done()
+}
+
+func (m *FederatedTypeConfigManager) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
+	_ = m.metrics.Rate("federated-type-config-manager.throughput", 1)
+	key := qualifiedName.String()
+	logger := m.logger.WithValues("federated-type-config", key)
+	startTime := time.Now()
+
+	logger.V(3).Info("Start reconcile")
+	defer m.metrics.Duration("federated-type-config-manager.latency", startTime)
+	defer func() {
+		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()
-}
 
-func (m *FederatedTypeConfigManager) enqueueTypeConfig(obj runtime.Object) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-	if err != nil {
-		m.logger.Error(err, "Failed to enqueue federated type config")
-	}
-	m.workqueue.Add(key)
-}
-
-func (m *FederatedTypeConfigManager) processQueueItem(ctx context.Context) {
-	key, quit := m.workqueue.Get()
-	if quit {
-		return
-	}
-	defer m.workqueue.Done(key)
-	keyedLogger := m.logger.WithValues("federated-type-config", key)
-
-	keyedLogger.V(4).Info("Process queue item")
-
-	_, name, err := cache.SplitMetaNamespaceKey(key.(string))
-	if err != nil {
-		keyedLogger.Error(err, "Failed to process queue item")
-		return
-	}
-
-	typeConfig, err := m.informer.Lister().Get(name)
+	typeConfig, err := m.informer.Lister().Get(qualifiedName.Name)
 	if err != nil && apierrors.IsNotFound(err) {
-		keyedLogger.V(4).Info("Observed FederatedTypeConfig deletion")
-		m.processFTCDeletion(name)
-		return
+		logger.V(3).Info("Observed FederatedTypeConfig deletion")
+		m.processFTCDeletion(qualifiedName.Name)
+		return worker.StatusAllOK
 	}
 	if err != nil {
-		keyedLogger.Error(err, "Failed to process queue item")
-		return
+		logger.Error(err, "Failed to get FederatedTypeConfig")
+		return worker.StatusError
 	}
 
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	if _, ok := m.subControllerCancelFuncs[name]; ok {
-		keyedLogger.V(4).Info("Subcontrollers already started")
-		return
+
+	startedSubControllers, ok := m.startedSubControllers[qualifiedName.Name]
+	if !ok {
+		startedSubControllers = sets.New[string]()
+		m.startedSubControllers[qualifiedName.Name] = startedSubControllers
+	}
+	subControllerCtx, ok := m.subControllerContexts[qualifiedName.Name]
+	if !ok {
+		subControllerCtx, m.subControllerCancelFuncs[qualifiedName.Name] = context.WithCancel(context.TODO())
+		m.subControllerContexts[qualifiedName.Name] = subControllerCtx
 	}
 
-	subControllerCtx, cancel := context.WithCancel(ctx)
-	m.subControllerCancelFuncs[name] = cancel
-
+	needRetry := false
 	for controllerName, startFunc := range m.registeredSubControllers {
-		if !isControllerEnabled(controllerName, controllersDisabledByDefault, m.enabledControllers) {
-			keyedLogger.WithValues("controller", controllerName).Info("Skip starting disabled subcontroller")
-			continue
+		logger := logger.WithValues("controller", controllerName)
+
+		if m.startedSubControllers[qualifiedName.Name].Has(controllerName) {
+			logger.V(3).Info("Subcontroller already started")
 		}
 
-		// TODO[ftcmanager]: handle controllers that do not need to be started for certain FTCs
+		isEnabledFunc := m.isSubControllerEnabledFuncs[controllerName]
+		if isEnabledFunc != nil && !isEnabledFunc(typeConfig) {
+			logger.V(3).Info("Skip starting subcontroller, is disabled")
+		}
+
 		if err := startFunc(subControllerCtx, m.controllerCtx, typeConfig); err != nil {
-			keyedLogger.Error(err, "Failed to start subcontrolelr")
+			logger.Error(err, "Failed to start subcontroller")
+			needRetry = true
 		} else {
-			keyedLogger.WithValues("controller", controllerName).Info("Started subcontroller")
+			logger.WithValues("controller", controllerName).Info("Started subcontroller")
+			m.startedSubControllers[qualifiedName.Name].Insert(controllerName)
 		}
 	}
 
 	// Since the controllers are created dynamically, we have to start the informer factories again, in case any new
-	// informers were accessed. Note that the top level context is used in case a FTC is recreated and the same informer
+	// informers were accessed. Note that a different context is used in case a FTC is recreated and the same informer
 	// needs to be used again (SharedInformerFactory and SharedInformers do not support restarts).
+	ctx := context.TODO()
 	m.controllerCtx.KubeInformerFactory.Start(ctx.Done())
 	m.controllerCtx.DynamicInformerFactory.Start(ctx.Done())
 	m.controllerCtx.FedInformerFactory.Start(ctx.Done())
+
+	if needRetry {
+		return worker.StatusError
+	}
+
+	return worker.StatusAllOK
 }
 
 func (m *FederatedTypeConfigManager) processFTCDeletion(ftcName string) {
@@ -191,4 +226,6 @@ func (m *FederatedTypeConfigManager) processFTCDeletion(ftcName string) {
 
 	cancel()
 	delete(m.subControllerCancelFuncs, ftcName)
+	delete(m.subControllerContexts, ftcName)
+	delete(m.startedSubControllers, ftcName)
 }

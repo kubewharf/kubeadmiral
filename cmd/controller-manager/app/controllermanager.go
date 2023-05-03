@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app/options"
+	"github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager/leaderelection"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 )
@@ -82,7 +83,7 @@ func Run(ctx context.Context, opts *options.Options) {
 	go func() {
 		handler := &healthz.Handler{
 			Checks: map[string]healthz.Checker{
-				"healthz": healthz.Ping,
+				"livez": healthz.Ping,
 			},
 		}
 		if err := http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", opts.Port), handler); err != nil {
@@ -113,7 +114,7 @@ func startControllers(
 	ctx context.Context,
 	controllerCtx *controllercontext.Context,
 	startControllerFuncs map[string]startControllerFunc,
-	startFTCSubControllerFuncs map[string]StartFTCSubControllerFunc,
+	ftcSubControllerInitFuncs map[string]ftcSubControllerInitFuncs,
 	enabledControllers []string,
 ) error {
 	klog.Infof("Start controllers %v", enabledControllers)
@@ -132,14 +133,22 @@ func startControllers(
 	}
 
 	manager := NewFederatedTypeConfigManager(
-		enabledControllers,
 		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedTypeConfigs(),
 		controllerCtx,
+		controllerCtx.Metrics,
 	)
-	for controllerName, startFunc := range startFTCSubControllerFuncs {
-		manager.RegisterSubController(controllerName, startFunc)
+	for controllerName, initFuncs := range ftcSubControllerInitFuncs {
+		manager.RegisterSubController(controllerName, initFuncs.startFunc, func(typeConfig *v1alpha1.FederatedTypeConfig) bool {
+			if !isControllerEnabled(controllerName, controllersDisabledByDefault, enabledControllers) {
+				return false
+			}
+			if initFuncs.isEnabledFunc != nil {
+				return initFuncs.isEnabledFunc(typeConfig)
+			}
+			return true
+		})
 	}
-	manager.Start(ctx)
+	go manager.Run(ctx)
 
 	return nil
 }

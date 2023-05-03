@@ -162,6 +162,17 @@ func startGlobalScheduler(
 	return nil
 }
 
+func isGlobalSchedulerEnabled(typeConfig *fedcorev1a1.FederatedTypeConfig) bool {
+	for _, controllerGroup := range typeConfig.GetControllers() {
+		for _, controller := range controllerGroup {
+			if controller == scheduler.PrefixedGlobalSchedulerName {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func startFederateController(
 	ctx context.Context,
 	controllerCtx *controllercontext.Context,
