@@ -22,12 +22,14 @@ import (
 	"net/http"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app/options"
 	"github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/controllermanager/leaderelection"
+	"github.com/kubewharf/kubeadmiral/pkg/controllermanager/healthcheck"
+	fedleaderelection "github.com/kubewharf/kubeadmiral/pkg/controllermanager/leaderelection"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 )
 
@@ -49,27 +51,13 @@ var controllersDisabledByDefault = sets.New(MonitorControllerName)
 
 // startControllerFunc is responsible for constructing and starting a controller. startControllerFunc should be
 // asynchronous and an error is only returned if we fail to start the controller.
-type startControllerFunc func(ctx context.Context, controllerCtx *controllercontext.Context) error
+type startControllerFunc func(ctx context.Context, controllerCtx *controllercontext.Context) (readyCheck healthz.Checker, err error)
 
 // Run starts the controller manager according to the given options.
 func Run(ctx context.Context, opts *options.Options) {
 	controllerCtx, err := createControllerContext(opts)
 	if err != nil {
 		klog.Fatalf("Error creating controller context: %v", err)
-	}
-
-	run := func(ctx context.Context) {
-		defer klog.Infoln("Ready to stop controllers")
-		klog.Infoln("Ready to start controllers")
-
-		err := startControllers(ctx, controllerCtx, knownControllers, knownFTCSubControllers, opts.Controllers)
-		if err != nil {
-			klog.Fatalf("Error starting controllers %s: %v", opts.Controllers, err)
-		}
-
-		controllerCtx.StartFactories(ctx)
-
-		<-ctx.Done()
 	}
 
 	if opts.EnableProfiling {
@@ -80,23 +68,42 @@ func Run(ctx context.Context, opts *options.Options) {
 		}()
 	}
 
-	go func() {
-		handler := &healthz.Handler{
-			Checks: map[string]healthz.Checker{
-				"livez": healthz.Ping,
-			},
+	handler := healthcheck.NewMutableHealthCheckHandler()
+	handler.AddLivezChecker("ping", healthz.Ping)
+
+	var healthzAdaptor *leaderelection.HealthzAdaptor
+	if opts.EnableLeaderElect {
+		healthzAdaptor = &leaderelection.HealthzAdaptor{}
+		handler.AddLivezChecker("leaderElection", healthzAdaptor.Check)
+	}
+
+	run := func(ctx context.Context) {
+		defer klog.Infoln("Ready to stop controllers")
+		klog.Infoln("Ready to start controllers")
+
+		err := startControllers(ctx, controllerCtx, knownControllers, knownFTCSubControllers, opts.Controllers, handler)
+		if err != nil {
+			klog.Fatalf("Error starting controllers %s: %v", opts.Controllers, err)
 		}
+
+		controllerCtx.StartFactories(ctx)
+
+		<-ctx.Done()
+	}
+
+	go func() {
 		if err := http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", opts.Port), handler); err != nil {
 			klog.Fatalf("Failed to start healthz endpoint: %v", err)
 		}
 	}()
 
 	if opts.EnableLeaderElect {
-		elector, err := leaderelection.NewFederationLeaderElector(
+		elector, err := fedleaderelection.NewFederationLeaderElector(
 			controllerCtx.RestConfig,
 			run,
 			controllerCtx.FedSystemNamespace,
 			opts.LeaderElectionResourceName,
+			healthzAdaptor,
 		)
 		if err != nil {
 			klog.Fatalf("Cannot elect leader: %v", err)
@@ -116,6 +123,7 @@ func startControllers(
 	startControllerFuncs map[string]startControllerFunc,
 	ftcSubControllerInitFuncs map[string]ftcSubControllerInitFuncs,
 	enabledControllers []string,
+	healthCheckHandler *healthcheck.MutableHealthCheckHandler,
 ) error {
 	klog.Infof("Start controllers %v", enabledControllers)
 

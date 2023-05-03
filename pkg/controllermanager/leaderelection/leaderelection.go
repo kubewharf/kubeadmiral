@@ -42,6 +42,7 @@ func NewFederationLeaderElector(
 	fnRunManager func(context.Context),
 	fedNamespace string,
 	component string,
+	healthzAdaptor *leaderelection.HealthzAdaptor,
 ) (*leaderelection.LeaderElector, error) {
 	leaderElectionClient := kubernetes.NewForConfigOrDie(config)
 
@@ -76,6 +77,7 @@ func NewFederationLeaderElector(
 		LeaseDuration: 15 * time.Second,
 		RenewDeadline: 10 * time.Second,
 		RetryPeriod:   5 * time.Second,
+		WatchDog:      healthzAdaptor,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				klog.Infof("Promoted as leader")

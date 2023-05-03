@@ -22,6 +22,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
@@ -37,7 +38,7 @@ import (
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 )
 
-func startFederatedClusterController(ctx context.Context, controllerCtx *controllercontext.Context) error {
+func startFederatedClusterController(ctx context.Context, controllerCtx *controllercontext.Context) (healthz.Checker, error) {
 	clusterController, err := federatedcluster.NewFederatedClusterController(
 		controllerCtx.FedClientset,
 		controllerCtx.KubeClientset,
@@ -57,7 +58,7 @@ func startFederatedClusterController(ctx context.Context, controllerCtx *control
 	return nil
 }
 
-func startTypeConfigController(ctx context.Context, controllerCtx *controllercontext.Context) error {
+func startTypeConfigController(ctx context.Context, controllerCtx *controllercontext.Context) (healthz.Checker, error) {
 	controllerConfig := controllerConfigFromControllerContext(controllerCtx)
 	typeConfigController, err := federatedtypeconfig.NewController(
 		controllerConfig,
@@ -75,7 +76,7 @@ func startTypeConfigController(ctx context.Context, controllerCtx *controllercon
 	return nil
 }
 
-func startMonitorController(ctx context.Context, controllerCtx *controllercontext.Context) error {
+func startMonitorController(ctx context.Context, controllerCtx *controllercontext.Context) (healthz.Checker, error) {
 	controllerConfig := controllerConfigFromControllerContext(controllerCtx)
 	monitorController, err := monitor.NewMonitorController(controllerConfig)
 	if err != nil {
@@ -87,7 +88,7 @@ func startMonitorController(ctx context.Context, controllerCtx *controllercontex
 	return nil
 }
 
-func startFollowerController(ctx context.Context, controllerCtx *controllercontext.Context) error {
+func startFollowerController(ctx context.Context, controllerCtx *controllercontext.Context) (healthz.Checker, error) {
 	controller, err := follower.NewFollowerController(
 		controllerCtx.KubeClientset,
 		controllerCtx.DynamicClientset,
@@ -125,7 +126,7 @@ func startGlobalScheduler(
 	ctx context.Context,
 	controllerCtx *controllercontext.Context,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) error {
+) (healthz.Checker, error) {
 	controllers := sets.Set[string]{}
 	for _, controllerGroup := range typeConfig.GetControllers() {
 		for _, controller := range controllerGroup {
@@ -177,7 +178,7 @@ func startFederateController(
 	ctx context.Context,
 	controllerCtx *controllercontext.Context,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) error {
+) (healthz.Checker, error) {
 	if typeConfig.GetSourceType() == nil {
 		klog.Infof("Federate controller disabled for FederatedTypeConfig %s", typeConfig.Name)
 		return nil
@@ -210,7 +211,7 @@ func startAutoMigrationController(
 	ctx context.Context,
 	controllerCtx *controllercontext.Context,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) error {
+) (healthz.Checker, error) {
 	if typeConfig.Spec.AutoMigration == nil || !typeConfig.Spec.AutoMigration.Enabled {
 		klog.Infof("Auto migration controller disabled for FederatedTypeConfig %s", typeConfig.Name)
 		return nil
