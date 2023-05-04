@@ -72,7 +72,7 @@ func NewFederationLeaderElector(
 		return nil, err
 	}
 
-	return leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
+	elector, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
 		Lock:          rl,
 		LeaseDuration: 15 * time.Second,
 		RenewDeadline: 10 * time.Second,
@@ -88,4 +88,11 @@ func NewFederationLeaderElector(
 			},
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	healthzAdaptor.SetLeaderElection(elector)
+
+	return elector, nil
 }
