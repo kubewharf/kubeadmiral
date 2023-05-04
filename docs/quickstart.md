@@ -2,18 +2,14 @@
 
 This guide will cover:
 
-* [Installation](#installation): different ways to setup and run the KubeAdmiral control plane.
+* [Installation](#installation): running KubeAdmiral against a local federation of fake clusters.
 * [Managing Kubernetes resources](#managing-kubernetes-resources): basic example of propgating a Deployment resource.
 
 ## Installation
 
-This section lists different ways to setup and run the KubeAdmiral control plane. To learn how to join a new cluster to an existing KubeAdmiral control plane, please refer to our [docs](./cluster-joining.md).
+If you wish to develop KubeAdmiral or simply see how it works, you can easily bootstrap a KubeAdmiral control plane on your local machine.
 
-### For development and testing
-
-If you wish to develop KubeAdmiral or simply see how it works, you can easily bootstrap a KubeAdmiral control plane in your local machine.
-
-#### Prerequisites
+### Prerequisites
 
 Ensure that the following programs are installed:
 
@@ -21,19 +17,19 @@ Ensure that the following programs are installed:
 * [Kind](https://kind.sigs.k8s.io/) version v0.10.0+
 * [Kubectl](https://github.com/kubernetes/kubectl) version v0.20.15+
 
-##### 1. Clone the KubeAdmiral repo to your machine
+### 1. Clone the KubeAdmiral repo to your machine
 
 ```console
 git clone https://github.com/kubewharf/kubeadmiral
 ```
 
-##### 2. Change to the kubeadmiral directory
+### 2. Change to the kubeadmiral directory
 
 ```console
 cd kubeadmiral
 ```
 
-##### 3. Bootstrap Kubernetes clusters
+### 3. Bootstrap Kubernetes clusters
 
 ```console
 bash hack/dev-up.sh
@@ -55,25 +51,44 @@ $ ls $HOME/.kube/kubeadmiral
 kubeadmiral-host.yaml kubeadmiral-member-1.yaml kubeadmiral-member-2.yaml kubeadmiral-member-3.yaml
 ```
 
-##### 4. Build and run the KubeAdmiral controller-manager
+The host cluster is the main entrypoint of a KubeAdmiral instance. KubeAdmiral will propagate resources in the host cluster to the member clusters, which will in turn run the workloads.
+
+You can check any of the member clusters by running:
+
+```console
+export KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral-member-{1,2,3}.yaml
+```
+
+We will mainly be working with the host cluster for the rest of this guide. Before proceeding, go ahead and switch to the host cluster:
+
+```console
+export KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml
+```
+
+### 4. Build and run the KubeAdmiral controller-manager
 
 ```console
 $ make build
-$ ./output/manager --create-crds-for-ftcs \
+$ ./output/manager \
+    --create-crds-for-ftcs \
     --klog-logtostderr=false \
-    --klog-log-file "./kubeadmiral.log" \
-    --kubeconfig "$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml" \
+    --klog-log-file="./kubeadmiral.log" \
+    --kubeconfig="$KUBECONFIG" \
     2>/dev/null
 ```
 
-**Note: This runs the KubeAdmiral controller-manager on your local machine.**
+This runs the KubeAdmiral controller-manager on your local machine. You can check the controller-manager logs in a separate terminal window:
 
-##### 5. Wait for member clusters to be joined
+```console
+less ./kubeadmiral.log
+```
+
+### 5. Wait for member clusters to be joined
 
 The KubeAdmiral controller-manager will now handle the joining of the member clusters. Afterwards, we should expect to see the following:
 
 ```console
-$ KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml kubectl get fcluster
+$ kubectl get fcluster
 
 NAME                   READY   JOINED   AGE
 kubeadmiral-member-1   True    True     1m
@@ -85,6 +100,8 @@ kubeadmiral-member-3   True    True     1m
 
 🎉 The KubeAdmiral control plane and member clusters are now ready to be used.
 
+To learn how to join a new cluster to an existing KubeAdmiral control plane, please refer to [this guide](./cluster-joining.md).
+
 ## Managing Kubernetes resources
 
 The most common usage of KubeAdmiral is to manage Kubernetes resources across multiple clusters using a single unified API.
@@ -94,31 +111,16 @@ This section describes how to propagate a Deployment to multiple member clusters
 <!-- TOOD: link to docs once available -->
 <!-- For more advanced tutorials on resource management, you may refer to our [docs](). -->
 
-### Prerequisites
-
-Ensure that the following programs are installed:
-
-* [Kubectl](https://github.com/kubernetes/kubectl) version v0.20.15+
-
-Ensure that we have the following files:
-
-* The kubeconfig of the KubeAdmiral control plane's host cluster
-
-### 1. Source the kubeconfig of the host cluster
-
-Replace `HOST_CLUSTER_KUBECONFIG` and `HOST_CLUSTER_CONTEXT` with the kubeconfig and context of the host cluster respectively.
+### 1. Ensure you are still using the host cluster kubeconfig
 
 ```console
-$ export KUBECONFIG=HOST_CLUSTER_KUBECONFIG
-
-# Remember to switch to the right context
-$ kubectl config use-context HOST_CLUSTER_CONTEXT
+export KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml
 ```
 
 ### 2. Create the deployment
 
 ```console
-$ cat <<EOF > test-deployment.yaml
+kubectl create -f - <<EOF
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -143,13 +145,12 @@ spec:
           protocol: TCP
           name: echo-server
 EOF
-$ kubectl create -f test-deployment.yaml
 ```
 
 ### 3. Create a new propagation policy
 
 ```console
-$ cat <<EOF > test-policy.yaml
+kubectl create -f - <<EOF
 apiVersion: core.kubeadmiral.io/v1alpha1
 kind: PropagationPolicy
 metadata:
@@ -158,12 +159,12 @@ spec:
   schedulingMode: Divide
   clusterSelector: {}
 EOF
-$ kubectl create -f test-policy.yaml
 ```
 
 The newly created propagation policy will propagate resources to all clusters.
 
-To learn more about how to use propagation policies, refer to our [docs]().
+<!-- TODO: link to docs once available -->
+<!-- To learn more about how to use propagation policies, refer to our [docs](). -->
 
 ### 4. Label the deployment with the propagation policy
 
@@ -184,11 +185,17 @@ NAME          READY   UP-TO-DATE   AVAILABLE   AGE
 echo-server   6/6     6            6           10m
 ```
 
-We can also view the status of the deployments in each member cluster by checking its `FederatedClusterStatus` object.
+We can also view the status of the deployments in each member cluster by checking its `FederatedDeploymentStatus` object.
 
 ```console
-$ kubectl get fdeploystatus echo-server -oyaml | yq .clusterStatus
+$ kubectl get fdeploystatus echo-server -oyaml
 
+apiVersion: types.kubeadmiral.io/v1alpha1
+kind: FederatedDeploymentStatus
+metadata:
+  name: dp
+  namespace: default
+clusterStatus:
 - clusterName: kubeadmiral-member-1
   collectedFields:
     metadata:
@@ -267,9 +274,3 @@ $ kubectl get fdeploystatus echo-server -oyaml | yq .clusterStatus
 ```
 
 🎉 We have successfully propagated a deployment using KubeAdmiral.
-
-### 6. Delete the files created in this example
-
-```console
-rm test-deployment.yaml test-policy.yaml
-```
