@@ -18,6 +18,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -38,9 +39,9 @@ import (
 )
 
 const (
-	FederateControllerName      = "federate-controller"
-	GlobalSchedulerName         = "global-scheduler"
-	AutoMigrationControllerName = "auto-migration-controller"
+	FederateControllerName      = "federate"
+	GlobalSchedulerName         = "scheduler"
+	AutoMigrationControllerName = "automigration"
 )
 
 var knownFTCSubControllers = map[string]controllermanager.FTCSubControllerInitFuncs{
@@ -173,6 +174,7 @@ func (m *FederatedTypeConfigManager) reconcile(qualifiedName common.QualifiedNam
 
 	needRetry := false
 	for controllerName, startFunc := range m.registeredSubControllers {
+		controllerName = fmt.Sprintf("%s-%s", typeConfig.Name, controllerName)
 		logger := logger.WithValues("controller", controllerName)
 
 		if m.startedSubControllers[qualifiedName.Name].Has(controllerName) {

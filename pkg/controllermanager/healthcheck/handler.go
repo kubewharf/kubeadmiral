@@ -24,7 +24,9 @@ func NewMutableHealthCheckHandler() *MutableHealthCheckHandler {
 
 	mux := http.NewServeMux()
 	mux.Handle("/readyz", http.StripPrefix("/readyz", h.readyzHandler))
+	mux.Handle("/readyz/", http.StripPrefix("/readyz/", h.readyzHandler))
 	mux.Handle("/livez", http.StripPrefix("/livez", h.livezHandler))
+	mux.Handle("/livez/", http.StripPrefix("/livez/", h.livezHandler))
 
 	h.handler = mux
 

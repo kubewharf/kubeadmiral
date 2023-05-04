@@ -35,10 +35,10 @@ import (
 )
 
 const (
-	FederatedClusterControllerName = "federated-cluster-controller"
-	TypeConfigControllerName       = "type-config-controller"
-	MonitorControllerName          = "monitor-controller"
-	FollowerControllerName         = "follower-controller"
+	FederatedClusterControllerName = "federatedcluster"
+	TypeConfigControllerName       = "typeconfig"
+	MonitorControllerName          = "monitor"
+	FollowerControllerName         = "follower"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
