@@ -20,7 +20,7 @@ func HealthzCheckerAdaptor(name string, controller Controller) healthz.Checker {
 			return nil
 		}
 		
-		return fmt.Errorf("Controller %s not ready", name)
+		return fmt.Errorf("controller %s not ready", name)
 	}
 }
 

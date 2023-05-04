@@ -174,7 +174,6 @@ func (m *FederatedTypeConfigManager) reconcile(qualifiedName common.QualifiedNam
 
 	needRetry := false
 	for controllerName, startFunc := range m.registeredSubControllers {
-		controllerName = fmt.Sprintf("%s-%s", typeConfig.Name, controllerName)
 		logger := logger.WithValues("controller", controllerName)
 
 		if m.startedSubControllers[qualifiedName.Name].Has(controllerName) {
@@ -195,7 +194,10 @@ func (m *FederatedTypeConfigManager) reconcile(qualifiedName common.QualifiedNam
 			m.startedSubControllers[qualifiedName.Name].Insert(controllerName)
 		}
 
-		m.healthCheckHandler.AddReadyzChecker(controllerName, controllermanager.HealthzCheckerAdaptor(controllerName, controller))
+		m.healthCheckHandler.AddReadyzChecker(
+			resolveSubcontrollerName(controllerName, qualifiedName.Name),
+			controllermanager.HealthzCheckerAdaptor(controllerName, controller),
+		)
 	}
 
 	// Since the controllers are created dynamically, we have to start the informer factories again, in case any new
@@ -223,7 +225,16 @@ func (m *FederatedTypeConfigManager) processFTCDeletion(ftcName string) {
 	}
 
 	cancel()
+
+	for controller := range m.startedSubControllers[ftcName] {
+		m.healthCheckHandler.RemoveReadyzChecker(resolveSubcontrollerName(controller, ftcName))
+	}
+
 	delete(m.subControllerCancelFuncs, ftcName)
 	delete(m.subControllerContexts, ftcName)
 	delete(m.startedSubControllers, ftcName)
+}
+
+func resolveSubcontrollerName(baseName, ftcName string) string {
+	return fmt.Sprintf("%s-%s", ftcName, baseName)
 }

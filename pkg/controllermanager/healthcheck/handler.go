@@ -54,4 +54,18 @@ func (h *MutableHealthCheckHandler) AddLivezChecker(name string, checker healthz
 	h.livezHandler.Checks[name] = checker
 }
 
+func (h *MutableHealthCheckHandler) RemoveReadyzChecker(name string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	delete(h.readyzHandler.Checks, name)
+}
+
+func (h *MutableHealthCheckHandler) RemoveLivezChecker(name string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	delete(h.livezHandler.Checks, name)
+}
+
 var _ http.Handler = &MutableHealthCheckHandler{}
