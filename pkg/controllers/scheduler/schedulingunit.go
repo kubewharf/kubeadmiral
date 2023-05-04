@@ -35,15 +35,14 @@ import (
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
 
-func (s *Scheduler) schedulingUnitForFedObject(
+func schedulingUnitForFedObject(
+	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	fedObject *unstructured.Unstructured,
 	policy fedcorev1a1.GenericPropagationPolicy,
 ) (*framework.SchedulingUnit, error) {
-	targetType := s.typeConfig.GetTargetType()
-
-	objectMeta, err := getTemplateObjectMeta(fedObject)
+	template, err := getTemplate(fedObject)
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving object meta from template: %w", err)
+		return nil, fmt.Errorf("error retrieving template: %w", err)
 	}
 
 	schedulingMode := getSchedulingModeFromPolicy(policy)
@@ -53,14 +52,14 @@ func (s *Scheduler) schedulingUnitForFedObject(
 	}
 
 	var desiredReplicasOption *int64
-	if schedulingMode == fedcorev1a1.SchedulingModeDivide && s.typeConfig.Spec.PathDefinition.ReplicasSpec == "" {
+	if schedulingMode == fedcorev1a1.SchedulingModeDivide && typeConfig.Spec.PathDefinition.ReplicasSpec == "" {
 		// TODO remove this check in favor of a DivideIfPossible mode
 		schedulingMode = fedcorev1a1.SchedulingModeDuplicate
 	}
 	if schedulingMode == fedcorev1a1.SchedulingModeDivide {
 		value, err := utilunstructured.GetInt64FromPath(
 			fedObject,
-			s.typeConfig.Spec.PathDefinition.ReplicasSpec,
+			typeConfig.Spec.PathDefinition.ReplicasSpec,
 			common.TemplatePath,
 		)
 		if err != nil {
@@ -70,19 +69,20 @@ func (s *Scheduler) schedulingUnitForFedObject(
 		desiredReplicasOption = value
 	}
 
-	currentReplicas, err := getCurrentReplicasFromObject(s.typeConfig, fedObject)
+	currentReplicas, err := getCurrentReplicasFromObject(typeConfig, fedObject)
 	if err != nil {
 		return nil, err
 	}
 
+	targetType := typeConfig.GetTargetType()
 	schedulingUnit := &framework.SchedulingUnit{
 		GroupVersion:    schema.GroupVersion{Group: targetType.Group, Version: targetType.Version},
 		Kind:            targetType.Kind,
 		Resource:        targetType.Name,
-		Namespace:       objectMeta.GetNamespace(),
-		Name:            objectMeta.GetName(),
-		Labels:          objectMeta.GetLabels(),
-		Annotations:     objectMeta.GetAnnotations(),
+		Namespace:       template.GetNamespace(),
+		Name:            template.GetName(),
+		Labels:          template.GetLabels(),
+		Annotations:     template.GetAnnotations(),
 		DesiredReplicas: desiredReplicasOption,
 		CurrentClusters: currentReplicas,
 		AvoidDisruption: true,
@@ -162,7 +162,7 @@ func (s *Scheduler) schedulingUnitForFedObject(
 	return schedulingUnit, nil
 }
 
-func getTemplateObjectMeta(fedObject *unstructured.Unstructured) (*metav1.ObjectMeta, error) {
+func getTemplate(fedObject *unstructured.Unstructured) (*metav1.PartialObjectMetadata, error) {
 	templateContent, exists, err := unstructured.NestedMap(fedObject.Object, common.TemplatePath...)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving template: %w", err)
@@ -170,12 +170,12 @@ func getTemplateObjectMeta(fedObject *unstructured.Unstructured) (*metav1.Object
 	if !exists {
 		return nil, fmt.Errorf("template not found")
 	}
-	objectMeta := metav1.ObjectMeta{}
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(templateContent, &objectMeta)
+	obj := metav1.PartialObjectMetadata{}
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(templateContent, &obj)
 	if err != nil {
-		return nil, fmt.Errorf("template cannot be converted to unstructured: %w", err)
+		return nil, fmt.Errorf("template cannot be converted from unstructured: %w", err)
 	}
-	return &objectMeta, nil
+	return &obj, nil
 }
 
 func getCurrentReplicasFromObject(

@@ -32,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	schedwebhookv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/schedulerwebhook/v1alpha1"
@@ -46,7 +47,8 @@ const (
 )
 
 var (
-	sampleHttpError    = fmt.Errorf("I'm a teapot")
+	// sample error that http.Client.Do might return
+	errClientSample    = fmt.Errorf("XXX")
 	sampleWebhookError = "rejected: kubeadmiral is too weak"
 )
 
@@ -68,16 +70,20 @@ func doTest[T any](
 	t *testing.T,
 	path string,
 	checkReq func(g gomega.Gomega, req *T),
-	httpErr error,
+	requestErr error,
+	respStatusCode *int,
+	// if provided, will be used instead of marshalling resp
+	respBody string,
 	resp any,
-	checkPluginResult func(g gomega.Gomega, plugin *WebhookPlugin),
+	runPluginAndCheckResults func(g gomega.Gomega, plugin *WebhookPlugin),
 ) {
 	t.Helper()
 	g := gomega.NewWithT(t)
 
 	client := &fakeHTTPClient{
-		err: httpErr,
+		err: requestErr,
 		roundTrip: func(httpReq *http.Request) *http.Response {
+			// Verify the plugin sends the request correctly
 			g.Expect(httpReq.Method).To(gomega.Equal(http.MethodPost))
 			g.Expect(httpReq.Header.Get("Content-Type")).To(gomega.Equal("application/json"))
 			g.Expect(httpReq.Header.Get("Accept")).To(gomega.Equal("application/json"))
@@ -88,13 +94,22 @@ func doTest[T any](
 			err := json.NewDecoder(httpReq.Body).Decode(req)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 
-			// Verify the plugin sends the request correctly
 			checkReq(g, req)
 
-			respBytes, err := json.Marshal(&resp)
-			g.Expect(err).NotTo(gomega.HaveOccurred())
+			var respBytes []byte
+			if respBody != "" {
+				respBytes = []byte(respBody)
+			} else {
+				respBytes, err = json.Marshal(&resp)
+				g.Expect(err).NotTo(gomega.HaveOccurred())
+			}
+
+			statusCode := http.StatusOK
+			if respStatusCode != nil {
+				statusCode = *respStatusCode
+			}
 			return &http.Response{
-				StatusCode: http.StatusOK,
+				StatusCode: statusCode,
 				Body:       io.NopCloser(bytes.NewReader(respBytes)),
 			}
 		},
@@ -110,39 +125,75 @@ func doTest[T any](
 	)
 
 	// Verify the plugin processes webhook responses correctly
-	checkPluginResult(g, plugin)
+	runPluginAndCheckResults(g, plugin)
+}
+
+type webhookErrors struct {
+	// error returned by the http client
+	requestError error
+	// non-200 response returned by the webhook
+	responseStatusCode *int
+	responseBody       string
+	// error field in the webhook response
+	responseError string
+}
+
+func (e *webhookErrors) expectedMessage() string {
+	switch {
+	case e.requestError != nil:
+		return fmt.Sprintf("request failed: %v", e.requestError)
+	case e.responseStatusCode != nil && *e.responseStatusCode != http.StatusOK:
+		return fmt.Sprintf("unexpected status code: %d, body: %s", *e.responseStatusCode, e.responseBody)
+	case e.responseError != "":
+		return e.responseError
+	default:
+		return ""
+	}
 }
 
 func TestFilter(t *testing.T) {
 	testCases := map[string]struct {
-		su       *framework.SchedulingUnit
-		cluster  *fedcorev1a1.FederatedCluster
-		httpErr  error
+		webhookErrors
+
+		// args
+		su      *framework.SchedulingUnit
+		cluster *fedcorev1a1.FederatedCluster
+
+		// result
 		selected bool
-		err      string
 	}{
 		"webhook selects cluster": {
 			su:       getSampleSchedulingUnit(),
 			cluster:  getSampleCluster("test"),
 			selected: true,
-			err:      "",
 		},
-		"webhook does not select clcuster": {
+		"webhook does not select cluster": {
 			su:       getSampleSchedulingUnit(),
 			cluster:  getSampleCluster("test"),
 			selected: false,
-			err:      "",
 		},
-		"webhook returns error": {
+		"webhook returns 200 response with error": {
+			webhookErrors: webhookErrors{
+				responseError: sampleWebhookError,
+			},
 			su:       getSampleSchedulingUnit(),
 			cluster:  getSampleCluster("test"),
 			selected: false,
-			err:      sampleWebhookError,
 		},
-		"http error": {
+		"webhook returns non-200 resopnse": {
+			webhookErrors: webhookErrors{
+				responseStatusCode: pointer.Int(http.StatusInternalServerError),
+				responseBody:       "XXX",
+			},
 			su:      getSampleSchedulingUnit(),
 			cluster: getSampleCluster("test"),
-			httpErr: sampleHttpError,
+		},
+		"request error": {
+			webhookErrors: webhookErrors{
+				requestError: errClientSample,
+			},
+			su:      getSampleSchedulingUnit(),
+			cluster: getSampleCluster("test"),
 		},
 	}
 
@@ -155,19 +206,24 @@ func TestFilter(t *testing.T) {
 					g.Expect(req.SchedulingUnit).To(custommatchers.SemanticallyEqual(*ConvertSchedulingUnit(tc.su)))
 					g.Expect(req.Cluster).To(custommatchers.SemanticallyEqual(*tc.cluster))
 				},
-				tc.httpErr,
+				tc.webhookErrors.requestError,
+				tc.webhookErrors.responseStatusCode,
+				tc.webhookErrors.responseBody,
 				schedwebhookv1a1.FilterResponse{
 					Selected: tc.selected,
-					Error:    tc.err,
+					Error:    tc.webhookErrors.responseError,
 				},
 				func(g gomega.Gomega, plugin *WebhookPlugin) {
 					result := plugin.Filter(getPluginContext(), tc.su, tc.cluster)
-					if tc.httpErr != nil {
-						g.Expect(result.Message()).To(gomega.Equal(fmt.Errorf("request failed: %w", tc.httpErr).Error()))
-					} else {
-						g.Expect(result.Message()).To(gomega.Equal(tc.err))
+
+					actualMessage := result.Message()
+					expectedMessage := tc.expectedMessage()
+					g.Expect(actualMessage).To(gomega.Equal(expectedMessage))
+
+					if expectedMessage == "" {
+						// result should be expected
+						g.Expect(result.IsSuccess()).To(gomega.Equal(tc.selected))
 					}
-					g.Expect(result.IsSuccess()).To(gomega.Equal(tc.selected))
 				},
 			)
 		})
@@ -176,27 +232,41 @@ func TestFilter(t *testing.T) {
 
 func TestScore(t *testing.T) {
 	testCases := map[string]struct {
+		webhookErrors
+
+		// args
 		su      *framework.SchedulingUnit
 		cluster *fedcorev1a1.FederatedCluster
-		httpErr error
-		score   int64
-		err     string
+
+		// result
+		score int64
 	}{
 		"webhook returns score": {
 			su:      getSampleSchedulingUnit(),
 			cluster: getSampleCluster("test"),
 			score:   5,
-			err:     "",
 		},
-		"webhook returns error": {
+		"webhook returns 200 response with error": {
+			webhookErrors: webhookErrors{
+				responseError: sampleWebhookError,
+			},
 			su:      getSampleSchedulingUnit(),
 			cluster: getSampleCluster("test"),
-			err:     sampleWebhookError,
 		},
-		"http error": {
+		"webhook returns non-200 response": {
+			webhookErrors: webhookErrors{
+				responseStatusCode: pointer.Int(http.StatusInternalServerError),
+				responseBody:       "YYY",
+			},
 			su:      getSampleSchedulingUnit(),
 			cluster: getSampleCluster("test"),
-			httpErr: sampleHttpError,
+		},
+		"request error": {
+			webhookErrors: webhookErrors{
+				requestError: errClientSample,
+			},
+			su:      getSampleSchedulingUnit(),
+			cluster: getSampleCluster("test"),
 		},
 	}
 
@@ -209,20 +279,23 @@ func TestScore(t *testing.T) {
 					g.Expect(req.SchedulingUnit).To(custommatchers.SemanticallyEqual(*ConvertSchedulingUnit(tc.su)))
 					g.Expect(req.Cluster).To(custommatchers.SemanticallyEqual(*tc.cluster))
 				},
-				tc.httpErr,
+				tc.webhookErrors.requestError,
+				tc.webhookErrors.responseStatusCode,
+				tc.webhookErrors.responseBody,
 				schedwebhookv1a1.ScoreResponse{
 					Score: tc.score,
-					Error: tc.err,
+					Error: tc.responseError,
 				},
 				func(g gomega.Gomega, plugin *WebhookPlugin) {
 					score, result := plugin.Score(getPluginContext(), tc.su, tc.cluster)
-					if tc.httpErr != nil {
-						g.Expect(result.Message()).To(gomega.Equal(fmt.Errorf("request failed: %w", tc.httpErr).Error()))
-					} else {
-						g.Expect(result.Message()).To(gomega.Equal(tc.err))
+
+					actualMessage := result.Message()
+					expectedMessage := tc.expectedMessage()
+					g.Expect(actualMessage).To(gomega.Equal(expectedMessage))
+
+					if expectedMessage == "" {
+						g.Expect(score).To(gomega.Equal(tc.score))
 					}
-					g.Expect(result.IsSuccess()).To(gomega.Equal(tc.httpErr == nil && tc.err == ""))
-					g.Expect(score).To(gomega.Equal(tc.score))
 				},
 			)
 		})
@@ -244,25 +317,38 @@ func TestSelect(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		su               *framework.SchedulingUnit
-		httpErr          error
+		webhookErrors
+
+		// args
+		su *framework.SchedulingUnit
+
+		// result
 		expectedClusters []*fedcorev1a1.FederatedCluster
-		err              string
 	}{
 		"webhook selects clusters": {
 			su:               getSampleSchedulingUnit(),
 			expectedClusters: clusters[:2],
-			err:              "",
 		},
-		"webhook returns error": {
+		"webhook returns 200 response with error": {
+			webhookErrors: webhookErrors{
+				responseError: sampleWebhookError,
+			},
 			su:               getSampleSchedulingUnit(),
 			expectedClusters: nil,
-			err:              sampleWebhookError,
 		},
-		"http error": {
+		"webhook returns non-200 response": {
+			webhookErrors: webhookErrors{
+				responseStatusCode: pointer.Int(http.StatusInternalServerError),
+				responseBody:       "ZZZ",
+			},
+			su: getSampleSchedulingUnit(),
+		},
+		"request error": {
+			webhookErrors: webhookErrors{
+				responseError: sampleWebhookError,
+			},
 			su:               getSampleSchedulingUnit(),
 			expectedClusters: nil,
-			httpErr:          sampleHttpError,
 		},
 	}
 
@@ -287,20 +373,23 @@ func TestSelect(t *testing.T) {
 					}
 					g.Expect(req.ClusterScores).To(custommatchers.SemanticallyEqual(expectedClusterScores))
 				},
-				tc.httpErr,
+				tc.webhookErrors.requestError,
+				tc.webhookErrors.responseStatusCode,
+				tc.webhookErrors.responseBody,
 				schedwebhookv1a1.SelectResponse{
 					SelectedClusterNames: selectedClusterNames,
-					Error:                tc.err,
+					Error:                tc.responseError,
 				},
 				func(g gomega.Gomega, plugin *WebhookPlugin) {
 					selectedClusters, result := plugin.SelectClusters(getPluginContext(), tc.su, clusterScores)
-					if tc.httpErr != nil {
-						g.Expect(result.Message()).To(gomega.Equal(fmt.Errorf("request failed: %w", tc.httpErr).Error()))
-					} else {
-						g.Expect(result.Message()).To(gomega.Equal(tc.err))
+
+					actualMessage := result.Message()
+					expectedMessage := tc.expectedMessage()
+					g.Expect(actualMessage).To(gomega.Equal(expectedMessage))
+
+					if expectedMessage == "" {
+						g.Expect(selectedClusters).To(custommatchers.SemanticallyEqual(tc.expectedClusters))
 					}
-					g.Expect(result.IsSuccess()).To(gomega.Equal(tc.httpErr == nil && tc.err == ""))
-					g.Expect(selectedClusters).To(custommatchers.SemanticallyEqual(tc.expectedClusters))
 				},
 			)
 		})

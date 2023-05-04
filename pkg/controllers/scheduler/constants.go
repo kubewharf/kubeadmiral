@@ -47,6 +47,7 @@ const (
 	EventReasonScheduleFederatedObject   = "ScheduleFederatedObject"
 	EventReasonInvalidFollowsObject      = "InvalidFollowsObject"
 	EventReasonWebhookConfigurationError = "WebhookConfigurationError"
+	EventReasonWebhookRegistered         = "WebhookRegistered"
 
 	SchedulingTriggerHashAnnotation = common.DefaultPrefix + "scheduling-trigger-hash"
 )

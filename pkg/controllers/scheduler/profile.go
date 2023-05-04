@@ -17,7 +17,8 @@ limitations under the License.
 package scheduler
 
 import (
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"fmt"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcore "github.com/kubewharf/kubeadmiral/pkg/apis/core"
@@ -81,7 +82,6 @@ func reconcileExtPoint(enabled []string, pluginSet fedcorev1a1.PluginSet) []stri
 }
 
 func (s *Scheduler) createFramework(
-	_ *unstructured.Unstructured,
 	profile *fedcorev1a1.SchedulingProfile,
 	handle framework.Handle,
 ) (framework.Framework, error) {
@@ -90,10 +90,23 @@ func (s *Scheduler) createFramework(
 		applyProfile(enabledPlugins, profile)
 	}
 
-	// TODO: merge the inTree registry with a dynamically generated webhook registry when supporting webhook plugins
+	registry := runtime.Registry{}
+
+	if err := registry.Merge(inTreeRegistry); err != nil {
+		// This should not happen
+		err = fmt.Errorf("failed to merge in-tree plugin registry into empty registry: %w", err)
+		return nil, err
+	}
+	webhookRegistry, err := s.webhookPluginRegistry()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get webhook plugin registry: %w", err)
+	}
+	if err := registry.Merge(webhookRegistry); err != nil {
+		return nil, fmt.Errorf("failed to merge webhook plugin registry: %w", err)
+	}
 
 	return runtime.NewFramework(
-		inTreeRegistry,
+		registry,
 		handle,
 		enabledPlugins,
 	)
