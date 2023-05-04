@@ -73,7 +73,7 @@ $ ./output/manager --create-crds-for-ftcs \
 The KubeAdmiral controller-manager will now handle the joining of the member clusters. Afterwards, we should expect to see the following:
 
 ```console
-$ KUBECONFIG=$HOME/.kube/kubeadmiral/kubeconfig.yaml kubectl get fcluster
+$ KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml kubectl get fcluster
 
 NAME                   READY   JOINED   AGE
 kubeadmiral-member-1   True    True     1m
