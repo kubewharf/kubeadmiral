@@ -75,7 +75,7 @@ func Run(ctx context.Context, opts *options.Options) {
 
 	var healthzAdaptor *leaderelection.HealthzAdaptor
 	if opts.EnableLeaderElect {
-		healthzAdaptor = leaderelection.NewLeaderHealthzAdaptor(time.Second*20)
+		healthzAdaptor = leaderelection.NewLeaderHealthzAdaptor(time.Second * 20)
 		handler.AddLivezChecker("leaderElection", healthzAdaptor.Check)
 	}
 
