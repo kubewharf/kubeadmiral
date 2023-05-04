@@ -176,7 +176,7 @@ func (m *FederatedTypeConfigManager) reconcile(qualifiedName common.QualifiedNam
 	for controllerName, startFunc := range m.registeredSubControllers {
 		logger := logger.WithValues("controller", controllerName)
 
-		if m.startedSubControllers[qualifiedName.Name].Has(controllerName) {
+		if startedSubControllers.Has(controllerName) {
 			logger.V(3).Info("Subcontroller already started")
 		}
 
@@ -191,7 +191,7 @@ func (m *FederatedTypeConfigManager) reconcile(qualifiedName common.QualifiedNam
 			needRetry = true
 		} else {
 			logger.WithValues("controller", controllerName).Info("Started subcontroller")
-			m.startedSubControllers[qualifiedName.Name].Insert(controllerName)
+			startedSubControllers.Insert(controllerName)
 		}
 
 		m.healthCheckHandler.AddReadyzChecker(

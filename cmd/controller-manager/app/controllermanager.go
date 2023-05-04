@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app/options"
-	"github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager/healthcheck"
 	fedleaderelection "github.com/kubewharf/kubeadmiral/pkg/controllermanager/leaderelection"
@@ -146,7 +146,7 @@ func startControllers(
 		controllerCtx.Metrics,
 	)
 	for controllerName, initFuncs := range ftcSubControllerInitFuncs {
-		manager.RegisterSubController(controllerName, initFuncs.StartFunc, func(typeConfig *v1alpha1.FederatedTypeConfig) bool {
+		manager.RegisterSubController(controllerName, initFuncs.StartFunc, func(typeConfig *fedcorev1a1.FederatedTypeConfig) bool {
 			if !isControllerEnabled(controllerName, controllersDisabledByDefault, enabledControllers) {
 				return false
 			}

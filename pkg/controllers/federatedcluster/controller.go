@@ -89,10 +89,6 @@ type FederatedClusterController struct {
 	statusCollectWorker worker.ReconcileWorker
 }
 
-func (f *FederatedClusterController) IsControllerReady() bool {
-	return f.clusterSynced()
-}
-
 func NewFederatedClusterController(
 	client fedclient.Interface,
 	kubeClient kubeclient.Interface,
@@ -159,6 +155,10 @@ func NewFederatedClusterController(
 			}))
 
 	return c, nil
+}
+
+func (c *FederatedClusterController) IsControllerReady() bool {
+	return c.clusterSynced()
 }
 
 func (c *FederatedClusterController) Run(ctx context.Context) {
