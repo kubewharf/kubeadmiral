@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/leaderelection"
@@ -59,7 +60,11 @@ func Run(ctx context.Context, opts *options.Options) {
 
 	if opts.EnableProfiling {
 		go func() {
-			if err := http.ListenAndServe("0.0.0.0:6060", nil); err != nil {
+			server := &http.Server{
+				Addr: "0.0.0.0:6060",
+				ReadHeaderTimeout: time.Second*3,
+			}
+			if err := server.ListenAndServe(); err != nil {
 				klog.Errorf("Failed to start pprof server: %v", err)
 			}
 		}()
@@ -89,8 +94,13 @@ func Run(ctx context.Context, opts *options.Options) {
 	}
 
 	go func() {
-		if err := http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", opts.Port), handler); err != nil {
-			klog.Fatalf("Failed to start healthz endpoint: %v", err)
+		server := &http.Server{
+			Addr: fmt.Sprintf("0.0.0.0:%d", opts.Port),
+			ReadHeaderTimeout: time.Second*3,
+			Handler: handler,
+		}
+		if err := server.ListenAndServe(); err != nil {
+			klog.Fatalf("Failed to start health check server: %v", err)
 		}
 	}()
 
