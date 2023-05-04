@@ -60,6 +60,7 @@ func startFederatedClusterController(ctx context.Context, controllerCtx *control
 
 func startTypeConfigController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
 	controllerConfig := controllerConfigFromControllerContext(controllerCtx)
+	//nolint:contextcheck
 	typeConfigController, err := federatedtypeconfig.NewController(
 		controllerConfig,
 		controllerCtx.KubeClientset,
@@ -80,6 +81,7 @@ func startTypeConfigController(ctx context.Context, controllerCtx *controllercon
 
 func startMonitorController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
 	controllerConfig := controllerConfigFromControllerContext(controllerCtx)
+	//nolint:contextcheck
 	monitorController, err := monitor.NewMonitorController(controllerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error creating monitor controller: %w", err)
@@ -92,6 +94,7 @@ func startMonitorController(ctx context.Context, controllerCtx *controllercontex
 	return monitorController, nil
 }
 
+//nolint:contextcheck
 func startFollowerController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
 	controller, err := follower.NewFollowerController(
 		controllerCtx.KubeClientset,
@@ -218,6 +221,7 @@ func startAutoMigrationController(
 	federatedAPIResource := typeConfig.GetFederatedType()
 	federatedGVR := schemautil.APIResourceToGVR(&federatedAPIResource)
 
+	//nolint:contextcheck
 	controller, err := automigration.NewAutoMigrationController(
 		controllerConfigFromControllerContext(controllerCtx),
 		typeConfig,

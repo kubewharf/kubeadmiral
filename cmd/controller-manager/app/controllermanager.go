@@ -61,8 +61,8 @@ func Run(ctx context.Context, opts *options.Options) {
 	if opts.EnableProfiling {
 		go func() {
 			server := &http.Server{
-				Addr: "0.0.0.0:6060",
-				ReadHeaderTimeout: time.Second*3,
+				Addr:              "0.0.0.0:6060",
+				ReadHeaderTimeout: time.Second * 3,
 			}
 			if err := server.ListenAndServe(); err != nil {
 				klog.Errorf("Failed to start pprof server: %v", err)
@@ -95,9 +95,9 @@ func Run(ctx context.Context, opts *options.Options) {
 
 	go func() {
 		server := &http.Server{
-			Addr: fmt.Sprintf("0.0.0.0:%d", opts.Port),
-			ReadHeaderTimeout: time.Second*3,
-			Handler: handler,
+			Addr:              fmt.Sprintf("0.0.0.0:%d", opts.Port),
+			ReadHeaderTimeout: time.Second * 3,
+			Handler:           handler,
 		}
 		if err := server.ListenAndServe(); err != nil {
 			klog.Fatalf("Failed to start health check server: %v", err)

@@ -138,8 +138,6 @@ type ClusterLifecycleHandlerFuncs struct {
 }
 
 // Builds a FederatedInformer for the given configuration.
-//
-//nolint:contextcheck
 func NewFederatedInformer(
 	config *ControllerConfig,
 	fedClient generic.Client,
