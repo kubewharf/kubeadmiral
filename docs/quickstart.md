@@ -45,18 +45,14 @@ This command will run the script `hack/dev-up.sh` which does the following:
 2. Installs the KubeAdmiral CRDs on the host cluster.
 3. Starts 3 member clusters using Kind.
 4. Bootstraps the joining of the 3 member clusters.
-5. Exports the cluster kubeconfigs to `$HOME/.kube/kubeadmiral/kubeconfig.yaml`
+5. Exports the cluster kubeconfigs to `$HOME/.kube/kubeadmiral/`
 
 If everything went well in the previous steps, we should observe the following:
 
 ```console
-$ KUBECONFIG=$HOME/.kube/kubeadmiral/kubeconfig.yaml kubectl config get-clusters
+$ ls $HOME/.kube/kubeadmiral
 
-NAME
-kind-kubeadmiral-member-1
-kind-kubeadmiral-member-2
-kind-kubeadmiral-member-3
-kind-kubeadmiral-host
+kubeadmiral-host.yaml kubeadmiral-member-1.yaml kubeadmiral-member-2.yaml kubeadmiral-member-3.yaml
 ```
 
 ##### 4. Build and run the KubeAdmiral controller-manager
@@ -66,9 +62,11 @@ $ make manager
 $ ./output/manager --create-crds-for-ftcs \
     --klog-logtostderr=false \
     --klog-log-file "./kubeadmiral.log" \
-    --kubeconfig "$HOME/.kube/kubeadmiral/kubeconfig.yaml" \
+    --kubeconfig "$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml" \
     2>/dev/null
 ```
+
+**Note: This runs the KubeAdmiral controller-manager on your local machine.**
 
 ##### 5. Wait for member clusters to be joined
 
