@@ -126,8 +126,8 @@ const (
 
 // Placement describes a cluster that a federated object can be propagated to and its propagation preferences.
 type Placement struct {
-	// ClusterName is the name of the cluster to propgate to.
-	ClusterName string `json:"clusterName"`
+	// Cluster is the name of the FederatedCluster to propagate to.
+	Cluster string `json:"cluster"`
 	// Preferences contains the cluster's propagation preferences.
 	// +optional
 	Preferences Preferences `json:"preferences,omitempty"`

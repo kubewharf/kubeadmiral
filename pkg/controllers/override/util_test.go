@@ -415,7 +415,7 @@ func TestParseOverrides(t *testing.T) {
 						},
 						{
 							TargetClusters: &fedcorev1a1.TargetClusters{
-								ClusterNames: []string{
+								Clusters: []string{
 									"fake",
 								},
 							},
@@ -433,7 +433,7 @@ func TestParseOverrides(t *testing.T) {
 						},
 						{
 							TargetClusters: &fedcorev1a1.TargetClusters{
-								ClusterNames: []string{
+								Clusters: []string{
 									"cluster1",
 								},
 							},
@@ -518,7 +518,7 @@ func TestParseOverrides(t *testing.T) {
 						},
 						{
 							TargetClusters: &fedcorev1a1.TargetClusters{
-								ClusterNames: []string{
+								Clusters: []string{
 									"cluster1",
 								},
 							},
@@ -543,7 +543,7 @@ func TestParseOverrides(t *testing.T) {
 						},
 						{
 							TargetClusters: &fedcorev1a1.TargetClusters{
-								ClusterNames: []string{
+								Clusters: []string{
 									"cluster2",
 								},
 							},
@@ -659,7 +659,7 @@ func TestIsClusterMatched(t *testing.T) {
 		},
 		"clusterNames should match a clusters with matching name": {
 			targetClusters: &fedcorev1a1.TargetClusters{
-				ClusterNames: []string{"cluster1", "cluster2"},
+				Clusters: []string{"cluster1", "cluster2"},
 			},
 			cluster: &fedcorev1a1.FederatedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -671,7 +671,7 @@ func TestIsClusterMatched(t *testing.T) {
 		},
 		"clusterNames should not match a clusters without matching name": {
 			targetClusters: &fedcorev1a1.TargetClusters{
-				ClusterNames: []string{"cluster1", "cluster2"},
+				Clusters: []string{"cluster1", "cluster2"},
 			},
 			cluster: &fedcorev1a1.FederatedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -683,7 +683,7 @@ func TestIsClusterMatched(t *testing.T) {
 		},
 		"nil clusterNames should match any cluster": {
 			targetClusters: &fedcorev1a1.TargetClusters{
-				ClusterNames: nil,
+				Clusters: nil,
 			},
 			cluster: &fedcorev1a1.FederatedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -695,7 +695,7 @@ func TestIsClusterMatched(t *testing.T) {
 		},
 		"empty clusterNames should match any cluster": {
 			targetClusters: &fedcorev1a1.TargetClusters{
-				ClusterNames: []string{},
+				Clusters: []string{},
 			},
 			cluster: &fedcorev1a1.FederatedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -958,7 +958,7 @@ func TestIsClusterMatched(t *testing.T) {
 		"clusterName, clusterSelector and clusterAffinity should be ANDed": {
 			targetClusters: &fedcorev1a1.TargetClusters{
 				// should match
-				ClusterNames: []string{"cluster1"},
+				Clusters: []string{"cluster1"},
 				// should match
 				ClusterSelector: map[string]string{
 					"foo": "bar",

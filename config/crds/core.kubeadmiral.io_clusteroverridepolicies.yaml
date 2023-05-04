@@ -80,9 +80,9 @@ spec:
                         of all of them.
                       properties:
                         clusterAffinity:
-                          description: ClusterAffinity selects clusters by matching
-                            their labels and fields against expressions. If multiple
-                            terms are specified, their results are ORed.
+                          description: ClusterAffinity selects FederatedClusters by
+                            matching their labels and fields against expressions.
+                            If multiple terms are specified, their results are ORed.
                           items:
                             properties:
                               matchExpressions:
@@ -151,18 +151,18 @@ spec:
                                 type: array
                             type: object
                           type: array
-                        clusterNames:
-                          description: ClusterNames selects clusters by their names.
-                            Empty ClusterNames selects all clusters.
-                          items:
-                            type: string
-                          type: array
                         clusterSelector:
                           additionalProperties:
                             type: string
-                          description: ClusterSelector selects clusters by their labels.
-                            Empty labels selects all clusters.
+                          description: ClusterSelector selects FederatedClusters by
+                            their labels. Empty labels selects all FederatedClusters.
                           type: object
+                        clusters:
+                          description: Clusters selects FederatedClusters by their
+                            names. Empty Clusters selects all FederatedClusters.
+                          items:
+                            type: string
+                          type: array
                       type: object
                   type: object
                 type: array

@@ -353,7 +353,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 					MaxClusters: pointer.Int64(5),
 					Placements: []fedcorev1a1.Placement{
 						{
-							ClusterName: "cluster1",
+							Cluster: "cluster1",
 						},
 					},
 				},
@@ -361,7 +361,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 			annotations: map[string]string{
 				PlacementsAnnotations: `[
 					{
-						"clusterName": "cluster1",
+						"cluster": "cluster1",
 						"preferences": {
 							"minReplicas": 5,
 							"maxReplicas": 10,
@@ -369,7 +369,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 						}
 					},
 					{
-						"clusterName": "cluster2",
+						"cluster": "cluster2",
 						"preferences": {
 							"minReplicas": 2,
 							"weight": 1

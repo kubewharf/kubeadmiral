@@ -132,8 +132,8 @@ spec:
                   items:
                     description: Placement describes a cluster that a federated object can be propagated to and its propagation preferences.
                     properties:
-                      clusterName:
-                        description: ClusterName is the name of the cluster to propgate to.
+                      cluster:
+                        description: Cluster is the name of the FederatedCluster to propagate to.
                         type: string
                       preferences:
                         description: Preferences contains the cluster's propagation preferences.
@@ -155,7 +155,7 @@ spec:
                             type: integer
                         type: object
                     required:
-                      - clusterName
+                      - cluster
                     type: object
                   type: array
                 replicaRescheduling:

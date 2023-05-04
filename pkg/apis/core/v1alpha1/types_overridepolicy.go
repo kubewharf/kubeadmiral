@@ -65,17 +65,17 @@ type OverridePolicyStatus struct {
 }
 
 type TargetClusters struct {
-	// ClusterNames selects clusters by their names.
-	// Empty ClusterNames selects all clusters.
+	// Clusters selects FederatedClusters by their names.
+	// Empty Clusters selects all FederatedClusters.
 	// +optional
-	ClusterNames []string `json:"clusterNames,omitempty"`
+	Clusters []string `json:"clusters,omitempty"`
 
-	// ClusterSelector selects clusters by their labels.
-	// Empty labels selects all clusters.
+	// ClusterSelector selects FederatedClusters by their labels.
+	// Empty labels selects all FederatedClusters.
 	// +optional
 	ClusterSelector map[string]string `json:"clusterSelector,omitempty"`
 
-	// ClusterAffinity selects clusters by matching their labels and fields against expressions.
+	// ClusterAffinity selects FederatedClusters by matching their labels and fields against expressions.
 	// If multiple terms are specified, their results are ORed.
 	// +optional
 	ClusterAffinity []ClusterSelectorTerm `json:"clusterAffinity,omitempty"`

@@ -43,7 +43,7 @@ func OverridePolicyForClustersWithPatches(
 	for clusterName, overriders := range clusterOverriders {
 		policy.Spec.OverrideRules = append(policy.Spec.OverrideRules, fedcorev1a1.OverrideRule{
 			TargetClusters: &fedcorev1a1.TargetClusters{
-				ClusterNames: []string{clusterName},
+				Clusters: []string{clusterName},
 			},
 			Overriders: &overriders,
 		})
