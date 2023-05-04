@@ -36,7 +36,7 @@ import (
 )
 
 const (
-	FederatedClusterControllerName = "federatedcluster"
+	FederatedClusterControllerName = "cluster"
 	TypeConfigControllerName       = "typeconfig"
 	MonitorControllerName          = "monitor"
 	FollowerControllerName         = "follower"
