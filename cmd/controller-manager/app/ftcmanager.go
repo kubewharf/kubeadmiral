@@ -175,23 +175,26 @@ func (m *FederatedTypeConfigManager) reconcile(qualifiedName common.QualifiedNam
 
 	needRetry := false
 	for controllerName, startFunc := range m.registeredSubControllers {
-		logger := logger.WithValues("controller", controllerName)
+		logger := logger.WithValues("subcontroller", controllerName)
 
 		if startedSubControllers.Has(controllerName) {
 			logger.V(3).Info("Subcontroller already started")
+			continue
 		}
 
 		isEnabledFunc := m.isSubControllerEnabledFuncs[controllerName]
 		if isEnabledFunc != nil && !isEnabledFunc(typeConfig) {
 			logger.V(3).Info("Skip starting subcontroller, is disabled")
+			continue
 		}
 
 		controller, err := startFunc(subControllerCtx, m.controllerCtx, typeConfig)
 		if err != nil {
 			logger.Error(err, "Failed to start subcontroller")
 			needRetry = true
+			continue
 		} else {
-			logger.WithValues("controller", controllerName).Info("Started subcontroller")
+			logger.Info("Started subcontroller")
 			startedSubControllers.Insert(controllerName)
 		}
 
@@ -242,5 +245,5 @@ func (m *FederatedTypeConfigManager) processFTCDeletion(ftcName string) {
 }
 
 func resolveSubcontrollerName(baseName, ftcName string) string {
-	return fmt.Sprintf("%s-%s", ftcName, baseName)
+	return fmt.Sprintf("%s[%s]", ftcName, baseName)
 }
