@@ -197,10 +197,7 @@ func NewScheduler(
 	return s, nil
 }
 
-func (s *Scheduler) Run(ctx context.Context) {
-	s.logger.Info("Starting controller")
-	defer s.logger.Info("Stopping controller")
-
+func (s *Scheduler) HasSynced() bool {
 	cachesSynced := []cache.InformerSynced{
 		s.federatedObjectSynced,
 		s.clusterPropagationPolicySynced,
@@ -212,7 +209,20 @@ func (s *Scheduler) Run(ctx context.Context) {
 		cachesSynced = append(cachesSynced, s.propagationPolicySynced)
 	}
 
-	if !cache.WaitForNamedCacheSync(s.name, ctx.Done(), cachesSynced...) {
+	for _, synced := range cachesSynced {
+		if !synced() {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *Scheduler) Run(ctx context.Context) {
+	s.logger.Info("Starting controller")
+	defer s.logger.Info("Stopping controller")
+
+	if !cache.WaitForNamedCacheSync(s.name, ctx.Done(), s.HasSynced) {
 		return
 	}
 
