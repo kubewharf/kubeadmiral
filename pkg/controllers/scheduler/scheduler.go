@@ -95,6 +95,14 @@ type Scheduler struct {
 	logger  klog.Logger
 }
 
+func (s *Scheduler) IsControllerReady() bool {
+	return s.federatedObjectSynced() &&
+		s.clusterPropagationPolicySynced() &&
+		s.clusterSynced() &&
+		s.schedulingProfileSynced() &&
+		s.webhookConfigurationSynced()
+}
+
 func NewScheduler(
 	logger klog.Logger,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,

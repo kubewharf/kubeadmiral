@@ -28,6 +28,7 @@ import (
 
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app/options"
 	"github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager/healthcheck"
 	fedleaderelection "github.com/kubewharf/kubeadmiral/pkg/controllermanager/leaderelection"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
@@ -40,7 +41,7 @@ const (
 	FollowerControllerName         = "follower-controller"
 )
 
-var knownControllers = map[string]startControllerFunc{
+var knownControllers = map[string]controllermanager.StartControllerFunc{
 	FederatedClusterControllerName: startFederatedClusterController,
 	TypeConfigControllerName:       startTypeConfigController,
 	MonitorControllerName:          startMonitorController,
@@ -48,10 +49,6 @@ var knownControllers = map[string]startControllerFunc{
 }
 
 var controllersDisabledByDefault = sets.New(MonitorControllerName)
-
-// startControllerFunc is responsible for constructing and starting a controller. startControllerFunc should be
-// asynchronous and an error is only returned if we fail to start the controller.
-type startControllerFunc func(ctx context.Context, controllerCtx *controllercontext.Context) (readyCheck healthz.Checker, err error)
 
 // Run starts the controller manager according to the given options.
 func Run(ctx context.Context, opts *options.Options) {
@@ -120,8 +117,8 @@ func Run(ctx context.Context, opts *options.Options) {
 func startControllers(
 	ctx context.Context,
 	controllerCtx *controllercontext.Context,
-	startControllerFuncs map[string]startControllerFunc,
-	ftcSubControllerInitFuncs map[string]ftcSubControllerInitFuncs,
+	startControllerFuncs map[string]controllermanager.StartControllerFunc,
+	ftcSubControllerInitFuncs map[string]controllermanager.FTCSubControllerInitFuncs,
 	enabledControllers []string,
 	healthCheckHandler *healthcheck.MutableHealthCheckHandler,
 ) error {
@@ -133,25 +130,28 @@ func startControllers(
 			continue
 		}
 
-		err := initFn(ctx, controllerCtx)
+		controller, err := initFn(ctx, controllerCtx)
 		if err != nil {
 			return fmt.Errorf("error starting %q: %w", controllerName, err)
 		}
 		klog.Infof("Started %q", controllerName)
+
+		healthCheckHandler.AddReadyzChecker(controllerName, controllermanager.HealthzCheckerAdaptor(controllerName, controller))
 	}
 
 	manager := NewFederatedTypeConfigManager(
 		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedTypeConfigs(),
 		controllerCtx,
+		healthCheckHandler,
 		controllerCtx.Metrics,
 	)
 	for controllerName, initFuncs := range ftcSubControllerInitFuncs {
-		manager.RegisterSubController(controllerName, initFuncs.startFunc, func(typeConfig *v1alpha1.FederatedTypeConfig) bool {
+		manager.RegisterSubController(controllerName, initFuncs.StartFunc, func(typeConfig *v1alpha1.FederatedTypeConfig) bool {
 			if !isControllerEnabled(controllerName, controllersDisabledByDefault, enabledControllers) {
 				return false
 			}
-			if initFuncs.isEnabledFunc != nil {
-				return initFuncs.isEnabledFunc(typeConfig)
+			if initFuncs.IsEnabledFunc != nil {
+				return initFuncs.IsEnabledFunc(typeConfig)
 			}
 			return true
 		})

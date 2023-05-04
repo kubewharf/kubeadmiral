@@ -86,6 +86,10 @@ type FederateController struct {
 	logger  klog.Logger
 }
 
+func (c *FederateController) IsControllerReady() bool {
+	return c.federatedObjectSynced() && c.sourceObjectSynced()
+}
+
 func NewFederateController(
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	kubeClient kubeclient.Interface,

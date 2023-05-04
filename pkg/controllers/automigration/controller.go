@@ -80,6 +80,19 @@ type Controller struct {
 	logger  klog.Logger
 }
 
+// IsControllerReady implements controllermanager.Controller
+func (c *Controller) IsControllerReady() bool {
+	clusters, err := c.federatedInformer.GetReadyClusters()
+	if err != nil {
+		c.logger.Error(err, "failed to get ready clusters")
+		return false
+	}
+
+	return c.federatedObjectInformer.Informer().HasSynced() &&
+		c.federatedInformer.ClustersSynced() &&
+		c.federatedInformer.GetTargetStore().ClustersSynced(clusters)
+}
+
 func NewAutoMigrationController(
 	controllerConfig *util.ControllerConfig,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,

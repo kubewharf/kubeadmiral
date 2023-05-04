@@ -20,12 +20,9 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/healthz"
-
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/automigration"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
@@ -38,7 +35,7 @@ import (
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 )
 
-func startFederatedClusterController(ctx context.Context, controllerCtx *controllercontext.Context) (healthz.Checker, error) {
+func startFederatedClusterController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
 	clusterController, err := federatedcluster.NewFederatedClusterController(
 		controllerCtx.FedClientset,
 		controllerCtx.KubeClientset,
@@ -51,14 +48,15 @@ func startFederatedClusterController(ctx context.Context, controllerCtx *control
 		controllerCtx.ComponentConfig.ClusterJoinTimeout,
 	)
 	if err != nil {
-		return fmt.Errorf("error creating federated cluster controller: %w", err)
+		return nil, fmt.Errorf("error creating federated cluster controller: %w", err)
 	}
 
 	go clusterController.Run(ctx)
-	return nil
+
+	return clusterController, nil
 }
 
-func startTypeConfigController(ctx context.Context, controllerCtx *controllercontext.Context) (healthz.Checker, error) {
+func startTypeConfigController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
 	controllerConfig := controllerConfigFromControllerContext(controllerCtx)
 	typeConfigController, err := federatedtypeconfig.NewController(
 		controllerConfig,
@@ -70,25 +68,29 @@ func startTypeConfigController(ctx context.Context, controllerCtx *controllercon
 		controllerCtx.FedInformerFactory,
 	)
 	if err != nil {
-		return fmt.Errorf("error creating type config controller: %w", err)
+		return nil, fmt.Errorf("error creating type config controller: %w", err)
 	}
+
 	go typeConfigController.Run(ctx.Done())
-	return nil
+
+	return typeConfigController, nil
 }
 
-func startMonitorController(ctx context.Context, controllerCtx *controllercontext.Context) (healthz.Checker, error) {
+func startMonitorController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
 	controllerConfig := controllerConfigFromControllerContext(controllerCtx)
 	monitorController, err := monitor.NewMonitorController(controllerConfig)
 	if err != nil {
-		return fmt.Errorf("error creating monitor controller: %w", err)
+		return nil, fmt.Errorf("error creating monitor controller: %w", err)
 	}
+
 	if err = monitorController.Run(ctx.Done()); err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+
+	return monitorController, nil
 }
 
-func startFollowerController(ctx context.Context, controllerCtx *controllercontext.Context) (healthz.Checker, error) {
+func startFollowerController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
 	controller, err := follower.NewFollowerController(
 		controllerCtx.KubeClientset,
 		controllerCtx.DynamicClientset,
@@ -98,10 +100,12 @@ func startFollowerController(ctx context.Context, controllerCtx *controllerconte
 		controllerCtx.WorkerCount,
 	)
 	if err != nil {
-		return fmt.Errorf("error creating follower controller: %w", err)
+		return nil, fmt.Errorf("error creating follower controller: %w", err)
 	}
+
 	go controller.Run(ctx.Done())
-	return nil
+
+	return controller, nil
 }
 
 // TODO: remove this function once all controllers are fully refactored
@@ -126,18 +130,7 @@ func startGlobalScheduler(
 	ctx context.Context,
 	controllerCtx *controllercontext.Context,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) (healthz.Checker, error) {
-	controllers := sets.Set[string]{}
-	for _, controllerGroup := range typeConfig.GetControllers() {
-		for _, controller := range controllerGroup {
-			controllers.Insert(controller)
-		}
-	}
-	if !controllers.Has(scheduler.PrefixedGlobalSchedulerName) {
-		klog.Infof("Global scheduler disabled for FederatedTypeConfig %s", typeConfig.Name)
-		return nil
-	}
-
+) (controllermanager.Controller, error) {
 	federatedAPIResource := typeConfig.GetFederatedType()
 	federatedGVR := schemautil.APIResourceToGVR(&federatedAPIResource)
 
@@ -157,10 +150,12 @@ func startGlobalScheduler(
 		controllerCtx.WorkerCount,
 	)
 	if err != nil {
-		return fmt.Errorf("error creating global scheduler: %w", err)
+		return nil, fmt.Errorf("error creating global scheduler: %w", err)
 	}
+
 	go scheduler.Run(ctx)
-	return nil
+
+	return scheduler, nil
 }
 
 func isGlobalSchedulerEnabled(typeConfig *fedcorev1a1.FederatedTypeConfig) bool {
@@ -178,12 +173,7 @@ func startFederateController(
 	ctx context.Context,
 	controllerCtx *controllercontext.Context,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) (healthz.Checker, error) {
-	if typeConfig.GetSourceType() == nil {
-		klog.Infof("Federate controller disabled for FederatedTypeConfig %s", typeConfig.Name)
-		return nil
-	}
-
+) (controllermanager.Controller, error) {
 	federatedAPIResource := typeConfig.GetFederatedType()
 	federatedGVR := schemautil.APIResourceToGVR(&federatedAPIResource)
 
@@ -201,31 +191,32 @@ func startFederateController(
 		controllerCtx.FedSystemNamespace,
 	)
 	if err != nil {
-		return fmt.Errorf("error creating federate controller: %w", err)
+		return nil, fmt.Errorf("error creating federate controller: %w", err)
 	}
+
 	go federateController.Run(ctx)
-	return nil
+
+	return federateController, nil
+}
+
+func isFederateControllerEnabled(typeConfig *fedcorev1a1.FederatedTypeConfig) bool {
+	return typeConfig.GetSourceType() != nil
 }
 
 func startAutoMigrationController(
 	ctx context.Context,
 	controllerCtx *controllercontext.Context,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) (healthz.Checker, error) {
-	if typeConfig.Spec.AutoMigration == nil || !typeConfig.Spec.AutoMigration.Enabled {
-		klog.Infof("Auto migration controller disabled for FederatedTypeConfig %s", typeConfig.Name)
-		return nil
-	}
-
+) (controllermanager.Controller, error) {
 	genericClient, err := generic.New(controllerCtx.RestConfig)
 	if err != nil {
-		return fmt.Errorf("error creating generic client: %w", err)
+		return nil, fmt.Errorf("error creating generic client: %w", err)
 	}
 
 	federatedAPIResource := typeConfig.GetFederatedType()
 	federatedGVR := schemautil.APIResourceToGVR(&federatedAPIResource)
 
-	federateController, err := automigration.NewAutoMigrationController(
+	controller, err := automigration.NewAutoMigrationController(
 		controllerConfigFromControllerContext(controllerCtx),
 		typeConfig,
 		genericClient,
@@ -234,8 +225,14 @@ func startAutoMigrationController(
 		controllerCtx.DynamicInformerFactory.ForResource(federatedGVR),
 	)
 	if err != nil {
-		return fmt.Errorf("error creating auto-migration controller: %w", err)
+		return nil, fmt.Errorf("error creating auto-migration controller: %w", err)
 	}
-	go federateController.Run(ctx)
-	return nil
+
+	go controller.Run(ctx)
+
+	return controller, nil
+}
+
+func isAutoMigrationControllerEnabled(typeConfig *fedcorev1a1.FederatedTypeConfig) bool {
+	return typeConfig.Spec.AutoMigration != nil && typeConfig.Spec.AutoMigration.Enabled
 }

@@ -25,10 +25,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
-	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/controllermanager/healthcheck"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
@@ -43,47 +43,34 @@ const (
 	AutoMigrationControllerName = "auto-migration-controller"
 )
 
-type ftcSubControllerInitFuncs struct {
-	startFunc     StartFTCSubControllerFunc
-	isEnabledFunc IsFTCSubControllerEnabledFunc
-}
-
-var knownFTCSubControllers = map[string]ftcSubControllerInitFuncs{
+var knownFTCSubControllers = map[string]controllermanager.FTCSubControllerInitFuncs{
 	GlobalSchedulerName: {
-		startFunc:     startGlobalScheduler,
-		isEnabledFunc: isGlobalSchedulerEnabled,
+		StartFunc:     startGlobalScheduler,
+		IsEnabledFunc: isGlobalSchedulerEnabled,
 	},
 	FederateControllerName: {
-		startFunc:     startFederateController,
-		isEnabledFunc: nil,
+		StartFunc:     startFederateController,
+		IsEnabledFunc: isFederateControllerEnabled,
 	},
 	AutoMigrationControllerName: {
-		startFunc:     startAutoMigrationController,
-		isEnabledFunc: nil,
+		StartFunc:     startAutoMigrationController,
+		IsEnabledFunc: isAutoMigrationControllerEnabled,
 	},
 }
-
-// StartFTCSubControllerFunc is responsible for constructing and starting a FTC subcontroller. A FTC subcontroller is started/stopped
-// dynamically for every FTC. StartFTCSubControllerFunc should be asynchronous and an error is only returned if we fail to start the
-// controller.
-//
-//nolint:lll
-type StartFTCSubControllerFunc func(ctx context.Context, controllerCtx *controllercontext.Context, typeConfig *fedcorev1a1.FederatedTypeConfig) (readyCheck healthz.Checker, err error)
-
-type IsFTCSubControllerEnabledFunc func(typeConfig *fedcorev1a1.FederatedTypeConfig) bool
 
 type FederatedTypeConfigManager struct {
 	informer fedcorev1a1informers.FederatedTypeConfigInformer
 	handle   cache.ResourceEventHandlerRegistration
 
 	lock                        sync.Mutex
-	registeredSubControllers    map[string]StartFTCSubControllerFunc
-	isSubControllerEnabledFuncs map[string]IsFTCSubControllerEnabledFunc
+	registeredSubControllers    map[string]controllermanager.StartFTCSubControllerFunc
+	isSubControllerEnabledFuncs map[string]controllermanager.IsFTCSubControllerEnabledFunc
 
 	subControllerContexts    map[string]context.Context
 	subControllerCancelFuncs map[string]context.CancelFunc
 	startedSubControllers    map[string]sets.Set[string]
 
+	healthCheckHandler *healthcheck.MutableHealthCheckHandler
 	worker             worker.ReconcileWorker
 	controllerCtx      *controllercontext.Context
 
@@ -94,14 +81,16 @@ type FederatedTypeConfigManager struct {
 func NewFederatedTypeConfigManager(
 	informer fedcorev1a1informers.FederatedTypeConfigInformer,
 	controllerCtx *controllercontext.Context,
+	healthCheckHandler *healthcheck.MutableHealthCheckHandler,
 	metrics stats.Metrics,
 ) *FederatedTypeConfigManager {
 	m := &FederatedTypeConfigManager{
 		informer:                 informer,
 		lock:                     sync.Mutex{},
-		registeredSubControllers: map[string]StartFTCSubControllerFunc{},
+		registeredSubControllers: map[string]controllermanager.StartFTCSubControllerFunc{},
 		subControllerCancelFuncs: map[string]context.CancelFunc{},
 		controllerCtx:            controllerCtx,
+		healthCheckHandler:       healthCheckHandler,
 		metrics:                  metrics,
 		logger:                   klog.LoggerWithValues(klog.Background(), "controller", "federated-type-config-manager"),
 	}
@@ -121,8 +110,8 @@ func NewFederatedTypeConfigManager(
 
 func (m *FederatedTypeConfigManager) RegisterSubController(
 	name string,
-	startFunc StartFTCSubControllerFunc,
-	isEnabledFunc IsFTCSubControllerEnabledFunc,
+	startFunc controllermanager.StartFTCSubControllerFunc,
+	isEnabledFunc controllermanager.IsFTCSubControllerEnabledFunc,
 ) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
@@ -192,13 +181,16 @@ func (m *FederatedTypeConfigManager) reconcile(qualifiedName common.QualifiedNam
 			logger.V(3).Info("Skip starting subcontroller, is disabled")
 		}
 
-		if err := startFunc(subControllerCtx, m.controllerCtx, typeConfig); err != nil {
+		controller, err := startFunc(subControllerCtx, m.controllerCtx, typeConfig)
+		if err != nil {
 			logger.Error(err, "Failed to start subcontroller")
 			needRetry = true
 		} else {
 			logger.WithValues("controller", controllerName).Info("Started subcontroller")
 			m.startedSubControllers[qualifiedName.Name].Insert(controllerName)
 		}
+
+		m.healthCheckHandler.AddReadyzChecker(controllerName, controllermanager.HealthzCheckerAdaptor(controllerName, controller))
 	}
 
 	// Since the controllers are created dynamically, we have to start the informer factories again, in case any new
