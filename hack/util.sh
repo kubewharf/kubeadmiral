@@ -64,10 +64,10 @@ nodes:
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
-    controllerManager:
+    kube-controller-manager:
       extraArgs:
         controllers: "namespace,garbagecollector"
-    apiServer:
+    kube-apiserver:
       extraArgs:
         disable-admission-plugins: StorageObjectInUseProtection
 EOF
@@ -87,11 +87,7 @@ apiVersion: config.kwok.x-k8s.io/v1alpha1
 options:
   kubeApiserverPort: ${APISERVER_PORT}
   kubeVersion: "v1.20.15"
-componentPatches:
-- name: kube-apiserver
-  extraArgs:
-  - key: disable-admission-plugins
-    value: StorageObjectInUseProtection
+componentsPatches:
 - name: kube-controller-manager
   extraArgs:
   - key: controllers
