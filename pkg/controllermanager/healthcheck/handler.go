@@ -18,13 +18,13 @@ type MutableHealthCheckHandler struct {
 func NewMutableHealthCheckHandler() *MutableHealthCheckHandler {
 	h := &MutableHealthCheckHandler{
 		mu:            sync.RWMutex{},
-		readyzHandler: &healthz.Handler{},
-		livezHandler:  &healthz.Handler{},
+		readyzHandler: &healthz.Handler{Checks: map[string]healthz.Checker{}},
+		livezHandler:  &healthz.Handler{Checks: map[string]healthz.Checker{}},
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("readyz", h.readyzHandler)
-	mux.Handle("livez", h.livezHandler)
+	mux.Handle("/readyz", http.StripPrefix("/readyz", h.readyzHandler))
+	mux.Handle("/livez", http.StripPrefix("/livez", h.livezHandler))
 
 	h.handler = mux
 

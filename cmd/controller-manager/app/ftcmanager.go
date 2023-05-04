@@ -85,14 +85,17 @@ func NewFederatedTypeConfigManager(
 	metrics stats.Metrics,
 ) *FederatedTypeConfigManager {
 	m := &FederatedTypeConfigManager{
-		informer:                 informer,
-		lock:                     sync.Mutex{},
-		registeredSubControllers: map[string]controllermanager.StartFTCSubControllerFunc{},
-		subControllerCancelFuncs: map[string]context.CancelFunc{},
-		controllerCtx:            controllerCtx,
-		healthCheckHandler:       healthCheckHandler,
-		metrics:                  metrics,
-		logger:                   klog.LoggerWithValues(klog.Background(), "controller", "federated-type-config-manager"),
+		informer:                    informer,
+		lock:                        sync.Mutex{},
+		registeredSubControllers:    map[string]controllermanager.StartFTCSubControllerFunc{},
+		isSubControllerEnabledFuncs: map[string]controllermanager.IsFTCSubControllerEnabledFunc{},
+		subControllerContexts:       map[string]context.Context{},
+		subControllerCancelFuncs:    map[string]context.CancelFunc{},
+		startedSubControllers:       map[string]sets.Set[string]{},
+		controllerCtx:               controllerCtx,
+		healthCheckHandler:          healthCheckHandler,
+		metrics:                     metrics,
+		logger:                      klog.LoggerWithValues(klog.Background(), "controller", "federated-type-config-manager"),
 	}
 
 	m.worker = worker.NewReconcileWorker(
