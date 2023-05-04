@@ -19,6 +19,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -196,7 +197,12 @@ func (m *FederatedTypeConfigManager) reconcile(qualifiedName common.QualifiedNam
 
 		m.healthCheckHandler.AddReadyzChecker(
 			resolveSubcontrollerName(controllerName, qualifiedName.Name),
-			controllermanager.HealthzCheckerAdaptor(controllerName, controller),
+			func(_ *http.Request) error {
+				if controller.IsControllerReady() {
+					return nil
+				}
+				return fmt.Errorf("controller not ready")
+			},
 		)
 	}
 

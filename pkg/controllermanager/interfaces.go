@@ -22,10 +22,6 @@ package controllermanager
 
 import (
 	"context"
-	"fmt"
-	"net/http"
-
-	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
@@ -33,16 +29,6 @@ import (
 
 type Controller interface {
 	IsControllerReady() bool
-}
-
-func HealthzCheckerAdaptor(name string, controller Controller) healthz.Checker {
-	return func(_ *http.Request) error {
-		if controller.IsControllerReady() {
-			return nil
-		}
-
-		return fmt.Errorf("controller %s not ready", name)
-	}
 }
 
 // startControllerFunc is responsible for constructing and starting a controller. startControllerFunc should be

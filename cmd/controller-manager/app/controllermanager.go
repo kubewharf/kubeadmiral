@@ -70,20 +70,14 @@ func Run(ctx context.Context, opts *options.Options) {
 		}()
 	}
 
-	handler := healthcheck.NewMutableHealthCheckHandler()
-	handler.AddLivezChecker("ping", healthz.Ping)
-
-	var healthzAdaptor *leaderelection.HealthzAdaptor
-	if opts.EnableLeaderElect {
-		healthzAdaptor = leaderelection.NewLeaderHealthzAdaptor(time.Second * 20)
-		handler.AddLivezChecker("leaderElection", healthzAdaptor.Check)
-	}
+	healthCheckHandler := healthcheck.NewMutableHealthCheckHandler()
+	healthCheckHandler.AddLivezChecker("ping", healthz.Ping)
 
 	run := func(ctx context.Context) {
 		defer klog.Infoln("Ready to stop controllers")
 		klog.Infoln("Ready to start controllers")
 
-		err := startControllers(ctx, controllerCtx, knownControllers, knownFTCSubControllers, opts.Controllers, handler)
+		err := startControllers(ctx, controllerCtx, knownControllers, knownFTCSubControllers, opts.Controllers, healthCheckHandler)
 		if err != nil {
 			klog.Fatalf("Error starting controllers %s: %v", opts.Controllers, err)
 		}
@@ -97,7 +91,7 @@ func Run(ctx context.Context, opts *options.Options) {
 		server := &http.Server{
 			Addr:              fmt.Sprintf("0.0.0.0:%d", opts.Port),
 			ReadHeaderTimeout: time.Second * 3,
-			Handler:           handler,
+			Handler:           healthCheckHandler,
 		}
 		if err := server.ListenAndServe(); err != nil {
 			klog.Fatalf("Failed to start health check server: %v", err)
@@ -105,6 +99,8 @@ func Run(ctx context.Context, opts *options.Options) {
 	}()
 
 	if opts.EnableLeaderElect {
+		healthzAdaptor := leaderelection.NewLeaderHealthzAdaptor(time.Second * 20)
+
 		elector, err := fedleaderelection.NewFederationLeaderElector(
 			controllerCtx.RestConfig,
 			run,
@@ -113,8 +109,11 @@ func Run(ctx context.Context, opts *options.Options) {
 			healthzAdaptor,
 		)
 		if err != nil {
-			klog.Fatalf("Cannot elect leader: %v", err)
+			klog.Fatalf("Cannot create elector: %v", err)
 		}
+
+		healthCheckHandler.AddLivezChecker("leaderElection", healthzAdaptor.Check)
+
 		elector.Run(ctx)
 	} else {
 		run(ctx)
@@ -146,7 +145,12 @@ func startControllers(
 		}
 		klog.Infof("Started %q", controllerName)
 
-		healthCheckHandler.AddReadyzChecker(controllerName, controllermanager.HealthzCheckerAdaptor(controllerName, controller))
+		healthCheckHandler.AddReadyzChecker(controllerName, func(_ *http.Request) error {
+			if controller.IsControllerReady() {
+				return nil
+			}
+			return fmt.Errorf("controller not ready")
+		})
 	}
 
 	manager := NewFederatedTypeConfigManager(
