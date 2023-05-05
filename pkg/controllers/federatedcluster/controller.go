@@ -342,9 +342,7 @@ func handleTerminatingCluster(
 	// 1. when the cluster has no ClusterJoin condition (the cluster did not even make it past the first join step)
 	// 2. when the cluster is Unjoinable (it was already part of another federation)
 	joinedCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterJoined)
-	if joinedCondition == nil {
-		requireCleanup = false
-	} else if joinedCondition.Reason != nil && *joinedCondition.Reason == ClusterUnjoinableReason {
+	if joinedCondition == nil || joinedCondition.Reason == ClusterUnjoinableReason {
 		requireCleanup = false
 	}
 

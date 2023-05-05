@@ -28,31 +28,31 @@ import (
 func ClusterJoined(cluster *fedcorev1a1.FederatedCluster) bool {
 	cond := GetClusterJoinCondition(cluster.Status.Conditions)
 	return cond != nil && cond.Status == corev1.ConditionTrue &&
-		cond.Reason != nil && *cond.Reason == federatedcluster.ClusterJoinedReason &&
-		cond.Message != nil && *cond.Message == federatedcluster.ClusterJoinedMessage
+		cond.Reason == federatedcluster.ClusterJoinedReason &&
+		cond.Message == federatedcluster.ClusterJoinedMessage
 }
 
 func ClusterReady(cluster *fedcorev1a1.FederatedCluster) bool {
 	cond := GetClusterReadyCondition(cluster.Status.Conditions)
 	return cond != nil && cond.Status == corev1.ConditionTrue &&
-		cond.Reason != nil && *cond.Reason == federatedcluster.ClusterReadyReason &&
-		cond.Message != nil && *cond.Message == federatedcluster.ClusterReadyMessage
+		cond.Reason == federatedcluster.ClusterReadyReason &&
+		cond.Message == federatedcluster.ClusterReadyMessage
 }
 
 func ClusterTimedOut(cluster *fedcorev1a1.FederatedCluster) bool {
 	cond := GetClusterJoinCondition(cluster.Status.Conditions)
 	messagePrefix := strings.TrimSuffix(federatedcluster.JoinTimeoutExceededMessageTemplate, "%v")
 	return cond != nil && cond.Status == corev1.ConditionFalse &&
-		cond.Reason != nil && *cond.Reason == federatedcluster.JoinTimeoutExceededReason &&
-		cond.Message != nil && strings.HasPrefix(*cond.Message, messagePrefix)
+		cond.Reason == federatedcluster.JoinTimeoutExceededReason &&
+		strings.HasPrefix(cond.Message, messagePrefix)
 }
 
 func ClusterReachable(cluster *fedcorev1a1.FederatedCluster) bool {
 	cond := GetClusterOfflineCondition(cluster.Status.Conditions)
 	return ClusterJoined(cluster) && ClusterReady(cluster) &&
 		cond != nil && cond.Status == corev1.ConditionFalse &&
-		cond.Reason != nil && *cond.Reason == federatedcluster.ClusterReachableReason &&
-		cond.Message != nil && *cond.Message == federatedcluster.ClusterReachableMsg
+		cond.Reason == federatedcluster.ClusterReachableReason &&
+		cond.Message == federatedcluster.ClusterReachableMsg
 }
 
 func ClusterUnreachable(cluster *fedcorev1a1.FederatedCluster) bool {
@@ -63,11 +63,11 @@ func ClusterUnreachable(cluster *fedcorev1a1.FederatedCluster) bool {
 
 	return ClusterJoined(cluster) &&
 		readyCond != nil && readyCond.Status == corev1.ConditionUnknown &&
-		readyCond.Reason != nil && *readyCond.Reason == federatedcluster.ClusterNotReachableReason &&
-		readyCond.Message != nil && *readyCond.Message == federatedcluster.ClusterNotReachableMsg &&
+		readyCond.Reason == federatedcluster.ClusterNotReachableReason &&
+		readyCond.Message == federatedcluster.ClusterNotReachableMsg &&
 		offlineCond != nil && offlineCond.Status == corev1.ConditionTrue &&
-		offlineCond.Reason != nil && *offlineCond.Reason == federatedcluster.ClusterNotReachableReason &&
-		offlineCond.Message != nil && *offlineCond.Message == federatedcluster.ClusterNotReachableMsg
+		offlineCond.Reason == federatedcluster.ClusterNotReachableReason &&
+		offlineCond.Message == federatedcluster.ClusterNotReachableMsg
 }
 
 func GetClusterJoinCondition(conditions []fedcorev1a1.ClusterCondition) *fedcorev1a1.ClusterCondition {

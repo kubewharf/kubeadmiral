@@ -92,45 +92,41 @@ func handleNotJoinedCluster(
 
 	// 1. check for join timeout
 
-	if joinedCondition != nil && joinedCondition.Status == corev1.ConditionFalse && joinedCondition.LastTransitionTime != nil {
-		logger.Info("Check for cluster join timeout")
+	if joinedCondition != nil &&
+		joinedCondition.Status == corev1.ConditionFalse &&
+		time.Since(joinedCondition.LastTransitionTime.Time) > clusterJoinTimeout {
+		// join timed out
+		logger.Error(nil, "Cluster join timed out")
+		eventRecorder.Eventf(
+			cluster,
+			corev1.EventTypeWarning,
+			EventReasonJoinClusterTimeoutExceeded,
+			"get token for cluster %q timed out",
+			cluster.Name,
+		)
 
-		if time.Since(joinedCondition.LastTransitionTime.Time) > clusterJoinTimeout {
-			// join timed out
-			logger.Error(nil, "Cluster join timed out")
-			eventRecorder.Eventf(
-				cluster,
-				corev1.EventTypeWarning,
-				EventReasonJoinClusterTimeoutExceeded,
-				"get token for cluster %q timed out",
-				cluster.Name,
-			)
-
-			currentTime := metav1.Now()
-			newCondition := &fedcorev1a1.ClusterCondition{
-				Type:               fedcorev1a1.ClusterJoined,
-				Status:             corev1.ConditionFalse,
-				Reason:             pointer.String(JoinTimeoutExceededReason),
-				Message:            pointer.String(fmt.Sprintf(JoinTimeoutExceededMessageTemplate, *joinedCondition.Message)),
-				LastProbeTime:      currentTime,
-				LastTransitionTime: &currentTime,
-			}
-
-			setClusterCondition(&cluster.Status, newCondition)
-
-			var updateErr error
-			if cluster, updateErr = client.CoreV1alpha1().FederatedClusters().UpdateStatus(
-				context.TODO(),
-				cluster,
-				metav1.UpdateOptions{},
-			); updateErr != nil {
-				return cluster, fmt.Errorf("failed to update cluster status after join timeout: %w", updateErr)
-			}
-
-			return cluster, nil
+		currentTime := metav1.Now()
+		newCondition := &fedcorev1a1.ClusterCondition{
+			Type:               fedcorev1a1.ClusterJoined,
+			Status:             corev1.ConditionFalse,
+			Reason:             JoinTimeoutExceededReason,
+			Message:            fmt.Sprintf(JoinTimeoutExceededMessageTemplate, joinedCondition.Message),
+			LastProbeTime:      currentTime,
+			LastTransitionTime: joinedCondition.LastTransitionTime,
 		}
 
-		logger.Info("Continue cluster join")
+		setClusterCondition(&cluster.Status, newCondition)
+
+		var updateErr error
+		if cluster, updateErr = client.CoreV1alpha1().FederatedClusters().UpdateStatus(
+			context.TODO(),
+			cluster,
+			metav1.UpdateOptions{},
+		); updateErr != nil {
+			return cluster, fmt.Errorf("failed to update cluster status after join timeout: %w", updateErr)
+		}
+
+		return cluster, nil
 	}
 
 	// 2. The remaining steps require a cluster kube client, attempt to create one
@@ -200,13 +196,13 @@ func handleNotJoinedCluster(
 		newCondition := &fedcorev1a1.ClusterCondition{
 			Type:          fedcorev1a1.ClusterJoined,
 			Status:        corev1.ConditionFalse,
-			Reason:        pointer.String(GetOrCreateNamespaceFailedReason),
-			Message:       pointer.String(fmt.Sprintf(GetOrCreateNamespaceFailedMessageTemplate, err.Error())),
+			Reason:        GetOrCreateNamespaceFailedReason,
+			Message:       fmt.Sprintf(GetOrCreateNamespaceFailedMessageTemplate, err.Error()),
 			LastProbeTime: currentTime,
 		}
 		if joinedCondition == nil {
 			// if we are trying to join for the first time, we set the last transition time
-			newCondition.LastTransitionTime = &currentTime
+			newCondition.LastTransitionTime = currentTime
 		} else {
 			// if not, we do not update the last transition time to allow the join process to timeout
 			newCondition.LastTransitionTime = joinedCondition.LastTransitionTime
@@ -237,12 +233,18 @@ func handleNotJoinedCluster(
 
 		currentTime := metav1.Now()
 		newCondition := &fedcorev1a1.ClusterCondition{
-			Type:               fedcorev1a1.ClusterJoined,
-			Status:             corev1.ConditionFalse,
-			Reason:             pointer.String(ClusterUnjoinableReason),
-			Message:            pointer.String(ClusterUnjoinableMessage),
-			LastProbeTime:      currentTime,
-			LastTransitionTime: &currentTime,
+			Type:          fedcorev1a1.ClusterJoined,
+			Status:        corev1.ConditionFalse,
+			Reason:        ClusterUnjoinableReason,
+			Message:       ClusterUnjoinableMessage,
+			LastProbeTime: currentTime,
+		}
+		if joinedCondition == nil {
+			// if we are trying to join for the first time, we set the last transition time
+			newCondition.LastTransitionTime = currentTime
+		} else {
+			// if not, we do not update the last transition time to allow the join process to timeout
+			newCondition.LastTransitionTime = joinedCondition.LastTransitionTime
 		}
 
 		setClusterCondition(&cluster.Status, newCondition)
@@ -282,13 +284,13 @@ func handleNotJoinedCluster(
 			newCondition := &fedcorev1a1.ClusterCondition{
 				Type:          fedcorev1a1.ClusterJoined,
 				Status:        corev1.ConditionFalse,
-				Reason:        pointer.String(TokenNotObtainedReason),
-				Message:       pointer.String(TokenNotObtainedMessage),
+				Reason:        TokenNotObtainedReason,
+				Message:       TokenNotObtainedMessage,
 				LastProbeTime: currentTime,
 			}
 			if joinedCondition == nil {
 				// if we are trying to join for the first time, we set the last transition time
-				newCondition.LastTransitionTime = &currentTime
+				newCondition.LastTransitionTime = currentTime
 			} else {
 				// if not, we do not update the last transition time to allow the join process to timeout
 				newCondition.LastTransitionTime = joinedCondition.LastTransitionTime
@@ -323,10 +325,10 @@ func handleNotJoinedCluster(
 	newCondition := &fedcorev1a1.ClusterCondition{
 		Type:               fedcorev1a1.ClusterJoined,
 		Status:             corev1.ConditionTrue,
-		Reason:             pointer.String(ClusterJoinedReason),
-		Message:            pointer.String(ClusterJoinedMessage),
+		Reason:             ClusterJoinedReason,
+		Message:            ClusterJoinedMessage,
 		LastProbeTime:      currentTime,
-		LastTransitionTime: &currentTime,
+		LastTransitionTime: currentTime,
 	}
 
 	setClusterCondition(&cluster.Status, newCondition)
