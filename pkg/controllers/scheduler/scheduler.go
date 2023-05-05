@@ -450,7 +450,7 @@ func (s *Scheduler) schedule(
 		common.NewQualifiedName(policy).String(),
 	)
 
-	schedulingUnit, err := schedulingUnitForFedObject(context.TODO(), s.federatedClient, s.clusterLister, s.typeConfig, fedObject, policy)
+	schedulingUnit, err := schedulingUnitForFedObject(ctx, s.federatedClient, s.clusterLister, s.typeConfig, fedObject, policy)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to get scheduling unit")
 		s.eventRecorder.Eventf(

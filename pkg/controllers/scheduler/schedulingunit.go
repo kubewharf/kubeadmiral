@@ -33,7 +33,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster/resource"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
@@ -237,7 +237,7 @@ func getClusterPodUsage(
 		return res, fmt.Errorf("cannot list pods: %w", err)
 	}
 
-	usage := federatedcluster.AggregatePodUsage(pods.Items, func(pod corev1.Pod) *corev1.Pod { return &pod })
+	usage := clusterresource.AggregatePodUsage(pods.Items, func(pod corev1.Pod) *corev1.Pod { return &pod })
 	return *framework.NewResource(usage), nil
 }
 

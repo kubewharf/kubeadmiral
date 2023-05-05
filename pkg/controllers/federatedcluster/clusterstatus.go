@@ -39,6 +39,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
+	clusterresource "github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster/resource"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
 )
 
@@ -186,12 +187,12 @@ func updateClusterResources(
 
 	schedulableNodes := int64(0)
 	for _, node := range nodes {
-		if isNodeSchedulable(node) {
+		if clusterresource.IsNodeSchedulable(node) {
 			schedulableNodes++
 		}
 	}
 
-	allocatable, available := AggregateResources(nodes, pods)
+	allocatable, available := clusterresource.AggregateResources(nodes, pods)
 	clusterStatus.Resources = fedcorev1a1.Resources{
 		SchedulableNodes: &schedulableNodes,
 		Allocatable:      allocatable,
