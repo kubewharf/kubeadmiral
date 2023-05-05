@@ -44,7 +44,7 @@ func PropagationPolicyForClustersWithPlacements(
 	}
 
 	for _, c := range clusters {
-		policy.Spec.Placements = append(policy.Spec.Placements, fedcorev1a1.Placement{ClusterName: c.Name})
+		policy.Spec.Placements = append(policy.Spec.Placements, fedcorev1a1.Placement{Cluster: c.Name})
 	}
 
 	return policy
