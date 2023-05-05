@@ -25,28 +25,32 @@ import (
 	"fmt"
 	"reflect"
 
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 
+	fedcore "github.com/kubewharf/kubeadmiral/pkg/apis/core"
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
 
 type frameworkImpl struct {
-	scorePluginsWeightMap map[string]int
-	filterPlugins         []framework.FilterPlugin
-	scorePlugins          []framework.ScorePlugin
-	selectPlugins         []framework.SelectPlugin
-	replicasPlugins       []framework.ReplicasPlugin
+	filterPlugins   []framework.FilterPlugin
+	scorePlugins    []framework.ScorePlugin
+	selectPlugins   []framework.SelectPlugin
+	replicasPlugins []framework.ReplicasPlugin
 }
 
 var _ framework.Framework = &frameworkImpl{}
 
-func NewFramework(registry Registry, handle framework.Handle) (framework.Framework, error) {
+func NewFramework(registry Registry, handle framework.Handle, enabledPlugins *fedcore.EnabledPlugins) (framework.Framework, error) {
 	fwk := &frameworkImpl{}
 
 	pluginsMap := make(map[string]framework.Plugin)
 
 	for name, factory := range registry {
+		if !enabledPlugins.IsPluginEnabled(name) {
+			continue
+		}
 		plugin, err := factory(handle)
 		if err != nil {
 			return nil, fmt.Errorf("error initializing plugin %q: %w", name, err)
@@ -54,8 +58,8 @@ func NewFramework(registry Registry, handle framework.Handle) (framework.Framewo
 		pluginsMap[name] = plugin
 	}
 
-	for _, e := range fwk.getExtensionPoints() {
-		if err := addPlugins(e.slicePtr, pluginsMap); err != nil {
+	for _, e := range fwk.getExtensionPoints(enabledPlugins) {
+		if err := addPlugins(e.slicePtr, e.plugins, pluginsMap); err != nil {
 			return nil, err
 		}
 	}
@@ -63,31 +67,47 @@ func NewFramework(registry Registry, handle framework.Handle) (framework.Framewo
 	return fwk, nil
 }
 
-func addPlugins(pluginList interface{}, pluginsMap map[string]framework.Plugin) error {
+func addPlugins(pluginList interface{}, enabledPluginNames []string, pluginsMap map[string]framework.Plugin) error {
 	plugins := reflect.ValueOf(pluginList).Elem()
 	pluginType := plugins.Type().Elem()
 
-	for _, plugin := range pluginsMap {
-		if !reflect.TypeOf(plugin).Implements(pluginType) {
-			// klog.Infof("plugin %q does not extend %s plugin", name, pluginType.Name())
-			continue
+	registeredPlugins := sets.New[string]()
+	for _, pluginName := range enabledPluginNames {
+		pg, ok := pluginsMap[pluginName]
+		if !ok {
+			return fmt.Errorf("%s %s does not exist", pluginType.Name(), pluginName)
 		}
-		newPlugins := reflect.Append(plugins, reflect.ValueOf(plugin))
+
+		if !reflect.TypeOf(pg).Implements(pluginType) {
+			return fmt.Errorf("plugin %s does not implement %s", pluginName, pluginType.Name())
+		}
+
+		if registeredPlugins.Has(pluginName) {
+			return fmt.Errorf("plugin %s already registered as %s", pluginName, pluginType.Name())
+		}
+
+		newPlugins := reflect.Append(plugins, reflect.ValueOf(pg))
 		plugins.Set(newPlugins)
+		registeredPlugins.Insert(pluginName)
 	}
+
 	return nil
 }
 
+// extensionPoint encapsulates desired and applied set of plugins at a specific extension point.
 type extensionPoint struct {
+	// the set of plugins to be configured at this extension point.
+	plugins []string
+	// a pointer to the slice storing plugins implmentations that will run at this extension point.
 	slicePtr interface{}
 }
 
-func (f *frameworkImpl) getExtensionPoints() []extensionPoint {
+func (f *frameworkImpl) getExtensionPoints(enabledPlugins *fedcore.EnabledPlugins) []extensionPoint {
 	return []extensionPoint{
-		{slicePtr: &f.filterPlugins},
-		{slicePtr: &f.scorePlugins},
-		{slicePtr: &f.selectPlugins},
-		{slicePtr: &f.replicasPlugins},
+		{plugins: enabledPlugins.FilterPlugins, slicePtr: &f.filterPlugins},
+		{plugins: enabledPlugins.ScorePlugins, slicePtr: &f.scorePlugins},
+		{plugins: enabledPlugins.SelectPlugins, slicePtr: &f.selectPlugins},
+		{plugins: enabledPlugins.ReplicasPlugins, slicePtr: &f.replicasPlugins},
 	}
 }
 
@@ -208,7 +228,7 @@ func (f *frameworkImpl) RunReplicasPlugin(
 	if len(f.replicasPlugins) == 0 {
 		return clusterReplicasList, framework.NewResult(
 			framework.Success,
-			fmt.Sprintf("no replicas plugin registered in the framework"),
+			"no replicas plugin registered in the framework",
 		)
 	}
 	for _, plugin := range f.replicasPlugins {

@@ -24,7 +24,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/apis/core"
 )
 
-// GroupVersion is the identifier for the API which includes
+// SchemeGroupVersion is the identifier for the API which includes
 // the name of the group and the version of the API
 var SchemeGroupVersion = schema.GroupVersion{
 	Group:   core.GroupName,
@@ -71,6 +71,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&ClusterOverridePolicyList{},
 		&SchedulerPluginWebhookConfiguration{},
 		&SchedulerPluginWebhookConfigurationList{},
+		&SchedulingProfile{},
+		&SchedulingProfileList{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil

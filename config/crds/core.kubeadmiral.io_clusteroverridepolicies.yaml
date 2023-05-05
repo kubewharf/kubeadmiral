@@ -56,10 +56,13 @@ spec:
                                   omitted, defaults to "replace".
                                 type: string
                               path:
-                                description: Path specified the location within the
-                                  resource document where the operation is performed.
-                                  Each key in the path should be prefixed with "/",
-                                  for example, "/metadata/labels".
+                                description: Path is a JSON pointer (RFC 6901) specifying
+                                  the location within the resource document where
+                                  the operation is performed. Each key in the path
+                                  should be prefixed with "/", while "~" and "/" should
+                                  be escaped as "~0" and "~1" respectively. For example,
+                                  to add a label "kubeadmiral.io/label", the path
+                                  should be "/metadata/labels/kubeadmiral.io~1label".
                                 type: string
                               value:
                                 description: Value is the value(s) required by the
@@ -77,9 +80,9 @@ spec:
                         of all of them.
                       properties:
                         clusterAffinity:
-                          description: ClusterAffinity selects clusters by matching
-                            their labels and fields against expressions. If multiple
-                            terms are specified, their results are ORed.
+                          description: ClusterAffinity selects FederatedClusters by
+                            matching their labels and fields against expressions.
+                            If multiple terms are specified, their results are ORed.
                           items:
                             properties:
                               matchExpressions:
@@ -148,18 +151,18 @@ spec:
                                 type: array
                             type: object
                           type: array
-                        clusterNames:
-                          description: ClusterNames selects clusters by their names.
-                            Empty ClusterNames selects all clusters.
-                          items:
-                            type: string
-                          type: array
                         clusterSelector:
                           additionalProperties:
                             type: string
-                          description: ClusterSelector selects clusters by their labels.
-                            Empty labels selects all clusters.
+                          description: ClusterSelector selects FederatedClusters by
+                            their labels. Empty labels selects all FederatedClusters.
                           type: object
+                        clusters:
+                          description: Clusters selects FederatedClusters by their
+                            names. Empty Clusters selects all FederatedClusters.
+                          items:
+                            type: string
+                          type: array
                       type: object
                   type: object
                 type: array

@@ -24,58 +24,56 @@ Ensure that the following programs are installed:
 ##### 1. Clone the KubeAdmiral repo to your machine
 
 ```console
-$ git clone https://github.com/kubewharf/kubeadmiral
+git clone https://github.com/kubewharf/kubeadmiral
 ```
 
 ##### 2. Change to the kubeadmiral directory
 
 ```console
-$ cd kubeadmiral
+cd kubeadmiral
 ```
 
 ##### 3. Bootstrap Kubernetes clusters
 
 ```console
-$ make kind
+bash hack/dev-up.sh
 ```
 
-This command will run the script `hack/dev-up.sh` which does the following:
+`hack/dev-up.sh` does the following:
 
 1. Starts a host cluster using Kind.
 2. Installs the KubeAdmiral CRDs on the host cluster.
 3. Starts 3 member clusters using Kind.
 4. Bootstraps the joining of the 3 member clusters.
-5. Exports the cluster kubeconfigs to `$HOME/.kube/kubeadmiral/kubeconfig.yaml`
+5. Exports the cluster kubeconfigs to `$HOME/.kube/kubeadmiral/`
 
 If everything went well in the previous steps, we should observe the following:
 
 ```console
-$ KUBECONFIG=$HOME/.kube/kubeadmiral/kubeconfig.yaml kubectl config get-clusters
+$ ls $HOME/.kube/kubeadmiral
 
-NAME
-kind-kubeadmiral-member-1
-kind-kubeadmiral-member-2
-kind-kubeadmiral-member-3
-kind-kubeadmiral-host
+kubeadmiral-host.yaml kubeadmiral-member-1.yaml kubeadmiral-member-2.yaml kubeadmiral-member-3.yaml
 ```
 
 ##### 4. Build and run the KubeAdmiral controller-manager
 
 ```console
-$ make manager
+$ make build
 $ ./output/manager --create-crds-for-ftcs \
     --klog-logtostderr=false \
     --klog-log-file "./kubeadmiral.log" \
-    --kubeconfig "$HOME/.kube/kubeadmiral/kubeconfig.yaml" \
+    --kubeconfig "$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml" \
     2>/dev/null
 ```
+
+**Note: This runs the KubeAdmiral controller-manager on your local machine.**
 
 ##### 5. Wait for member clusters to be joined
 
 The KubeAdmiral controller-manager will now handle the joining of the member clusters. Afterwards, we should expect to see the following:
 
 ```console
-$ KUBECONFIG=$HOME/.kube/kubeadmiral/kubeconfig.yaml kubectl get fcluster
+$ KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml kubectl get fcluster
 
 NAME                   READY   JOINED   AGE
 kubeadmiral-member-1   True    True     1m
@@ -93,7 +91,8 @@ The most common usage of KubeAdmiral is to manage Kubernetes resources across mu
 
 This section describes how to propagate a Deployment to multiple member clusters, and view their individual statuses using KubeAdmiral.
 
-For more advanced tutorials on resource management, you may refer to our [docs]().
+<!-- TOOD: link to docs once available -->
+<!-- For more advanced tutorials on resource management, you may refer to our [docs](). -->
 
 ### Prerequisites
 
@@ -171,7 +170,7 @@ To learn more about how to use propagation policies, refer to our [docs]().
 Attach the new propagation policy to our deployment by labelling the deployment with the policy's name.
 
 ```console
-$ kubectl label deployment echo-server kubeadmiral.io/propagation-policy-name=policy-all-clusters
+kubectl label deployment echo-server kubeadmiral.io/propagation-policy-name=policy-all-clusters
 ```
 
 ### 5. Wait for the deployment to be propagated to all clusters
@@ -272,6 +271,5 @@ $ kubectl get fdeploystatus echo-server -oyaml | yq .clusterStatus
 ### 6. Delete the files created in this example
 
 ```console
-$ rm test-deployment.yaml test-policy.yaml
+rm test-deployment.yaml test-policy.yaml
 ```
-

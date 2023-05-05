@@ -145,6 +145,7 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 func getComponentConfig(opts *options.Options) (*controllercontext.ComponentConfig, error) {
 	componentConfig := &controllercontext.ComponentConfig{
 		FederatedTypeConfigCreateCRDsForFTCs: opts.CreateCRDsForFTCs,
+		ClusterJoinTimeout:                   opts.ClusterJoinTimeout,
 	}
 
 	if opts.NSAutoPropExcludeRegexp != "" {

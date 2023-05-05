@@ -28,10 +28,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
-)
-
-const (
-	TaintTolerationName = "TaintToleration"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 )
 
 type TaintToleration struct{}
@@ -41,7 +38,7 @@ func NewTaintToleration(_ framework.Handle) (framework.Plugin, error) {
 }
 
 func (pl *TaintToleration) Name() string {
-	return TaintTolerationName
+	return names.TaintToleration
 }
 
 func (pl *TaintToleration) Filter(

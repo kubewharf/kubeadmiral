@@ -78,30 +78,17 @@ func getNewClusterOfflineCondition(
 
 func getNewClusterReadyCondition(
 	status corev1.ConditionStatus,
+	reason, message string,
 	conditionTime metav1.Time,
 ) fedcorev1a1.ClusterCondition {
 	condition := fedcorev1a1.ClusterCondition{
 		Type:               fedcorev1a1.ClusterReady,
+		Status:             status,
+		Reason:             &reason,
+		Message:            &message,
 		LastProbeTime:      conditionTime,
 		LastTransitionTime: &conditionTime,
 	}
-
-	var reason, message string
-	switch status {
-	case corev1.ConditionTrue:
-		reason = ClusterReadyReason
-		message = ClusterReadyMessage
-	case corev1.ConditionFalse:
-		reason = ClusterNotReadyReason
-		message = ClusterNotReadyMessage
-	case corev1.ConditionUnknown:
-		reason = ClusterNotReachableReason
-		message = ClusterNotReachableMsg
-	}
-
-	condition.Status = status
-	condition.Reason = &reason
-	condition.Message = &message
 
 	return condition
 }

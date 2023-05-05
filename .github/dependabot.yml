@@ -4,3 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Minor version upgrades are adopted in longer cycles for stability.
+      - dependency-name: "k8s.io/*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "sigs.k8s.io/*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

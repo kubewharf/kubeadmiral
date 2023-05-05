@@ -65,17 +65,17 @@ type OverridePolicyStatus struct {
 }
 
 type TargetClusters struct {
-	// ClusterNames selects clusters by their names.
-	// Empty ClusterNames selects all clusters.
+	// Clusters selects FederatedClusters by their names.
+	// Empty Clusters selects all FederatedClusters.
 	// +optional
-	ClusterNames []string `json:"clusterNames,omitempty"`
+	Clusters []string `json:"clusters,omitempty"`
 
-	// ClusterSelector selects clusters by their labels.
-	// Empty labels selects all clusters.
+	// ClusterSelector selects FederatedClusters by their labels.
+	// Empty labels selects all FederatedClusters.
 	// +optional
 	ClusterSelector map[string]string `json:"clusterSelector,omitempty"`
 
-	// ClusterAffinity selects clusters by matching their labels and fields against expressions.
+	// ClusterAffinity selects FederatedClusters by matching their labels and fields against expressions.
 	// If multiple terms are specified, their results are ORed.
 	// +optional
 	ClusterAffinity []ClusterSelectorTerm `json:"clusterAffinity,omitempty"`
@@ -93,8 +93,12 @@ type JsonPatchOverrider struct {
 	// +optional
 	Operator string `json:"operator,omitempty"`
 
-	// Path specified the location within the resource document where the operation is performed.
-	// Each key in the path should be prefixed with "/", for example, "/metadata/labels".
+	// Path is a JSON pointer (RFC 6901) specifying the location within the resource document where the
+	// operation is performed.
+	// Each key in the path should be prefixed with "/",
+	// while "~" and "/" should be escaped as "~0" and "~1" respectively.
+	// For example, to add a label "kubeadmiral.io/label",
+	// the path should be "/metadata/labels/kubeadmiral.io~1label".
 	Path string `json:"path"`
 
 	// Value is the value(s) required by the operation.

@@ -52,8 +52,8 @@ type federatedClientFactory struct {
 	informer   fedcorev1a1informers.FederatedClusterInformer
 	handle     cache.ResourceEventHandlerRegistration
 
-	fedSystemNamespace string
-	baseRestConfig     *rest.Config
+	fedSystemNamespace  string
+	memberClientBuilder MemberClientBuilder
 
 	clientUpdateHandlers []ClientUpdateHandler
 	queue                workqueue.Interface
@@ -65,20 +65,89 @@ type federatedClientFactory struct {
 	dynamicInformerCache  map[string]dynamicinformer.DynamicSharedInformerFactory
 }
 
+type MemberClientBuilder interface {
+	Build(
+		ctx context.Context,
+		kubeClient kubeclient.Interface,
+		cluster *fedcorev1a1.FederatedCluster,
+		fedSystemNamespace string,
+	) (kubeclient.Interface, dynamicclient.Interface, error)
+}
+
+type BaseRestMemberClientBuilder struct {
+	Base *rest.Config
+}
+
+func (b *BaseRestMemberClientBuilder) Build(
+	ctx context.Context,
+	kubeClient kubeclient.Interface,
+	cluster *fedcorev1a1.FederatedCluster,
+	fedSystemNamespace string,
+) (
+	kubeClientset kubeclient.Interface,
+	dynamicClientset dynamicclient.Interface,
+	err error,
+) {
+	restConfig := copyRestConfig(b.Base)
+	restConfig.Host = cluster.Spec.APIEndpoint
+
+	clusterSecretRef, err := kubeClient.CoreV1().
+		Secrets(fedSystemNamespace).
+		Get(ctx, cluster.Spec.SecretRef.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to retrieve cluster secret: %w", err)
+	}
+
+	if err := util.PopulateAuthDetailsFromSecret(
+		restConfig,
+		cluster.Spec.Insecure,
+		clusterSecretRef,
+		cluster.Spec.UseServiceAccountToken,
+	); err != nil {
+		return nil, nil, fmt.Errorf("failed to bulid rest config from cluster secret: %w", err)
+	}
+
+	if kubeClientset, err = kubeclient.NewForConfig(restConfig); err != nil {
+		return nil, nil, fmt.Errorf("failed to create kube clientset: %w", err)
+	}
+
+	if dynamicClientset, err = dynamicclient.NewForConfig(restConfig); err != nil {
+		return nil, nil, fmt.Errorf("failed to create dynamic clientset: %w", err)
+	}
+
+	return kubeClientset, dynamicClientset, nil
+}
+
 func NewFederatedClientsetFactory(
-	client fedclient.Interface,
+	fedClient fedclient.Interface,
 	kubeClient kubeclient.Interface,
 	informer fedcorev1a1informers.FederatedClusterInformer,
 	fedSystemNamespace string,
 	baseRestConfig *rest.Config,
 ) FederatedClientFactory {
+	return NewFederatedClientsetFactoryWithBuilder(
+		fedClient,
+		kubeClient,
+		informer,
+		fedSystemNamespace,
+		&BaseRestMemberClientBuilder{Base: baseRestConfig},
+	)
+}
+
+func NewFederatedClientsetFactoryWithBuilder(
+	fedClient fedclient.Interface,
+	kubeClient kubeclient.Interface,
+	informer fedcorev1a1informers.FederatedClusterInformer,
+	fedSystemNamespace string,
+	memberClientBuilder MemberClientBuilder,
+) FederatedClientFactory {
 	factory := &federatedClientFactory{
 		mu:                    sync.RWMutex{},
-		client:                client,
+		client:                fedClient,
 		kubeClient:            kubeClient,
 		informer:              informer,
 		fedSystemNamespace:    fedSystemNamespace,
-		baseRestConfig:        baseRestConfig,
+		memberClientBuilder:   memberClientBuilder,
 		queue:                 workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
 		clientUpdateHandlers:  []ClientUpdateHandler{},
 		clusterErrors:         map[string]error{},
@@ -261,48 +330,15 @@ func (f *federatedClientFactory) processQueueItem(ctx context.Context) {
 		return
 	}
 
-	var kubeClientset kubeclient.Interface
-	var dynamicClientset dynamicclient.Interface
-	var kubeInformerFactory kubeinformer.SharedInformerFactory
-	var dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory
-
-	restConfig := copyRestConfig(f.baseRestConfig)
-	restConfig.Host = cluster.Spec.APIEndpoint
-
-	clusterSecretRef, err := f.kubeClient.CoreV1().
-		Secrets(f.fedSystemNamespace).
-		Get(ctx, cluster.Spec.SecretRef.Name, metav1.GetOptions{})
+	kubeClientset, dynamicClientset, err := f.memberClientBuilder.Build(ctx, f.kubeClient, cluster, f.fedSystemNamespace)
 	if err != nil {
-		f.updateCachesWithError(name, fmt.Errorf("failed to retrieve cluster secret: %w", err))
+		f.updateCachesWithError(name, err)
 		f.queue.Add(key)
 		return
 	}
 
-	if err := util.PopulateAuthDetailsFromSecret(
-		restConfig,
-		cluster.Spec.Insecure,
-		clusterSecretRef,
-		cluster.Spec.UseServiceAccountToken,
-	); err != nil {
-		f.updateCachesWithError(name, fmt.Errorf("failed to bulid rest config from cluster secret: %w", err))
-		f.queue.Add(key)
-		return
-	}
-
-	if kubeClientset, err = kubeclient.NewForConfig(restConfig); err != nil {
-		f.updateCachesWithError(name, fmt.Errorf("failed to create kube clientset: %w", err))
-		f.queue.Add(key)
-		return
-	}
-
-	if dynamicClientset, err = dynamicclient.NewForConfig(restConfig); err != nil {
-		f.updateCachesWithError(name, fmt.Errorf("failed to create dynamic clientset: %w", err))
-		f.queue.Add(key)
-		return
-	}
-
-	kubeInformerFactory = kubeinformer.NewSharedInformerFactory(kubeClientset, util.NoResyncPeriod)
-	dynamicInformerFactory = dynamicinformer.NewDynamicSharedInformerFactory(dynamicClientset, util.NoResyncPeriod)
+	kubeInformerFactory := kubeinformer.NewSharedInformerFactory(kubeClientset, util.NoResyncPeriod)
+	dynamicInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(dynamicClientset, util.NoResyncPeriod)
 
 	f.mu.Lock()
 	f.clusterErrors[name] = nil

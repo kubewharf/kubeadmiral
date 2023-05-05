@@ -1,5 +1,3 @@
-//go:build e2e
-
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -16,22 +14,30 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package e2e
+package core
 
-import (
-	"testing"
+import "k8s.io/apimachinery/pkg/util/sets"
 
-	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
+type EnabledPlugins struct {
+	FilterPlugins   []string
+	ScorePlugins    []string
+	SelectPlugins   []string
+	ReplicasPlugins []string
+}
 
-	// Remember to import the package for tests to be discovered by ginkgo
-	_ "github.com/kubewharf/kubeadmiral/test/e2e/automigration"
-	_ "github.com/kubewharf/kubeadmiral/test/e2e/federatedcluster"
-	_ "github.com/kubewharf/kubeadmiral/test/e2e/resourcepropagation"
-	_ "github.com/kubewharf/kubeadmiral/test/e2e/schedulingprofile"
-)
+func (ep EnabledPlugins) IsPluginEnabled(pluginName string) bool {
+	if sets.New(ep.FilterPlugins...).Has(pluginName) {
+		return true
+	}
+	if sets.New(ep.ScorePlugins...).Has(pluginName) {
+		return true
+	}
+	if sets.New(ep.SelectPlugins...).Has(pluginName) {
+		return true
+	}
+	if sets.New(ep.ReplicasPlugins...).Has(pluginName) {
+		return true
+	}
 
-func TestMain(t *testing.T) {
-	gomega.RegisterFailHandler(ginkgo.Fail)
-	ginkgo.RunSpecs(t, "KubeAdmiral E2E Tests")
+	return false
 }

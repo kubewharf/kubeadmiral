@@ -31,23 +31,26 @@ import (
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
 
-func (s *Scheduler) schedulingUnitForFedObject(
+func schedulingUnitForFedObject(
 	ctx context.Context,
+	federatedClient federatedclient.FederatedClientFactory,
+	clusterLister fedcorev1a1listers.FederatedClusterLister,
+	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	fedObject *unstructured.Unstructured,
 	policy fedcorev1a1.GenericPropagationPolicy,
 ) (*framework.SchedulingUnit, error) {
-	targetType := s.typeConfig.GetTargetType()
-
-	objectMeta, err := getTemplateObjectMeta(fedObject)
+	template, err := getTemplate(fedObject)
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving object meta from template: %w", err)
+		return nil, fmt.Errorf("error retrieving template: %w", err)
 	}
 
 	schedulingMode := getSchedulingModeFromPolicy(policy)
@@ -57,14 +60,14 @@ func (s *Scheduler) schedulingUnitForFedObject(
 	}
 
 	var desiredReplicasOption *int64
-	if schedulingMode == fedcorev1a1.SchedulingModeDivide && s.typeConfig.Spec.PathDefinition.ReplicasSpec == "" {
+	if schedulingMode == fedcorev1a1.SchedulingModeDivide && typeConfig.Spec.PathDefinition.ReplicasSpec == "" {
 		// TODO remove this check in favor of a DivideIfPossible mode
 		schedulingMode = fedcorev1a1.SchedulingModeDuplicate
 	}
 	if schedulingMode == fedcorev1a1.SchedulingModeDivide {
 		value, err := utilunstructured.GetInt64FromPath(
 			fedObject,
-			s.typeConfig.Spec.PathDefinition.ReplicasSpec,
+			typeConfig.Spec.PathDefinition.ReplicasSpec,
 			common.TemplatePath,
 		)
 		if err != nil {
@@ -74,28 +77,29 @@ func (s *Scheduler) schedulingUnitForFedObject(
 		desiredReplicasOption = value
 	}
 
-	currentReplicas, err := getCurrentReplicasFromObject(s.typeConfig, fedObject)
+	currentReplicas, err := getCurrentReplicasFromObject(typeConfig, fedObject)
 	if err != nil {
 		return nil, err
 	}
 
 	var currentUsage map[string]framework.Resource
-	selectorPath := s.typeConfig.Spec.PathDefinition.LabelSelector
+	selectorPath := typeConfig.Spec.PathDefinition.LabelSelector
 	if selectorPath != "" {
-		currentUsage, err = s.getPodUsage(ctx, fedObject, selectorPath)
+		currentUsage, err = getPodUsage(ctx, federatedClient, clusterLister, fedObject, selectorPath)
 		if err != nil {
 			return nil, fmt.Errorf("get pod resource usage: %w", err)
 		}
 	}
 
+	targetType := typeConfig.GetTargetType()
 	schedulingUnit := &framework.SchedulingUnit{
 		GroupVersion:    schema.GroupVersion{Group: targetType.Group, Version: targetType.Version},
 		Kind:            targetType.Kind,
 		Resource:        targetType.Name,
-		Namespace:       objectMeta.GetNamespace(),
-		Name:            objectMeta.GetName(),
-		Labels:          objectMeta.GetLabels(),
-		Annotations:     objectMeta.GetAnnotations(),
+		Namespace:       template.GetNamespace(),
+		Name:            template.GetName(),
+		Labels:          template.GetLabels(),
+		Annotations:     template.GetAnnotations(),
 		DesiredReplicas: desiredReplicasOption,
 		CurrentClusters: currentReplicas,
 		CurrentUsage:    currentUsage,
@@ -176,12 +180,14 @@ func (s *Scheduler) schedulingUnitForFedObject(
 	return schedulingUnit, nil
 }
 
-func (s *Scheduler) getPodUsage(
+func getPodUsage(
 	ctx context.Context,
+	federatedClient federatedclient.FederatedClientFactory,
+	clusterLister fedcorev1a1listers.FederatedClusterLister,
 	fedObject *unstructured.Unstructured,
 	selectorPath string,
 ) (map[string]framework.Resource, error) {
-	clusters, err := s.clusterLister.List(labels.Everything())
+	clusters, err := clusterLister.List(labels.Everything())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get clusters from store: %w", err)
 	}
@@ -199,7 +205,7 @@ func (s *Scheduler) getPodUsage(
 			continue
 		}
 
-		currentUsage[cluster.Name], err = s.getClusterPodUsage(ctx, cluster, fedObject, selector)
+		currentUsage[cluster.Name], err = getClusterPodUsage(ctx, federatedClient, cluster, fedObject, selector)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get pod resource usage in cluster %q: %w", cluster.Name, err)
 		}
@@ -208,13 +214,14 @@ func (s *Scheduler) getPodUsage(
 	return currentUsage, nil
 }
 
-func (s *Scheduler) getClusterPodUsage(
+func getClusterPodUsage(
 	ctx context.Context,
+	federatedClient federatedclient.FederatedClientFactory,
 	cluster *fedcorev1a1.FederatedCluster,
 	fedObject *unstructured.Unstructured,
 	selector *metav1.LabelSelector,
 ) (res framework.Resource, err error) {
-	client, exists, err := s.federatedClient.KubeClientsetForCluster(cluster.Name)
+	client, exists, err := federatedClient.KubeClientsetForCluster(cluster.Name)
 	if err != nil {
 		return res, fmt.Errorf("get clientset: %w", err)
 	}
@@ -234,7 +241,7 @@ func (s *Scheduler) getClusterPodUsage(
 	return *framework.NewResource(usage), nil
 }
 
-func getTemplateObjectMeta(fedObject *unstructured.Unstructured) (*metav1.ObjectMeta, error) {
+func getTemplate(fedObject *unstructured.Unstructured) (*metav1.PartialObjectMetadata, error) {
 	templateContent, exists, err := unstructured.NestedMap(fedObject.Object, common.TemplatePath...)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving template: %w", err)
@@ -242,12 +249,12 @@ func getTemplateObjectMeta(fedObject *unstructured.Unstructured) (*metav1.Object
 	if !exists {
 		return nil, fmt.Errorf("template not found")
 	}
-	objectMeta := metav1.ObjectMeta{}
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(templateContent, &objectMeta)
+	obj := metav1.PartialObjectMetadata{}
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(templateContent, &obj)
 	if err != nil {
-		return nil, fmt.Errorf("template cannot be converted to unstructured: %w", err)
+		return nil, fmt.Errorf("template cannot be converted from unstructured: %w", err)
 	}
-	return &objectMeta, nil
+	return &obj, nil
 }
 
 func getCurrentReplicasFromObject(
@@ -527,7 +534,7 @@ func getWeightsFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[strin
 	weights := map[string]int64{}
 	for _, placement := range policy.GetSpec().Placements {
 		if placement.Preferences.Weight != nil {
-			weights[placement.ClusterName] = *placement.Preferences.Weight
+			weights[placement.Cluster] = *placement.Preferences.Weight
 		}
 	}
 
@@ -560,7 +567,7 @@ func getWeightsFromObject(object *unstructured.Unstructured) (map[string]int64, 
 	weights := map[string]int64{}
 	for _, placement := range placements {
 		if placement.Preferences.Weight != nil {
-			weights[placement.ClusterName] = *placement.Preferences.Weight
+			weights[placement.Cluster] = *placement.Preferences.Weight
 		}
 	}
 
@@ -586,7 +593,7 @@ func getMinReplicasFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[s
 
 	minReplicas := make(map[string]int64, len(policy.GetSpec().Placements))
 	for _, placement := range policy.GetSpec().Placements {
-		minReplicas[placement.ClusterName] = placement.Preferences.MinReplicas
+		minReplicas[placement.Cluster] = placement.Preferences.MinReplicas
 	}
 
 	return minReplicas
@@ -617,7 +624,7 @@ func getMinReplicasFromObject(object *unstructured.Unstructured) (map[string]int
 
 	minReplicas := make(map[string]int64, len(placements))
 	for _, placement := range placements {
-		minReplicas[placement.ClusterName] = placement.Preferences.MinReplicas
+		minReplicas[placement.Cluster] = placement.Preferences.MinReplicas
 	}
 
 	// we need to do additional validation vs getting from policy which relies on CRD validation by apiserver
@@ -643,7 +650,7 @@ func getMaxReplicasFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[s
 	maxReplicas := make(map[string]int64, len(policy.GetSpec().Placements))
 	for _, placement := range policy.GetSpec().Placements {
 		if placement.Preferences.MaxReplicas != nil {
-			maxReplicas[placement.ClusterName] = *placement.Preferences.MaxReplicas
+			maxReplicas[placement.Cluster] = *placement.Preferences.MaxReplicas
 		}
 	}
 
@@ -676,7 +683,7 @@ func getMaxReplicasFromObject(object *unstructured.Unstructured) (map[string]int
 	maxReplicas := make(map[string]int64, len(placements))
 	for _, placement := range placements {
 		if placement.Preferences.MaxReplicas != nil {
-			maxReplicas[placement.ClusterName] = *placement.Preferences.MaxReplicas
+			maxReplicas[placement.Cluster] = *placement.Preferences.MaxReplicas
 		}
 	}
 
@@ -702,7 +709,7 @@ func getClusterNamesFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[
 
 	clusterNames := make(map[string]struct{}, len(policy.GetSpec().Placements))
 	for _, placement := range policy.GetSpec().Placements {
-		clusterNames[placement.ClusterName] = struct{}{}
+		clusterNames[placement.Cluster] = struct{}{}
 	}
 
 	return clusterNames
@@ -733,7 +740,7 @@ func getClusterNamesFromObject(object *unstructured.Unstructured) (map[string]st
 
 	clusterNames := make(map[string]struct{}, len(placements))
 	for _, placement := range placements {
-		clusterNames[placement.ClusterName] = struct{}{}
+		clusterNames[placement.Cluster] = struct{}{}
 	}
 
 	return clusterNames, true
