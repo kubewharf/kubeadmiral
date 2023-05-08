@@ -160,6 +160,8 @@ func startControllers(
 		controllerCtx.Metrics,
 	)
 	for controllerName, initFuncs := range ftcSubControllerInitFuncs {
+		controllerName := controllerName
+		initFuncs := initFuncs
 		manager.RegisterSubController(controllerName, initFuncs.StartFunc, func(typeConfig *fedcorev1a1.FederatedTypeConfig) bool {
 			if !isControllerEnabled(controllerName, controllersDisabledByDefault, enabledControllers) {
 				return false
