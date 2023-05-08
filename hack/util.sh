@@ -88,6 +88,7 @@ options:
   kubeApiserverPort: ${APISERVER_PORT}
   kubeVersion: "v1.20.15"
 componentsPatches:
+# we do not need to disable StorageObjectInUseProtection explictly for the apiserver because kwok disables admission plugins by default
 - name: kube-controller-manager
   extraArgs:
   - key: controllers
