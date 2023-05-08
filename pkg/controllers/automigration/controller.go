@@ -82,15 +82,7 @@ type Controller struct {
 
 // IsControllerReady implements controllermanager.Controller
 func (c *Controller) IsControllerReady() bool {
-	clusters, err := c.federatedInformer.GetReadyClusters()
-	if err != nil {
-		c.logger.Error(err, "failed to get ready clusters")
-		return false
-	}
-
-	return c.federatedObjectInformer.Informer().HasSynced() &&
-		c.federatedInformer.ClustersSynced() &&
-		c.federatedInformer.GetTargetStore().ClustersSynced(clusters)
+	return c.HasSynced()
 }
 
 func NewAutoMigrationController(
@@ -163,25 +155,26 @@ func (c *Controller) Run(ctx context.Context) {
 	c.federatedInformer.Start()
 	defer c.federatedInformer.Stop()
 
-	cachesSynced := []cache.InformerSynced{
-		c.federatedObjectInformer.Informer().HasSynced,
-		c.federatedInformer.ClustersSynced,
-		func() bool {
-			clusters, err := c.federatedInformer.GetReadyClusters()
-			if err != nil {
-				c.logger.Error(err, "failed to get ready clusters")
-				return false
-			}
-			return c.federatedInformer.GetTargetStore().ClustersSynced(clusters)
-		},
-	}
-
-	if !cache.WaitForNamedCacheSync(c.name, ctx.Done(), cachesSynced...) {
+	if !cache.WaitForNamedCacheSync(c.name, ctx.Done(), c.HasSynced) {
 		return
 	}
 	c.worker.Run(ctx.Done())
 
 	<-ctx.Done()
+}
+
+func (c *Controller) HasSynced() bool {
+	if !c.federatedObjectInformer.Informer().HasSynced() || !c.federatedInformer.ClustersSynced() {
+		return false
+	}
+
+	clusters, err := c.federatedInformer.GetReadyClusters()
+	if err != nil {
+		c.logger.Error(err, "failed to get ready clusters")
+		return false
+	}
+
+	return c.federatedInformer.GetTargetStore().ClustersSynced(clusters)
 }
 
 func (c *Controller) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {

@@ -96,11 +96,7 @@ type Scheduler struct {
 }
 
 func (s *Scheduler) IsControllerReady() bool {
-	return s.federatedObjectSynced() &&
-		s.clusterPropagationPolicySynced() &&
-		s.clusterSynced() &&
-		s.schedulingProfileSynced() &&
-		s.webhookConfigurationSynced()
+	return s.HasSynced()
 }
 
 func NewScheduler(
