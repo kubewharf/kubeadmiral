@@ -40,11 +40,13 @@ type FTCSubControllerInitFuncs struct {
 	IsEnabledFunc IsFTCSubControllerEnabledFunc
 }
 
-// StartFTCSubControllerFunc is responsible for constructing and starting a FTC subcontroller. A FTC subcontroller is started/stopped
-// dynamically for every FTC. StartFTCSubControllerFunc should be asynchronous and an error is only returned if we fail to start the
-// controller.
-//
-//nolint:lll
-type StartFTCSubControllerFunc func(ctx context.Context, controllerCtx *controllercontext.Context, typeConfig *fedcorev1a1.FederatedTypeConfig) (Controller, error)
+// StartFTCSubControllerFunc is responsible for constructing and starting a FTC subcontroller. A FTC subcontroller is
+// started/stopped dynamically for every FTC. StartFTCSubControllerFunc should be asynchronous and an error is only
+// returned if we fail to start the controller.
+type StartFTCSubControllerFunc func(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+	typeConfig *fedcorev1a1.FederatedTypeConfig,
+) (Controller, error)
 
 type IsFTCSubControllerEnabledFunc func(typeConfig *fedcorev1a1.FederatedTypeConfig) bool
