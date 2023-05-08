@@ -1148,7 +1148,7 @@ func (s *KubeFedSyncController) reconcileCluster(qualifiedName common.QualifiedN
 			cluster,
 			corev1.EventTypeWarning,
 			EventReasonWaitForCascadingDeleteError,
-			"unable to get cluster client: cluster is not unavailable (check cluster conditions): %v",
+			"unable to get cluster client: cluster is not available (check cluster conditions): %v",
 			err,
 		)
 		runtime.HandleError(errors.Wrapf(err, "failed to get cluster client for cluster %s", cluster.Name))
