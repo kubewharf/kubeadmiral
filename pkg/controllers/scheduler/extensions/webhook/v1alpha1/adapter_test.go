@@ -157,13 +157,13 @@ func TestConvertSchedulingUnit(t *testing.T) {
 				MaxClusters: pointer.Int64(5),
 				Placements: []fedcorev1a1.Placement{
 					{
-						ClusterName: "cluster1",
+						Cluster: "cluster1",
 					},
 					{
-						ClusterName: "cluster2",
+						Cluster: "cluster2",
 					},
 					{
-						ClusterName: "cluster3",
+						Cluster: "cluster3",
 					},
 				},
 			},
@@ -350,13 +350,13 @@ func TestConvertSchedulingUnit(t *testing.T) {
 				MaxClusters: pointer.Int64(5),
 				Placements: []fedcorev1a1.Placement{
 					{
-						ClusterName: "cluster1",
+						Cluster: "cluster1",
 					},
 					{
-						ClusterName: "cluster2",
+						Cluster: "cluster2",
 					},
 					{
-						ClusterName: "cluster3",
+						Cluster: "cluster3",
 					},
 				},
 			},
@@ -456,10 +456,10 @@ func TestConvertSchedulingUnit(t *testing.T) {
 			})
 			// we need to sort placements due to go's maps being unordered
 			sort.Slice(converted.Placements, func(i, j int) bool {
-				return converted.Placements[i].ClusterName < converted.Placements[j].ClusterName
+				return converted.Placements[i].Cluster < converted.Placements[j].Cluster
 			})
 			sort.Slice(test.expectedResult.Placements, func(i, j int) bool {
-				return test.expectedResult.Placements[i].ClusterName < test.expectedResult.Placements[j].ClusterName
+				return test.expectedResult.Placements[i].Cluster < test.expectedResult.Placements[j].Cluster
 			})
 
 			g := gomega.NewWithT(t)
