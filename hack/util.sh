@@ -64,10 +64,10 @@ nodes:
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
-    kube-controller-manager:
+    controllerManager:
       extraArgs:
         controllers: "namespace,garbagecollector"
-    kube-apiserver:
+    apiServer:
       extraArgs:
         disable-admission-plugins: StorageObjectInUseProtection
 EOF
