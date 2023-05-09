@@ -63,11 +63,6 @@ nodes:
   image: kindest/node:v1.20.15
   kubeadmConfigPatches:
   - |
-    kind: InitConfiguration
-    skipPhases:
-    - "kubeconfig/scheduler"
-    - "control-plane/scheduler"
-  - |
     kind: ClusterConfiguration
     controllerManager:
       extraArgs:
@@ -79,6 +74,11 @@ EOF
 )
 
   kind create cluster --config=<(echo "${KIND_CONFIG}") --name="${HOST_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG_PATH}"
+
+  # ideally we would use InitConfiguration.skipPhases in kubeadmConfigPatches above to disable the kube-scheduler, but
+  # it is only avaiable from v1.22 onwards, so we simply delete the static kube-scheduler pod after the kind cluster is
+  # created for now
+  docker exec kubeadmiral-host-control-plane rm /etc/kubernetes/manifests/kube-scheduler.yaml
 }
 
 function util::create_host_kwok_cluster() {

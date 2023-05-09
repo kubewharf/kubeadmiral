@@ -723,6 +723,7 @@ spec:
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
+    - - kubeadmiral.io/follower-controller
   statusCollection:
     fields:
       - status
