@@ -85,6 +85,10 @@ func RetainOrMergeClusterFields(
 		if err := retainPersistentVolumeClaimFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
+	case schemautil.IsPodGvk(targetGvk):
+		if err := retainPodFields(desiredObj, clusterObj); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -244,6 +248,18 @@ func retainPersistentVolumeClaimFields(
 	if volumeName, exists, err := unstructured.NestedString(
 		clusterObj.Object, "spec", "volumeName"); err == nil && exists {
 		if err := unstructured.SetNestedField(desiredObj.Object, volumeName, "spec", "volumeName"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
+	// If left empty in the source, spec.nodeName will be set by the scheduler. Otherwise, the field is immutable.
+	// In both cases, it is safe to retain the value from the cluster object.
+	if nodeName, exists, err := unstructured.NestedString(clusterObj.Object, "spec", "nodeName"); err == nil && exists {
+		if err := unstructured.SetNestedField(desiredObj.Object, nodeName, "spec", "nodeName"); err != nil {
 			return err
 		}
 	}

@@ -42,3 +42,7 @@ func IsPersistentVolumeGvk(gvk schema.GroupVersionKind) bool {
 func IsPersistentVolumeClaimGvk(gvk schema.GroupVersionKind) bool {
 	return gvk.Group == "" && gvk.Kind == common.PersistentVolumeClaimKind
 }
+
+func IsPodGvk(gvk schema.GroupVersionKind) bool {
+	return gvk.Group == "" && gvk.Kind == common.PodKind
+}
