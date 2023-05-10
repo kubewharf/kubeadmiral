@@ -240,14 +240,19 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 		}
 	}
 
+	if schemautil.IsPodGvk(r.TargetGVK()) {
+		if err := dropPodFields(obj); err != nil {
+			return nil, err
+		}
+	}
+
 	return obj, nil
 }
 
 func dropJobFields(obj *unstructured.Unstructured) error {
 	// no need to do anything if manualSelector is true
 	if manualSelector, exists, err := unstructured.NestedBool(obj.Object, "spec", "manualSelector"); err == nil &&
-		exists &&
-		manualSelector {
+		exists && manualSelector {
 		return nil
 	}
 
@@ -264,6 +269,15 @@ func dropServiceFields(obj *unstructured.Unstructured) error {
 			unstructured.RemoveNestedField(obj.Object, "spec", "clusterIP")
 			unstructured.RemoveNestedField(obj.Object, "spec", "clusterIPs")
 		}
+	}
+
+	return nil
+}
+
+func dropPodFields(obj *unstructured.Unstructured) error {
+	if ephemeralContainers, exists, err := unstructured.NestedSlice(obj.Object, "spec", "ephemeralContainers"); err == nil &&
+		exists && len(ephemeralContainers) > 0 {
+		unstructured.RemoveNestedField(obj.Object, "spec", "ephemeralContainers")
 	}
 
 	return nil

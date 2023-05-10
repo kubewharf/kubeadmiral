@@ -239,9 +239,7 @@ func retainPersistentVolumeFields(desiredObj, clusterObj *unstructured.Unstructu
 	return nil
 }
 
-func retainPersistentVolumeClaimFields(
-	desiredObj, clusterObj *unstructured.Unstructured,
-) error {
+func retainPersistentVolumeClaimFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 	// If left empty in the source, spec.volumeName will be set by the in-cluster controller.
 	// Otherwise, the field is immutable.
 	// In both cases, it is safe to retain the value from the cluster object.
@@ -256,15 +254,50 @@ func retainPersistentVolumeClaimFields(
 }
 
 func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
-	// If left empty in the source, spec.nodeName will be set by the scheduler. Otherwise, the field is immutable.
-	// In both cases, it is safe to retain the value from the cluster object.
-	if nodeName, exists, err := unstructured.NestedString(clusterObj.Object, "spec", "nodeName"); err == nil && exists {
-		if err := unstructured.SetNestedField(desiredObj.Object, nodeName, "spec", "nodeName"); err != nil {
+	if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "ephemeralContainers"); err != nil {
+		return err
+	}
+
+	if serviceAccountName, exists, err := unstructured.NestedString(desiredObj.Object, "spec", "serviceAccountName"); err == nil &&
+		(!exists || len(serviceAccountName) == 0) {
+		if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "serviceAccountName"); err != nil {
+			return err
+		}
+	}
+
+	if serviceAccount, exists, err := unstructured.NestedString(desiredObj.Object, "spec", "serviceAccount"); err == nil &&
+		(!exists || len(serviceAccount) == 0) {
+		if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "serviceAccount"); err != nil {
+			return err
+		}
+	}
+
+	if nodeName, exists, err := unstructured.NestedString(desiredObj.Object, "spec", "nodeName"); err == nil &&
+		(!exists || len(nodeName) == 0) {
+		if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "nodeName"); err != nil {
+			return err
+		}
+	}
+
+	if priority, exists, err := unstructured.NestedFieldNoCopy(desiredObj.Object, "spec", "priority"); err == nil &&
+		(!exists || priority == nil) {
+		if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "priority"); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// copyUnstructuredField copies the given field from srcObj to destObj if it exists in srcObj. An error is returned if
+// the field cannot be set in destObj as one of the nesting levels is not a map[string]interface{}
+func copyUnstructuredField(srcObj, destObj *unstructured.Unstructured, fields ...string) error {
+	value, exists, err := unstructured.NestedFieldNoCopy(srcObj.Object, fields...)
+	if err != nil || !exists {
+		return nil
+	}
+
+	return unstructured.SetNestedField(destObj.Object, value, fields...)
 }
 
 func checkRetainReplicas(fedObj *unstructured.Unstructured) (bool, error) {
