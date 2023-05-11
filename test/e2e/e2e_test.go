@@ -21,18 +21,28 @@ package e2e
 import (
 	"testing"
 
+	"github.com/go-logr/logr/funcr"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 
 	// Remember to import the package for tests to be discovered by ginkgo
+	// _ "github.com/kubewharf/kubeadmiral/test/e2e/example"
+
 	_ "github.com/kubewharf/kubeadmiral/test/e2e/automigration"
 	_ "github.com/kubewharf/kubeadmiral/test/e2e/federatedcluster"
 	_ "github.com/kubewharf/kubeadmiral/test/e2e/resourcepropagation"
 	_ "github.com/kubewharf/kubeadmiral/test/e2e/schedulingprofile"
-	// _ "github.com/kubewharf/kubeadmiral/test/e2e/example"
 )
 
 func TestMain(t *testing.T) {
+	// replace the default GinkgoLogr for better formatting
+	ginkgo.GinkgoLogr = funcr.New(func(prefix, args string) {
+		if len(prefix) > 0 {
+			prefix = prefix + ": "
+		}
+		ginkgo.GinkgoWriter.Printf("%s%s\n", prefix, args)
+	}, funcr.Options{})
+
 	gomega.RegisterFailHandler(ginkgo.Fail)
 	ginkgo.RunSpecs(t, "KubeAdmiral E2E Tests")
 }
