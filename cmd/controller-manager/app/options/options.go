@@ -53,6 +53,9 @@ type Options struct {
 	NSAutoPropExcludeRegexp string
 	CreateCRDsForFTCs       bool
 	ClusterJoinTimeout      time.Duration
+
+	MaxPodListers    int64
+	EnablePodPruning bool
 }
 
 func NewOptions() *Options {
@@ -109,6 +112,10 @@ func (o *Options) AddFlags(flags *pflag.FlagSet, allControllers []string, disabl
 		"The maximum amount of time to wait for a new cluster to join the federation before timing out.",
 	)
 
+	flags.Int64Var(&o.MaxPodListers, "max-pod-listers", 0, "The maximum number of concurrent pod listing requests to member clusters. "+
+		"A non-positive number means unlimited, but may increase the instantaneous memory usage.")
+	flags.BoolVar(&o.EnablePodPruning, "enable-pod-pruning", false, "Enable pod pruning for pod informer. "+
+		"Enabling this can reduce memory usage of the pod informer, but will disable pod propagation.")
 	o.addKlogFlags(flags)
 }
 
