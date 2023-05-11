@@ -444,6 +444,36 @@ func handleTerminatingCluster(
 	return nil
 }
 
+func getClusterClient(
+	ctx context.Context,
+	hostClient kubeclient.Interface,
+	fedSystemNamespace string,
+	cluster *fedcorev1a1.FederatedCluster,
+) (*corev1.Secret, kubeclient.Interface, error) {
+	restConfig := &rest.Config{Host: cluster.Spec.APIEndpoint}
+
+	clusterSecretName := cluster.Spec.SecretRef.Name
+	if clusterSecretName == "" {
+		return nil, nil, fmt.Errorf("cluster secret is not set")
+	}
+
+	clusterSecret, err := hostClient.CoreV1().Secrets(fedSystemNamespace).Get(ctx, clusterSecretName, metav1.GetOptions{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get cluster secret: %w", err)
+	}
+
+	if err := util.PopulateAuthDetailsFromSecret(restConfig, cluster.Spec.Insecure, clusterSecret, false); err != nil {
+		return nil, nil, fmt.Errorf("cluster secret malformed: %w", err)
+	}
+
+	clusterClient, err := kubeclient.NewForConfig(restConfig)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create cluster kube clientset: %w", err)
+	}
+
+	return clusterSecret, clusterClient, nil
+}
+
 func (c *FederatedClusterController) enqueueAllJoinedClusters() {
 	clusters, err := c.clusterLister.List(labels.Everything())
 	if err != nil {

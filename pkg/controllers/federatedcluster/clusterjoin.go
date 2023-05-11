@@ -33,7 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
@@ -42,7 +41,6 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 )
 
 const (
@@ -107,52 +105,16 @@ func handleNotJoinedCluster(
 
 	// 2. The remaining steps require a cluster kube client, attempt to create one
 
-	// TODO: should populate condition if failed to create client
-	restConfig := &rest.Config{Host: cluster.Spec.APIEndpoint}
-
-	clusterSecretName := cluster.Spec.SecretRef.Name
-	if clusterSecretName == "" {
-		eventRecorder.Eventf(
-			cluster,
-			corev1.EventTypeWarning,
-			EventReasonJoinClusterError,
-			"cluster %q secret is not set",
-			cluster.Name,
-		)
-		return cluster, fmt.Errorf("cluster secret is not set")
-	}
-	clusterSecret, err := kubeClient.CoreV1().Secrets(fedSystemNamespace).Get(ctx, clusterSecretName, metav1.GetOptions{})
-	if err != nil && apierrors.IsNotFound(err) {
-		eventRecorder.Eventf(
-			cluster,
-			corev1.EventTypeWarning,
-			EventReasonJoinClusterError,
-			"cluster %q secret %q not found",
-			cluster.Name,
-			clusterSecretName,
-		)
-		return cluster, fmt.Errorf("cluster secret not found: %w", err)
-	}
+	_, clusterKubeClient, err := getClusterClient(ctx, kubeClient, fedSystemNamespace, cluster)
 	if err != nil {
-		return cluster, fmt.Errorf("failed to get cluster secret: %w", err)
-	}
-
-	if err := util.PopulateAuthDetailsFromSecret(restConfig, cluster.Spec.Insecure, clusterSecret, false); err != nil {
-		eventRecorder.Eventf(
-			cluster,
-			corev1.EventTypeWarning,
-			EventReasonHandleTerminatingClusterFailed,
-			"cluster %q secret %q is malformed: %v",
-			cluster.Name,
-			clusterSecretName,
-			err.Error(),
+		logger.Error(err, "Failed to create cluster client")
+		msg := fmt.Sprintf("Failed to create cluster client: %v", err.Error())
+		return recordJoinResult(
+			ctx, cluster, client, eventRecorder,
+			err,
+			corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
+			corev1.ConditionFalse, TokenNotObtainedReason, msg,
 		)
-		return cluster, fmt.Errorf("cluster secret malformed: %w", err)
-	}
-
-	clusterKubeClient, err := kubeclient.NewForConfig(restConfig)
-	if err != nil {
-		return cluster, fmt.Errorf("failed to create cluster kube clientset: %w", err)
 	}
 
 	// 3. Get or create system namespace in the cluster, this will also tell us if the cluster is unjoinable
