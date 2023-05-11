@@ -343,32 +343,17 @@ func handleTerminatingCluster(
 
 	// Only perform clean-up if we made any effectual changes to the cluster during join.
 	if cluster.Status.JoinPerformed {
-		clusterSecretName := cluster.Spec.SecretRef.Name
-		if clusterSecretName == "" {
-			eventRecorder.Eventf(
-				cluster,
-				corev1.EventTypeWarning,
-				EventReasonHandleTerminatingClusterFailed,
-				"cluster %q secret is not set",
-				cluster.Name,
-			)
-
-			return fmt.Errorf("cluster secret is not set")
-		}
-
-		clusterSecret, err := kubeClient.CoreV1().
-			Secrets(fedSystemNamespace).
-			Get(ctx, clusterSecretName, metav1.GetOptions{})
+		clusterSecret, clusterKubeClient, err := getClusterClient(ctx, kubeClient, fedSystemNamespace, cluster)
 		if err != nil {
 			eventRecorder.Eventf(
 				cluster,
 				corev1.EventTypeWarning,
 				EventReasonHandleTerminatingClusterFailed,
-				"cluster %q secret %q not found",
-				cluster.Name,
-				clusterSecretName,
+				"Failed to get cluster client: %v",
+				err,
 			)
-			return fmt.Errorf("failed to get cluster secret: %w", err)
+
+			return fmt.Errorf("failed to get cluster client: %w", err)
 		}
 
 		// 1. cleanup service account token from cluster secret if required
@@ -382,7 +367,7 @@ func handleTerminatingCluster(
 				delete(clusterSecret.Data, ServiceAccountTokenKey)
 				delete(clusterSecret.Data, ServiceAccountCAKey)
 
-				clusterSecret, err = kubeClient.CoreV1().
+				_, err = kubeClient.CoreV1().
 					Secrets(fedSystemNamespace).
 					Update(ctx, clusterSecret, metav1.UpdateOptions{})
 				if err != nil {
@@ -395,26 +380,6 @@ func handleTerminatingCluster(
 		}
 
 		// 2. connect to cluster and perform cleanup
-
-		restConfig := &rest.Config{Host: cluster.Spec.APIEndpoint}
-
-		if err := util.PopulateAuthDetailsFromSecret(restConfig, cluster.Spec.Insecure, clusterSecret, false); err != nil {
-			eventRecorder.Eventf(
-				cluster,
-				corev1.EventTypeWarning,
-				EventReasonHandleTerminatingClusterFailed,
-				"cluster %q secret %q is malformed: %v",
-				cluster.Name,
-				clusterSecret.Name,
-				err.Error(),
-			)
-			return fmt.Errorf("cluster secret malformed: %w", err)
-		}
-
-		clusterKubeClient, err := kubeclient.NewForConfig(restConfig)
-		if err != nil {
-			return fmt.Errorf("failed to create cluster kube clientset: %w", err)
-		}
 
 		err = clusterKubeClient.CoreV1().
 			Namespaces().
