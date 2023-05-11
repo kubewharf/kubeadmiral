@@ -62,9 +62,6 @@ const (
 	TokenNotObtainedReason  = "TokenNotObtained"
 	TokenNotObtainedMessage = "Service account token has not been obtained from the cluster"
 
-	GetOrCreateNamespaceFailedReason          = "GetOrCreateNamespaceFailed"
-	GetOrCreateNamespaceFailedMessageTemplate = "Failed to get or create system namespace in member cluster: %v"
-
 	JoinTimeoutExceededReason          = "JoinTimeoutExceeded"
 	JoinTimeoutExceededMessageTemplate = "Timeout exceeded when joining the federation, message from last attempt: %v"
 
@@ -100,40 +97,17 @@ func handleNotJoinedCluster(
 		time.Since(joinedCondition.LastTransitionTime.Time) > clusterJoinTimeout {
 		// join timed out
 		logger.Error(nil, "Cluster join timed out")
-		eventRecorder.Eventf(
-			cluster,
-			corev1.EventTypeWarning,
-			EventReasonJoinClusterTimeoutExceeded,
-			"get token for cluster %q timed out",
-			cluster.Name,
+		return recordJoinResult(
+			ctx, cluster, client, eventRecorder,
+			nil,
+			corev1.EventTypeWarning, EventReasonJoinClusterTimeoutExceeded, "Cluster join timed out",
+			corev1.ConditionFalse, JoinTimeoutExceededReason, fmt.Sprintf(JoinTimeoutExceededMessageTemplate, joinedCondition.Message),
 		)
-
-		currentTime := metav1.Now()
-		newCondition := &fedcorev1a1.ClusterCondition{
-			Type:               fedcorev1a1.ClusterJoined,
-			Status:             corev1.ConditionFalse,
-			Reason:             JoinTimeoutExceededReason,
-			Message:            fmt.Sprintf(JoinTimeoutExceededMessageTemplate, joinedCondition.Message),
-			LastProbeTime:      currentTime,
-			LastTransitionTime: joinedCondition.LastTransitionTime,
-		}
-
-		setClusterCondition(&cluster.Status, newCondition)
-
-		var updateErr error
-		if cluster, updateErr = client.CoreV1alpha1().FederatedClusters().UpdateStatus(
-			context.TODO(),
-			cluster,
-			metav1.UpdateOptions{},
-		); updateErr != nil {
-			return cluster, fmt.Errorf("failed to update cluster status after join timeout: %w", updateErr)
-		}
-
-		return cluster, nil
 	}
 
 	// 2. The remaining steps require a cluster kube client, attempt to create one
 
+	// TODO: should populate condition if failed to create client
 	restConfig := &rest.Config{Host: cluster.Spec.APIEndpoint}
 
 	clusterSecretName := cluster.Spec.SecretRef.Name
@@ -147,7 +121,7 @@ func handleNotJoinedCluster(
 		)
 		return cluster, fmt.Errorf("cluster secret is not set")
 	}
-	clusterSecret, err := kubeClient.CoreV1().Secrets(fedSystemNamespace).Get(context.TODO(), clusterSecretName, metav1.GetOptions{})
+	clusterSecret, err := kubeClient.CoreV1().Secrets(fedSystemNamespace).Get(ctx, clusterSecretName, metav1.GetOptions{})
 	if err != nil && apierrors.IsNotFound(err) {
 		eventRecorder.Eventf(
 			cluster,
@@ -181,90 +155,73 @@ func handleNotJoinedCluster(
 		return cluster, fmt.Errorf("failed to create cluster kube clientset: %w", err)
 	}
 
-	// 3. Create or get system namespace in the cluster, this will also tell us if the cluster is unjoinable
+	// 3. Get or create system namespace in the cluster, this will also tell us if the cluster is unjoinable
 
 	logger.Info(fmt.Sprintf("Create or get system namespace %s in cluster", fedSystemNamespace))
-	memberFedNamespace, unjoinable, err := getOrCreateFedSystemNamespace(clusterKubeClient, fedSystemNamespace, string(cluster.UID))
+	memberFedNamespace, err := clusterKubeClient.CoreV1().Namespaces().Get(ctx, fedSystemNamespace, metav1.GetOptions{ResourceVersion: "0"})
 	if err != nil {
-		eventRecorder.Eventf(
-			cluster,
-			corev1.EventTypeWarning,
-			EventReasonJoinClusterError,
-			"cluster %q failed to join: get or create system namespace failed: %v, will retry later",
-			cluster.Name,
-			err.Error(),
-		)
-
-		currentTime := metav1.Now()
-		newCondition := &fedcorev1a1.ClusterCondition{
-			Type:          fedcorev1a1.ClusterJoined,
-			Status:        corev1.ConditionFalse,
-			Reason:        GetOrCreateNamespaceFailedReason,
-			Message:       fmt.Sprintf(GetOrCreateNamespaceFailedMessageTemplate, err.Error()),
-			LastProbeTime: currentTime,
-		}
-		if joinedCondition == nil {
-			// if we are trying to join for the first time, we set the last transition time
-			newCondition.LastTransitionTime = currentTime
-		} else {
-			// if not, we do not update the last transition time to allow the join process to timeout
-			newCondition.LastTransitionTime = joinedCondition.LastTransitionTime
-		}
-
-		setClusterCondition(&cluster.Status, newCondition)
-
-		var updateErr error
-		if cluster, updateErr = client.CoreV1alpha1().FederatedClusters().UpdateStatus(
-			context.TODO(),
-			cluster,
-			metav1.UpdateOptions{},
-		); updateErr != nil {
-			return cluster, fmt.Errorf("failed to update cluster status after cluster join failed: %w", updateErr)
-		}
-
-		return cluster, err
-	}
-	if unjoinable {
-		logger.Info("Cluster is unjoinable (check if cluster is already joined to another federation)")
-		eventRecorder.Eventf(
-			cluster,
-			corev1.EventTypeWarning,
-			EventReasonClusterUnjoinable,
-			"cluster %q is unjoinable",
-			cluster.Name,
-		)
-
-		currentTime := metav1.Now()
-		newCondition := &fedcorev1a1.ClusterCondition{
-			Type:          fedcorev1a1.ClusterJoined,
-			Status:        corev1.ConditionFalse,
-			Reason:        ClusterUnjoinableReason,
-			Message:       ClusterUnjoinableMessage,
-			LastProbeTime: currentTime,
-		}
-		if joinedCondition == nil {
-			// if we are trying to join for the first time, we set the last transition time
-			newCondition.LastTransitionTime = currentTime
-		} else {
-			// if not, we do not update the last transition time to allow the join process to timeout
-			newCondition.LastTransitionTime = joinedCondition.LastTransitionTime
-		}
-
-		setClusterCondition(&cluster.Status, newCondition)
-
-		var updateErr error
-		if cluster, updateErr = client.CoreV1alpha1().FederatedClusters().UpdateStatus(
-			context.TODO(),
-			cluster,
-			metav1.UpdateOptions{},
-		); updateErr != nil {
-			return cluster, fmt.Errorf(
-				"failed to update cluster status after finding cluster unjoinable: %w",
+		if !apierrors.IsNotFound(err) {
+			msg := fmt.Sprintf("Failed to get namespace: %v", err.Error())
+			logger.Error(err, "Failed to get namespace")
+			return recordJoinResult(
+				ctx, cluster, client, eventRecorder,
 				err,
+				corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
+				corev1.ConditionFalse, TokenNotObtainedReason, msg,
 			)
 		}
 
-		return cluster, nil
+		// Ensure the value is nil and not garbage.
+		memberFedNamespace = nil
+	}
+
+	if memberFedNamespace != nil && memberFedNamespace.Annotations[FederatedClusterUID] != string(cluster.UID) {
+		// ns exists and is not created by us - the cluster is managed by another control plane
+		msg := "Cluster is unjoinable (check if cluster is already joined to another federation)"
+		logger.Error(nil, msg, "UID", memberFedNamespace.Annotations[FederatedClusterUID], "clusterUID", string(cluster.UID))
+		cluster.Status.JoinPerformed = false
+		return recordJoinResult(
+			ctx, cluster, client, eventRecorder,
+			nil,
+			corev1.EventTypeWarning, EventReasonClusterUnjoinable, msg,
+			corev1.ConditionFalse, ClusterUnjoinableReason, msg,
+		)
+	}
+
+	// Either the namespace doesn't exist or it is created by us.
+	// Clean-up on removal is required.
+	cluster.Status.JoinPerformed = true
+	// Update the condition to persist the flag before proceeding to ensure
+	// we don't lose the flag due to an update failure.
+	if cluster, err = client.CoreV1alpha1().FederatedClusters().UpdateStatus(
+		ctx, cluster, metav1.UpdateOptions{},
+	); err != nil {
+		logger.Error(err, "Failed to persist JoinPerformed status")
+		return cluster, fmt.Errorf("failed to persist JoinPerformed status: %w", err)
+	}
+
+	// If ns doesn't exist, create one
+	if memberFedNamespace == nil {
+		memberFedNamespace = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fedSystemNamespace,
+				Annotations: map[string]string{
+					FederatedClusterUID: string(cluster.UID),
+				},
+			},
+		}
+
+		memberFedNamespace, err = clusterKubeClient.CoreV1().Namespaces().Create(ctx, memberFedNamespace, metav1.CreateOptions{})
+		if err != nil {
+			msg := fmt.Sprintf("Failed to create system namespace: %v", err.Error())
+			logger.Error(err, "Failed to create system namespace")
+			return recordJoinResult(
+				ctx, cluster, client, eventRecorder,
+				err,
+				corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
+				corev1.ConditionFalse, TokenNotObtainedReason, msg,
+			)
+		}
 	}
 
 	// 4. If the cluster uses service account token, we have an additional step to create the corresponding required resources
@@ -274,115 +231,26 @@ func handleNotJoinedCluster(
 		err = getAndSaveClusterToken(ctx, cluster, kubeClient, clusterKubeClient, fedSystemNamespace, memberFedNamespace, logger)
 
 		if err != nil {
-			eventRecorder.Eventf(
-				cluster,
-				corev1.EventTypeWarning,
-				EventReasonJoinClusterError,
-				"cluster %q failed to join: get and save cluster token failed: %v, will retry later",
-				cluster.Name,
-				err.Error(),
+			msg := fmt.Sprintf("Failed to get and save cluster token: %v", err.Error())
+			logger.Error(err, "Failed to get and save cluster token")
+			return recordJoinResult(
+				ctx, cluster, client, eventRecorder,
+				err,
+				corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
+				corev1.ConditionFalse, TokenNotObtainedReason, msg,
 			)
-
-			currentTime := metav1.Now()
-			newCondition := &fedcorev1a1.ClusterCondition{
-				Type:          fedcorev1a1.ClusterJoined,
-				Status:        corev1.ConditionFalse,
-				Reason:        TokenNotObtainedReason,
-				Message:       TokenNotObtainedMessage,
-				LastProbeTime: currentTime,
-			}
-			if joinedCondition == nil {
-				// if we are trying to join for the first time, we set the last transition time
-				newCondition.LastTransitionTime = currentTime
-			} else {
-				// if not, we do not update the last transition time to allow the join process to timeout
-				newCondition.LastTransitionTime = joinedCondition.LastTransitionTime
-			}
-
-			setClusterCondition(&cluster.Status, newCondition)
-
-			var updateErr error
-			if cluster, updateErr = client.CoreV1alpha1().FederatedClusters().UpdateStatus(
-				context.TODO(),
-				cluster,
-				metav1.UpdateOptions{},
-			); updateErr != nil {
-				return cluster, fmt.Errorf("failed to update cluster status after cluster join failed: %w", updateErr)
-			}
-
-			return cluster, err
 		}
 	}
 
 	// 5. Cluster is joined, update condition
 
 	logger.Info("Cluster joined successfully")
-	eventRecorder.Eventf(
-		cluster,
-		corev1.EventTypeNormal,
-		EventReasonJoinClusterSuccess,
-		"cluster %q has joined the federation",
-		cluster.Name,
+	return recordJoinResult(
+		ctx, cluster, client, eventRecorder,
+		nil,
+		corev1.EventTypeNormal, EventReasonJoinClusterSuccess, "Cluster joined successfully",
+		corev1.ConditionTrue, ClusterJoinedReason, ClusterJoinedMessage,
 	)
-	currentTime := metav1.Now()
-	newCondition := &fedcorev1a1.ClusterCondition{
-		Type:               fedcorev1a1.ClusterJoined,
-		Status:             corev1.ConditionTrue,
-		Reason:             ClusterJoinedReason,
-		Message:            ClusterJoinedMessage,
-		LastProbeTime:      currentTime,
-		LastTransitionTime: currentTime,
-	}
-
-	setClusterCondition(&cluster.Status, newCondition)
-
-	var updateErr error
-	if cluster, updateErr = client.CoreV1alpha1().FederatedClusters().UpdateStatus(
-		context.TODO(),
-		cluster,
-		metav1.UpdateOptions{},
-	); updateErr != nil {
-		return cluster, fmt.Errorf("failed to update cluster status after cluster join succeed: %w", updateErr)
-	}
-
-	return cluster, nil
-}
-
-func getOrCreateFedSystemNamespace(
-	clusterKubeClient kubeclient.Interface,
-	fedSystemNamespace string,
-	federatedClusterUID string,
-) (ns *corev1.Namespace, unjoinable bool, err error) {
-	ns, err = clusterKubeClient.CoreV1().Namespaces().Get(context.TODO(), fedSystemNamespace, metav1.GetOptions{ResourceVersion: "0"})
-	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, false, err
-	}
-
-	if err == nil {
-		// ns exists
-		if ns.Annotations[FederatedClusterUID] != federatedClusterUID {
-			return nil, true, nil
-		} else {
-			return ns, false, nil
-		}
-	}
-
-	// ns doesn't exist, create one
-	ns = &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: fedSystemNamespace,
-			Annotations: map[string]string{
-				FederatedClusterUID: federatedClusterUID,
-			},
-		},
-	}
-
-	ns, err = clusterKubeClient.CoreV1().Namespaces().Create(context.TODO(), ns, metav1.CreateOptions{})
-	if err != nil {
-		return nil, false, err
-	}
-
-	return ns, false, nil
 }
 
 func getAndSaveClusterToken(
@@ -722,4 +590,49 @@ func getServiceAccountToken(
 	}
 
 	return token, ca, nil
+}
+
+func recordJoinResult(
+	ctx context.Context,
+	cluster *fedcorev1a1.FederatedCluster,
+	client fedclient.Interface,
+	eventRecorder record.EventRecorder,
+
+	joinError error,
+
+	eventType, eventReason, eventMessage string,
+
+	conditionStatus corev1.ConditionStatus,
+	conditionReason, conditionMessage string,
+) (*fedcorev1a1.FederatedCluster, error) {
+	eventRecorder.Event(
+		cluster, eventType, eventReason, eventMessage,
+	)
+
+	currentTime := metav1.Now()
+	oldCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterJoined)
+	newCondition := &fedcorev1a1.ClusterCondition{
+		Type:               fedcorev1a1.ClusterJoined,
+		Status:             conditionStatus,
+		Reason:             conditionReason,
+		Message:            conditionMessage,
+		LastProbeTime:      currentTime,
+		LastTransitionTime: currentTime,
+	}
+	// The condition's last transition time is updated to the current time only if
+	// the status has changed.
+	if oldCondition != nil && oldCondition.Status == conditionStatus {
+		newCondition.LastTransitionTime = oldCondition.LastTransitionTime
+	}
+
+	setClusterCondition(&cluster.Status, newCondition)
+
+	if cluster, updateErr := client.CoreV1alpha1().FederatedClusters().UpdateStatus(
+		ctx, cluster, metav1.UpdateOptions{},
+	); updateErr != nil {
+		klog.FromContext(ctx).Error(updateErr, "Failed to update cluster status")
+		return cluster, fmt.Errorf("failed to update cluster status: %w", updateErr)
+	}
+
+	return cluster, joinError
 }

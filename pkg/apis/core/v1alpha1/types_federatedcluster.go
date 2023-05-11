@@ -89,6 +89,10 @@ type FederatedClusterStatus struct {
 	// The list of api resource types defined in the federated cluster
 	// +optional
 	APIResourceTypes []APIResource `json:"apiResourceTypes,omitempty"`
+	// Whether any effectual action was performed in the cluster while joining.
+	// If true, clean-up is required on cluster removal to undo the side-effects.
+	// +optional
+	JoinPerformed bool `json:"joinPerformed,omitempty"`
 }
 
 // LocalSecretReference is a reference to a secret within the enclosing namespace.

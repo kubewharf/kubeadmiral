@@ -175,6 +175,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              joinPerformed:
+                description: Whether any effectual action was performed in the cluster
+                  while joining. If true, clean-up is required on cluster removal
+                  to undo the side-effects.
+                type: boolean
               resources:
                 description: Resources describes the cluster's resources.
                 properties:

@@ -246,7 +246,6 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 			c.fedSystemNamespace,
 			c.clusterJoinTimeout,
 		); err != nil {
-			keyedLogger.Error(err, "Failed to handle unjoined cluster")
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
 			}
@@ -342,16 +341,8 @@ func handleTerminatingCluster(
 		return nil
 	}
 
-	requireCleanup := true
-	// there are two cases where cleanup is not required:
-	// 1. when the cluster has no ClusterJoin condition (the cluster did not even make it past the first join step)
-	// 2. when the cluster is Unjoinable (it was already part of another federation)
-	joinedCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterJoined)
-	if joinedCondition == nil || joinedCondition.Reason == ClusterUnjoinableReason {
-		requireCleanup = false
-	}
-
-	if requireCleanup {
+	// Only perform clean-up if we made any effectual changes to the cluster during join.
+	if cluster.Status.JoinPerformed {
 		clusterSecretName := cluster.Spec.SecretRef.Name
 		if clusterSecretName == "" {
 			eventRecorder.Eventf(
