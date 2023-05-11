@@ -80,14 +80,17 @@ const (
 )
 
 func handleNotJoinedCluster(
+	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
 	client fedclient.Interface,
 	kubeClient kubeclient.Interface,
 	eventRecorder record.EventRecorder,
 	fedSystemNamespace string,
-	logger klog.Logger,
 	clusterJoinTimeout time.Duration,
 ) (*fedcorev1a1.FederatedCluster, error) {
+	logger := klog.FromContext(ctx).WithValues("process", "cluster-join")
+	ctx = klog.NewContext(ctx, logger)
+
 	joinedCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterJoined)
 
 	// 1. check for join timeout
@@ -268,7 +271,7 @@ func handleNotJoinedCluster(
 
 	if cluster.Spec.UseServiceAccountToken {
 		logger.Info("Get and save cluster token")
-		err = getAndSaveClusterToken(cluster, kubeClient, clusterKubeClient, fedSystemNamespace, memberFedNamespace, logger)
+		err = getAndSaveClusterToken(ctx, cluster, kubeClient, clusterKubeClient, fedSystemNamespace, memberFedNamespace, logger)
 
 		if err != nil {
 			eventRecorder.Eventf(
@@ -383,6 +386,7 @@ func getOrCreateFedSystemNamespace(
 }
 
 func getAndSaveClusterToken(
+	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
 	kubeClient kubeclient.Interface,
 	clusterKubeClient kubeclient.Interface,
@@ -391,25 +395,25 @@ func getAndSaveClusterToken(
 	logger klog.Logger,
 ) error {
 	logger.Info("Creating authorized service account")
-	saTokenSecretName, err := createAuthorizedServiceAccount(clusterKubeClient, memberSystemNamespace, cluster.Name, false, logger)
+	saTokenSecretName, err := createAuthorizedServiceAccount(ctx, clusterKubeClient, memberSystemNamespace, cluster.Name, false, logger)
 	if err != nil {
 		return err
 	}
 
 	logger.Info("Updating cluster secret")
-	token, ca, err := getServiceAccountToken(clusterKubeClient, memberSystemNamespace.Name, saTokenSecretName)
+	token, ca, err := getServiceAccountToken(ctx, clusterKubeClient, memberSystemNamespace.Name, saTokenSecretName)
 	if err != nil {
 		return fmt.Errorf("error getting service account token from joining cluster: %w", err)
 	}
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		secret, err := kubeClient.CoreV1().Secrets(fedSystemNamespace).Get(context.TODO(), cluster.Spec.SecretRef.Name, metav1.GetOptions{})
+		secret, err := kubeClient.CoreV1().Secrets(fedSystemNamespace).Get(ctx, cluster.Spec.SecretRef.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 		secret.Data[ServiceAccountTokenKey] = token
 		secret.Data[ServiceAccountCAKey] = ca
-		_, err = kubeClient.CoreV1().Secrets(fedSystemNamespace).Update(context.TODO(), secret, metav1.UpdateOptions{})
+		_, err = kubeClient.CoreV1().Secrets(fedSystemNamespace).Update(ctx, secret, metav1.UpdateOptions{})
 		return err
 	})
 	if err != nil {
@@ -426,6 +430,7 @@ func getAndSaveClusterToken(
 // and grants the privileges required by the control plane to manage
 // resources in the joining cluster.  The created secret name is returned on success.
 func createAuthorizedServiceAccount(
+	ctx context.Context,
 	clusterKubeClient kubeclient.Interface,
 	memberSystemNamespace *corev1.Namespace,
 	clusterName string,
@@ -434,7 +439,7 @@ func createAuthorizedServiceAccount(
 ) (string, error) {
 	// 1. create service account
 	logger.Info(fmt.Sprintf("Creating service account %s", MemberServiceAccountName))
-	err := createServiceAccount(clusterKubeClient, memberSystemNamespace.Name, MemberServiceAccountName, clusterName, errorOnExisting)
+	err := createServiceAccount(ctx, clusterKubeClient, memberSystemNamespace.Name, MemberServiceAccountName, clusterName, errorOnExisting)
 	if err != nil {
 		return "", fmt.Errorf("failed to create service account %s: %w", MemberServiceAccountName, err)
 	}
@@ -442,6 +447,7 @@ func createAuthorizedServiceAccount(
 	// 2. create service account token secret
 	logger.Info(fmt.Sprintf("Creating service account token secret for %s", MemberServiceAccountName))
 	saTokenSecretName, err := createServiceAccountTokenSecret(
+		ctx,
 		clusterKubeClient,
 		memberSystemNamespace.Name,
 		MemberServiceAccountName,
@@ -455,7 +461,7 @@ func createAuthorizedServiceAccount(
 
 	// 3. create rbac
 	logger.Info(fmt.Sprintf("Creating RBAC for service account %s", MemberServiceAccountName))
-	err = createClusterRoleAndBinding(clusterKubeClient, memberSystemNamespace, MemberServiceAccountName, clusterName, errorOnExisting)
+	err = createClusterRoleAndBinding(ctx, clusterKubeClient, memberSystemNamespace, MemberServiceAccountName, clusterName, errorOnExisting)
 	if err != nil {
 		return "", fmt.Errorf("error creating cluster role and binding for service account %s: %w", MemberServiceAccountName, err)
 	}
@@ -466,7 +472,11 @@ func createAuthorizedServiceAccount(
 // createServiceAccount creates a service account in the cluster associated
 // with clusterClientset with credentials that will be used by the host cluster
 // to access its API server.
-func createServiceAccount(clusterClientset kubeclient.Interface, namespace, saName, joiningClusterName string, errorOnExisting bool) error {
+func createServiceAccount(
+	ctx context.Context,
+	clusterClientset kubeclient.Interface,
+	namespace, saName, joiningClusterName string, errorOnExisting bool,
+) error {
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      saName,
@@ -478,7 +488,7 @@ func createServiceAccount(clusterClientset kubeclient.Interface, namespace, saNa
 		AutomountServiceAccountToken: pointer.Bool(false),
 	}
 
-	_, err := clusterClientset.CoreV1().ServiceAccounts(namespace).Create(context.Background(), sa, metav1.CreateOptions{})
+	_, err := clusterClientset.CoreV1().ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{})
 	switch {
 	case apierrors.IsAlreadyExists(err) && errorOnExisting:
 		return fmt.Errorf("service account %s/%s already exists in target cluster %s", namespace, saName, joiningClusterName)
@@ -499,6 +509,7 @@ func createServiceAccount(clusterClientset kubeclient.Interface, namespace, saNa
 // with clusterClientset with credentials that will be used by the host cluster
 // to access its API server.
 func createServiceAccountTokenSecret(
+	ctx context.Context,
 	clusterClientset kubeclient.Interface,
 	namespace, saName, joiningClusterName string,
 	errorOnExisting bool,
@@ -515,7 +526,7 @@ func createServiceAccountTokenSecret(
 		Type: corev1.SecretTypeServiceAccountToken,
 	}
 
-	_, err := clusterClientset.CoreV1().Secrets(namespace).Create(context.Background(), saTokenSecret, metav1.CreateOptions{})
+	_, err := clusterClientset.CoreV1().Secrets(namespace).Create(ctx, saTokenSecret, metav1.CreateOptions{})
 	switch {
 	case apierrors.IsAlreadyExists(err) && errorOnExisting:
 		return "", fmt.Errorf(
@@ -552,6 +563,7 @@ func bindingSubjects(saName, namespace string) []rbacv1.Subject {
 // access all resources in all namespaces in the cluster associated
 // with clientset.
 func createClusterRoleAndBinding(
+	ctx context.Context,
 	clientset kubeclient.Interface,
 	namespace *corev1.Namespace,
 	saName, clusterName string,
@@ -578,7 +590,7 @@ func createClusterRoleAndBinding(
 		},
 	}
 
-	existingRole, err := clientset.RbacV1().ClusterRoles().Get(context.Background(), roleName, metav1.GetOptions{})
+	existingRole, err := clientset.RbacV1().ClusterRoles().Get(ctx, roleName, metav1.GetOptions{})
 	switch {
 	case err != nil && !apierrors.IsNotFound(err):
 		return fmt.Errorf("could not get cluster role for service account %s in joining cluster %s due to %w", saName, clusterName, err)
@@ -587,7 +599,7 @@ func createClusterRoleAndBinding(
 	case err == nil:
 		existingRole.Rules = role.Rules
 		existingRole.OwnerReferences = []metav1.OwnerReference{namespaceOwnerReference}
-		_, err := clientset.RbacV1().ClusterRoles().Update(context.Background(), existingRole, metav1.UpdateOptions{})
+		_, err := clientset.RbacV1().ClusterRoles().Update(ctx, existingRole, metav1.UpdateOptions{})
 		if err != nil {
 			return fmt.Errorf(
 				"could not update cluster role for service account: %s in joining cluster: %s due to: %w",
@@ -597,7 +609,7 @@ func createClusterRoleAndBinding(
 			)
 		}
 	default: // role was not found
-		_, err := clientset.RbacV1().ClusterRoles().Create(context.Background(), role, metav1.CreateOptions{})
+		_, err := clientset.RbacV1().ClusterRoles().Create(ctx, role, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf(
 				"could not create cluster role for service account: %s in joining cluster: %s due to: %w",
@@ -620,7 +632,7 @@ func createClusterRoleAndBinding(
 			Name:     roleName,
 		},
 	}
-	existingBinding, err := clientset.RbacV1().ClusterRoleBindings().Get(context.Background(), binding.Name, metav1.GetOptions{})
+	existingBinding, err := clientset.RbacV1().ClusterRoleBindings().Get(ctx, binding.Name, metav1.GetOptions{})
 	switch {
 	case err != nil && !apierrors.IsNotFound(err):
 		return fmt.Errorf(
@@ -635,7 +647,7 @@ func createClusterRoleAndBinding(
 		// The roleRef cannot be updated, therefore if the existing roleRef is different, the existing rolebinding
 		// must be deleted and recreated with the correct roleRef
 		if !reflect.DeepEqual(existingBinding.RoleRef, binding.RoleRef) {
-			err = clientset.RbacV1().ClusterRoleBindings().Delete(context.Background(), existingBinding.Name, metav1.DeleteOptions{})
+			err = clientset.RbacV1().ClusterRoleBindings().Delete(ctx, existingBinding.Name, metav1.DeleteOptions{})
 			if err != nil {
 				return fmt.Errorf(
 					"could not delete existing cluster role binding for service account %s in joining cluster %s due to: %w",
@@ -644,7 +656,7 @@ func createClusterRoleAndBinding(
 					err,
 				)
 			}
-			_, err = clientset.RbacV1().ClusterRoleBindings().Create(context.Background(), binding, metav1.CreateOptions{})
+			_, err = clientset.RbacV1().ClusterRoleBindings().Create(ctx, binding, metav1.CreateOptions{})
 			if err != nil {
 				return fmt.Errorf(
 					"could not create cluster role binding for service account: %s in joining cluster: %s due to: %w",
@@ -656,7 +668,7 @@ func createClusterRoleAndBinding(
 		} else {
 			existingBinding.Subjects = binding.Subjects
 			existingBinding.OwnerReferences = binding.OwnerReferences
-			_, err := clientset.RbacV1().ClusterRoleBindings().Update(context.Background(), existingBinding, metav1.UpdateOptions{})
+			_, err := clientset.RbacV1().ClusterRoleBindings().Update(ctx, existingBinding, metav1.UpdateOptions{})
 			if err != nil {
 				return fmt.Errorf(
 					"could not update cluster role binding for service account: %s in joining cluster: %s due to: %w",
@@ -667,7 +679,7 @@ func createClusterRoleAndBinding(
 			}
 		}
 	default:
-		_, err = clientset.RbacV1().ClusterRoleBindings().Create(context.Background(), binding, metav1.CreateOptions{})
+		_, err = clientset.RbacV1().ClusterRoleBindings().Create(ctx, binding, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf(
 				"could not create cluster role binding for service account: %s in joining cluster: %s due to: %w",
@@ -681,6 +693,7 @@ func createClusterRoleAndBinding(
 }
 
 func getServiceAccountToken(
+	ctx context.Context,
 	clusterClientset kubeclient.Interface,
 	memberSystemNamespace, secretName string,
 ) ([]byte, []byte, error) {
@@ -691,7 +704,7 @@ func getServiceAccountToken(
 	err := wait.PollImmediate(1*time.Second, serviceAccountSecretTimeout, func() (bool, error) {
 		joiningClusterSASecret, err := clusterClientset.CoreV1().
 			Secrets(memberSystemNamespace).
-			Get(context.TODO(), secretName, metav1.GetOptions{})
+			Get(ctx, secretName, metav1.GetOptions{})
 		if err != nil {
 			return false, nil
 		}
