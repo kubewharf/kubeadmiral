@@ -195,8 +195,7 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 					)
 					gomega.Expect(err).NotTo(gomega.HaveOccurred())
 					if c.Name == clusterToMigrateFrom.Name {
-						g.Expect(clusterDp.Spec.Template.Spec.NodeSelector).
-							To(gomega.HaveKeyWithValue("non-existing-key", "non-existing-value"))
+						g.Expect(clusterDp.Spec.Template.Spec.NodeSelector).To(gomega.HaveKeyWithValue("non-existing-key", "non-existing-value"))
 					} else {
 						gomega.Expect(clusterDp.Spec.Template.Spec.NodeSelector).To(gomega.BeEmpty())
 					}
