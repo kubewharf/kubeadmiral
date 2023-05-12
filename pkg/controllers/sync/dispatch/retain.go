@@ -47,7 +47,8 @@ var RemovalRespectedAnnotations = sets.New(
 const (
 	// see serviceaccount admission plugin in kubernetes
 	ServiceAccountVolumeNamePrefix = "kube-api-access-"
-	DefaultAPITokenMountPath       = "/var/run/secrets/kubernetes.io/serviceaccount"
+	//nolint:gosec
+	DefaultAPITokenMountPath = "/var/run/secrets/kubernetes.io/serviceaccount"
 )
 
 // RetainOrMergeClusterFields updates the desired object with values retained
@@ -302,44 +303,17 @@ func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 
 	// The logic for retaining serviceaccount volumes and volumeMounts is slightly more involved.
 	if !hasServiceAccountVolume(desiredObj) {
-		copyServiceAccountVolume(clusterObj, desiredObj)
-	}
-
-	retainContainers := func(desiredContainers, clusterContainers []interface{}) error {
-		for _, dc := range desiredContainers {
-			desiredContainer, ok := dc.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			desiredContainerName, exists, err := unstructured.NestedString(desiredContainer, "name")
-			if err != nil || !exists {
-				continue
-			}
-
-			for _, cc := range clusterContainers {
-				clusterContainer, ok := cc.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				clusterContainerName, exists, err := unstructured.NestedString(clusterContainer, "name")
-				if err != nil || !exists {
-					continue
-				}
-
-				if clusterContainerName == desiredContainerName {
-					if err := copyServiceAccountVolumeMount(clusterContainer, desiredContainer); err != nil {
-						return err
-					}
-					break
-				}
-			}
+		if err := copyServiceAccountVolume(clusterObj, desiredObj); err != nil {
+			return err
 		}
-		return nil
 	}
 
 	desiredContainers, _, _ := unstructured.NestedSlice(desiredObj.Object, "spec", "containers")
 	clusterContainers, _, _ := unstructured.NestedSlice(clusterObj.Object, "spec", "containers")
 	if err := retainContainers(desiredContainers, clusterContainers); err != nil {
+		return err
+	}
+	if err := unstructured.SetNestedSlice(desiredObj.Object, desiredContainers, "spec", "containers"); err != nil {
 		return err
 	}
 
@@ -348,6 +322,21 @@ func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 	if err := retainContainers(desiredInitContainers, clusterInitContainers); err != nil {
 		return err
 	}
+	if err := unstructured.SetNestedSlice(desiredObj.Object, desiredInitContainers, "spec", "initContainers"); err != nil {
+		return err
+	}
+
+	// The tolerations field is also defaulted by an admission plugin. However, we do not need to explicitly retain
+	// the default tolerations due to 2 reasons:
+	// 1. The tolerations field is mutable so any updates will not reuslt in an error
+	// 2. The same tolerations will be defaulted in any updates, so it will not result in an infinite reconcile loop
+	//
+	// For example:
+	// 1. We create a new pod with no tolerations and the admission plugin injects toleration A.
+	// 2. The controller receives the create event and sees that toleration A should not be present.
+	// 3. The controller attempts to remove toleration A with an update.
+	// 4. The update is defaulted with the same toleration A, resulting in a noop update and no new events will be emitted.
+	// 5. Eventual consistency is achieved with no infinite reconciliation.
 
 	return nil
 }
@@ -421,9 +410,43 @@ func copyServiceAccountVolume(srcPod, destPod *unstructured.Unstructured) error 
 				return fmt.Errorf("failed to copy service account volume, slice length mismatch")
 			}
 			newVolumes := append(destVolumes[:i], volume)
-			newVolumes = append(newVolumes, destVolumes[i:])
+			newVolumes = append(newVolumes, destVolumes[i:]...)
 
 			return unstructured.SetNestedSlice(destPod.Object, newVolumes, "spec", "volumes")
+		}
+	}
+	return nil
+}
+
+func retainContainers(desiredContainers, clusterContainers []interface{}) error {
+	for _, dc := range desiredContainers {
+		desiredContainer, ok := dc.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		desiredContainerName, exists, err := unstructured.NestedString(desiredContainer, "name")
+		if err != nil || !exists {
+			continue
+		}
+
+		for _, cc := range clusterContainers {
+			clusterContainer, ok := cc.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			clusterContainerName, exists, err := unstructured.NestedString(clusterContainer, "name")
+			if err != nil || !exists {
+				continue
+			}
+
+			if clusterContainerName == desiredContainerName {
+				if !hasServiceAccountVolumeMount(desiredContainer) {
+					if err := copyServiceAccountVolumeMount(clusterContainer, desiredContainer); err != nil {
+						return err
+					}
+				}
+				break
+			}
 		}
 	}
 	return nil
@@ -482,7 +505,7 @@ func copyServiceAccountVolumeMount(srcContainer, destContainer map[string]interf
 			}
 
 			newMounts := append(destMounts[:i], mount)
-			newMounts = append(newMounts, destMounts[i:])
+			newMounts = append(newMounts, destMounts[i:]...)
 
 			return unstructured.SetNestedSlice(destContainer, newMounts, "volumeMounts")
 		}

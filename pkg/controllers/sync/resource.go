@@ -21,6 +21,7 @@ are Copyright 2023 The KubeAdmiral Authors.
 package sync
 
 import (
+	//nolint:gosec
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -201,8 +202,8 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 	obj.SetName(r.federatedResource.GetName())
 	namespace := util.NamespaceForCluster(clusterName, r.federatedResource.GetNamespace())
 	obj.SetNamespace(namespace)
-	targetApiResource := r.typeConfig.GetTargetType()
-	obj.SetKind(targetApiResource.Kind)
+	targetAPIResource := r.typeConfig.GetTargetType()
+	obj.SetKind(targetAPIResource.Kind)
 
 	// deprecated: federated generation is currently unused and might increase the dispatcher load
 	// if _, err = annotationutil.AddAnnotation(
@@ -217,7 +218,7 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 	// If the template does not specify an api version, default it to
 	// the one configured for the target type in the FTC.
 	if len(obj.GetAPIVersion()) == 0 {
-		obj.SetAPIVersion(fmt.Sprintf("%s/%s", targetApiResource.Group, targetApiResource.Version))
+		obj.SetAPIVersion(fmt.Sprintf("%s/%s", targetAPIResource.Group, targetAPIResource.Version))
 	}
 
 	// set current revision
@@ -449,6 +450,7 @@ func hashUnstructured(obj *unstructured.Unstructured, description string) (strin
 	if err != nil {
 		return "", errors.Wrapf(err, "Failed to marshal %q to json", description)
 	}
+	//nolint:gosec
 	hash := md5.New()
 	if _, err := hash.Write(jsonBytes); err != nil {
 		return "", err
