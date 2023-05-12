@@ -1,3 +1,6 @@
+# NOTE: if serviceaccount admission plugin is enabled in a member cluster, pod
+# propagation will only work properly with the BoundServiceAccountToken feature
+# feature (enabled by default from v1.21 onwards)
 apiVersion: core.kubeadmiral.io/v1alpha1
 kind: FederatedTypeConfig
 metadata:
