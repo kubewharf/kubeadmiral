@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/semaphore"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -63,6 +64,9 @@ type federatedClientFactory struct {
 	dynamicClientsetCache map[string]dynamicclient.Interface
 	kubeInformerCache     map[string]kubeinformer.SharedInformerFactory
 	dynamicInformerCache  map[string]dynamicinformer.DynamicSharedInformerFactory
+
+	availablePodListers *semaphore.Weighted
+	enablePodPruning    bool
 }
 
 type MemberClientBuilder interface {
@@ -124,6 +128,8 @@ func NewFederatedClientsetFactory(
 	informer fedcorev1a1informers.FederatedClusterInformer,
 	fedSystemNamespace string,
 	baseRestConfig *rest.Config,
+	maxPodListers int64,
+	enablePodPruning bool,
 ) FederatedClientFactory {
 	return NewFederatedClientsetFactoryWithBuilder(
 		fedClient,
@@ -155,6 +161,10 @@ func NewFederatedClientsetFactoryWithBuilder(
 		dynamicClientsetCache: map[string]dynamicclient.Interface{},
 		kubeInformerCache:     map[string]kubeinformer.SharedInformerFactory{},
 		dynamicInformerCache:  map[string]dynamicinformer.DynamicSharedInformerFactory{},
+		enablePodPruning:      enablePodPruning,
+	}
+	if maxPodListers > 0 {
+		factory.availablePodListers = semaphore.NewWeighted(maxPodListers)
 	}
 	factory.handle, _ = informer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -346,6 +356,7 @@ func (f *federatedClientFactory) processQueueItem(ctx context.Context) {
 	f.dynamicClientsetCache[name] = dynamicClientset
 	f.kubeInformerCache[name] = kubeInformerFactory
 	f.dynamicInformerCache[name] = dynamicInformerFactory
+	addPodInformer(ctx, kubeInformerFactory, kubeClientset, f.availablePodListers, f.enablePodPruning)
 	f.mu.Unlock()
 }
 

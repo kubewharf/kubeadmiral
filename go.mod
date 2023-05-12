@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/evanphx/json-patch v5.6.0+incompatible
-	github.com/go-logr/logr v1.2.3
+	github.com/go-logr/logr v1.2.4
 	github.com/google/go-cmp v0.5.9
 	github.com/jinzhu/copier v0.3.5
 	github.com/onsi/ginkgo/v2 v2.9.2
@@ -15,6 +15,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2
+	golang.org/x/sync v0.1.0
 	k8s.io/api v0.26.0
 	k8s.io/apiextensions-apiserver v0.26.0
 	k8s.io/apimachinery v0.26.0
