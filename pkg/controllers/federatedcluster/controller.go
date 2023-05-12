@@ -233,29 +233,66 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 		return worker.StatusError
 	}
 
-	joined, alreadyFailed := isClusterJoined(&cluster.Status)
-	if !joined && !alreadyFailed {
-		// not joined yet and not failed, so we try to join
-		keyedLogger.Info("Handle unjoined cluster")
-		if cluster, err = handleNotJoinedCluster(
-			ctx,
-			cluster,
-			c.client,
-			c.kubeClient,
-			c.eventRecorder,
-			c.fedSystemNamespace,
-			c.clusterJoinTimeout,
-		); err != nil {
-			if apierrors.IsConflict(err) {
-				return worker.StatusConflict
-			}
-			return worker.StatusError
+	if joined, alreadyFailed := isClusterJoined(&cluster.Status); joined || alreadyFailed {
+		return worker.StatusAllOK
+	}
+
+	// not joined yet and not failed, so we try to join
+	keyedLogger.Info("Handle unjoined cluster")
+	cluster, newCondition, newJoinPerformed, err := handleNotJoinedCluster(
+		ctx,
+		cluster,
+		c.client,
+		c.kubeClient,
+		c.eventRecorder,
+		c.fedSystemNamespace,
+		c.clusterJoinTimeout,
+	)
+
+	needsUpdate := false
+	if newCondition != nil {
+		needsUpdate = true
+
+		currentTime := metav1.Now()
+		newCondition.Type = fedcorev1a1.ClusterJoined
+		newCondition.LastProbeTime = currentTime
+
+		// The condition's last transition time is updated to the current time only if
+		// the status has changed.
+		oldCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterJoined)
+		if oldCondition != nil && oldCondition.Status == newCondition.Status {
+			newCondition.LastTransitionTime = oldCondition.LastTransitionTime
+		} else {
+			newCondition.LastTransitionTime = currentTime
 		}
 
-		// trigger initial status collection if successfully joined
-		if joined, alreadyFailed := isClusterJoined(&cluster.Status); joined && !alreadyFailed {
-			c.statusCollectWorker.EnqueueObject(cluster)
+		setClusterCondition(&cluster.Status, newCondition)
+	}
+	if newJoinPerformed != nil && *newJoinPerformed != cluster.Status.JoinPerformed {
+		needsUpdate = true
+		cluster.Status.JoinPerformed = *newJoinPerformed
+	}
+
+	if needsUpdate {
+		var updateErr error
+		if cluster, updateErr = c.client.CoreV1alpha1().FederatedClusters().UpdateStatus(
+			ctx, cluster, metav1.UpdateOptions{},
+		); updateErr != nil {
+			keyedLogger.Error(updateErr, "Failed to update cluster status")
+			err = updateErr
 		}
+	}
+
+	if err != nil {
+		if apierrors.IsConflict(err) {
+			return worker.StatusConflict
+		}
+		return worker.StatusError
+	}
+
+	// trigger initial status collection if successfully joined
+	if joined, alreadyFailed := isClusterJoined(&cluster.Status); joined && !alreadyFailed {
+		c.statusCollectWorker.EnqueueObject(cluster)
 	}
 
 	return worker.StatusAllOK

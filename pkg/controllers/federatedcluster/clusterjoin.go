@@ -74,6 +74,12 @@ const (
 	EventReasonClusterUnjoinable          = "ClusterUnjoinable"
 )
 
+// Processes a cluster that has not joined.
+// If either condition or joinPerformed returned is non-nil, the caller should merge them into
+// the cluster status and update the cluster.
+// The returned condition (if not-nil) will have status, reason and message set. The other fields
+// should be added by the caller.
+// The returned err is for informational purpose only and the caller should not abort on non-nil error.
 func handleNotJoinedCluster(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
@@ -82,7 +88,7 @@ func handleNotJoinedCluster(
 	eventRecorder record.EventRecorder,
 	fedSystemNamespace string,
 	clusterJoinTimeout time.Duration,
-) (*fedcorev1a1.FederatedCluster, error) {
+) (c *fedcorev1a1.FederatedCluster, condition *fedcorev1a1.ClusterCondition, joinPerformed *bool, err error) {
 	logger := klog.FromContext(ctx).WithValues("process", "cluster-join")
 	ctx = klog.NewContext(ctx, logger)
 
@@ -95,12 +101,17 @@ func handleNotJoinedCluster(
 		time.Since(joinedCondition.LastTransitionTime.Time) > clusterJoinTimeout {
 		// join timed out
 		logger.Error(nil, "Cluster join timed out")
-		return recordJoinResult(
-			ctx, cluster, client, eventRecorder,
-			nil,
-			corev1.EventTypeWarning, EventReasonJoinClusterTimeoutExceeded, "Cluster join timed out",
-			corev1.ConditionFalse, JoinTimeoutExceededReason, fmt.Sprintf(JoinTimeoutExceededMessageTemplate, joinedCondition.Message),
+		eventRecorder.Eventf(
+			cluster,
+			corev1.EventTypeWarning,
+			EventReasonJoinClusterTimeoutExceeded,
+			"Cluster join timed out",
 		)
+		return cluster, &fedcorev1a1.ClusterCondition{
+			Status:  corev1.ConditionFalse,
+			Reason:  JoinTimeoutExceededReason,
+			Message: fmt.Sprintf(JoinTimeoutExceededMessageTemplate, joinedCondition.Message),
+		}, nil, nil
 	}
 
 	// 2. The remaining steps require a cluster kube client, attempt to create one
@@ -109,12 +120,15 @@ func handleNotJoinedCluster(
 	if err != nil {
 		logger.Error(err, "Failed to create cluster client")
 		msg := fmt.Sprintf("Failed to create cluster client: %v", err.Error())
-		return recordJoinResult(
-			ctx, cluster, client, eventRecorder,
-			err,
+		eventRecorder.Eventf(
+			cluster,
 			corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
-			corev1.ConditionFalse, TokenNotObtainedReason, msg,
 		)
+		return cluster, &fedcorev1a1.ClusterCondition{
+			Status:  corev1.ConditionFalse,
+			Reason:  TokenNotObtainedReason,
+			Message: msg,
+		}, nil, err
 	}
 
 	// 3. Get or create system namespace in the cluster, this will also tell us if the cluster is unjoinable
@@ -125,12 +139,15 @@ func handleNotJoinedCluster(
 		if !apierrors.IsNotFound(err) {
 			msg := fmt.Sprintf("Failed to get namespace: %v", err.Error())
 			logger.Error(err, "Failed to get namespace")
-			return recordJoinResult(
-				ctx, cluster, client, eventRecorder,
-				err,
+			eventRecorder.Eventf(
+				cluster,
 				corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
-				corev1.ConditionFalse, TokenNotObtainedReason, msg,
 			)
+			return cluster, &fedcorev1a1.ClusterCondition{
+				Status:  corev1.ConditionFalse,
+				Reason:  TokenNotObtainedReason,
+				Message: msg,
+			}, nil, err
 		}
 
 		// Ensure the value is nil and not garbage.
@@ -141,26 +158,22 @@ func handleNotJoinedCluster(
 		// ns exists and is not created by us - the cluster is managed by another control plane
 		msg := "Cluster is unjoinable (check if cluster is already joined to another federation)"
 		logger.Error(nil, msg, "UID", memberFedNamespace.Annotations[FederatedClusterUID], "clusterUID", string(cluster.UID))
-		cluster.Status.JoinPerformed = false
-		return recordJoinResult(
-			ctx, cluster, client, eventRecorder,
-			nil,
+		eventRecorder.Eventf(
+			cluster,
 			corev1.EventTypeWarning, EventReasonClusterUnjoinable, msg,
-			corev1.ConditionFalse, ClusterUnjoinableReason, msg,
 		)
+		return cluster, &fedcorev1a1.ClusterCondition{
+				Status:  corev1.ConditionFalse,
+				Reason:  ClusterUnjoinableReason,
+				Message: msg,
+			},
+			// Cluster is managed by another control plane - no need to perform clean-up on removal
+			pointer.Bool(false), nil
 	}
 
 	// Either the namespace doesn't exist or it is created by us.
 	// Clean-up on removal is required.
-	cluster.Status.JoinPerformed = true
-	// Update the condition to persist the flag before proceeding to ensure
-	// we don't lose the flag due to an update failure.
-	if cluster, err = client.CoreV1alpha1().FederatedClusters().UpdateStatus(
-		ctx, cluster, metav1.UpdateOptions{},
-	); err != nil {
-		logger.Error(err, "Failed to persist JoinPerformed status")
-		return cluster, fmt.Errorf("failed to persist JoinPerformed status: %w", err)
-	}
+	joinPerformed = pointer.Bool(true)
 
 	// If ns doesn't exist, create one
 	if memberFedNamespace == nil {
@@ -177,12 +190,15 @@ func handleNotJoinedCluster(
 		if err != nil {
 			msg := fmt.Sprintf("Failed to create system namespace: %v", err.Error())
 			logger.Error(err, "Failed to create system namespace")
-			return recordJoinResult(
-				ctx, cluster, client, eventRecorder,
-				err,
+			eventRecorder.Eventf(
+				cluster,
 				corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
-				corev1.ConditionFalse, TokenNotObtainedReason, msg,
 			)
+			return cluster, &fedcorev1a1.ClusterCondition{
+				Status:  corev1.ConditionFalse,
+				Reason:  TokenNotObtainedReason,
+				Message: msg,
+			}, joinPerformed, err
 		}
 	}
 
@@ -195,24 +211,30 @@ func handleNotJoinedCluster(
 		if err != nil {
 			msg := fmt.Sprintf("Failed to get and save cluster token: %v", err.Error())
 			logger.Error(err, "Failed to get and save cluster token")
-			return recordJoinResult(
-				ctx, cluster, client, eventRecorder,
-				err,
+			eventRecorder.Eventf(
+				cluster,
 				corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
-				corev1.ConditionFalse, TokenNotObtainedReason, msg,
 			)
+			return cluster, &fedcorev1a1.ClusterCondition{
+				Status:  corev1.ConditionFalse,
+				Reason:  TokenNotObtainedReason,
+				Message: msg,
+			}, joinPerformed, err
 		}
 	}
 
 	// 5. Cluster is joined, update condition
 
 	logger.Info("Cluster joined successfully")
-	return recordJoinResult(
-		ctx, cluster, client, eventRecorder,
-		nil,
+	eventRecorder.Eventf(
+		cluster,
 		corev1.EventTypeNormal, EventReasonJoinClusterSuccess, "Cluster joined successfully",
-		corev1.ConditionTrue, ClusterJoinedReason, ClusterJoinedMessage,
 	)
+	return cluster, &fedcorev1a1.ClusterCondition{
+		Status:  corev1.ConditionTrue,
+		Reason:  ClusterJoinedReason,
+		Message: ClusterJoinedMessage,
+	}, joinPerformed, nil
 }
 
 func getAndSaveClusterToken(
@@ -552,49 +574,4 @@ func getServiceAccountToken(
 	}
 
 	return token, ca, nil
-}
-
-func recordJoinResult(
-	ctx context.Context,
-	cluster *fedcorev1a1.FederatedCluster,
-	client fedclient.Interface,
-	eventRecorder record.EventRecorder,
-
-	joinError error,
-
-	eventType, eventReason, eventMessage string,
-
-	conditionStatus corev1.ConditionStatus,
-	conditionReason, conditionMessage string,
-) (*fedcorev1a1.FederatedCluster, error) {
-	eventRecorder.Event(
-		cluster, eventType, eventReason, eventMessage,
-	)
-
-	currentTime := metav1.Now()
-	oldCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterJoined)
-	newCondition := &fedcorev1a1.ClusterCondition{
-		Type:               fedcorev1a1.ClusterJoined,
-		Status:             conditionStatus,
-		Reason:             conditionReason,
-		Message:            conditionMessage,
-		LastProbeTime:      currentTime,
-		LastTransitionTime: currentTime,
-	}
-	// The condition's last transition time is updated to the current time only if
-	// the status has changed.
-	if oldCondition != nil && oldCondition.Status == conditionStatus {
-		newCondition.LastTransitionTime = oldCondition.LastTransitionTime
-	}
-
-	setClusterCondition(&cluster.Status, newCondition)
-
-	if cluster, updateErr := client.CoreV1alpha1().FederatedClusters().UpdateStatus(
-		ctx, cluster, metav1.UpdateOptions{},
-	); updateErr != nil {
-		klog.FromContext(ctx).Error(updateErr, "Failed to update cluster status")
-		return cluster, fmt.Errorf("failed to update cluster status: %w", updateErr)
-	}
-
-	return cluster, joinError
 }
