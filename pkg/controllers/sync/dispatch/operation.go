@@ -32,8 +32,10 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
 )
 
-type clientAccessorFunc func(clusterName string) (generic.Client, error)
-type targetAccessorFunc func(clusterName string) (*unstructured.Unstructured, error)
+type (
+	clientAccessorFunc func(clusterName string) (generic.Client, error)
+	targetAccessorFunc func(clusterName string) (*unstructured.Unstructured, error)
+)
 
 type dispatchRecorder interface {
 	recordEvent(clusterName, operation, operationContinuous string)

@@ -182,7 +182,8 @@ func clustersDiffers(
 // updated to reflect the given reason.  The type of the condition is
 // derived from the reason (empty -> True, not empty -> False).
 func setPropagationCondition(s *fedtypesv1a1.GenericFederatedStatus, reason fedtypesv1a1.AggregateReason,
-	changesPropagated bool) bool {
+	changesPropagated bool,
+) bool {
 	// Determine the appropriate status from the reason.
 	var newStatus corev1.ConditionStatus
 	if reason == fedtypesv1a1.AggregateSuccess {

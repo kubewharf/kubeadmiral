@@ -22,9 +22,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
-var (
-	AdoptedAnnotation = common.DefaultPrefix + "adopted"
-)
+var AdoptedAnnotation = common.DefaultPrefix + "adopted"
 
 func HasAdoptedAnnotation(obj *unstructured.Unstructured) bool {
 	annotations := obj.GetAnnotations()

@@ -54,9 +54,7 @@ const (
 	ClusterOverridePolicyNameLabel = common.DefaultPrefix + "cluster-override-policy-name"
 )
 
-var (
-	PrefixedControllerName = common.DefaultPrefix + ControllerName
-)
+var PrefixedControllerName = common.DefaultPrefix + ControllerName
 
 // OverrideController adds override rules specified in OverridePolicies
 // to federated objects.

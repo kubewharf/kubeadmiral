@@ -33,9 +33,11 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
 
-var _ framework.FilterPlugin = &WebhookPlugin{}
-var _ framework.ScorePlugin = &WebhookPlugin{}
-var _ framework.SelectPlugin = &WebhookPlugin{}
+var (
+	_ framework.FilterPlugin = &WebhookPlugin{}
+	_ framework.ScorePlugin  = &WebhookPlugin{}
+	_ framework.SelectPlugin = &WebhookPlugin{}
+)
 
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)

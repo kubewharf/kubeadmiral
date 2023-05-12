@@ -164,16 +164,16 @@ func (s Targets) ActualReplicas() int32 {
 }
 
 type TargetStatus struct {
-	Replicas                    int32 //dp.Spec.Replicas
-	ActualReplicas              int32 //dp.Status.Replicas
-	AvailableReplicas           int32 //dp.Status.AvailableReplicas
-	UpdatedReplicas             int32 //latestreplicaset.kubeadmiral.io/replicas if it's up-to-date, else 0
-	UpdatedAvailableReplicas    int32 //latestreplicaset.kubeadmiral.io/available-replicas if it's up-to-date, else 0
-	CurrentNewReplicas          int32 //the replicas of new replicaset which belong to current deployment
-	CurrentNewAvailableReplicas int32 //the available replicas of new replicaset which belong to current deployment
-	Updated                     bool  //whether pod template is up to date in current dp with which in fedDp
-	MaxSurge                    int32 //maxSurge in current dp
-	MaxUnavailable              int32 //maxUnavailable in current dp
+	Replicas                    int32 // dp.Spec.Replicas
+	ActualReplicas              int32 // dp.Status.Replicas
+	AvailableReplicas           int32 // dp.Status.AvailableReplicas
+	UpdatedReplicas             int32 // latestreplicaset.kubeadmiral.io/replicas if it's up-to-date, else 0
+	UpdatedAvailableReplicas    int32 // latestreplicaset.kubeadmiral.io/available-replicas if it's up-to-date, else 0
+	CurrentNewReplicas          int32 // the replicas of new replicaset which belong to current deployment
+	CurrentNewAvailableReplicas int32 // the available replicas of new replicaset which belong to current deployment
+	Updated                     bool  // whether pod template is up to date in current dp with which in fedDp
+	MaxSurge                    int32 // maxSurge in current dp
+	MaxUnavailable              int32 // maxUnavailable in current dp
 }
 
 type TargetInfo struct {
@@ -362,7 +362,8 @@ func (t *TargetInfo) SkipPlanForScaleOut(maxSurge int32) bool {
 }
 
 func unstructuredObjToTargetInfo(clusterName string, unstructuredObj *unstructured.Unstructured, desiredReplicas int32,
-	desiredRevision string, typeConfig *fedcorev1a1.FederatedTypeConfig) (*TargetInfo, error) {
+	desiredRevision string, typeConfig *fedcorev1a1.FederatedTypeConfig,
+) (*TargetInfo, error) {
 	if unstructuredObj == nil {
 		return &TargetInfo{
 			ClusterName:     clusterName,
@@ -536,8 +537,8 @@ func (p *RolloutPlanner) String() string {
 }
 
 func (p *RolloutPlanner) RemainingMaxSurge() int32 {
-	//maxSurge := p.Replicas + p.MaxSurge - p.Targets.ActualReplicas()
-	//maxSurge := p.MaxSurge - (p.Targets.ActualReplicas() - p.Replicas)
+	// maxSurge := p.Replicas + p.MaxSurge - p.Targets.ActualReplicas()
+	// maxSurge := p.MaxSurge - (p.Targets.ActualReplicas() - p.Replicas)
 	var replicas, occupied int32
 	for _, t := range p.Targets {
 		replicas += t.Status.Replicas
@@ -547,8 +548,8 @@ func (p *RolloutPlanner) RemainingMaxSurge() int32 {
 }
 
 func (p *RolloutPlanner) RemainingMaxUnavailable() int32 {
-	//maxUnavailable := p.Targets.AvailableReplicas() - (p.Replicas - p.MaxUnavailable)
-	//maxUnavailable := p.MaxUnavailable - (p.Replicas - p.Targets.AvailableReplicas())
+	// maxUnavailable := p.Targets.AvailableReplicas() - (p.Replicas - p.MaxUnavailable)
+	// maxUnavailable := p.MaxUnavailable - (p.Replicas - p.Targets.AvailableReplicas())
 	var replicas, occupied int32
 	for _, t := range p.Targets {
 		replicas += t.Status.Replicas
@@ -757,7 +758,8 @@ func resolveFenceposts(maxSurge, maxUnavailable *intstrutil.IntOrString, desired
 }
 
 func RetrieveFencepost(unstructuredObj *unstructured.Unstructured, maxSurgePath []string, maxUnavailablePath []string,
-	replicas int32) (int32, int32, error) {
+	replicas int32,
+) (int32, int32, error) {
 	var maxSurge, maxUnavailable *intstrutil.IntOrString
 	if ms, ok, err := unstructured.NestedString(unstructuredObj.Object, maxSurgePath...); ok && err == nil {
 		maxSurge = &intstrutil.IntOrString{Type: intstrutil.String, StrVal: ms}

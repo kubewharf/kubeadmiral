@@ -34,7 +34,8 @@ func addPodInformer(ctx context.Context,
 	informer informers.SharedInformerFactory,
 	client kubeclient.Interface,
 	podListerSemaphore *semaphore.Weighted,
-	enablePodPruning bool) {
+	enablePodPruning bool,
+) {
 	informer.InformerFor(&corev1.Pod{}, func(k kubeclient.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
 		return cache.NewSharedIndexInformer(
 			podListerWatcher(ctx, client, podListerSemaphore, enablePodPruning),
@@ -48,7 +49,8 @@ func addPodInformer(ctx context.Context,
 func podListerWatcher(ctx context.Context,
 	client kubeclient.Interface,
 	semaphore *semaphore.Weighted,
-	enablePodPruning bool) cache.ListerWatcher {
+	enablePodPruning bool,
+) cache.ListerWatcher {
 	return &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 			if semaphore != nil {

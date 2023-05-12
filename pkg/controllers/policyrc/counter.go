@@ -23,9 +23,11 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
-type ObjectKey common.QualifiedName
-type PolicyKey common.QualifiedName
-type PolicySet []PolicyKey
+type (
+	ObjectKey common.QualifiedName
+	PolicyKey common.QualifiedName
+	PolicySet []PolicyKey
+)
 
 type Counter struct {
 	// For now this uses a global mutex.

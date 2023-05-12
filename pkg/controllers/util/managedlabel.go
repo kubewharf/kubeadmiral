@@ -26,9 +26,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
-var (
-	ManagedByKubeFedLabelKey = common.DefaultPrefix + "managed"
-)
+var ManagedByKubeFedLabelKey = common.DefaultPrefix + "managed"
 
 const (
 	ManagedByKubeFedLabelValue   = "true"
