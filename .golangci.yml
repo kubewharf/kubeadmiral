@@ -52,8 +52,8 @@ linters:
     # - godot # little value-add
     # - godox # little value-add
     # - goerr113 # too demanding
-    - gofmt
-    # - gofumpt # favour gofmt
+    # - gofmt # gofumpt'ed code is a subset of gofmt'ed code
+    - gofumpt
     - goheader
     # - goimports # favour gci
     # - gomnd # too many false-positives
