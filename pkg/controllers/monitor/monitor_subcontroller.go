@@ -49,9 +49,7 @@ var (
 	ErrMissingObservedGenerationField = fmt.Errorf("missing observed generation")
 )
 
-var (
-	OutOfSyncRecheckDelay = 5 * time.Second
-)
+var OutOfSyncRecheckDelay = 5 * time.Second
 
 // MonitorSubController monitor the sync state of federated resources
 type MonitorSubController struct {
@@ -85,7 +83,8 @@ func StartMonitorSubController(
 	controllerConfig *util.ControllerConfig,
 	stopChan <-chan struct{},
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	meters *sync.Map) error {
+	meters *sync.Map,
+) error {
 	controller, err := newMonitorSubController(controllerConfig, typeConfig, meters)
 	if err != nil {
 		return err
@@ -100,8 +99,8 @@ func StartMonitorSubController(
 func newMonitorSubController(
 	controllerConfig *util.ControllerConfig,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	meters *sync.Map) (*MonitorSubController, error) {
-
+	meters *sync.Map,
+) (*MonitorSubController, error) {
 	federatedTypeAPIResource := typeConfig.GetFederatedType()
 
 	// Initialize non-dynamic clients first to avoid polluting config
@@ -171,7 +170,6 @@ func (m *MonitorSubController) Run(stopChan <-chan struct{}) {
 }
 
 func (m *MonitorSubController) reconcile(qualifiedName common.QualifiedName) worker.Result {
-
 	key := qualifiedName.String()
 	meterKey := m.kind + "/" + qualifiedName.String()
 	klog.Infof("Receive %s", meterKey)
@@ -255,7 +253,6 @@ func (m *MonitorSubController) reconcile(qualifiedName common.QualifiedName) wor
 }
 
 func (m *MonitorSubController) reconcileSync(obj *unstructured.Unstructured, baseMeter *BaseMeter) error {
-
 	annotations := obj.GetAnnotations()
 	if v, ok := annotations[annotationutil.SyncSuccessTimestamp]; ok {
 		syncSuccessTimestamp, err := time.Parse(time.RFC3339Nano, v)

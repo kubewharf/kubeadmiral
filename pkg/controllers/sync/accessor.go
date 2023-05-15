@@ -76,8 +76,8 @@ func NewFederatedResourceAccessor(
 	fedNamespaceAPIResource *metav1.APIResource,
 	client genericclient.Client,
 	enqueueObj func(pkgruntime.Object),
-	eventRecorder record.EventRecorder) (FederatedResourceAccessor, error) {
-
+	eventRecorder record.EventRecorder,
+) (FederatedResourceAccessor, error) {
 	a := &resourceAccessor{
 		limitedScope:            controllerConfig.LimitedScope(),
 		typeConfig:              typeConfig,

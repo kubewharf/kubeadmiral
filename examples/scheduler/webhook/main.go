@@ -15,9 +15,7 @@ import (
 	webhookv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/schedulerwebhook/v1alpha1"
 )
 
-var (
-	port = flag.Int("port", 50051, "The server port")
-)
+var port = flag.Int("port", 50051, "The server port")
 
 func doFilter(req *webhookv1a1.FilterRequest) *webhookv1a1.FilterResponse {
 	log.Printf("Received filter request\nScheduling unit: %s: Cluster: %s\n", spew.Sdump(req.SchedulingUnit), spew.Sdump(req.Cluster))

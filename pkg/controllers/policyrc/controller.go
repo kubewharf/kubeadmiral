@@ -70,7 +70,8 @@ type Controller struct {
 }
 
 func StartController(controllerConfig *util.ControllerConfig,
-	stopChan <-chan struct{}, typeConfig *fedcorev1a1.FederatedTypeConfig) error {
+	stopChan <-chan struct{}, typeConfig *fedcorev1a1.FederatedTypeConfig,
+) error {
 	controller, err := newController(controllerConfig, typeConfig)
 	if err != nil {
 		return err
@@ -81,7 +82,8 @@ func StartController(controllerConfig *util.ControllerConfig,
 }
 
 func newController(controllerConfig *util.ControllerConfig,
-	typeConfig *fedcorev1a1.FederatedTypeConfig) (*Controller, error) {
+	typeConfig *fedcorev1a1.FederatedTypeConfig,
+) (*Controller, error) {
 	federatedAPIResource := typeConfig.GetFederatedType()
 
 	userAgent := fmt.Sprintf("%s-policyrc-controller", strings.ToLower(federatedAPIResource.Kind))

@@ -48,9 +48,7 @@ const (
 	allocatableResource string = "allocatable"
 )
 
-var (
-	ErrNoCPUResource = errors.New("no cpu resource")
-)
+var ErrNoCPUResource = errors.New("no cpu resource")
 
 type ClusterCapacityWeight struct{}
 

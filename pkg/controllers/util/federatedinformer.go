@@ -144,8 +144,8 @@ func NewFederatedInformer(
 	restConfig *restclient.Config,
 	apiResource *metav1.APIResource,
 	triggerFunc func(pkgruntime.Object),
-	clusterLifecycle *ClusterLifecycleHandlerFuncs) (FederatedInformer, error) {
-
+	clusterLifecycle *ClusterLifecycleHandlerFuncs,
+) (FederatedInformer, error) {
 	targetInformerFactory := func(
 		cluster *fedcorev1a1.FederatedCluster,
 		clusterConfig *restclient.Config,
@@ -270,7 +270,7 @@ func NewFederatedInformer(
 						}
 					}
 				} else {
-					//klog.V(7).Infof("Cluster %v not updated to %v as ready status and specs are identical", oldCluster, curCluster)
+					// klog.V(7).Infof("Cluster %v not updated to %v as ready status and specs are identical", oldCluster, curCluster)
 				}
 			},
 		},
@@ -449,7 +449,6 @@ func (f *federatedInformerImpl) getClusterUnlocked(key string) (*fedcorev1a1.Fed
 	if obj, exist, err := f.clusterInformer.store.GetByKey(key); exist && err == nil {
 		if cluster, ok := obj.(*fedcorev1a1.FederatedCluster); ok {
 			return cluster, true, nil
-
 		}
 		return nil, false, errors.Errorf("wrong data in FederatedInformerImpl cluster store: %v", obj)
 
@@ -590,7 +589,6 @@ func (fs *federatedStoreImpl) GetKeyFor(item interface{}) string {
 // Checks whether stores for all clusters form the lists (and only these) are there and
 // are synced.
 func (fs *federatedStoreImpl) ClustersSynced(clusters []*fedcorev1a1.FederatedCluster) bool {
-
 	// Get the list of informers to check under a lock and check it outside.
 	okSoFar, informersToCheck := func() (bool, []informer) {
 		fs.federatedInformer.Lock()

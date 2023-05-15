@@ -32,14 +32,16 @@ import (
 	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 )
 
-var Scheme = runtime.NewScheme()
-var Codecs = serializer.NewCodecFactory(Scheme)
-var ParameterCodec = runtime.NewParameterCodec(Scheme)
-var localSchemeBuilder = runtime.SchemeBuilder{
-	fedcorev1a1.AddToScheme,
-	fedtypesv1a1.AddToScheme,
-	k8sscheme.AddToScheme,
-}
+var (
+	Scheme             = runtime.NewScheme()
+	Codecs             = serializer.NewCodecFactory(Scheme)
+	ParameterCodec     = runtime.NewParameterCodec(Scheme)
+	localSchemeBuilder = runtime.SchemeBuilder{
+		fedcorev1a1.AddToScheme,
+		fedtypesv1a1.AddToScheme,
+		k8sscheme.AddToScheme,
+	}
+)
 
 var AddToScheme = localSchemeBuilder.AddToScheme
 
