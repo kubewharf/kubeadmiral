@@ -121,8 +121,10 @@ func (*fakeFilterAndScorePlugin) Name() string {
 	panic("unimplemeneted")
 }
 
-var _ framework.FilterPlugin = &fakeFilterAndScorePlugin{}
-var _ framework.ScorePlugin = &fakeFilterAndScorePlugin{}
+var (
+	_ framework.FilterPlugin = &fakeFilterAndScorePlugin{}
+	_ framework.ScorePlugin  = &fakeFilterAndScorePlugin{}
+)
 
 type fakeScoreAndSelectPlugin struct {
 	*fakeScorePlugin
@@ -133,8 +135,10 @@ func (*fakeScoreAndSelectPlugin) Name() string {
 	panic("unimplemeneted")
 }
 
-var _ framework.ScorePlugin = &fakeScoreAndSelectPlugin{}
-var _ framework.SelectPlugin = &fakeScoreAndSelectPlugin{}
+var (
+	_ framework.ScorePlugin  = &fakeScoreAndSelectPlugin{}
+	_ framework.SelectPlugin = &fakeScoreAndSelectPlugin{}
+)
 
 func TestRunFilterPlugins(t *testing.T) {
 	tests := []struct {

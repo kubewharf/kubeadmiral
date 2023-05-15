@@ -96,7 +96,6 @@ func TestCountUnschedulablePods(t *testing.T) {
 		*crossingIn10s,
 		*crossingIn20s,
 	}, 1, pointer.Duration(10*time.Second))
-
 }
 
 func newPod(terminating bool, schedulable bool, lastTransitionTimestamp time.Time) *corev1.Pod {

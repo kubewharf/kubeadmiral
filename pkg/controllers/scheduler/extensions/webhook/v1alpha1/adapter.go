@@ -51,7 +51,7 @@ func ConvertSchedulingUnit(su *framework.SchedulingUnit) *schedwebhookv1a1.Sched
 		}
 
 		placement := fedcorev1a1.Placement{
-			ClusterName: cluster,
+			Cluster: cluster,
 			Preferences: fedcorev1a1.Preferences{
 				MinReplicas: su.MinReplicas[cluster],
 				MaxReplicas: maxReplicas,

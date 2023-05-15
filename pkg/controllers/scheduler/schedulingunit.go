@@ -455,7 +455,7 @@ func getWeightsFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[strin
 	weights := map[string]int64{}
 	for _, placement := range policy.GetSpec().Placements {
 		if placement.Preferences.Weight != nil {
-			weights[placement.ClusterName] = *placement.Preferences.Weight
+			weights[placement.Cluster] = *placement.Preferences.Weight
 		}
 	}
 
@@ -488,7 +488,7 @@ func getWeightsFromObject(object *unstructured.Unstructured) (map[string]int64, 
 	weights := map[string]int64{}
 	for _, placement := range placements {
 		if placement.Preferences.Weight != nil {
-			weights[placement.ClusterName] = *placement.Preferences.Weight
+			weights[placement.Cluster] = *placement.Preferences.Weight
 		}
 	}
 
@@ -514,7 +514,7 @@ func getMinReplicasFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[s
 
 	minReplicas := make(map[string]int64, len(policy.GetSpec().Placements))
 	for _, placement := range policy.GetSpec().Placements {
-		minReplicas[placement.ClusterName] = placement.Preferences.MinReplicas
+		minReplicas[placement.Cluster] = placement.Preferences.MinReplicas
 	}
 
 	return minReplicas
@@ -545,7 +545,7 @@ func getMinReplicasFromObject(object *unstructured.Unstructured) (map[string]int
 
 	minReplicas := make(map[string]int64, len(placements))
 	for _, placement := range placements {
-		minReplicas[placement.ClusterName] = placement.Preferences.MinReplicas
+		minReplicas[placement.Cluster] = placement.Preferences.MinReplicas
 	}
 
 	// we need to do additional validation vs getting from policy which relies on CRD validation by apiserver
@@ -571,7 +571,7 @@ func getMaxReplicasFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[s
 	maxReplicas := make(map[string]int64, len(policy.GetSpec().Placements))
 	for _, placement := range policy.GetSpec().Placements {
 		if placement.Preferences.MaxReplicas != nil {
-			maxReplicas[placement.ClusterName] = *placement.Preferences.MaxReplicas
+			maxReplicas[placement.Cluster] = *placement.Preferences.MaxReplicas
 		}
 	}
 
@@ -604,7 +604,7 @@ func getMaxReplicasFromObject(object *unstructured.Unstructured) (map[string]int
 	maxReplicas := make(map[string]int64, len(placements))
 	for _, placement := range placements {
 		if placement.Preferences.MaxReplicas != nil {
-			maxReplicas[placement.ClusterName] = *placement.Preferences.MaxReplicas
+			maxReplicas[placement.Cluster] = *placement.Preferences.MaxReplicas
 		}
 	}
 
@@ -630,7 +630,7 @@ func getClusterNamesFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[
 
 	clusterNames := make(map[string]struct{}, len(policy.GetSpec().Placements))
 	for _, placement := range policy.GetSpec().Placements {
-		clusterNames[placement.ClusterName] = struct{}{}
+		clusterNames[placement.Cluster] = struct{}{}
 	}
 
 	return clusterNames
@@ -661,7 +661,7 @@ func getClusterNamesFromObject(object *unstructured.Unstructured) (map[string]st
 
 	clusterNames := make(map[string]struct{}, len(placements))
 	for _, placement := range placements {
-		clusterNames[placement.ClusterName] = struct{}{}
+		clusterNames[placement.Cluster] = struct{}{}
 	}
 
 	return clusterNames, true

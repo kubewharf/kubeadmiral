@@ -93,7 +93,8 @@ type StatusAggregator struct {
 }
 
 func StartStatusAggregator(controllerConfig *util.ControllerConfig,
-	stopChan <-chan struct{}, typeConfig *fedcorev1a1.FederatedTypeConfig) error {
+	stopChan <-chan struct{}, typeConfig *fedcorev1a1.FederatedTypeConfig,
+) error {
 	aggregator, err := newStatusAggregator(controllerConfig, typeConfig)
 	if err != nil {
 		return err
@@ -104,7 +105,8 @@ func StartStatusAggregator(controllerConfig *util.ControllerConfig,
 }
 
 func newStatusAggregator(controllerConfig *util.ControllerConfig,
-	typeConfig *fedcorev1a1.FederatedTypeConfig) (*StatusAggregator, error) {
+	typeConfig *fedcorev1a1.FederatedTypeConfig,
+) (*StatusAggregator, error) {
 	federatedAPIResource := typeConfig.GetFederatedType()
 	targetAPIResource := typeConfig.GetTargetType()
 	sourceAPIResource := typeConfig.GetSourceType()

@@ -160,7 +160,7 @@ func isClusterMatched(targetClusters *fedcorev1a1.TargetClusters, cluster *fedco
 	// If targetClusters is specified, we consider clusterNames, clusterSelector, and clusterAffinity.
 	// The 3 criteria are ANDed, i.e., for a cluster to be matched, it must be matched by all 3 criteria.
 
-	if !isClusterMatchedByClusterNames(targetClusters.ClusterNames, cluster) {
+	if !isClusterMatchedByClusterNames(targetClusters.Clusters, cluster) {
 		return false, nil
 	}
 

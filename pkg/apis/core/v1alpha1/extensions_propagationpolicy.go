@@ -16,8 +16,10 @@ limitations under the License.
 
 package v1alpha1
 
-var _ GenericPropagationPolicy = &PropagationPolicy{}
-var _ GenericPropagationPolicy = &ClusterPropagationPolicy{}
+var (
+	_ GenericPropagationPolicy = &PropagationPolicy{}
+	_ GenericPropagationPolicy = &ClusterPropagationPolicy{}
+)
 
 func (pp *PropagationPolicy) GetSpec() *PropagationPolicySpec {
 	return &pp.Spec

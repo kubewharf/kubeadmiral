@@ -86,7 +86,6 @@ func getDownstreamControllers(allControllers PendingControllers, current string)
 				return allControllers[i+1:]
 			}
 		}
-
 	}
 	return nil
 }

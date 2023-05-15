@@ -41,7 +41,7 @@ func DoReportStatusLatency(meters *sync.Map, client stats.Metrics) {
 	meters.Range(func(k, v interface{}) bool {
 		baseMeter := v.(BaseMeter)
 		name := k.(string)
-		//klog.Infof(
+		// klog.Infof(
 		// "Attempt to report: %s, status update %s, status success %s", name, baseMeter.lastStatusSyncedTimestamp, baseMeter.outOfSyncDuration)
 		if baseMeter.lastStatusSyncedTimestamp.IsZero() {
 			return true
@@ -63,7 +63,7 @@ func DoReportSyncLatency(meters *sync.Map, client stats.Metrics) {
 	meters.Range(func(k, v interface{}) bool {
 		baseMeter := v.(BaseMeter)
 		name := k.(string)
-		//klog.Infof("Attempt to report: ", name, baseMeter.creationTimestamp, baseMeter.lastUpdateTimestamp, baseMeter.syncSuccessTimestamp)
+		// klog.Infof("Attempt to report: ", name, baseMeter.creationTimestamp, baseMeter.lastUpdateTimestamp, baseMeter.syncSuccessTimestamp)
 		if baseMeter.syncSuccessTimestamp.Add(ReportInterval).After(now.Time) {
 			start := baseMeter.creationTimestamp
 			if baseMeter.lastUpdateTimestamp.After(baseMeter.creationTimestamp.Time) {

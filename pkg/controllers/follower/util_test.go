@@ -34,117 +34,225 @@ func TestGetFollowersFromPod(t *testing.T) {
 				EnvFrom: []corev1.EnvFromSource{{
 					ConfigMapRef: &corev1.ConfigMapEnvSource{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: "Spec.Containers[*].EnvFrom[*].ConfigMapRef"}}}, {
+							Name: "Spec.Containers[*].EnvFrom[*].ConfigMapRef",
+						},
+					},
+				}, {
 					SecretRef: &corev1.SecretEnvSource{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: "Spec.Containers[*].EnvFrom[*].SecretRef"}}}},
+							Name: "Spec.Containers[*].EnvFrom[*].SecretRef",
+						},
+					},
+				}},
 				Env: []corev1.EnvVar{{
 					ValueFrom: &corev1.EnvVarSource{
 						ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: "Spec.Containers[*].Env[*].ValueFrom.ConfigMapKeyRef"}}}}, {
+								Name: "Spec.Containers[*].Env[*].ValueFrom.ConfigMapKeyRef",
+							},
+						},
+					},
+				}, {
 					ValueFrom: &corev1.EnvVarSource{
 						SecretKeyRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: "Spec.Containers[*].Env[*].ValueFrom.SecretKeyRef"}}}}}}},
+								Name: "Spec.Containers[*].Env[*].ValueFrom.SecretKeyRef",
+							},
+						},
+					},
+				}},
+			}},
 			EphemeralContainers: []corev1.EphemeralContainer{{
 				EphemeralContainerCommon: corev1.EphemeralContainerCommon{
 					EnvFrom: []corev1.EnvFromSource{{
 						ConfigMapRef: &corev1.ConfigMapEnvSource{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: "Spec.EphemeralContainers[*].EphemeralContainerCommon.EnvFrom[*].ConfigMapRef"}}}, {
+								Name: "Spec.EphemeralContainers[*].EphemeralContainerCommon.EnvFrom[*].ConfigMapRef",
+							},
+						},
+					}, {
 						SecretRef: &corev1.SecretEnvSource{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: "Spec.EphemeralContainers[*].EphemeralContainerCommon.EnvFrom[*].SecretRef"}}}},
+								Name: "Spec.EphemeralContainers[*].EphemeralContainerCommon.EnvFrom[*].SecretRef",
+							},
+						},
+					}},
 					Env: []corev1.EnvVar{{
 						ValueFrom: &corev1.EnvVarSource{
 							ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 								LocalObjectReference: corev1.LocalObjectReference{
-									Name: "Spec.EphemeralContainers[*].EphemeralContainerCommon.Env[*].ValueFrom.ConfigMapKeyRef"}}}}, {
+									Name: "Spec.EphemeralContainers[*].EphemeralContainerCommon.Env[*].ValueFrom.ConfigMapKeyRef",
+								},
+							},
+						},
+					}, {
 						ValueFrom: &corev1.EnvVarSource{
 							SecretKeyRef: &corev1.SecretKeySelector{
 								LocalObjectReference: corev1.LocalObjectReference{
-									Name: "Spec.EphemeralContainers[*].EphemeralContainerCommon.Env[*].ValueFrom.SecretKeyRef"}}}}}}}},
+									Name: "Spec.EphemeralContainers[*].EphemeralContainerCommon.Env[*].ValueFrom.SecretKeyRef",
+								},
+							},
+						},
+					}},
+				},
+			}},
 			InitContainers: []corev1.Container{{
 				EnvFrom: []corev1.EnvFromSource{{
 					ConfigMapRef: &corev1.ConfigMapEnvSource{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: "Spec.InitContainers[*].EnvFrom[*].ConfigMapRef"}}}, {
+							Name: "Spec.InitContainers[*].EnvFrom[*].ConfigMapRef",
+						},
+					},
+				}, {
 					SecretRef: &corev1.SecretEnvSource{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: "Spec.InitContainers[*].EnvFrom[*].SecretRef"}}}},
+							Name: "Spec.InitContainers[*].EnvFrom[*].SecretRef",
+						},
+					},
+				}},
 				Env: []corev1.EnvVar{{
 					ValueFrom: &corev1.EnvVarSource{
 						ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: "Spec.InitContainers[*].Env[*].ValueFrom.ConfigMapKeyRef"}}}}, {
+								Name: "Spec.InitContainers[*].Env[*].ValueFrom.ConfigMapKeyRef",
+							},
+						},
+					},
+				}, {
 					ValueFrom: &corev1.EnvVarSource{
 						SecretKeyRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: "Spec.InitContainers[*].Env[*].ValueFrom.SecretKeyRef"}}}}}}},
+								Name: "Spec.InitContainers[*].Env[*].ValueFrom.SecretKeyRef",
+							},
+						},
+					},
+				}},
+			}},
 			ImagePullSecrets: []corev1.LocalObjectReference{{
-				Name: "Spec.ImagePullSecrets"}},
+				Name: "Spec.ImagePullSecrets",
+			}},
 			Volumes: []corev1.Volume{{
 				VolumeSource: corev1.VolumeSource{
 					Projected: &corev1.ProjectedVolumeSource{
 						Sources: []corev1.VolumeProjection{{
 							ConfigMap: &corev1.ConfigMapProjection{
 								LocalObjectReference: corev1.LocalObjectReference{
-									Name: "Spec.Volumes[*].VolumeSource.Projected.Sources[*].ConfigMap"}}}}}}}, {
+									Name: "Spec.Volumes[*].VolumeSource.Projected.Sources[*].ConfigMap",
+								},
+							},
+						}},
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					ConfigMap: &corev1.ConfigMapVolumeSource{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: "Spec.Volumes[*].VolumeSource.ConfigMap"}}}}, {
+							Name: "Spec.Volumes[*].VolumeSource.ConfigMap",
+						},
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					AzureFile: &corev1.AzureFileVolumeSource{
-						SecretName: "Spec.Volumes[*].VolumeSource.AzureFile.SecretName"}}}, {
+						SecretName: "Spec.Volumes[*].VolumeSource.AzureFile.SecretName",
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					CephFS: &corev1.CephFSVolumeSource{
 						SecretRef: &corev1.LocalObjectReference{
-							Name: "Spec.Volumes[*].VolumeSource.CephFS.SecretRef"}}}}, {
+							Name: "Spec.Volumes[*].VolumeSource.CephFS.SecretRef",
+						},
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					Cinder: &corev1.CinderVolumeSource{
 						SecretRef: &corev1.LocalObjectReference{
-							Name: "Spec.Volumes[*].VolumeSource.Cinder.SecretRef"}}}}, {
+							Name: "Spec.Volumes[*].VolumeSource.Cinder.SecretRef",
+						},
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					FlexVolume: &corev1.FlexVolumeSource{
 						SecretRef: &corev1.LocalObjectReference{
-							Name: "Spec.Volumes[*].VolumeSource.FlexVolume.SecretRef"}}}}, {
+							Name: "Spec.Volumes[*].VolumeSource.FlexVolume.SecretRef",
+						},
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					Projected: &corev1.ProjectedVolumeSource{
 						Sources: []corev1.VolumeProjection{{
 							Secret: &corev1.SecretProjection{
 								LocalObjectReference: corev1.LocalObjectReference{
-									Name: "Spec.Volumes[*].VolumeSource.Projected.Sources[*].Secret"}}}}}}}, {
+									Name: "Spec.Volumes[*].VolumeSource.Projected.Sources[*].Secret",
+								},
+							},
+						}},
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					RBD: &corev1.RBDVolumeSource{
 						SecretRef: &corev1.LocalObjectReference{
-							Name: "Spec.Volumes[*].VolumeSource.RBD.SecretRef"}}}}, {
+							Name: "Spec.Volumes[*].VolumeSource.RBD.SecretRef",
+						},
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
-						SecretName: "Spec.Volumes[*].VolumeSource.Secret.SecretName"}}}, {
+						SecretName: "Spec.Volumes[*].VolumeSource.Secret.SecretName",
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
-						SecretName: "Spec.Volumes[*].VolumeSource.Secret"}}}, {
+						SecretName: "Spec.Volumes[*].VolumeSource.Secret",
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					ScaleIO: &corev1.ScaleIOVolumeSource{
 						SecretRef: &corev1.LocalObjectReference{
-							Name: "Spec.Volumes[*].VolumeSource.ScaleIO.SecretRef"}}}}, {
+							Name: "Spec.Volumes[*].VolumeSource.ScaleIO.SecretRef",
+						},
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					ISCSI: &corev1.ISCSIVolumeSource{
 						SecretRef: &corev1.LocalObjectReference{
-							Name: "Spec.Volumes[*].VolumeSource.ISCSI.SecretRef"}}}}, {
+							Name: "Spec.Volumes[*].VolumeSource.ISCSI.SecretRef",
+						},
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					StorageOS: &corev1.StorageOSVolumeSource{
 						SecretRef: &corev1.LocalObjectReference{
-							Name: "Spec.Volumes[*].VolumeSource.StorageOS.SecretRef"}}}}, {
+							Name: "Spec.Volumes[*].VolumeSource.StorageOS.SecretRef",
+						},
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					CSI: &corev1.CSIVolumeSource{
 						NodePublishSecretRef: &corev1.LocalObjectReference{
-							Name: "Spec.Volumes[*].VolumeSource.CSI.NodePublishSecretRef"}}}}, {
+							Name: "Spec.Volumes[*].VolumeSource.CSI.NodePublishSecretRef",
+						},
+					},
+				},
+			}, {
 				VolumeSource: corev1.VolumeSource{
 					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: "Spec.Volumes[*].VolumeSource.PersistentVolumeClaim"}}}}},
+						ClaimName: "Spec.Volumes[*].VolumeSource.PersistentVolumeClaim",
+					},
+				},
+			}},
+		},
 	}
 
 	expectedNamesByGK := map[schema.GroupKind]sets.Set[string]{

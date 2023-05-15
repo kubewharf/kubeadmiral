@@ -27,10 +27,12 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/policyrc"
 )
 
-const NumGoroutines = 8
-const NumPolicies = 16
-const NumObjects = 64
-const NumRepetitions = 4
+const (
+	NumGoroutines  = 8
+	NumPolicies    = 16
+	NumObjects     = 64
+	NumRepetitions = 4
+)
 
 // In this test, the counter observes that each object is updated to use different policies concurrently.
 // We expect that each object is mapped to the same or different policy eventually,

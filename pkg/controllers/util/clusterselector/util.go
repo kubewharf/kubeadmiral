@@ -96,7 +96,8 @@ func ClusterSelectorRequirementsAsFieldSelector(csm []fedcorev1a1.ClusterSelecto
 // The terms are ORed. nil or empty term matches no objects.
 func MatchClusterSelectorTerms(
 	clusterSelectorTerms []fedcorev1a1.ClusterSelectorTerm,
-	cluster *fedcorev1a1.FederatedCluster) (bool, error) {
+	cluster *fedcorev1a1.FederatedCluster,
+) (bool, error) {
 	clusterLabels := labels.Set(cluster.Labels)
 	clusterFields := fields.Set{"metadata.name": cluster.Name}
 

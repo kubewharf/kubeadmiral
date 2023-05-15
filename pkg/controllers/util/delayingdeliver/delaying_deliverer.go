@@ -52,9 +52,11 @@ type delivererHeap struct {
 // Functions required by container.Heap.
 
 func (dh *delivererHeap) Len() int { return len(dh.data) }
+
 func (dh *delivererHeap) Less(i, j int) bool {
 	return dh.data[i].DeliveryTime.Before(dh.data[j].DeliveryTime)
 }
+
 func (dh *delivererHeap) Swap(i, j int) {
 	dh.keyPosition[dh.data[i].Key] = j
 	dh.keyPosition[dh.data[j].Key] = i

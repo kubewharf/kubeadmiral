@@ -297,10 +297,10 @@ func TestTaintTolerationScore(t *testing.T) {
 		},
 		{
 			name: "Default behaviour No taints and tolerations, lands on cluster with no taints",
-			//su without tolerations
+			// su without tolerations
 			su: suWithTolerations("su1", []corev1.Toleration{}),
 			clusters: []*fedcorev1a1.FederatedCluster{
-				//cluster without taints
+				// cluster without taints
 				clusterWithTaints("clusterA", []corev1.Taint{}),
 				clusterWithTaints("clusterB", []corev1.Taint{
 					{

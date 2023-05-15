@@ -41,9 +41,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework/util"
 )
 
-var (
-	resourcePropagationTestLabel = ginkgo.Label("resource-propagation")
-)
+var resourcePropagationTestLabel = ginkgo.Label("resource-propagation")
 
 const (
 	resourceUpdateTestAnnotationKey   = "kubeadmiral.io/e2e-update-test"

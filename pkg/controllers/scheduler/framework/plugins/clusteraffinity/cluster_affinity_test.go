@@ -654,7 +654,8 @@ func TestClusterAffinity(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   test.clusterName,
 					Labels: test.labels,
-				}}
+				},
+			}
 			if test.wantResult == nil {
 				test.wantResult = framework.NewResult(framework.Success)
 			}

@@ -433,7 +433,6 @@ func (rh *realHistory) ReleaseControllerRevision(
 				),
 			),
 			metav1.PatchOptions{})
-
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// We ignore deleted revisions
