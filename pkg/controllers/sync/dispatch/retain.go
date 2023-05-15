@@ -352,8 +352,8 @@ func copyUnstructuredField(srcObj, destObj *unstructured.Unstructured, fields ..
 	return unstructured.SetNestedField(destObj.Object, value, fields...)
 }
 
-// containsServiceAccountVolume checks if the given pod contains a serviceaccount volume as defined by the
-// serviceaccount admission plugin. This only works with the BoundServiceAccountTokenVolume feature enabled!!!
+// hasServiceAccountVolume checks if the given pod contains a serviceaccount volume as defined by the serviceaccount
+// admission plugin. This only works with the BoundServiceAccountTokenVolume feature enabled!!!
 //
 // Before the BoundServiceAccountTokenVolume feature was introduced, serviceaccount volumes can only be identified by
 // checking if the volume has a secret volumeSource that references the secret containing the serviceaccount token. This

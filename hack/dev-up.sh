@@ -48,7 +48,7 @@ fi
 mkdir -p "$(dirname "${KUBECONFIG_DIR}")"
 
 # start host cluster
-util::create_host_cluster "${HOST_CLUSTER_NAME}" "${KUBECONFIG_DIR}/${HOST_CLUSTER_NAME}.yaml" "${MANIFEST_DIR}" "${CONFIG_DIR}"
+util::create_host_cluster "${HOST_CLUSTER_NAME}" "${KUBECONFIG_DIR}/${HOST_CLUSTER_NAME}.yaml" "${MANIFEST_DIR}" "${CONFIG_DIR}" &
 
 if [[ "${NUM_MEMBER_CLUSTERS}" -gt "0" ]]; then
     # start member clusters
@@ -62,7 +62,6 @@ if [[ "${NUM_MEMBER_CLUSTERS}" -gt "0" ]]; then
     for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
       util::join_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${HOST_CLUSTER_NAME}" "${KUBECONFIG_DIR}/${HOST_CLUSTER_NAME}.yaml" &
     done
-
-    wait
 fi
 
+wait
