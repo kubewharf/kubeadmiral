@@ -264,8 +264,8 @@ func retainPersistentVolumeClaimFields(desiredObj, clusterObj *unstructured.Unst
 }
 
 func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
-	// A general guideline is to always drop and retain fields that are unable to be explicitly set by the user, and is
-	// managed by the Kubernetes control plane instead. ephemeralContainers falls into this cateogry.
+	// A general guideline is to always drop and retain fields that are unable to be set by the user and are managed by
+	// the Kubernetes control plane instead. ephemeralContainers falls into this cateogry.
 	if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "ephemeralContainers"); err != nil {
 		return err
 	}
@@ -301,15 +301,28 @@ func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 		}
 	}
 
-	// The logic for retaining serviceaccount volumes and volumeMounts is slightly more involved.
-	if !hasServiceAccountVolume(desiredObj) {
-		if err := copyServiceAccountVolume(clusterObj, desiredObj); err != nil {
-			return err
+	if _, _, exists := findServiceAccountVolume(desiredObj); !exists {
+		if volume, idx, exists := findServiceAccountVolume(clusterObj); exists {
+			// If the service account volume exists in clusterObj but not in the desiredObj, it was injected by the
+			// service account admission plugin. We retain the service account volume at the same index in desiredObj
+			// (if we do not preserve the ordering of the volumes slice, the update will fail).
+			desiredVolumes, _, _ := unstructured.NestedSlice(desiredObj.Object, "spec", "volumes") // this is a deepcopy
+			if len(desiredVolumes) < idx {
+				return fmt.Errorf("failed to copy service account volume, slice length mismatch")
+			}
+
+			desiredVolumes = append(desiredVolumes, nil)
+			copy(desiredVolumes[idx+1:], desiredVolumes[idx:])
+			desiredVolumes[idx] = volume
+
+			if err := unstructured.SetNestedSlice(desiredObj.Object, desiredVolumes, "spec", "volumes"); err != nil {
+				return err
+			}
 		}
 	}
 
-	desiredContainers, _, _ := unstructured.NestedSlice(desiredObj.Object, "spec", "containers")
-	clusterContainers, _, _ := unstructured.NestedSlice(clusterObj.Object, "spec", "containers")
+	desiredContainers, _, _ := unstructured.NestedSlice(desiredObj.Object, "spec", "containers") // this is a deepcopy
+	clusterContainers, _, _ := unstructured.NestedSlice(clusterObj.Object, "spec", "containers") // this is a deepcopy
 	if err := retainContainers(desiredContainers, clusterContainers); err != nil {
 		return err
 	}
@@ -317,8 +330,8 @@ func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 		return err
 	}
 
-	desiredInitContainers, _, _ := unstructured.NestedSlice(desiredObj.Object, "spec", "initContainers")
-	clusterInitContainers, _, _ := unstructured.NestedSlice(clusterObj.Object, "spec", "initContainers")
+	desiredInitContainers, _, _ := unstructured.NestedSlice(desiredObj.Object, "spec", "initContainers") // this is a deepcopy
+	clusterInitContainers, _, _ := unstructured.NestedSlice(clusterObj.Object, "spec", "initContainers") // this is a deepcopy
 	if err := retainContainers(desiredInitContainers, clusterInitContainers); err != nil {
 		return err
 	}
@@ -328,15 +341,15 @@ func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 
 	// The tolerations field is also defaulted by an admission plugin. However, we do not need to explicitly retain
 	// the default tolerations due to 2 reasons:
-	// 1. The tolerations field is mutable so any updates will not reuslt in an error
-	// 2. The same tolerations will be defaulted in any updates, so it will not result in an infinite reconcile loop
+	// 1. The tolerations field is mutable so any updates will not result in an error
+	// 2. The tolerations field will be defaulted in all create and update requests
 	//
 	// For example:
 	// 1. We create a new pod with no tolerations and the admission plugin injects toleration A.
 	// 2. The controller receives the create event and sees that toleration A should not be present.
 	// 3. The controller attempts to remove toleration A with an update.
-	// 4. The update is defaulted with the same toleration A, resulting in a noop update and no new events will be emitted.
-	// 5. Eventual consistency is achieved with no infinite reconciliation.
+	// 4. The update is defaulted with the same toleration A, resulting in a noop update where no new watch events will be emitted.
+	// 5. There is no error or infinite reconciliation.
 
 	return nil
 }
@@ -352,20 +365,22 @@ func copyUnstructuredField(srcObj, destObj *unstructured.Unstructured, fields ..
 	return unstructured.SetNestedField(destObj.Object, value, fields...)
 }
 
-// hasServiceAccountVolume checks if the given pod contains a serviceaccount volume as defined by the serviceaccount
-// admission plugin. This only works with the BoundServiceAccountTokenVolume feature enabled!!!
+// findServiceAccountVolume checks if the given pod contains a serviceaccount volume as defined by the serviceaccount
+// admission plugin and returns the volume along with the index at which it is located.
+//
+// NOTE: This ONLY WORKS with the BoundServiceAccountTokenVolume feature enabled.
 //
 // Before the BoundServiceAccountTokenVolume feature was introduced, serviceaccount volumes can only be identified by
 // checking if the volume has a secret volumeSource that references the secret containing the serviceaccount token. This
-// would require us to send multiple requests to the apiserver or add new informers to the sync controller. As a result,
-// we have decided not to support this.
-func hasServiceAccountVolume(pod *unstructured.Unstructured) bool {
+// would require us to send multiple requests to the apiserver or add new informers to the sync controller. We have
+// decided not to support this.
+func findServiceAccountVolume(pod *unstructured.Unstructured) (volume map[string]interface{}, idx int, exists bool) {
 	volumes, exists, err := unstructured.NestedSlice(pod.Object, "spec", "volumes")
 	if err != nil || !exists {
-		return false
+		return nil, 0, false
 	}
 
-	for _, v := range volumes {
+	for i, v := range volumes {
 		volume, ok := v.(map[string]interface{})
 		if !ok {
 			continue
@@ -378,44 +393,11 @@ func hasServiceAccountVolume(pod *unstructured.Unstructured) bool {
 
 		// see serviceaccount admission plugin
 		if strings.HasPrefix(name, ServiceAccountVolumeNamePrefix) {
-			return true
+			return volume, i, true
 		}
 	}
 
-	return false
-}
-
-// copyServiceAccountVolume copies the serviceaccount volume as defined by the serviceaccount admission plugin from
-// srcPod to destPod if it exists in srcPod. This only works with the BoundServiceAccountTokenVolume feature enabled!!!
-func copyServiceAccountVolume(srcPod, destPod *unstructured.Unstructured) error {
-	srcVolumes, exists, err := unstructured.NestedSlice(srcPod.Object, "spec", "volumes")
-	if err != nil || !exists {
-		return nil
-	}
-
-	for i, v := range srcVolumes {
-		volume, ok := v.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		name, exists, err := unstructured.NestedString(volume, "name")
-		if err != nil || !exists {
-			continue
-		}
-
-		if strings.HasPrefix(name, ServiceAccountVolumeNamePrefix) {
-			destVolumes, _, _ := unstructured.NestedSlice(destPod.Object, "spec", "volumes")
-			if len(destVolumes) < i {
-				return fmt.Errorf("failed to copy service account volume, slice length mismatch")
-			}
-			newVolumes := append(destVolumes[:i], volume)
-			newVolumes = append(newVolumes, destVolumes[i:]...)
-
-			return unstructured.SetNestedSlice(destPod.Object, newVolumes, "spec", "volumes")
-		}
-	}
-	return nil
+	return nil, 0, false
 }
 
 func retainContainers(desiredContainers, clusterContainers []interface{}) error {
@@ -424,43 +406,70 @@ func retainContainers(desiredContainers, clusterContainers []interface{}) error 
 		if !ok {
 			continue
 		}
-		desiredContainerName, exists, err := unstructured.NestedString(desiredContainer, "name")
+
+		desiredName, exists, err := unstructured.NestedString(desiredContainer, "name")
 		if err != nil || !exists {
 			continue
 		}
 
+		// find the corresponding container in clusterObj
 		for _, cc := range clusterContainers {
 			clusterContainer, ok := cc.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			clusterContainerName, exists, err := unstructured.NestedString(clusterContainer, "name")
+
+			name, exists, err := unstructured.NestedString(clusterContainer, "name")
 			if err != nil || !exists {
 				continue
 			}
 
-			if clusterContainerName == desiredContainerName {
-				if !hasServiceAccountVolumeMount(desiredContainer) {
-					if err := copyServiceAccountVolumeMount(clusterContainer, desiredContainer); err != nil {
-						return err
-					}
+			if name == desiredName {
+				if err := retainContainer(desiredContainer, clusterContainer); err != nil {
+					return err
 				}
 				break
 			}
 		}
 	}
+
 	return nil
 }
 
-// containsServiceAccountVolume checks if the given container contains a serviceaccount volume mount as defined by the
-// serviceaccount admission plugin.
-func hasServiceAccountVolumeMount(container map[string]interface{}) bool {
-	volumeMounts, exists, err := unstructured.NestedSlice(container, "volumeMounts")
-	if err != nil || !exists {
-		return false
+func retainContainer(desiredContainer, clusterContainer map[string]interface{}) error {
+	if _, _, exists := findServiceAccountVolumeMount(desiredContainer); !exists {
+		if volumeMnt, idx, exists := findServiceAccountVolumeMount(clusterContainer); exists {
+			// The logic for retaining service account volume mounts is the same as retaining service account volumes.
+			// If the service account volume mount exists in the clusterContainer but not in the desiredContainer, it
+			// was injected by the service account admission plugin.
+			desiredVolumeMnts, _, _ := unstructured.NestedSlice(desiredContainer, "volumeMounts") // this is a deepcopy
+
+			// We retain the service account volume mount at the same index in desiredContainer
+			if len(desiredVolumeMnts) < idx {
+				return fmt.Errorf("failed to copy service account volume mount, slice length mismatch")
+			}
+			desiredVolumeMnts = append(desiredVolumeMnts, nil)
+			copy(desiredVolumeMnts[idx+1:], desiredVolumeMnts[idx:])
+			desiredVolumeMnts[idx] = volumeMnt
+
+			if err := unstructured.SetNestedSlice(desiredContainer, desiredVolumeMnts, "volumeMounts"); err != nil {
+				return err
+			}
+		}
 	}
 
-	for _, m := range volumeMounts {
+	return nil
+}
+
+// findServiceAccountVolumeMount checks if the given container contains a serviceaccount volume mount as defined by the
+// serviceaccount admission plugin and returns the volume mount along with the index at which it is located.
+func findServiceAccountVolumeMount(container map[string]interface{}) (volumeMount map[string]interface{}, idx int, exists bool) {
+	volumeMounts, exists, err := unstructured.NestedSlice(container, "volumeMounts")
+	if err != nil || !exists {
+		return nil, 0, false
+	}
+
+	for i, m := range volumeMounts {
 		volumeMount, ok := m.(map[string]interface{})
 		if !ok {
 			continue
@@ -472,45 +481,11 @@ func hasServiceAccountVolumeMount(container map[string]interface{}) bool {
 		}
 
 		if mountPath == DefaultAPITokenMountPath {
-			return true
+			return volumeMount, i, true
 		}
 	}
 
-	return false
-}
-
-// copyServiceAccountVolume copies the serviceaccount volume mount as defined by the serviceaccount admission plugin
-// from srcContainer to destContainer if it exists in srcContainer.
-func copyServiceAccountVolumeMount(srcContainer, destContainer map[string]interface{}) error {
-	srcMounts, exists, err := unstructured.NestedSlice(srcContainer, "volumeMounts")
-	if err != nil || !exists {
-		return nil
-	}
-
-	for i, m := range srcMounts {
-		mount, ok := m.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		mountPath, exists, err := unstructured.NestedString(mount, "mountPath")
-		if err != nil || !exists {
-			continue
-		}
-
-		if mountPath == DefaultAPITokenMountPath {
-			destMounts, _, _ := unstructured.NestedSlice(destContainer, "volumeMounts")
-			if len(destMounts) < i {
-				return fmt.Errorf("failed to copy service account volume mount, slice length mismatch")
-			}
-
-			newMounts := append(destMounts[:i], mount)
-			newMounts = append(newMounts, destMounts[i:]...)
-
-			return unstructured.SetNestedSlice(destContainer, newMounts, "volumeMounts")
-		}
-	}
-	return nil
+	return nil, 0, false
 }
 
 func checkRetainReplicas(fedObj *unstructured.Unstructured) (bool, error) {
