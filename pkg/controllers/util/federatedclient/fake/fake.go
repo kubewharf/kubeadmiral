@@ -45,6 +45,8 @@ func New(
 		kubeClient,
 		informer,
 		common.DefaultFedSystemNamespace,
+		1,
+		false,
 		&mockBuilder{
 			scheme:  scheme,
 			objects: objects,

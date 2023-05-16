@@ -136,6 +136,8 @@ func NewFederatedClientsetFactory(
 		kubeClient,
 		informer,
 		fedSystemNamespace,
+		maxPodListers,
+		enablePodPruning,
 		&BaseRestMemberClientBuilder{Base: baseRestConfig},
 	)
 }
@@ -145,6 +147,8 @@ func NewFederatedClientsetFactoryWithBuilder(
 	kubeClient kubeclient.Interface,
 	informer fedcorev1a1informers.FederatedClusterInformer,
 	fedSystemNamespace string,
+	maxPodListers int64,
+	enablePodPruning bool,
 	memberClientBuilder MemberClientBuilder,
 ) FederatedClientFactory {
 	factory := &federatedClientFactory{
