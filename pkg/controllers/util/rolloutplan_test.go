@@ -291,7 +291,6 @@ func TestPlanWholeProcessWithMaxUnavailable(t *testing.T) {
 			if !reflect.DeepEqual(got, test.Plans) {
 				t.Errorf("%s: got: %v, expected: %v", test.Name, got, test.Plans)
 			}
-
 		})
 	}
 }
@@ -418,7 +417,6 @@ func TestPlanWholeProcessWithBoth(t *testing.T) {
 			if !reflect.DeepEqual(got, test.Plans) {
 				t.Errorf("%s: got: %v, expected: %v", test.Name, got, test.Plans)
 			}
-
 		})
 	}
 }
@@ -653,7 +651,6 @@ func TestPlanWholeProcessWithSurge(t *testing.T) {
 			if !reflect.DeepEqual(got, test.Plans) {
 				t.Errorf("%s: got: %v, expected: %v", test.Name, got, test.Plans)
 			}
-
 		})
 	}
 }
@@ -681,7 +678,6 @@ func TestPlanCreation(t *testing.T) {
 			if !reflect.DeepEqual(got, test.Plans) {
 				t.Errorf("%s: got: %v, expected: %v", test.Name, got, test.Plans)
 			}
-
 		})
 	}
 }
@@ -710,7 +706,6 @@ func TestPlanScale(t *testing.T) {
 			if !reflect.DeepEqual(got, test.Plans) {
 				t.Errorf("%s: got: %v, expected: %v", test.Name, got, test.Plans)
 			}
-
 		})
 	}
 }
@@ -893,7 +888,6 @@ func TestPlanUnexceptedCases(t *testing.T) {
 			if !reflect.DeepEqual(got, test.Plans) {
 				t.Errorf("%s: got: %v, expected: %v", test.Name, got, test.Plans)
 			}
-
 		})
 	}
 }
@@ -1453,7 +1447,6 @@ func TestPlanActualCases(t *testing.T) {
 			if !reflect.DeepEqual(got, test.Plans) {
 				t.Errorf("%s: got: %v, expected: %v", test.Name, got, test.Plans)
 			}
-
 		})
 	}
 }

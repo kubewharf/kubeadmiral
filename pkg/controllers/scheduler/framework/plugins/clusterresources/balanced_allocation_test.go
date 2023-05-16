@@ -82,8 +82,10 @@ func TestClusterResourcesBalancedAllocation(t *testing.T) {
 			// Memory Fraction: 0 / 10000 = 0%
 			// Cluster2 Score: 10 - (0-0)*100 = 100
 			su: makeSchedulingUnit("su1", 0, 0),
-			clusters: []*fedcorev1a1.FederatedCluster{makeCluster("cluster1", 4000, 10000, 4000, 10000),
-				makeCluster("cluster2", 4000, 10000, 4000, 10000)},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				makeCluster("cluster1", 4000, 10000, 4000, 10000),
+				makeCluster("cluster2", 4000, 10000, 4000, 10000),
+			},
 			expectedList: []framework.ClusterScore{
 				{Cluster: makeCluster("cluster1", 4000, 10000, 4000, 10000), Score: framework.MaxClusterScore},
 				{Cluster: makeCluster("cluster2", 4000, 10000, 4000, 10000), Score: framework.MaxClusterScore},
@@ -100,8 +102,10 @@ func TestClusterResourcesBalancedAllocation(t *testing.T) {
 			// Memory Fraction: 5000/10000 = 50%
 			// Cluster2 Score: 10 - (0.5-0.5)*100 = 100
 			su: makeSchedulingUnit("su2", 3000, 5000),
-			clusters: []*fedcorev1a1.FederatedCluster{makeCluster("cluster1", 4000, 10000, 4000, 10000),
-				makeCluster("cluster2", 6000, 10000, 6000, 10000)},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				makeCluster("cluster1", 4000, 10000, 4000, 10000),
+				makeCluster("cluster2", 6000, 10000, 6000, 10000),
+			},
 			expectedList: []framework.ClusterScore{
 				{Cluster: makeCluster("cluster1", 4000, 10000, 4000, 10000), Score: 75},
 				{Cluster: makeCluster("cluster2", 6000, 10000, 6000, 10000), Score: framework.MaxClusterScore},

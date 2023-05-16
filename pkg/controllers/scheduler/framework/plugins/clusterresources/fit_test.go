@@ -34,9 +34,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
 
-var (
-	extendedResourceA = corev1.ResourceName("example.com/aaa")
-)
+var extendedResourceA = corev1.ResourceName("example.com/aaa")
 
 func makeClusterWithScalarResource(clusterName string, scalarA int64) *fedcorev1a1.FederatedCluster {
 	return &fedcorev1a1.FederatedCluster{

@@ -157,7 +157,8 @@ func (d *managedDispatcherImpl) Wait() (bool, error) {
 
 // Deprecated: this method is not used and outdated, but should be kept to reintegrate rollout planner in the future
 func (d *managedDispatcherImpl) Dispatch(targetGetter targetAccessorFunc, clusters []*fedcorev1a1.FederatedCluster,
-	selectedClusterNames sets.String, rolloutPlanEnabled bool) {
+	selectedClusterNames sets.String, rolloutPlanEnabled bool,
+) {
 	clusterObjs := make(map[string]*unstructured.Unstructured)
 	toDelete := sets.String{}
 	for _, cluster := range clusters {
@@ -268,7 +269,8 @@ func (d *managedDispatcherImpl) Dispatch(targetGetter targetAccessorFunc, cluste
 }
 
 func (d *managedDispatcherImpl) planRolloutProcess(clusterObjs map[string]*unstructured.Unstructured,
-	selectedClusterNames, toDelete sets.String) (util.RolloutPlans, error) {
+	selectedClusterNames, toDelete sets.String,
+) (util.RolloutPlans, error) {
 	var (
 		r        = d.fedResource
 		key      = r.TargetName().String()
@@ -585,8 +587,11 @@ func (d *managedDispatcherImpl) recordError(clusterName, operation string, err e
 	eventErr := errors.Wrapf(err, "Failed to "+eventTemplate, args...)
 	klog.Infof("%s with error %s", eventType, eventErr)
 	d.fedResource.RecordError(eventType, eventErr)
-	d.metrics.Rate("member_operation_error", 1, []stats.Tag{{Name: "cluster", Value: clusterName},
-		{Name: "operation", Value: operation}, {Name: "reason", Value: string(apierrors.ReasonForError(err))}}...)
+	d.metrics.Rate("member_operation_error", 1, []stats.Tag{
+		{Name: "cluster", Value: clusterName},
+		{Name: "operation", Value: operation},
+		{Name: "reason", Value: string(apierrors.ReasonForError(err))},
+	}...)
 }
 
 func (d *managedDispatcherImpl) recordEvent(clusterName, operation, operationContinuous string) {

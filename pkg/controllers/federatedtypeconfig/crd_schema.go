@@ -73,6 +73,7 @@ openAPIV3Schema:
 	required: [spec]
 	x-kubernetes-preserve-unknown-fields: true
 `
+
 const statusObjectSchemaYaml = `
 openAPIV3Schema:
 	type: object

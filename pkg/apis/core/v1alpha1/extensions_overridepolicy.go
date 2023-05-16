@@ -16,8 +16,10 @@ limitations under the License.
 
 package v1alpha1
 
-var _ GenericOverridePolicy = &OverridePolicy{}
-var _ GenericRefCountedPolicy = &OverridePolicy{}
+var (
+	_ GenericOverridePolicy   = &OverridePolicy{}
+	_ GenericRefCountedPolicy = &OverridePolicy{}
+)
 
 func (pp *OverridePolicy) GetSpec() *GenericOverridePolicySpec {
 	return &pp.Spec
@@ -31,8 +33,10 @@ func (pp *OverridePolicy) GetRefCountedStatus() *GenericRefCountedStatus {
 	return &pp.Status.GenericRefCountedStatus
 }
 
-var _ GenericOverridePolicy = &ClusterOverridePolicy{}
-var _ GenericRefCountedPolicy = &ClusterOverridePolicy{}
+var (
+	_ GenericOverridePolicy   = &ClusterOverridePolicy{}
+	_ GenericRefCountedPolicy = &ClusterOverridePolicy{}
+)
 
 func (cpp *ClusterOverridePolicy) GetSpec() *GenericOverridePolicySpec {
 	return &cpp.Spec
