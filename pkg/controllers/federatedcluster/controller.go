@@ -184,6 +184,7 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 	_ = c.metrics.Rate("federated-cluster-controller.throughput", 1)
 	key := qualifiedName.String()
 	keyedLogger := c.logger.WithValues("control-loop", "reconcile", "key", key)
+	ctx := klog.NewContext(context.TODO(), keyedLogger)
 	startTime := time.Now()
 
 	keyedLogger.Info("Start reconcile")
@@ -206,6 +207,7 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 	if cluster.GetDeletionTimestamp() != nil {
 		keyedLogger.Info("Handle terminating cluster")
 		err := handleTerminatingCluster(
+			ctx,
 			cluster,
 			c.client,
 			c.kubeClient,
@@ -222,7 +224,7 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 		return worker.StatusAllOK
 	}
 
-	if cluster, err = ensureFinalizer(cluster, c.client); err != nil {
+	if cluster, err = ensureFinalizer(ctx, cluster, c.client); err != nil {
 		if apierrors.IsConflict(err) {
 			// Ignore IsConflict errors because we will retry on the next reconcile
 			return worker.StatusConflict
@@ -231,30 +233,66 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 		return worker.StatusError
 	}
 
-	joined, alreadyFailed := isClusterJoined(&cluster.Status)
-	if !joined && !alreadyFailed {
-		// not joined yet and not failed, so we try to join
-		keyedLogger.Info("Handle unjoined cluster")
-		if cluster, err = handleNotJoinedCluster(
-			cluster,
-			c.client,
-			c.kubeClient,
-			c.eventRecorder,
-			c.fedSystemNamespace,
-			keyedLogger.V(6).WithValues("process", "cluster-join"),
-			c.clusterJoinTimeout,
-		); err != nil {
-			keyedLogger.Error(err, "Failed to handle unjoined cluster")
-			if apierrors.IsConflict(err) {
-				return worker.StatusConflict
-			}
-			return worker.StatusError
+	if joined, alreadyFailed := isClusterJoined(&cluster.Status); joined || alreadyFailed {
+		return worker.StatusAllOK
+	}
+
+	// not joined yet and not failed, so we try to join
+	keyedLogger.Info("Handle unjoined cluster")
+	cluster, newCondition, newJoinPerformed, err := handleNotJoinedCluster(
+		ctx,
+		cluster,
+		c.client,
+		c.kubeClient,
+		c.eventRecorder,
+		c.fedSystemNamespace,
+		c.clusterJoinTimeout,
+	)
+
+	needsUpdate := false
+	if newCondition != nil {
+		needsUpdate = true
+
+		currentTime := metav1.Now()
+		newCondition.Type = fedcorev1a1.ClusterJoined
+		newCondition.LastProbeTime = currentTime
+
+		// The condition's last transition time is updated to the current time only if
+		// the status has changed.
+		oldCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterJoined)
+		if oldCondition != nil && oldCondition.Status == newCondition.Status {
+			newCondition.LastTransitionTime = oldCondition.LastTransitionTime
+		} else {
+			newCondition.LastTransitionTime = currentTime
 		}
 
-		// trigger initial status collection if successfully joined
-		if joined, alreadyFailed := isClusterJoined(&cluster.Status); joined && !alreadyFailed {
-			c.statusCollectWorker.EnqueueObject(cluster)
+		setClusterCondition(&cluster.Status, newCondition)
+	}
+	if newJoinPerformed != nil && *newJoinPerformed != cluster.Status.JoinPerformed {
+		needsUpdate = true
+		cluster.Status.JoinPerformed = *newJoinPerformed
+	}
+
+	if needsUpdate {
+		var updateErr error
+		if cluster, updateErr = c.client.CoreV1alpha1().FederatedClusters().UpdateStatus(
+			ctx, cluster, metav1.UpdateOptions{},
+		); updateErr != nil {
+			keyedLogger.Error(updateErr, "Failed to update cluster status")
+			err = updateErr
 		}
+	}
+
+	if err != nil {
+		if apierrors.IsConflict(err) {
+			return worker.StatusConflict
+		}
+		return worker.StatusError
+	}
+
+	// trigger initial status collection if successfully joined
+	if joined, alreadyFailed := isClusterJoined(&cluster.Status); joined && !alreadyFailed {
+		c.statusCollectWorker.EnqueueObject(cluster)
 	}
 
 	return worker.StatusAllOK
@@ -263,6 +301,7 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 func (c *FederatedClusterController) collectClusterStatus(qualifiedName common.QualifiedName) (status worker.Result) {
 	key := qualifiedName.String()
 	keyedLogger := c.logger.WithValues("control-loop", "status-collect", "key", key)
+	ctx := klog.NewContext(context.TODO(), keyedLogger)
 	startTime := time.Now()
 
 	keyedLogger.Info("Start status collection")
@@ -282,7 +321,7 @@ func (c *FederatedClusterController) collectClusterStatus(qualifiedName common.Q
 
 	cluster = cluster.DeepCopy()
 	if shouldCollectClusterStatus(cluster, c.clusterHealthCheckConfig.Period) {
-		if err := collectIndividualClusterStatus(context.TODO(), cluster, c.client, c.federatedClient, keyedLogger); err != nil {
+		if err := collectIndividualClusterStatus(ctx, cluster, c.client, c.federatedClient); err != nil {
 			keyedLogger.Error(err, "Failed to collect cluster status")
 			return worker.StatusError
 		}
@@ -292,6 +331,7 @@ func (c *FederatedClusterController) collectClusterStatus(qualifiedName common.Q
 }
 
 func ensureFinalizer(
+	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
 	client fedclient.Interface,
 ) (*fedcorev1a1.FederatedCluster, error) {
@@ -306,13 +346,14 @@ func ensureFinalizer(
 	if updated {
 		return client.CoreV1alpha1().
 			FederatedClusters().
-			Update(context.TODO(), cluster, metav1.UpdateOptions{})
+			Update(ctx, cluster, metav1.UpdateOptions{})
 	}
 
 	return cluster, nil
 }
 
 func handleTerminatingCluster(
+	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
 	client fedclient.Interface,
 	kubeClient kubeclient.Interface,
@@ -337,44 +378,19 @@ func handleTerminatingCluster(
 		return nil
 	}
 
-	requireCleanup := true
-	// there are two cases where cleanup is not required:
-	// 1. when the cluster has no ClusterJoin condition (the cluster did not even make it past the first join step)
-	// 2. when the cluster is Unjoinable (it was already part of another federation)
-	joinedCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterJoined)
-	if joinedCondition == nil {
-		requireCleanup = false
-	} else if joinedCondition.Reason != nil && *joinedCondition.Reason == ClusterUnjoinableReason {
-		requireCleanup = false
-	}
-
-	if requireCleanup {
-		clusterSecretName := cluster.Spec.SecretRef.Name
-		if clusterSecretName == "" {
-			eventRecorder.Eventf(
-				cluster,
-				corev1.EventTypeWarning,
-				EventReasonHandleTerminatingClusterFailed,
-				"cluster %q secret is not set",
-				cluster.Name,
-			)
-
-			return fmt.Errorf("cluster secret is not set")
-		}
-
-		clusterSecret, err := kubeClient.CoreV1().
-			Secrets(fedSystemNamespace).
-			Get(context.TODO(), clusterSecretName, metav1.GetOptions{})
+	// Only perform clean-up if we made any effectual changes to the cluster during join.
+	if cluster.Status.JoinPerformed {
+		clusterSecret, clusterKubeClient, err := getClusterClient(ctx, kubeClient, fedSystemNamespace, cluster)
 		if err != nil {
 			eventRecorder.Eventf(
 				cluster,
 				corev1.EventTypeWarning,
 				EventReasonHandleTerminatingClusterFailed,
-				"cluster %q secret %q not found",
-				cluster.Name,
-				clusterSecretName,
+				"Failed to get cluster client: %v",
+				err,
 			)
-			return fmt.Errorf("failed to get cluster secret: %w", err)
+
+			return fmt.Errorf("failed to get cluster client: %w", err)
 		}
 
 		// 1. cleanup service account token from cluster secret if required
@@ -388,9 +404,9 @@ func handleTerminatingCluster(
 				delete(clusterSecret.Data, ServiceAccountTokenKey)
 				delete(clusterSecret.Data, ServiceAccountCAKey)
 
-				clusterSecret, err = kubeClient.CoreV1().
+				_, err = kubeClient.CoreV1().
 					Secrets(fedSystemNamespace).
-					Update(context.TODO(), clusterSecret, metav1.UpdateOptions{})
+					Update(ctx, clusterSecret, metav1.UpdateOptions{})
 				if err != nil {
 					return fmt.Errorf(
 						"failed to remove service account info from cluster secret: %w",
@@ -402,29 +418,9 @@ func handleTerminatingCluster(
 
 		// 2. connect to cluster and perform cleanup
 
-		restConfig := &rest.Config{Host: cluster.Spec.APIEndpoint}
-
-		if err := util.PopulateAuthDetailsFromSecret(restConfig, cluster.Spec.Insecure, clusterSecret, false); err != nil {
-			eventRecorder.Eventf(
-				cluster,
-				corev1.EventTypeWarning,
-				EventReasonHandleTerminatingClusterFailed,
-				"cluster %q secret %q is malformed: %v",
-				cluster.Name,
-				clusterSecret.Name,
-				err.Error(),
-			)
-			return fmt.Errorf("cluster secret malformed: %w", err)
-		}
-
-		clusterKubeClient, err := kubeclient.NewForConfig(restConfig)
-		if err != nil {
-			return fmt.Errorf("failed to create cluster kube clientset: %w", err)
-		}
-
 		err = clusterKubeClient.CoreV1().
 			Namespaces().
-			Delete(context.TODO(), fedSystemNamespace, metav1.DeleteOptions{})
+			Delete(ctx, fedSystemNamespace, metav1.DeleteOptions{})
 		if err != nil && !apierrors.IsNotFound(err) {
 			eventRecorder.Eventf(
 				cluster,
@@ -442,12 +438,42 @@ func handleTerminatingCluster(
 	cluster.SetFinalizers(nil)
 	_, err := client.CoreV1alpha1().
 		FederatedClusters().
-		Update(context.TODO(), cluster, metav1.UpdateOptions{})
+		Update(ctx, cluster, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to update cluster for finalizer removal: %w", err)
 	}
 
 	return nil
+}
+
+func getClusterClient(
+	ctx context.Context,
+	hostClient kubeclient.Interface,
+	fedSystemNamespace string,
+	cluster *fedcorev1a1.FederatedCluster,
+) (*corev1.Secret, kubeclient.Interface, error) {
+	restConfig := &rest.Config{Host: cluster.Spec.APIEndpoint}
+
+	clusterSecretName := cluster.Spec.SecretRef.Name
+	if clusterSecretName == "" {
+		return nil, nil, fmt.Errorf("cluster secret is not set")
+	}
+
+	clusterSecret, err := hostClient.CoreV1().Secrets(fedSystemNamespace).Get(ctx, clusterSecretName, metav1.GetOptions{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get cluster secret: %w", err)
+	}
+
+	if err := util.PopulateAuthDetailsFromSecret(restConfig, cluster.Spec.Insecure, clusterSecret, false); err != nil {
+		return nil, nil, fmt.Errorf("cluster secret malformed: %w", err)
+	}
+
+	clusterClient, err := kubeclient.NewForConfig(restConfig)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create cluster kube clientset: %w", err)
+	}
+
+	return clusterSecret, clusterClient, nil
 }
 
 func (c *FederatedClusterController) enqueueAllJoinedClusters() {

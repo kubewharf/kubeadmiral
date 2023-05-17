@@ -66,9 +66,8 @@ func collectIndividualClusterStatus(
 	cluster *fedcorev1a1.FederatedCluster,
 	fedClient fedclient.Interface,
 	federatedClient federatedclient.FederatedClientFactory,
-	logger klog.Logger,
 ) error {
-	logger = logger.WithValues("sub-process", "status-collection")
+	logger := klog.FromContext(ctx)
 
 	clusterKubeClient, exists, err := federatedClient.KubeClientsetForCluster(cluster.Name)
 	if !exists {
