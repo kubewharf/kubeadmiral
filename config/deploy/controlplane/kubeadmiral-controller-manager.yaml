@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubeadmiral-controller-manager
+  namespace: kubeadmiral-system
+  labels:
+    app: kubeadmiral-controller-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubeadmiral-controller-manager
+  template:
+    metadata:
+      labels:
+        app: kubeadmiral-controller-manager
+    spec:
+      containers:
+        - name: kubeadmiral-controller-manager
+          command:
+            - /bin/kubeadmiral-controller-manager
+            - --create-crds-for-ftcs=true
+            - --kubeconfig=/etc/kubeconfig
+            - --klog-v=4
+          image: ghcr.io/kubewharf/kubeadmiral-controller-manager:latest
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: kubeconfig
+              subPath: kubeconfig
+              mountPath: /etc/kubeconfig
+      restartPolicy: Always
+      automountServiceAccountToken: false
+      volumes:
+        - name: kubeconfig
+          secret:
+            secretName: kubeconfig
