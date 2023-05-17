@@ -85,20 +85,7 @@ func (in *AutoMigrationTrigger) DeepCopy() *AutoMigrationTrigger {
 func (in *ClusterCondition) DeepCopyInto(out *ClusterCondition) {
 	*out = *in
 	in.LastProbeTime.DeepCopyInto(&out.LastProbeTime)
-	if in.LastTransitionTime != nil {
-		in, out := &in.LastTransitionTime, &out.LastTransitionTime
-		*out = (*in).DeepCopy()
-	}
-	if in.Reason != nil {
-		in, out := &in.Reason, &out.Reason
-		*out = new(string)
-		**out = **in
-	}
-	if in.Message != nil {
-		in, out := &in.Message, &out.Message
-		*out = new(string)
-		**out = **in
-	}
+	in.LastTransitionTime.DeepCopyInto(&out.LastTransitionTime)
 	return
 }
 

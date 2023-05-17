@@ -28,7 +28,7 @@ import (
 // +genclient
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +k8s:openapi-gen=true
+// +kubebuilder:validation:Required
 // +kubebuilder:resource:path=federatedclusters,shortName=fcluster,scope=Cluster
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name=ready,type=string,JSONPath=.status.conditions[?(@.type=='Ready')].status
@@ -60,6 +60,7 @@ type FederatedClusterSpec struct {
 	APIEndpoint string `json:"apiEndpoint"`
 
 	// Access API endpoint with security.
+	// +optional
 	Insecure bool `json:"insecure,omitempty"`
 
 	// Whether to use service account token to authenticate to the member cluster.
@@ -68,7 +69,6 @@ type FederatedClusterSpec struct {
 
 	// Name of the secret containing the token required to access the member cluster.
 	// The secret needs to exist in the fed system namespace.
-	// +optional
 	SecretRef LocalSecretReference `json:"secretRef"`
 
 	// If specified, the cluster's taints.
@@ -79,13 +79,20 @@ type FederatedClusterSpec struct {
 // FederatedClusterStatus defines the observed state of FederatedCluster
 type FederatedClusterStatus struct {
 	// Conditions is an array of current cluster conditions.
-	Conditions []ClusterCondition `json:"conditions"`
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []ClusterCondition `json:"conditions,omitempty"`
 	// Resources describes the cluster's resources.
 	// +optional
 	Resources Resources `json:"resources,omitempty"`
 	// The list of api resource types defined in the federated cluster
 	// +optional
 	APIResourceTypes []APIResource `json:"apiResourceTypes,omitempty"`
+	// Whether any effectual action was performed in the cluster while joining.
+	// If true, clean-up is required on cluster removal to undo the side-effects.
+	// +optional
+	JoinPerformed bool `json:"joinPerformed,omitempty"`
 }
 
 // LocalSecretReference is a reference to a secret within the enclosing namespace.
@@ -103,14 +110,11 @@ type ClusterCondition struct {
 	// Last time the condition was checked.
 	LastProbeTime metav1.Time `json:"lastProbeTime"`
 	// Last time the condition transit from one status to another.
-	// +optional
-	LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
-	// (brief) reason for the condition's last transition.
-	// +optional
-	Reason *string `json:"reason,omitempty"`
-	// Human readable message indicating details about last transition.
-	// +optional
-	Message *string `json:"message,omitempty"`
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+	// Programmatic identifier indicating the reason for the current status.
+	Reason string `json:"reason"`
+	// Human readable message indicating details about the current status.
+	Message string `json:"message"`
 }
 
 type ClusterConditionType string

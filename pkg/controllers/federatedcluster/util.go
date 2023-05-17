@@ -57,7 +57,7 @@ func getNewClusterOfflineCondition(
 	condition := fedcorev1a1.ClusterCondition{
 		Type:               fedcorev1a1.ClusterOffline,
 		LastProbeTime:      conditionTime,
-		LastTransitionTime: &conditionTime,
+		LastTransitionTime: conditionTime,
 	}
 
 	var reason, message string
@@ -70,8 +70,8 @@ func getNewClusterOfflineCondition(
 	}
 
 	condition.Status = status
-	condition.Reason = &reason
-	condition.Message = &message
+	condition.Reason = reason
+	condition.Message = message
 
 	return condition
 }
@@ -84,10 +84,10 @@ func getNewClusterReadyCondition(
 	condition := fedcorev1a1.ClusterCondition{
 		Type:               fedcorev1a1.ClusterReady,
 		Status:             status,
-		Reason:             &reason,
-		Message:            &message,
+		Reason:             reason,
+		Message:            message,
 		LastProbeTime:      conditionTime,
-		LastTransitionTime: &conditionTime,
+		LastTransitionTime: conditionTime,
 	}
 
 	return condition
@@ -102,11 +102,8 @@ func isClusterJoined(status *fedcorev1a1.FederatedClusterStatus) (joined, failed
 		return true, false
 	}
 
-	if joinedCondition.Reason == nil {
-		return false, false
-	}
-	if *joinedCondition.Reason == JoinTimeoutExceededReason ||
-		*joinedCondition.Reason == ClusterUnjoinableReason {
+	if joinedCondition.Reason == JoinTimeoutExceededReason ||
+		joinedCondition.Reason == ClusterUnjoinableReason {
 		return false, true
 	}
 

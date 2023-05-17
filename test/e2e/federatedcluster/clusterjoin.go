@@ -47,6 +47,7 @@ var _ = ginkgo.Describe("Cluster Join", federatedClusterTestLabels, func() {
 			cluster, err := f.HostFedClient().CoreV1alpha1().FederatedClusters().Get(ctx, cluster.Name, metav1.GetOptions{})
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 			g.Expect(cluster).To(gomega.Satisfy(clusterfwk.ClusterJoined))
+			gomega.Expect(cluster.Status.JoinPerformed).To(gomega.BeTrue())
 		}).WithTimeout(clusterJoinTimeout).WithContext(ctx).Should(gomega.Succeed(), "Timed out waiting for cluster join")
 	}
 
@@ -139,9 +140,20 @@ var _ = ginkgo.Describe("Cluster Join", federatedClusterTestLabels, func() {
 				cluster, err := f.HostFedClient().CoreV1alpha1().FederatedClusters().Get(ctx, cluster.Name, metav1.GetOptions{})
 				gomega.Expect(err).ToNot(gomega.HaveOccurred())
 				g.Expect(cluster).To(gomega.Satisfy(clusterfwk.ClusterTimedOut))
+				gomega.Expect(cluster.Status.JoinPerformed).NotTo(gomega.BeTrue())
 			}).WithTimeout(clusterJoinTimeoutTimeout).WithContext(ctx).Should(gomega.Succeed())
 
 			ginkgo.GinkgoLogr.Info("cluster timed out", "duration", time.Since(start))
+
+			ginkgo.By("Deleting cluster after join timeout")
+			err := f.HostFedClient().CoreV1alpha1().FederatedClusters().Delete(ctx, cluster.Name, metav1.DeleteOptions{})
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+			gomega.Eventually(func(g gomega.Gomega, ctx context.Context) {
+				_, err := f.HostFedClient().CoreV1alpha1().FederatedClusters().Get(ctx, cluster.Name, metav1.GetOptions{})
+				g.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(err).To(gomega.Satisfy(apierrors.IsNotFound))
+			}).WithTimeout(clusterDeleteTimeout).WithContext(ctx).Should(gomega.Succeed())
 		})
 	})
 })
