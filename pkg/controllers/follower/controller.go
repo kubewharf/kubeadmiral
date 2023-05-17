@@ -126,6 +126,10 @@ type Controller struct {
 	fedClient  fedclient.Interface
 }
 
+func (c *Controller) IsControllerReady() bool {
+	return c.HasSynced()
+}
+
 func NewFollowerController(
 	kubeClient kubernetes.Interface,
 	dynamicClient dynamic.Interface,

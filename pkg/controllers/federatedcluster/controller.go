@@ -157,6 +157,10 @@ func NewFederatedClusterController(
 	return c, nil
 }
 
+func (c *FederatedClusterController) IsControllerReady() bool {
+	return c.clusterSynced()
+}
+
 func (c *FederatedClusterController) Run(ctx context.Context) {
 	defer utilruntime.HandleCrash()
 

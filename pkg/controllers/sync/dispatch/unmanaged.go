@@ -25,10 +25,12 @@ import (
 
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/klog/v2"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
@@ -97,7 +99,20 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string) {
 
 		obj := &unstructured.Unstructured{}
 		obj.SetGroupVersionKind(d.targetGVK)
-		err := client.Delete(context.Background(), obj, targetName.Namespace, targetName.Name)
+		err := client.Delete(
+			context.Background(),
+			obj,
+			targetName.Namespace,
+			targetName.Name,
+			// When deleting some resources (e.g. batch/v1.Job, batch/v1beta1.CronJob) without setting PropagationPolicy in DeleteOptions,
+			// kube-apiserver defaults to Orphan for backward compatibility.
+			// This would leak the dependents after the main propagated resource has been deleted.
+			// Ref: https://github.com/kubernetes/kubernetes/pull/71792
+			//
+			// To avoid this, we explicitly set the PropagationPolicy to Background like `kubectl delete` does by default.
+			// Ref: https://github.com/kubernetes/kubernetes/pull/65908
+			runtimeclient.PropagationPolicy(metav1.DeletePropagationBackground),
+		)
 		if apierrors.IsNotFound(err) {
 			err = nil
 		}

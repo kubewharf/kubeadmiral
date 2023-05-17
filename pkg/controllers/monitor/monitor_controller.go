@@ -69,6 +69,10 @@ type MonitorController struct {
 	meters *sync.Map
 }
 
+func (c *MonitorController) IsControllerReady() bool {
+	return c.controller.HasSynced()
+}
+
 type BaseMeter struct {
 	creationTimestamp         metav1.Time
 	lastUpdateTimestamp       metav1.Time

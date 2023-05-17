@@ -66,6 +66,8 @@ var mutex = sync.Mutex{}
 
 var finalizer string = "core." + common.DefaultPrefix + "federated-type-config"
 
+const ControllerName = "federated-type-config"
+
 // The FederatedTypeConfig controller configures sync and status
 // controllers in response to FederatedTypeConfig resources in the
 // KubeFed system namespace.
@@ -98,6 +100,10 @@ type Controller struct {
 	controllerRevisionStore      cache.Store
 	controllerRevisionController cache.Controller
 	isControllerRevisionExists   bool
+}
+
+func (c *Controller) IsControllerReady() bool {
+	return c.HasSynced()
 }
 
 // NewController returns a new controller to manage FederatedTypeConfig objects.

@@ -86,6 +86,10 @@ type FederateController struct {
 	logger  klog.Logger
 }
 
+func (c *FederateController) IsControllerReady() bool {
+	return c.HasSynced()
+}
+
 func NewFederateController(
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	kubeClient kubeclient.Interface,
@@ -154,12 +158,16 @@ func (c *FederateController) Run(ctx context.Context) {
 	c.logger.Info("Starting controller")
 	defer c.logger.Info("Stopping controller")
 
-	if !cache.WaitForNamedCacheSync(c.name, ctx.Done(), c.sourceObjectSynced, c.federatedObjectSynced) {
+	if !cache.WaitForNamedCacheSync(c.name, ctx.Done(), c.HasSynced) {
 		return
 	}
 
 	c.worker.Run(ctx.Done())
 	<-ctx.Done()
+}
+
+func (c *FederateController) HasSynced() bool {
+	return c.sourceObjectSynced() && c.federatedObjectSynced()
 }
 
 func (c *FederateController) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
