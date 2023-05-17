@@ -842,7 +842,7 @@ func (s *KubeFedSyncController) deleteFromCluster(
 	}
 
 	if !respectOrphaningBehavior {
-		dispatcher.Delete(clusterName)
+		dispatcher.Delete(clusterName, clusterObj)
 		return
 	}
 
@@ -856,7 +856,7 @@ func (s *KubeFedSyncController) deleteFromCluster(
 				fedResource.TargetGVK(), fedResource.TargetName(), clusterName)
 		dispatcher.RemoveManagedLabel(clusterName, clusterObj)
 	} else {
-		dispatcher.Delete(clusterName)
+		dispatcher.Delete(clusterName, clusterObj)
 	}
 }
 

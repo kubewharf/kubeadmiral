@@ -233,6 +233,8 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 		if err := dropJobFields(obj); err != nil {
 			return nil, err
 		}
+
+		addRetainObjectFinalizer(obj)
 	}
 
 	if schemautil.IsServiceGvk(r.TargetGVK()) {
@@ -245,9 +247,23 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 		if err := dropPodFields(obj); err != nil {
 			return nil, err
 		}
+
+		addRetainObjectFinalizer(obj)
 	}
 
 	return obj, nil
+}
+
+func addRetainObjectFinalizer(obj *unstructured.Unstructured) {
+	finalizers := obj.GetFinalizers()
+	for _, finalizer := range finalizers {
+		if finalizer == dispatch.RetainTerminatingObjectFinalizer {
+			return
+		}
+	}
+
+	finalizers = append(finalizers, dispatch.RetainTerminatingObjectFinalizer)
+	obj.SetFinalizers(finalizers)
 }
 
 func dropJobFields(obj *unstructured.Unstructured) error {

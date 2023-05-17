@@ -233,7 +233,7 @@ func (d *managedDispatcherImpl) Dispatch(targetGetter targetAccessorFunc, cluste
 				continue
 			}
 			if toDelete.Has(clusterName) && (plan.Replicas == nil || plan.Replicas != nil && *plan.Replicas == 0) {
-				d.Delete(clusterName)
+				d.Delete(clusterName, clusterObj)
 				continue
 			}
 			if clusterObj == nil {
@@ -252,7 +252,7 @@ func (d *managedDispatcherImpl) Dispatch(targetGetter targetAccessorFunc, cluste
 	d.emitRolloutStatus(clusterObjs, selectedClusterNames, nil)
 	for clusterName, clusterObj := range clusterObjs {
 		if toDelete.Has(clusterName) {
-			d.Delete(clusterName)
+			d.Delete(clusterName, clusterObj)
 			continue
 		}
 
@@ -463,10 +463,10 @@ func (d *managedDispatcherImpl) Update(clusterName string, clusterObj *unstructu
 	})
 }
 
-func (d *managedDispatcherImpl) Delete(clusterName string) {
+func (d *managedDispatcherImpl) Delete(clusterName string, clusterObj *unstructured.Unstructured) {
 	d.RecordStatus(clusterName, fedtypesv1a1.DeletionTimedOut)
 
-	d.unmanagedDispatcher.Delete(clusterName)
+	d.unmanagedDispatcher.Delete(clusterName, clusterObj)
 }
 
 func (d *managedDispatcherImpl) PatchAndKeepTemplate(

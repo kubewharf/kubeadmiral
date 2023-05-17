@@ -38,6 +38,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 )
 
+const RetainTerminatingObjectFinalizer = common.DefaultPrefix + "retain-terminating-object"
 const eventTemplate = "%s %s %q in cluster %q"
 
 // UnmanagedDispatcher dispatches operations to member clusters for
@@ -45,7 +46,7 @@ const eventTemplate = "%s %s %q in cluster %q"
 type UnmanagedDispatcher interface {
 	OperationDispatcher
 
-	Delete(clusterName string)
+	Delete(clusterName string, clusterObj *unstructured.Unstructured)
 	RemoveManagedLabel(clusterName string, clusterObj *unstructured.Unstructured)
 }
 
@@ -85,7 +86,7 @@ func (d *unmanagedDispatcherImpl) Wait() (bool, error) {
 	return d.dispatcher.Wait()
 }
 
-func (d *unmanagedDispatcherImpl) Delete(clusterName string) {
+func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstructured.Unstructured) {
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "delete"
 	const opContinuous = "Deleting"
@@ -95,6 +96,25 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string) {
 			klog.V(2).Infof(eventTemplate, opContinuous, d.targetGVK.Kind, targetName, clusterName)
 		} else {
 			d.recorder.recordEvent(clusterName, op, opContinuous)
+		}
+
+		if needUpdate := removeRetainObjectFinalizer(clusterObj); needUpdate {
+			err := client.Update(
+				context.Background(),
+				clusterObj,
+			)
+			if apierrors.IsNotFound(err) {
+				err = nil
+			}
+			if err != nil {
+				if d.recorder == nil {
+					wrappedErr := d.wrapOperationError(err, clusterName, op)
+					runtime.HandleError(wrappedErr)
+				} else {
+					d.recorder.recordOperationError(fedtypesv1a1.DeletionFailed, clusterName, op, err)
+				}
+				return false
+			}
 		}
 
 		obj := &unstructured.Unstructured{}
@@ -145,6 +165,7 @@ func (d *unmanagedDispatcherImpl) RemoveManagedLabel(clusterName string, cluster
 		updateObj := clusterObj.DeepCopy()
 
 		util.RemoveManagedLabel(updateObj)
+		removeRetainObjectFinalizer(updateObj)
 
 		err := client.Update(context.Background(), updateObj)
 		if err != nil {
@@ -176,4 +197,18 @@ func (d *unmanagedDispatcherImpl) targetNameForCluster(clusterName string) commo
 
 func wrapOperationError(err error, operation, targetKind, targetName, clusterName string) error {
 	return errors.Wrapf(err, "Failed to "+eventTemplate, operation, targetKind, targetName, clusterName)
+}
+
+func removeRetainObjectFinalizer(obj *unstructured.Unstructured) bool {
+	finalizers := obj.GetFinalizers()
+	for i, finalizer := range finalizers {
+		if finalizer == RetainTerminatingObjectFinalizer {
+			newFinalizers := make([]string, len(finalizers)-1)
+			copy(newFinalizers, finalizers[:i])
+			copy(newFinalizers[i:], finalizers[i+1:])
+			obj.SetFinalizers(newFinalizers)
+			return true
+		}
+	}
+	return false
 }
