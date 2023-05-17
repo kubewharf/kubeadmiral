@@ -42,6 +42,7 @@ const (
 	IngressKind               = "Ingress"
 	PersistentVolumeKind      = "PersistentVolume"
 	PersistentVolumeClaimKind = "PersistentVolumeClaim"
+	PodKind                   = "Pod"
 )
 
 // The following consts are spec fields used to interact with unstructured resources

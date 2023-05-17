@@ -74,6 +74,7 @@ var (
 		{Group: appsv1.GroupName, Kind: common.DaemonSetKind}:   "spec.template",
 		{Group: batchv1.GroupName, Kind: common.JobKind}:        "spec.template",
 		{Group: batchv1.GroupName, Kind: common.CronJobKind}:    "spec.jobTemplate.spec.template",
+		{Group: "", Kind: common.PodKind}:                       "spec",
 	}
 
 	supportedFollowerTypes = sets.New(
