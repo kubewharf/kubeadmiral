@@ -176,7 +176,7 @@ func (c *FederateController) HasSynced() bool {
 func (c *FederateController) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
 	_ = c.metrics.Rate("federate.throughput", 1)
 	logger := c.logger.WithValues("object", qualifiedName.String())
-	ctx := klog.NewContext(context.Background(), logger)
+	ctx := klog.NewContext(context.TODO(), logger)
 	startTime := time.Now()
 
 	logger.V(3).Info("Start reconcile")
@@ -410,7 +410,6 @@ func (c *FederateController) handleCreateFederatedObject(ctx context.Context, so
 		return fmt.Errorf("failed to generate federated object from source object: %w", err)
 	}
 
-	logger.V(2).Info("Set pending controllers on federated object")
 	if _, err = pendingcontrollers.SetPendingControllers(fedObject, c.typeConfig.GetControllers()); err != nil {
 		return fmt.Errorf("failed to set pending controllers on federated object: %w", err)
 	}
@@ -433,7 +432,7 @@ func (c *FederateController) handleExistingFederatedObject(
 ) (bool, error) {
 	logger := klog.FromContext(ctx)
 
-	logger.V(2).Info("Checking if federated object needs update")
+	logger.V(3).Info("Checking if federated object needs update")
 	needsUpdate, err := updateFederatedObjectForSourceObject(fedObject, c.typeConfig, sourceObject)
 	if err != nil {
 		return false, fmt.Errorf("failed to check if federated object needs update: %w", err)
