@@ -50,9 +50,10 @@ type Options struct {
 	LogVerbosity    int
 	KlogVerbosity   int
 
-	PrometheusMetrics bool
-	PrometheusAddr    string
-	PrometheusPort    uint16
+	PrometheusMetrics   bool
+	PrometheusAddr      string
+	PrometheusPort      uint16
+	PrometheusQuantiles map[string]string
 
 	NSAutoPropExcludeRegexp string
 	CreateCRDsForFTCs       bool
@@ -105,6 +106,12 @@ func (o *Options) AddFlags(flags *pflag.FlagSet, allControllers []string, disabl
 	flags.BoolVar(&o.PrometheusMetrics, "export-prometheus", true, "Whether to expose metrics through a prometheus endpoint")
 	flags.StringVar(&o.PrometheusAddr, "prometheus-addr", "", "prometheus collector address")
 	flags.Uint16Var(&o.PrometheusPort, "prometheus-port", 9090, "prometheus collector port")
+	flags.StringToStringVar(
+		&o.PrometheusQuantiles,
+		"prometheus-quantiles",
+		map[string]string{"0.5": "0.01", "0.95": "0.01", "0.99": "0.002"},
+		"prometheus summary objective quantiles",
+	)
 
 	flags.StringVar(
 		&o.NSAutoPropExcludeRegexp,

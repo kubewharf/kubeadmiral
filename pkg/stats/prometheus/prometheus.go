@@ -33,7 +33,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
-func New(namespace string, addr string, port uint16) stats.Metrics {
+func New(namespace string, addr string, port uint16, quantiles map[float64]float64) stats.Metrics {
 	registry := prometheus.NewRegistry()
 
 	server := &http.Server{
@@ -52,21 +52,23 @@ func New(namespace string, addr string, port uint16) stats.Metrics {
 	return &promMetrics{
 		factory:   promauto.With(registry),
 		namespace: namespace,
+		quantiles: quantiles,
 	}
 }
 
 type promMetrics struct {
 	factory   promauto.Factory
 	namespace string
+	quantiles map[float64]float64
 	onceMap   sync.Map
 }
 
 type once struct {
-	once      sync.Once
-	gauge     *prometheus.GaugeVec
-	counter   *prometheus.CounterVec
-	histogram *prometheus.HistogramVec
-	tagNames  []string
+	once     sync.Once
+	gauge    *prometheus.GaugeVec
+	counter  *prometheus.CounterVec
+	summary  *prometheus.SummaryVec
+	tagNames []string
 }
 
 func initOnce(metrics *promMetrics, name string, tags []stats.Tag, init func(once *once, tags []string)) (*once, []string) {
@@ -139,9 +141,13 @@ func (metrics *promMetrics) Counter(name string, val interface{}, tags ...stats.
 
 func (metrics *promMetrics) Timer(name string, val interface{}, tags ...stats.Tag) {
 	once, tagValues := initOnce(metrics, name, tags, func(once *once, tagNames []string) {
-		once.histogram = metrics.factory.NewHistogramVec(prometheus.HistogramOpts{Name: name, Namespace: metrics.namespace}, tagNames)
+		once.summary = metrics.factory.NewSummaryVec(prometheus.SummaryOpts{
+			Name:       name,
+			Namespace:  metrics.namespace,
+			Objectives: metrics.quantiles,
+		}, tagNames)
 	})
-	once.histogram.WithLabelValues(tagValues...).Observe(valToFloat64(val))
+	once.summary.WithLabelValues(tagValues...).Observe(valToFloat64(val))
 }
 
 func (metrics *promMetrics) Duration(name string, start time.Time, tags ...stats.Tag) {

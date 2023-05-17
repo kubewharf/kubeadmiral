@@ -19,6 +19,7 @@ package app
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,7 +38,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
-	"github.com/kubewharf/kubeadmiral/pkg/stats/prometheus"
+	prometheusstats "github.com/kubewharf/kubeadmiral/pkg/stats/prometheus"
 )
 
 // KnownControllers returns all well known controller names
@@ -93,7 +94,21 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 
 	var metrics stats.Metrics
 	if opts.PrometheusMetrics {
-		metrics = prometheusstats.New("kubeadmiral_controller_manager", opts.PrometheusAddr, opts.PrometheusPort)
+		quantiles := map[float64]float64{}
+		for qStr, eStr := range opts.PrometheusQuantiles {
+			q, err := strconv.ParseFloat(qStr, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid float %q: %w", qStr, err)
+			}
+
+			e, err := strconv.ParseFloat(eStr, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid float %q: %w", eStr, err)
+			}
+
+			quantiles[q] = e
+		}
+		metrics = prometheusstats.New("kubeadmiral_controller_manager", opts.PrometheusAddr, opts.PrometheusPort, quantiles)
 	} else {
 		metrics = stats.NewMock("", "kubeadmiral_controller_manager", false)
 	}
