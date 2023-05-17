@@ -376,11 +376,11 @@ func (s *KubeFedSyncController) reconcile(qualifiedName common.QualifiedName) wo
 
 	key := fedResource.FederatedName().String()
 
-	s.metrics.Rate("sync.throughput", 1)
+	s.metrics.Counter("sync_throughput", 1, stats.Tag{Name: "type", Value: s.typeConfig.Name})
 	klog.V(4).Infof("Starting to reconcile %s %q", kind, key)
 	startTime := time.Now()
 	defer func() {
-		s.metrics.Duration("sync.latency", startTime)
+		s.metrics.Duration("sync_latency", startTime, stats.Tag{Name: "type", Value: s.typeConfig.Name})
 		klog.V(4).Infof("Finished reconciling %s %q (duration: %v)", kind, key, time.Since(startTime))
 	}()
 

@@ -587,7 +587,7 @@ func (d *managedDispatcherImpl) recordError(clusterName, operation string, err e
 	eventErr := errors.Wrapf(err, "Failed to "+eventTemplate, args...)
 	klog.Infof("%s with error %s", eventType, eventErr)
 	d.fedResource.RecordError(eventType, eventErr)
-	d.metrics.Rate("member_operation_error", 1, []stats.Tag{
+	d.metrics.Counter("member_operation_error", 1, []stats.Tag{
 		{Name: "cluster", Value: clusterName},
 		{Name: "operation", Value: operation},
 		{Name: "reason", Value: string(apierrors.ReasonForError(err))},
@@ -678,19 +678,19 @@ func (d *managedDispatcherImpl) emitRolloutStatus(
 			klog.Errorf("Skip rollout metrics: failed to get maxSurge and maxUnavailable: %v", err)
 			return
 		}
-		d.metrics.Store("sync.rollout.maxSurge", maxSurge, fedTags...)
-		d.metrics.Store("sync.rollout.maxUnavailable", maxUnavailable, fedTags...)
-		d.metrics.Store("sync.rollout.minAvailable", replicas-maxUnavailable, fedTags...)
+		d.metrics.Store("sync_rollout_maxSurge", maxSurge, fedTags...)
+		d.metrics.Store("sync_rollout_maxUnavailable", maxUnavailable, fedTags...)
+		d.metrics.Store("sync_rollout_minAvailable", replicas-maxUnavailable, fedTags...)
 	} else {
-		d.metrics.Store("sync.rollout.maxSurge", planner.MaxSurge, fedTags...)
-		d.metrics.Store("sync.rollout.maxUnavailable", planner.MaxUnavailable, fedTags...)
-		d.metrics.Store("sync.rollout.minAvailable", planner.Replicas-planner.MaxUnavailable, fedTags...)
+		d.metrics.Store("sync_rollout_maxSurge", planner.MaxSurge, fedTags...)
+		d.metrics.Store("sync_rollout_maxUnavailable", planner.MaxUnavailable, fedTags...)
+		d.metrics.Store("sync_rollout_minAvailable", planner.Replicas-planner.MaxUnavailable, fedTags...)
 
 		for _, t := range planner.Targets {
 			clusterName := t.ClusterName
 			tags := []stats.Tag{{Name: "dp", Value: deployName}, {Name: "cluster", Value: clusterName}, {Name: "ismember", Value: "true"}}
-			d.metrics.Store("sync.rollout.maxSurge", t.Status.MaxSurge, tags...)
-			d.metrics.Store("sync.rollout.maxUnavailable", t.Status.MaxUnavailable, tags...)
+			d.metrics.Store("sync_rollout_maxSurge", t.Status.MaxSurge, tags...)
+			d.metrics.Store("sync_rollout_maxUnavailable", t.Status.MaxUnavailable, tags...)
 		}
 	}
 
@@ -707,25 +707,25 @@ func (d *managedDispatcherImpl) emitRolloutStatus(
 		}
 		if u, ok, err := unstructured.NestedInt64(clusterObj.Object, "status", "unavailableReplicas"); err == nil &&
 			ok {
-			d.metrics.Store("sync.rollout.unavailable", u, tags...)
+			d.metrics.Store("sync_rollout_unavailable", u, tags...)
 			unavailable += u
 		}
 		if r, ok, err := unstructured.NestedInt64(clusterObj.Object, "status", "replicas"); err == nil && ok {
 			if r0, err := utilunstructured.GetInt64FromPath(clusterObj, d.fedResource.TypeConfig().Spec.PathDefinition.ReplicasSpec, nil); err == nil &&
 				r0 != nil {
 				s := r - *r0
-				d.metrics.Store("sync.rollout.surge", s, tags...)
+				d.metrics.Store("sync_rollout_surge", s, tags...)
 				surge += s
 			}
 		}
 		if a, ok, err := unstructured.NestedInt64(clusterObj.Object, "status", "availableReplicas"); err == nil && ok {
-			d.metrics.Store("sync.rollout.available", a, tags...)
+			d.metrics.Store("sync_rollout_available", a, tags...)
 			available += a
 		}
 	}
-	d.metrics.Store("sync.rollout.surge", surge, fedTags...)
-	d.metrics.Store("sync.rollout.unavailable", unavailable, fedTags...)
-	d.metrics.Store("sync.rollout.available", available, fedTags...)
+	d.metrics.Store("sync_rollout_surge", surge, fedTags...)
+	d.metrics.Store("sync_rollout_unavailable", unavailable, fedTags...)
+	d.metrics.Store("sync_rollout_available", available, fedTags...)
 }
 
 func SendRolloutPlansToES(

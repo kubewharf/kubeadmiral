@@ -22,15 +22,15 @@ import (
 	"net"
 	"net/http"
 	"reflect"
-	"regexp"
 	"sync"
 	"time"
 
-	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/klog/v2"
+
+	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
 func New(namespace string, addr string, port uint16) stats.Metrics {
@@ -123,14 +123,7 @@ func valToFloat64(val interface{}) float64 {
 	}
 }
 
-var metricNameInverseRegex = regexp.MustCompile("[^A-Za-z0-9_:]")
-
-func standardizeMetricName(name string) string {
-	return metricNameInverseRegex.ReplaceAllString(name, "_")
-}
-
 func (metrics *promMetrics) Store(name string, val interface{}, tags ...stats.Tag) {
-	name = standardizeMetricName(name)
 	once, tagValues := initOnce(metrics, name, tags, func(once *once, tagNames []string) {
 		once.gauge = metrics.factory.NewGaugeVec(prometheus.GaugeOpts{Name: name, Namespace: metrics.namespace}, tagNames)
 	})
@@ -138,20 +131,13 @@ func (metrics *promMetrics) Store(name string, val interface{}, tags ...stats.Ta
 }
 
 func (metrics *promMetrics) Counter(name string, val interface{}, tags ...stats.Tag) {
-	name = standardizeMetricName(name)
 	once, tagValues := initOnce(metrics, name, tags, func(once *once, tagNames []string) {
 		once.counter = metrics.factory.NewCounterVec(prometheus.CounterOpts{Name: name, Namespace: metrics.namespace}, tagNames)
 	})
 	once.counter.WithLabelValues(tagValues...).Add(valToFloat64(val))
 }
 
-func (metrics *promMetrics) Rate(name string, val interface{}, tags ...stats.Tag) {
-	// there is no rate metric type in prometheus, just record them as counter
-	metrics.Counter(name, val, tags...)
-}
-
 func (metrics *promMetrics) Timer(name string, val interface{}, tags ...stats.Tag) {
-	name = standardizeMetricName(name)
 	once, tagValues := initOnce(metrics, name, tags, func(once *once, tagNames []string) {
 		once.histogram = metrics.factory.NewHistogramVec(prometheus.HistogramOpts{Name: name, Namespace: metrics.namespace}, tagNames)
 	})

@@ -35,6 +35,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustername"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
@@ -106,7 +107,7 @@ func newController(controllerConfig *util.ControllerConfig,
 
 	c.persistPpWorker = worker.NewReconcileWorker(
 		func(qualifiedName common.QualifiedName) worker.Result {
-			return c.reconcilePersist("propagation-policy", qualifiedName, c.pp.store, c.cpp.store, c.ppCounter)
+			return c.reconcilePersist("propagation_policy", qualifiedName, c.pp.store, c.cpp.store, c.ppCounter)
 		},
 		worker.WorkerTiming{},
 		controllerConfig.WorkerCount,
@@ -115,7 +116,7 @@ func newController(controllerConfig *util.ControllerConfig,
 	)
 	c.persistOpWorker = worker.NewReconcileWorker(
 		func(qualifiedName common.QualifiedName) worker.Result {
-			return c.reconcilePersist("override-policy", qualifiedName, c.op.store, c.cop.store, c.opCounter)
+			return c.reconcilePersist("override_policy", qualifiedName, c.op.store, c.cop.store, c.opCounter)
 		},
 		worker.WorkerTiming{},
 		controllerConfig.WorkerCount,
@@ -134,6 +135,7 @@ func newController(controllerConfig *util.ControllerConfig,
 		targetNamespace,
 		c.countWorker.EnqueueObject,
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 
 	c.client = generic.NewForConfigOrDie(configWithUserAgent)
@@ -144,6 +146,7 @@ func newController(controllerConfig *util.ControllerConfig,
 		0,
 		c.persistPpWorker.EnqueueObject,
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 	if err != nil {
 		return nil, err
@@ -156,6 +159,7 @@ func newController(controllerConfig *util.ControllerConfig,
 		0,
 		c.persistPpWorker.EnqueueObject,
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 	if err != nil {
 		return nil, err
@@ -168,6 +172,7 @@ func newController(controllerConfig *util.ControllerConfig,
 		0,
 		c.persistOpWorker.EnqueueObject,
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 	if err != nil {
 		return nil, err
@@ -180,6 +185,7 @@ func newController(controllerConfig *util.ControllerConfig,
 		0,
 		c.persistOpWorker.EnqueueObject,
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 	if err != nil {
 		return nil, err
@@ -223,11 +229,11 @@ func (c *Controller) reconcileCount(qualifiedName common.QualifiedName) worker.R
 	federatedKind := c.typeConfig.GetFederatedType().Kind
 	key := qualifiedName.String()
 
-	c.metrics.Rate("policyrc-count-controller.throughput", 1)
+	c.metrics.Counter("policyrc_count_throughput", 1, stats.Tag{Name: "type", Value: c.typeConfig.Name})
 	klog.V(4).Infof("policyrc count controller for %v starting to reconcile %v", federatedKind, key)
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration("policyrc-count-controller.latency", startTime)
+		c.metrics.Duration("policyrc_count_latency", startTime, stats.Tag{Name: "type", Value: c.typeConfig.Name})
 		klog.V(4).
 			Infof("policyrc count controller for %v finished reconciling %v (duration: %v)", federatedKind, key, time.Since(startTime))
 	}()
@@ -278,11 +284,11 @@ func (c *Controller) reconcilePersist(
 	federatedKind := c.typeConfig.GetFederatedType().Kind
 	key := qualifiedName.String()
 
-	c.metrics.Rate(fmt.Sprintf("policyrc-persist-%s-controller.throughput", metricName), 1)
+	c.metrics.Counter("policyrc_persist_throughput", 1, stats.Tag{Name: "type", Value: c.typeConfig.Name})
 	klog.V(4).Infof("policyrc persist %s controller for %v starting to reconcile %v", metricName, federatedKind, key)
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("policyrc-persist-%s-controller.latency", metricName), startTime)
+		c.metrics.Duration("policyrc_persist_latency", startTime, stats.Tag{Name: "type", Value: c.typeConfig.Name})
 		klog.V(4).Infof(
 			"policyrc persist %s controller for %v finished reconciling %v (duration: %v)",
 			metricName, federatedKind, key, time.Since(startTime),

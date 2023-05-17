@@ -33,7 +33,6 @@ type Tag struct {
 type Metrics interface {
 	Store(name string, val interface{}, tags ...Tag)
 	Counter(name string, val interface{}, tags ...Tag)
-	Rate(name string, val interface{}, tags ...Tag)
 	Timer(name string, val interface{}, tags ...Tag)
 	Duration(name string, start time.Time, tags ...Tag)
 }
@@ -63,7 +62,7 @@ func convertTToFields(tags []Tag) log.Fields {
 func (s *mockMetrics) Store(name string, val interface{}, tags ...Tag) {
 	if s.logMetrics {
 		fields := convertTToFields(tags)
-		msg := fmt.Sprintf("store %s.%s = %v", s.prefix, name, val)
+		msg := fmt.Sprintf("store %s_%s = %v", s.prefix, name, val)
 		log.WithFields(fields).Infoln(msg)
 	}
 }
@@ -71,15 +70,7 @@ func (s *mockMetrics) Store(name string, val interface{}, tags ...Tag) {
 func (s *mockMetrics) Counter(name string, val interface{}, tags ...Tag) {
 	if s.logMetrics {
 		fields := convertTToFields(tags)
-		msg := fmt.Sprintf("counter %s.%s + %v", s.prefix, name, val)
-		log.WithFields(fields).Infoln(msg)
-	}
-}
-
-func (s *mockMetrics) Rate(name string, val interface{}, tags ...Tag) {
-	if s.logMetrics {
-		fields := convertTToFields(tags)
-		msg := fmt.Sprintf("rate %s.%s + %v", s.prefix, name, val)
+		msg := fmt.Sprintf("rate %s_%s + %v", s.prefix, name, val)
 		log.WithFields(fields).Infoln(msg)
 	}
 }
@@ -87,13 +78,13 @@ func (s *mockMetrics) Rate(name string, val interface{}, tags ...Tag) {
 func (s *mockMetrics) Timer(name string, val interface{}, tags ...Tag) {
 	if s.logMetrics {
 		fields := convertTToFields(tags)
-		msg := fmt.Sprintf("duration %s.%s <- %v", s.prefix, name, val)
+		msg := fmt.Sprintf("duration %s_%s <- %v", s.prefix, name, val)
 		log.WithFields(fields).Infoln(msg)
 	}
 }
 
 func (s *mockMetrics) Duration(name string, start time.Time, tags ...Tag) {
 	duration := time.Since(start).Nanoseconds() / 1000 / 1000
-	key := fmt.Sprintf("%s.ms", name)
+	key := fmt.Sprintf("%s_ms", name)
 	s.Timer(key, duration, tags...)
 }

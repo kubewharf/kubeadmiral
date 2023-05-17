@@ -158,7 +158,7 @@ func NewFollowerController(
 		federatedGVR := schemautil.APIResourceToGVR(&federatedType)
 
 		handles := &typeHandles{
-			name:        handleNamePrefix + "-" + federatedType.Kind,
+			name:        handleNamePrefix + "_" + federatedType.Kind,
 			typeConfig:  ftc,
 			sourceGK:    schemautil.APIResourceToGVK(&targetType).GroupKind(),
 			federatedGK: schemautil.APIResourceToGVK(&federatedType).GroupKind(),
@@ -253,14 +253,24 @@ func (c *Controller) reconcileLeader(
 	handles *typeHandles,
 	qualifiedName common.QualifiedName,
 ) (status worker.Result) {
-	c.metrics.Rate(fmt.Sprintf("follower-controller-%s.throughput", handles.name), 1)
+	c.metrics.Counter(
+		"follower_controller_throughput",
+		1,
+		stats.Tag{Name: "name", Value: handles.name},
+		stats.Tag{Name: "source", Value: "leader"},
+	)
 	key := qualifiedName.String()
 	logger := c.logger.WithValues("origin", "reconcileLeader", "type", handles.name, "key", key)
 	startTime := time.Now()
 
 	logger.Info("Starting reconcileLeader")
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("follower-controller-%s.latency", handles.name), startTime)
+		c.metrics.Duration(
+			"follower_controller_latency",
+			startTime,
+			stats.Tag{Name: "name", Value: handles.name},
+			stats.Tag{Name: "source", Value: "leader"},
+		)
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcileLeader")
 	}()
 
@@ -421,14 +431,24 @@ func (c *Controller) reconcileFollower(
 	handles *typeHandles,
 	qualifiedName common.QualifiedName,
 ) (status worker.Result) {
-	c.metrics.Rate(fmt.Sprintf("follower-controller-%s.throughput", handles.name), 1)
+	c.metrics.Counter(
+		"follower_controller_throughput",
+		1,
+		stats.Tag{Name: "name", Value: handles.name},
+		stats.Tag{Name: "source", Value: "follower"},
+	)
 	key := qualifiedName.String()
 	logger := c.logger.WithValues("origin", "reconcileFollower", "type", handles.name, "key", key)
 	startTime := time.Now()
 
 	logger.Info("Starting reconclieFollower")
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("follower-controller-%s.latency", handles.name), startTime)
+		c.metrics.Duration(
+			"follower_controller_latency",
+			startTime,
+			stats.Tag{Name: "name", Value: handles.name},
+			stats.Tag{Name: "source", Value: "leader"},
+		)
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcileFollower")
 	}()
 

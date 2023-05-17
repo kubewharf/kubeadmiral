@@ -57,6 +57,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/statusaggregator"
 	synccontroller "github.com/kubewharf/kubeadmiral/pkg/controllers/sync"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustername"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 )
@@ -141,6 +142,7 @@ func NewController(
 		util.NoResyncPeriod,
 		c.worker.EnqueueObject,
 		config.Metrics,
+		clustername.Host,
 	)
 	if err != nil {
 		return nil, err
@@ -640,6 +642,7 @@ func (c *Controller) startSyncController(tc *fedcorev1a1.FederatedTypeConfig) er
 			"",
 			triggerFunc,
 			c.controllerConfig.Metrics,
+			clustername.Host,
 		)
 		c.isControllerRevisionExists = true
 		go c.controllerRevisionController.Run(stopChan)

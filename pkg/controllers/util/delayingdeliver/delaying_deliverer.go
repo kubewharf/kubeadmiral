@@ -130,8 +130,8 @@ func (d *DelayingDeliverer) RunMetricLoop(
 	}
 
 	d.updateQueue.RunMetricLoop(stopCh, interval, func(md unboundedqueue.MetricData) {
-		metrics.Store("delayingDeliverer.queueLength", md.MaxLength, tags...)
-		metrics.Store("delayingDeliverer.queueCapacity", md.Capacity, tags...)
+		metrics.Store("delayingDeliverer_queueLength", md.MaxLength, tags...)
+		metrics.Store("delayingDeliverer_queueCapacity", md.Capacity, tags...)
 	})
 }
 

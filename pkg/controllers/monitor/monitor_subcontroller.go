@@ -40,6 +40,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustername"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 )
@@ -124,8 +125,13 @@ func newMonitorSubController(
 	m.worker = worker.NewReconcileWorker(m.reconcile, worker.WorkerTiming{}, controllerConfig.WorkerCount,
 		controllerConfig.Metrics, delayingdeliver.NewMetricTags("monitor-subcontroller", m.kind))
 
-	m.federatedStore, m.federatedController = util.NewResourceInformer(m.federatedClient,
-		controllerConfig.TargetNamespace, m.worker.EnqueueObject, controllerConfig.Metrics)
+	m.federatedStore, m.federatedController = util.NewResourceInformer(
+		m.federatedClient,
+		controllerConfig.TargetNamespace,
+		m.worker.EnqueueObject,
+		controllerConfig.Metrics,
+		clustername.Host,
+	)
 
 	m.enableStatus = typeConfig.GetStatusEnabled()
 
@@ -135,8 +141,13 @@ func newMonitorSubController(
 		if err != nil {
 			return nil, err
 		}
-		m.statusStore, m.statusController = util.NewResourceInformer(m.statusClient,
-			controllerConfig.TargetNamespace, m.worker.EnqueueObject, controllerConfig.Metrics)
+		m.statusStore, m.statusController = util.NewResourceInformer(
+			m.statusClient,
+			controllerConfig.TargetNamespace,
+			m.worker.EnqueueObject,
+			controllerConfig.Metrics,
+			clustername.Host,
+		)
 
 		client := genericclient.NewForConfigOrDieWithUserAgent(configCopy, userAgent)
 		targetAPIResource := typeConfig.GetTargetType()

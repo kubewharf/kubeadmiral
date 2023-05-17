@@ -163,14 +163,14 @@ func (c *FederateController) Run(ctx context.Context) {
 }
 
 func (c *FederateController) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
-	c.metrics.Rate("federate.throughput", 1)
+	c.metrics.Counter("federate_throughput", 1, stats.Tag{Name: "type", Value: c.typeConfig.Name})
 	key := qualifiedName.String()
 	keyedLogger := c.logger.WithValues("control-loop", "reconcile", "key", key)
 	startTime := time.Now()
 
 	keyedLogger.Info("Start reconcile")
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("%s.latency", c.name), startTime)
+		c.metrics.Duration("federate_latency", startTime, stats.Tag{Name: "type", Value: c.typeConfig.Name})
 		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcile")
 	}()
 

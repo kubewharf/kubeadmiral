@@ -182,11 +182,11 @@ func newController(
 func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result {
 	key := qualifiedName.String()
 
-	c.metrics.Rate("namespace-auto-propagation-controller.throughput", 1)
+	c.metrics.Counter("namespace_auto_propagation_controller_throughput", 1)
 	klog.V(4).Infof("namespace auto propagation controller starting to reconcile %v", key)
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration("namespace-auto-propagation-controller.latency", startTime)
+		c.metrics.Duration("namespace_auto_propagation_controller_latency", startTime)
 		klog.V(4).
 			Infof("namespace auto propagation controller finished reconciling %v (duration: %v)", key, time.Since(startTime))
 	}()

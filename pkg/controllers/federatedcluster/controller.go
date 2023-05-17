@@ -177,13 +177,13 @@ func (c *FederatedClusterController) Run(ctx context.Context) {
 }
 
 func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
-	c.metrics.Rate("federated-cluster-controller.throughput", 1)
+	c.metrics.Counter("federated_cluster_controller_throughput", 1)
 	key := qualifiedName.String()
 	keyedLogger := c.logger.WithValues("control-loop", "reconcile", "key", key)
 	startTime := time.Now()
 
 	keyedLogger.Info("Start reconcile")
-	defer c.metrics.Duration("federated-cluster-controller.latency", startTime)
+	defer c.metrics.Duration("federated_cluster_controller_latency", startTime)
 	defer func() {
 		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcile")
 	}()

@@ -177,10 +177,10 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) (status worke
 	ctx := klog.NewContext(context.TODO(), keyedLogger)
 
 	startTime := time.Now()
-	c.metrics.Rate("auto-migration.throughput", 1)
+	c.metrics.Counter("auto_migration_throughput", 1, stats.Tag{Name: "type", Value: c.typeConfig.Name})
 	keyedLogger.V(3).Info("Start reconcile")
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("%s.latency", c.name), startTime)
+		c.metrics.Duration("automigration_latency", startTime, stats.Tag{Name: "type", Value: c.typeConfig.Name})
 		keyedLogger.V(3).Info("Finished reconcile", "duration", time.Since(startTime), "status", status.String())
 	}()
 

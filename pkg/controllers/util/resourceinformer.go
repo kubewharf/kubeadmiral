@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustername"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
@@ -53,8 +54,9 @@ func NewResourceInformer(
 	namespace string,
 	triggerFunc func(pkgruntime.Object),
 	metrics stats.Metrics,
+	clusterName clustername.Name,
 ) (cache.Store, cache.Controller) {
-	return newResourceInformer(client, namespace, NewTriggerOnAllChanges(triggerFunc), "", map[string]string{}, metrics)
+	return newResourceInformer(client, namespace, NewTriggerOnAllChanges(triggerFunc), "", clusterName, metrics)
 }
 
 func NewResourceInformerWithEventHandler(
@@ -62,8 +64,9 @@ func NewResourceInformerWithEventHandler(
 	namespace string,
 	eventHandler cache.ResourceEventHandler,
 	metrics stats.Metrics,
+	clusterName clustername.Name,
 ) (cache.Store, cache.Controller) {
-	return newResourceInformer(client, namespace, eventHandler, "", map[string]string{}, metrics)
+	return newResourceInformer(client, namespace, eventHandler, "", clusterName, metrics)
 }
 
 // NewManagedResourceInformer returns an informer limited to resources
@@ -72,7 +75,7 @@ func NewManagedResourceInformer(
 	client ResourceClient,
 	namespace string,
 	triggerFunc func(pkgruntime.Object),
-	extraTags map[string]string,
+	clusterName clustername.Name,
 	metrics stats.Metrics,
 ) (cache.Store, cache.Controller) {
 	labelSelector := labels.Set(map[string]string{ManagedByKubeFedLabelKey: ManagedByKubeFedLabelValue}).
@@ -83,7 +86,7 @@ func NewManagedResourceInformer(
 		namespace,
 		NewTriggerOnAllChanges(triggerFunc),
 		labelSelector,
-		extraTags,
+		clusterName,
 		metrics,
 	)
 }
@@ -93,7 +96,7 @@ func newResourceInformer(
 	namespace string,
 	eventHandler cache.ResourceEventHandler,
 	labelSelector string,
-	extraTags map[string]string,
+	clusterName clustername.Name,
 	metrics stats.Metrics,
 ) (cache.Store, cache.Controller) {
 	store, controller := cache.NewInformer(
@@ -119,9 +122,9 @@ func newResourceInformer(
 
 	go func(metrics stats.Metrics) {
 		baseTags := []stats.Tag{{Name: "type", Value: client.GVKString()}}
-		tags := []stats.Tag{{Name: "type", Value: client.GVKString()}}
-		for k, v := range extraTags {
-			tags = append(tags, stats.Tag{Name: k, Value: v})
+		tags := []stats.Tag{
+			{Name: "type", Value: client.GVKString()},
+			{Name: "cluster", Value: clusterName.MetricValue()},
 		}
 		for {
 			select {
@@ -129,7 +132,7 @@ func newResourceInformer(
 			}
 
 			num := len(store.ListKeys())
-			metrics.Store("store.count", num, tags...)
+			metrics.Store("store_count", num, tags...)
 
 			mutex.Lock()
 			v, ok := meters[gvk]
@@ -146,7 +149,7 @@ func newResourceInformer(
 			}
 			klog.V(7).Infof("Type %s has total %d object, %d informer", gvk, sum, len(meters[gvk]))
 			mutex.Unlock()
-			metrics.Store("store.totalcount", sum, baseTags...)
+			metrics.Store("store_totalcount", sum, baseTags...)
 		}
 	}(metrics)
 	return store, controller
