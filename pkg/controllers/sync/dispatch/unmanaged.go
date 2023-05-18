@@ -100,7 +100,16 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstruc
 			d.recorder.recordEvent(clusterName, op, opContinuous)
 		}
 
-		if needUpdate := removeRetainObjectFinalizer(clusterObj); needUpdate {
+		needUpdate, err := removeRetainObjectFinalizer(clusterObj)
+		if err != nil {
+			if d.recorder == nil {
+				wrappedErr := d.wrapOperationError(err, clusterName, op)
+				runtime.HandleError(wrappedErr)
+			} else {
+				d.recorder.recordOperationError(fedtypesv1a1.DeletionFailed, clusterName, op, err)
+			}
+		}
+		if needUpdate {
 			err := client.Update(
 				context.Background(),
 				clusterObj,
@@ -121,7 +130,7 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstruc
 
 		obj := &unstructured.Unstructured{}
 		obj.SetGroupVersionKind(d.targetGVK)
-		err := client.Delete(
+		err = client.Delete(
 			context.Background(),
 			obj,
 			targetName.Namespace,
