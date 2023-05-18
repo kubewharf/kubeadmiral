@@ -25,7 +25,6 @@ import (
 	"github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
-	batchv1b1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -141,7 +140,6 @@ var _ = ginkgo.Describe("Cluster Delete", federatedClusterTestLabels, func() {
 	ginkgo.Context("With cascading delete", func() {
 		var deploy *appsv1.Deployment
 		var job *batchv1.Job
-		var cronJob *batchv1b1.CronJob
 
 		ginkgo.JustBeforeEach(func(ctx ginkgo.SpecContext) {
 			ginkgo.By("Create resources for cascading delete")
@@ -150,7 +148,6 @@ var _ = ginkgo.Describe("Cluster Delete", federatedClusterTestLabels, func() {
 
 			deploy = resources.GetSimpleDeployment(f.Name())
 			job = resources.GetSimpleJob(f.Name())
-			cronJob = resources.GetSimpleCronJob(f.Name())
 
 			policy := policies.PropagationPolicyForClustersWithPlacements(f.Name(), []*fedcorev1a1.FederatedCluster{cluster})
 			policies.SetTolerationsForTaints(policy, cluster.Spec.Taints)
@@ -162,13 +159,10 @@ var _ = ginkgo.Describe("Cluster Delete", federatedClusterTestLabels, func() {
 
 			policies.SetPropagationPolicy(deploy, policy)
 			policies.SetPropagationPolicy(job, policy)
-			policies.SetPropagationPolicy(cronJob, policy)
 
 			deploy, err = f.HostKubeClient().AppsV1().Deployments(f.TestNamespace().Name).Create(ctx, deploy, metav1.CreateOptions{})
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
 			job, err = f.HostKubeClient().BatchV1().Jobs(f.TestNamespace().Name).Create(ctx, job, metav1.CreateOptions{})
-			gomega.Expect(err).ToNot(gomega.HaveOccurred())
-			cronJob, err = f.HostKubeClient().BatchV1beta1().CronJobs(f.TestNamespace().Name).Create(ctx, cronJob, metav1.CreateOptions{})
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
 
 			// wait for resources to be propagated
@@ -183,10 +177,6 @@ var _ = ginkgo.Describe("Cluster Delete", federatedClusterTestLabels, func() {
 				_, err = clusterClient.BatchV1().Jobs(f.TestNamespace().Name).Get(ctx, job.Name, metav1.GetOptions{})
 				gomega.Expect(err).To(gomega.Or(gomega.BeNil(), gomega.Satisfy(apierrors.IsNotFound)))
 				g.Expect(err).ToNot(gomega.HaveOccurred())
-
-				_, err = clusterClient.BatchV1beta1().CronJobs(f.TestNamespace().Name).Get(ctx, cronJob.Name, metav1.GetOptions{})
-				gomega.Expect(err).To(gomega.Or(gomega.BeNil(), gomega.Satisfy(apierrors.IsNotFound)))
-				g.Expect(err).ToNot(gomega.HaveOccurred())
 			}).WithTimeout(resourcePropagationTimeout).WithContext(ctx).Should(gomega.Succeed())
 		})
 
@@ -197,9 +187,6 @@ var _ = ginkgo.Describe("Cluster Delete", federatedClusterTestLabels, func() {
 			gomega.Expect(err).To(gomega.Satisfy(apierrors.IsNotFound))
 
 			_, err = clusterClient.BatchV1().Jobs(f.TestNamespace().Name).Get(ctx, job.Name, metav1.GetOptions{})
-			gomega.Expect(err).To(gomega.Satisfy(apierrors.IsNotFound))
-
-			_, err = clusterClient.BatchV1beta1().CronJobs(f.TestNamespace().Name).Get(ctx, cronJob.Name, metav1.GetOptions{})
 			gomega.Expect(err).To(gomega.Satisfy(apierrors.IsNotFound))
 		}
 

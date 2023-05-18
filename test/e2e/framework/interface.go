@@ -20,6 +20,7 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	kubeclient "k8s.io/client-go/kubernetes"
 
@@ -35,6 +36,7 @@ type Framework interface {
 	HostKubeClient() kubeclient.Interface
 	HostFedClient() fedclient.Interface
 	HostDynamicClient() dynamic.Interface
+	HostDiscoveryClient() discovery.DiscoveryInterface
 
 	Name() string
 	TestNamespace() *corev1.Namespace
