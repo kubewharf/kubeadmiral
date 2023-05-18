@@ -836,11 +836,6 @@ func (s *KubeFedSyncController) deleteFromCluster(
 	clusterObj *unstructured.Unstructured,
 	respectOrphaningBehavior bool,
 ) {
-	// Avoid attempting any operation on a deleted resource.
-	if clusterObj.GetDeletionTimestamp() != nil {
-		return
-	}
-
 	if !respectOrphaningBehavior {
 		dispatcher.Delete(clusterName, clusterObj)
 		return

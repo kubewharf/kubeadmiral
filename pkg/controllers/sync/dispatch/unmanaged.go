@@ -128,6 +128,11 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstruc
 			}
 		}
 
+		// Avoid deleting a deleted resource again.
+		if clusterObj.GetDeletionTimestamp() != nil {
+			return true
+		}
+
 		obj := &unstructured.Unstructured{}
 		obj.SetGroupVersionKind(d.targetGVK)
 		err = client.Delete(
