@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -36,6 +37,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
 )
 
 const RetainTerminatingObjectFinalizer = common.DefaultPrefix + "retain-terminating-object"
@@ -199,16 +201,6 @@ func wrapOperationError(err error, operation, targetKind, targetName, clusterNam
 	return errors.Wrapf(err, "Failed to "+eventTemplate, operation, targetKind, targetName, clusterName)
 }
 
-func removeRetainObjectFinalizer(obj *unstructured.Unstructured) bool {
-	finalizers := obj.GetFinalizers()
-	for i, finalizer := range finalizers {
-		if finalizer == RetainTerminatingObjectFinalizer {
-			newFinalizers := make([]string, len(finalizers)-1)
-			copy(newFinalizers, finalizers[:i])
-			copy(newFinalizers[i:], finalizers[i+1:])
-			obj.SetFinalizers(newFinalizers)
-			return true
-		}
-	}
-	return false
+func removeRetainObjectFinalizer(obj *unstructured.Unstructured) (bool, error) {
+	return finalizers.RemoveFinalizers(obj, sets.NewString(RetainTerminatingObjectFinalizer))
 }
