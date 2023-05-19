@@ -102,6 +102,9 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstruc
 			d.recorder.recordEvent(clusterName, op, opContinuous)
 		}
 
+		// Avoid mutating the resource in the informer cache
+		clusterObj := clusterObj.DeepCopy()
+
 		needUpdate, err := removeRetainObjectFinalizer(clusterObj)
 		if err != nil {
 			if d.recorder == nil {
