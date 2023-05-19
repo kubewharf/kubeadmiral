@@ -43,6 +43,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/version"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
@@ -233,6 +234,10 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 		if err := dropJobFields(obj); err != nil {
 			return nil, err
 		}
+
+		if err := addRetainObjectFinalizer(obj); err != nil {
+			return nil, err
+		}
 	}
 
 	if schemautil.IsServiceGvk(r.TargetGVK()) {
@@ -245,9 +250,20 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 		if err := dropPodFields(obj); err != nil {
 			return nil, err
 		}
+
+		if err := addRetainObjectFinalizer(obj); err != nil {
+			return nil, err
+		}
 	}
 
 	return obj, nil
+}
+
+func addRetainObjectFinalizer(obj *unstructured.Unstructured) error {
+	if _, err := finalizers.AddFinalizers(obj, sets.NewString(dispatch.RetainTerminatingObjectFinalizer)); err != nil {
+		return err
+	}
+	return nil
 }
 
 func dropJobFields(obj *unstructured.Unstructured) error {

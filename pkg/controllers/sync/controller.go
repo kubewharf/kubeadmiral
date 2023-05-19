@@ -836,13 +836,8 @@ func (s *KubeFedSyncController) deleteFromCluster(
 	clusterObj *unstructured.Unstructured,
 	respectOrphaningBehavior bool,
 ) {
-	// Avoid attempting any operation on a deleted resource.
-	if clusterObj.GetDeletionTimestamp() != nil {
-		return
-	}
-
 	if !respectOrphaningBehavior {
-		dispatcher.Delete(clusterName)
+		dispatcher.Delete(clusterName, clusterObj)
 		return
 	}
 
@@ -856,7 +851,7 @@ func (s *KubeFedSyncController) deleteFromCluster(
 				fedResource.TargetGVK(), fedResource.TargetName(), clusterName)
 		dispatcher.RemoveManagedLabel(clusterName, clusterObj)
 	} else {
-		dispatcher.Delete(clusterName)
+		dispatcher.Delete(clusterName, clusterObj)
 	}
 }
 

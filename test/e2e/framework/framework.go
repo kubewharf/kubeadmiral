@@ -34,6 +34,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -53,6 +54,7 @@ const (
 var (
 	// TODO: make this configurable through flags
 	FedSystemNamespace string = common.DefaultFedSystemNamespace
+	CronJobV1Available bool
 
 	// variables used to connect to the host cluster
 
@@ -80,6 +82,7 @@ var (
 	hostKubeClient        kubeclient.Interface
 	hostFedClient         fedclient.Interface
 	hostDynamicClient     dynamic.Interface
+	hostDiscoveryClient   discovery.DiscoveryInterface
 	clusterKubeClients    sync.Map
 	clusterFedClients     sync.Map
 	clusterDynamicClients sync.Map
@@ -142,6 +145,9 @@ var _ = ginkgo.SynchronizedBeforeSuite(
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 		hostDynamicClient, err = dynamic.NewForConfig(restConfig)
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+		hostDiscoveryClient, err = discovery.NewDiscoveryClientForConfig(restConfig)
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 		clusterKubeClients = sync.Map{}
@@ -219,6 +225,10 @@ func (*framework) HostFedClient() fedclient.Interface {
 
 func (*framework) HostDynamicClient() dynamic.Interface {
 	return hostDynamicClient
+}
+
+func (*framework) HostDiscoveryClient() discovery.DiscoveryInterface {
+	return hostDiscoveryClient
 }
 
 func (f *framework) TestNamespace() *corev1.Namespace {

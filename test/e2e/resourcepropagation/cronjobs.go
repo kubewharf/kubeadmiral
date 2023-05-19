@@ -18,7 +18,9 @@ package resourcepropagation
 
 import (
 	"github.com/onsi/ginkgo/v2"
-	batchv1b1 "k8s.io/api/batch/v1beta1"
+	"github.com/onsi/gomega"
+	batchv1 "k8s.io/api/batch/v1"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
@@ -30,25 +32,60 @@ import (
 var _ = ginkgo.Describe("CronJob Propagation", func() {
 	f := framework.NewFramework("cronjob-propagation", framework.FrameworkOptions{CreateNamespace: true})
 
-	resourcePropagationTest(
-		f,
-		&resourcePropagationTestConfig[*batchv1b1.CronJob]{
-			gvr:           batchv1b1.SchemeGroupVersion.WithResource("jobs"),
-			objectFactory: resources.GetSimpleCronJob,
-			clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*batchv1b1.CronJob] {
-				return client.BatchV1beta1().CronJobs(namespace)
-			},
-			isPropagatedResourceWorking: func(
-				_ kubernetes.Interface,
-				_ dynamic.Interface,
-				cronjob *batchv1b1.CronJob,
-			) (bool, error) {
-				return resources.IsCronJobScheduledOnce(cronjob), nil
-			},
-			statusCollection: &resourceStatusCollectionTestConfig{
-				gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federatedcronjobstatuses"),
-				path: "status",
-			},
-		},
-	)
+	ginkgo.It("Should succeed", resourcePropagationTestLabel, func(ctx ginkgo.SpecContext) {
+		v1Available, err := discovery.IsResourceEnabled(
+			f.HostDiscoveryClient(),
+			batchv1.SchemeGroupVersion.WithResource("cronjobs"),
+		)
+		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
+
+		if v1Available {
+			resourcePropagationTest(
+				f,
+				&resourcePropagationTestConfig[*batchv1.CronJob]{
+					gvr:           batchv1.SchemeGroupVersion.WithResource("jobs"),
+					objectFactory: resources.GetSimpleV1CronJob,
+					clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*batchv1.CronJob] {
+						return client.BatchV1().CronJobs(namespace)
+					},
+					isPropagatedResourceWorking: func(
+						_ kubernetes.Interface,
+						_ dynamic.Interface,
+						cronjob *batchv1.CronJob,
+					) (bool, error) {
+						return resources.IsV1CronJobScheduledOnce(cronjob), nil
+					},
+					statusCollection: &resourceStatusCollectionTestConfig{
+						gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federatedcronjobstatuses"),
+						path: "status",
+					},
+				},
+				ctx,
+			)
+		} else {
+			resourcePropagationTest(
+				f,
+				&resourcePropagationTestConfig[*batchv1.CronJob]{
+					gvr:           batchv1.SchemeGroupVersion.WithResource("jobs"),
+					objectFactory: resources.GetSimpleV1CronJob,
+					clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*batchv1.CronJob] {
+						return client.BatchV1().CronJobs(namespace)
+					},
+					isPropagatedResourceWorking: func(
+						_ kubernetes.Interface,
+						_ dynamic.Interface,
+						cronjob *batchv1.CronJob,
+					) (bool, error) {
+						return resources.IsV1CronJobScheduledOnce(cronjob), nil
+					},
+					statusCollection: &resourceStatusCollectionTestConfig{
+						gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federatedcronjobstatuses"),
+						path: "status",
+					},
+				},
+				ctx,
+			)
+
+		}
+	})
 })

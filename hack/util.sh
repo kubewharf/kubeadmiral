@@ -60,7 +60,7 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
-  image: kindest/node:v1.20.15
+  image: kindest/node:${KUBE_VERSION}
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
@@ -69,7 +69,7 @@ nodes:
         controllers: "namespace,garbagecollector"
     apiServer:
       extraArgs:
-        disable-admission-plugins: StorageObjectInUseProtection
+        disable-admission-plugins: StorageObjectInUseProtection,ServiceAccount
 EOF
 )
 
@@ -91,7 +91,7 @@ kind: KwokctlConfiguration
 apiVersion: config.kwok.x-k8s.io/v1alpha1
 options:
   kubeApiserverPort: ${APISERVER_PORT}
-  kubeVersion: "v1.20.15"
+  kubeVersion: "${KUBE_VERSION}"
   disableKubeScheduler: true
 componentsPatches:
 # we do not need to disable StorageObjectInUseProtection explictly for the apiserver because kwok disables admission plugins by default
@@ -110,10 +110,10 @@ function util::create_member_cluster() {
   local KUBECONFIG_PATH=${2}
 
   if [[ $CLUSTER_PROVIDER == "kind" ]]; then
-    kind create cluster --image=kindest/node:v1.20.15 --name="${MEMBER_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG_PATH}"
+    kind create cluster --image="kindest/node:${KUBE_VERSION}" --name="${MEMBER_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG_PATH}"
   elif [[ $CLUSTER_PROVIDER == "kwok" ]]; then
     local APISERVER_PORT=$(( $RANDOM + 30000 ))
-    KUBECONFIG=${KUBECONFIG_PATH} KWOK_KUBE_VERSION="v1.20.15" kwokctl create cluster --name=${MEMBER_CLUSTER_NAME} --kube-apiserver-port=${APISERVER_PORT} --kube-authorization
+    KUBECONFIG=${KUBECONFIG_PATH} KWOK_KUBE_VERSION="${KUBE_VERSION}" kwokctl create cluster --name=${MEMBER_CLUSTER_NAME} --kube-apiserver-port=${APISERVER_PORT} --kube-authorization
     for i in $(seq 1 10); do
       kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="kwok-${MEMBER_CLUSTER_NAME}" apply -f - <<EOF
 apiVersion: v1

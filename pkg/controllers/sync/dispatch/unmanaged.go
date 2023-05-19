@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -36,16 +37,20 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
 )
 
-const eventTemplate = "%s %s %q in cluster %q"
+const (
+	RetainTerminatingObjectFinalizer = common.DefaultPrefix + "retain-terminating-object"
+	eventTemplate                    = "%s %s %q in cluster %q"
+)
 
 // UnmanagedDispatcher dispatches operations to member clusters for
 // resources that are no longer managed by a federated resource.
 type UnmanagedDispatcher interface {
 	OperationDispatcher
 
-	Delete(clusterName string)
+	Delete(clusterName string, clusterObj *unstructured.Unstructured)
 	RemoveManagedLabel(clusterName string, clusterObj *unstructured.Unstructured)
 }
 
@@ -85,7 +90,7 @@ func (d *unmanagedDispatcherImpl) Wait() (bool, error) {
 	return d.dispatcher.Wait()
 }
 
-func (d *unmanagedDispatcherImpl) Delete(clusterName string) {
+func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstructured.Unstructured) {
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "delete"
 	const opContinuous = "Deleting"
@@ -97,9 +102,46 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string) {
 			d.recorder.recordEvent(clusterName, op, opContinuous)
 		}
 
+		// Avoid mutating the resource in the informer cache
+		clusterObj := clusterObj.DeepCopy()
+
+		needUpdate, err := removeRetainObjectFinalizer(clusterObj)
+		if err != nil {
+			if d.recorder == nil {
+				wrappedErr := d.wrapOperationError(err, clusterName, op)
+				runtime.HandleError(wrappedErr)
+			} else {
+				d.recorder.recordOperationError(fedtypesv1a1.DeletionFailed, clusterName, op, err)
+			}
+			return false
+		}
+		if needUpdate {
+			err := client.Update(
+				context.Background(),
+				clusterObj,
+			)
+			if apierrors.IsNotFound(err) {
+				err = nil
+			}
+			if err != nil {
+				if d.recorder == nil {
+					wrappedErr := d.wrapOperationError(err, clusterName, op)
+					runtime.HandleError(wrappedErr)
+				} else {
+					d.recorder.recordOperationError(fedtypesv1a1.DeletionFailed, clusterName, op, err)
+				}
+				return false
+			}
+		}
+
+		// Avoid deleting a deleted resource again.
+		if clusterObj.GetDeletionTimestamp() != nil {
+			return true
+		}
+
 		obj := &unstructured.Unstructured{}
 		obj.SetGroupVersionKind(d.targetGVK)
-		err := client.Delete(
+		err = client.Delete(
 			context.Background(),
 			obj,
 			targetName.Namespace,
@@ -145,6 +187,15 @@ func (d *unmanagedDispatcherImpl) RemoveManagedLabel(clusterName string, cluster
 		updateObj := clusterObj.DeepCopy()
 
 		util.RemoveManagedLabel(updateObj)
+		if _, err := removeRetainObjectFinalizer(updateObj); err != nil {
+			if d.recorder == nil {
+				wrappedErr := d.wrapOperationError(err, clusterName, op)
+				runtime.HandleError(wrappedErr)
+			} else {
+				d.recorder.recordOperationError(fedtypesv1a1.LabelRemovalFailed, clusterName, op, err)
+			}
+			return false
+		}
 
 		err := client.Update(context.Background(), updateObj)
 		if err != nil {
@@ -176,4 +227,8 @@ func (d *unmanagedDispatcherImpl) targetNameForCluster(clusterName string) commo
 
 func wrapOperationError(err error, operation, targetKind, targetName, clusterName string) error {
 	return errors.Wrapf(err, "Failed to "+eventTemplate, operation, targetKind, targetName, clusterName)
+}
+
+func removeRetainObjectFinalizer(obj *unstructured.Unstructured) (bool, error) {
+	return finalizers.RemoveFinalizers(obj, sets.NewString(RetainTerminatingObjectFinalizer))
 }

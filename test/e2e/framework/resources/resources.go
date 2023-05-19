@@ -148,12 +148,50 @@ func IsJobComplete(job *batchv1.Job) bool {
 	return false
 }
 
-func GetSimpleCronJob(baseName string) *batchv1b1.CronJob {
+func GetSimpleV1CronJob(baseName string) *batchv1.CronJob {
+	name := fmt.Sprintf("%s-%s", baseName, rand.String(12))
+
+	return &batchv1.CronJob{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: batchv1.SchemeGroupVersion.String(),
+			Kind:       common.CronJobKind,
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: batchv1.CronJobSpec{
+			Schedule:          "* * * * *",
+			ConcurrencyPolicy: "",
+			JobTemplate: batchv1.JobTemplateSpec{
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							RestartPolicy: corev1.RestartPolicyNever,
+							Containers: []corev1.Container{
+								{
+									Name:    "main",
+									Image:   DefaultPodImage,
+									Command: []string{"sleep", "2"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func IsV1CronJobScheduledOnce(cronJob *batchv1.CronJob) bool {
+	return cronJob.Status.LastScheduleTime != nil && !cronJob.Status.LastScheduleTime.IsZero()
+}
+
+func GetSimpleV1Beta1CronJob(baseName string) *batchv1b1.CronJob {
 	name := fmt.Sprintf("%s-%s", baseName, rand.String(12))
 
 	return &batchv1b1.CronJob{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: batchv1.SchemeGroupVersion.String(),
+			APIVersion: batchv1b1.SchemeGroupVersion.String(),
 			Kind:       common.CronJobKind,
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -182,7 +220,7 @@ func GetSimpleCronJob(baseName string) *batchv1b1.CronJob {
 	}
 }
 
-func IsCronJobScheduledOnce(cronJob *batchv1b1.CronJob) bool {
+func IsV1Beta1CronJobScheduledOnce(cronJob *batchv1b1.CronJob) bool {
 	return cronJob.Status.LastScheduleTime != nil && !cronJob.Status.LastScheduleTime.IsZero()
 }
 
