@@ -33,7 +33,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/discovery"
@@ -152,11 +151,10 @@ var _ = ginkgo.SynchronizedBeforeSuite(
 		hostDiscoveryClient, err = discovery.NewDiscoveryClientForConfig(restConfig)
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
-		CronJobV1Available, err = discovery.IsResourceEnabled(hostDiscoveryClient, schema.GroupVersionResource{
-			Group:    batchv1.SchemeGroupVersion.Group,
-			Version:  batchv1.SchemeGroupVersion.Version,
-			Resource: "cronjobs",
-		})
+		CronJobV1Available, err = discovery.IsResourceEnabled(
+			hostDiscoveryClient,
+			batchv1.SchemeGroupVersion.WithResource("cronjobs"),
+		)
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
 		clusterKubeClients = sync.Map{}
