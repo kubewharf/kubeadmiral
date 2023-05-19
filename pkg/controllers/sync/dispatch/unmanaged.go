@@ -40,8 +40,10 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
 )
 
-const RetainTerminatingObjectFinalizer = common.DefaultPrefix + "retain-terminating-object"
-const eventTemplate = "%s %s %q in cluster %q"
+const (
+	RetainTerminatingObjectFinalizer = common.DefaultPrefix + "retain-terminating-object"
+	eventTemplate                    = "%s %s %q in cluster %q"
+)
 
 // UnmanagedDispatcher dispatches operations to member clusters for
 // resources that are no longer managed by a federated resource.
@@ -108,6 +110,7 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstruc
 			} else {
 				d.recorder.recordOperationError(fedtypesv1a1.DeletionFailed, clusterName, op, err)
 			}
+			return false
 		}
 		if needUpdate {
 			err := client.Update(
@@ -181,7 +184,15 @@ func (d *unmanagedDispatcherImpl) RemoveManagedLabel(clusterName string, cluster
 		updateObj := clusterObj.DeepCopy()
 
 		util.RemoveManagedLabel(updateObj)
-		removeRetainObjectFinalizer(updateObj)
+		if _, err := removeRetainObjectFinalizer(updateObj); err != nil {
+			if d.recorder == nil {
+				wrappedErr := d.wrapOperationError(err, clusterName, op)
+				runtime.HandleError(wrappedErr)
+			} else {
+				d.recorder.recordOperationError(fedtypesv1a1.LabelRemovalFailed, clusterName, op, err)
+			}
+			return false
+		}
 
 		err := client.Update(context.Background(), updateObj)
 		if err != nil {

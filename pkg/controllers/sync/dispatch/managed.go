@@ -711,8 +711,11 @@ func (d *managedDispatcherImpl) emitRolloutStatus(
 			unavailable += u
 		}
 		if r, ok, err := unstructured.NestedInt64(clusterObj.Object, "status", "replicas"); err == nil && ok {
-			if r0, err := utilunstructured.GetInt64FromPath(clusterObj, d.fedResource.TypeConfig().Spec.PathDefinition.ReplicasSpec, nil); err == nil &&
-				r0 != nil {
+			if r0, err := utilunstructured.GetInt64FromPath(
+				clusterObj,
+				d.fedResource.TypeConfig().Spec.PathDefinition.ReplicasSpec,
+				nil,
+			); err == nil && r0 != nil {
 				s := r - *r0
 				_ = d.metrics.Store("sync.rollout.surge", s, tags...)
 				surge += s
