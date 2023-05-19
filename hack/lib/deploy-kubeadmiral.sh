@@ -135,35 +135,23 @@ function deploy::generate_cert_secret {
   local kubeadmiral_ca=$(base64 -i "${root_ca_file_path}" | tr -d '\r\n')
   local kubeadmiral_ca_key=$(base64 -i "${root_ca_key_path}" | tr -d '\r\n')
 
-  local TEMP_PATH=$(mktemp -d)
+  local target_array=(ca_crt ca_key client_crt client_key apiserver_crt apiserver_key front_proxy_ca_crt front_proxy_client_crt front_proxy_client_key etcd_ca_crt etcd_server_crt etcd_server_key etcd_client_crt etcd_client_key)
+  local value_array=($kubeadmiral_ca $kubeadmiral_ca_key $KUBEADMIRAL_CRT $KUBEADMIRAL_KEY $KUBEADMIRAL_APISERVER_CRT $KUBEADMIRAL_APISERVER_KEY $FRONT_PROXY_CA_CRT $FRONT_PROXY_CLIENT_CRT $FRONT_PROXY_CLIENT_KEY $ETCD_CA_CRT $ETCD_SERVER_CRT $ETCD_SERVER_KEY $ETCD_CLIENT_CRT $ETCD_CLIENT_KEY)
+  local cmd_string=""
+  for i in ${!target_array[@]}; do
+    cmd_string+="s/{{${target_array[$i]}}}/${value_array[$i]}/g;"
+  done
 
-  cp -rf "${cert_yaml_path}"/kubeadmiral-cert-secret.yaml "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  cp -rf "${cert_yaml_path}"/kubeconfig-secret.yaml "${TEMP_PATH}"/kubeconfig-secret-tmp.yaml
+  sed -e "$cmd_string" "${cert_yaml_path}"/kubeadmiral-cert-secret.yaml | kubectl --kubeconfig=${kubeconfig_path} --context="${meta_cluster_context}" apply -f -
 
-  sed -i'' -e "s/{{ca_crt}}/${kubeadmiral_ca}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  sed -i'' -e "s/{{ca_key}}/${kubeadmiral_ca_key}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  sed -i'' -e "s/{{client_crt}}/${KUBEADMIRAL_CRT}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  sed -i'' -e "s/{{client_key}}/${KUBEADMIRAL_KEY}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  sed -i'' -e "s/{{apiserver_crt}}/${KUBEADMIRAL_APISERVER_CRT}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  sed -i'' -e "s/{{apiserver_key}}/${KUBEADMIRAL_APISERVER_KEY}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
+  target_array=(ca_crt client_crt client_key)
+  value_array=(${kubeadmiral_ca} ${KUBEADMIRAL_CRT} ${KUBEADMIRAL_KEY})
+  cmd_string=""
+  for i in ${!target_array[@]}; do
+    cmd_string+="s/{{${target_array[$i]}}}/${value_array[$i]}/g;"
+  done
 
-  sed -i'' -e "s/{{front_proxy_ca_crt}}/${FRONT_PROXY_CA_CRT}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  sed -i'' -e "s/{{front_proxy_client_crt}}/${FRONT_PROXY_CLIENT_CRT}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  sed -i'' -e "s/{{front_proxy_client_key}}/${FRONT_PROXY_CLIENT_KEY}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-
-  sed -i'' -e "s/{{etcd_ca_crt}}/${ETCD_CA_CRT}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  sed -i'' -e "s/{{etcd_server_crt}}/${ETCD_SERVER_CRT}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  sed -i'' -e "s/{{etcd_server_key}}/${ETCD_SERVER_KEY}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  sed -i'' -e "s/{{etcd_client_crt}}/${ETCD_CLIENT_CRT}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  sed -i'' -e "s/{{etcd_client_key}}/${ETCD_CLIENT_KEY}/g" "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-
-  sed -i'' -e "s/{{ca_crt}}/${kubeadmiral_ca}/g" "${TEMP_PATH}"/kubeconfig-secret-tmp.yaml
-  sed -i'' -e "s/{{client_crt}}/${KUBEADMIRAL_CRT}/g" "${TEMP_PATH}"/kubeconfig-secret-tmp.yaml
-  sed -i'' -e "s/{{client_key}}/${KUBEADMIRAL_KEY}/g" "${TEMP_PATH}"/kubeconfig-secret-tmp.yaml
-
-  kubectl --kubeconfig=${kubeconfig_path} --context="${meta_cluster_context}" apply -f "${TEMP_PATH}"/kubeadmiral-cert-secret-tmp.yaml
-  kubectl --kubeconfig=${kubeconfig_path} --context="${meta_cluster_context}" apply -f "${TEMP_PATH}"/kubeconfig-secret-tmp.yaml
-  rm -rf "${TEMP_PATH}"
+  sed -e "$cmd_string" "${cert_yaml_path}"/kubeconfig-secret.yaml | kubectl --kubeconfig=${kubeconfig_path} --context="${meta_cluster_context}" apply -f -
 }
 
 # deploy::ensure_cfssl downloads cfssl/cfssljson if they do not already exist in PATH

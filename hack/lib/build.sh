@@ -21,7 +21,6 @@ REPO_ROOT=${REPO_ROOT:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"}
 source "${REPO_ROOT}/hack/lib/util.sh"
 
 BUILD_OUTPUT_DIR=${BUILD_OUTPUT_DIR:-"${REPO_ROOT}/output/bin"}
-GOLDFLAGS="$(util::project_info) ${GOLDFLAGS:-}"
 
 # This function builds multi-platform binaries for kubeadmiral-controller-manager
 # Args:

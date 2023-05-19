@@ -18,10 +18,30 @@ spec:
       containers:
         - name: kubeadmiral-controller-manager
           command:
-            - /bin/kubeadmiral-controller-manager
+            - /kubeadmiral-controller-manager
             - --create-crds-for-ftcs=true
             - --kubeconfig=/etc/kubeconfig
             - --klog-v=4
+          livenessProbe:
+            failureThreshold: 8
+            httpGet:
+              path: /livez
+              port: 11257
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            successThreshold: 1
+            timeoutSeconds: 15
+          readinessProbe:
+            failureThreshold: 4
+            httpGet:
+              path: /readyz
+              port: 11257
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            successThreshold: 1
+            timeoutSeconds: 15
           image: ghcr.io/kubewharf/kubeadmiral-controller-manager:latest
           imagePullPolicy: IfNotPresent
           volumeMounts:

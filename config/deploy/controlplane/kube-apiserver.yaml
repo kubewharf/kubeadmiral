@@ -47,7 +47,7 @@ spec:
             - --kubelet-client-certificate=/etc/kubeadmiral/pki/kubeadmiral.crt
             - --kubelet-client-key=/etc/kubeadmiral/pki/kubeadmiral.key
             - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
-            - --disable-admission-plugins=StorageObjectInUseProtection
+            - --disable-admission-plugins=StorageObjectInUseProtection,ServiceAccount
             - --runtime-config=
             - --secure-port=5443
             - --service-account-issuer=https://kubernetes.default.svc.cluster.local

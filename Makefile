@@ -5,15 +5,15 @@ BUILD_FLAGS :=
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 GOPROXY ?= $(shell go env GOPROXY)
-TARGET_NAME ?= "kubeadmiral-controller-manager"
+TARGET_NAME ?= kubeadmiral-controller-manager
 
 # image information
-REGISTRY?="ghcr.io/kubewharf"
-TAG?="latest"
-REGION?="cn"
+REGISTRY ?= ghcr.io/kubewharf
+TAG ?= latest
+REGION ?= cn
 
-ifeq (${REGION}, "cn")
-GOPROXY=https://goproxy.cn,direct
+ifeq (${REGION}, cn)
+GOPROXY := https://goproxy.cn,direct
 endif
 
 .PHONY: all
@@ -31,7 +31,7 @@ all: build
 #   make build BUILD_PLATFORMS=linux/amd64,darwin/amd64
 .PHONY: build
 build:
-	BUILD_FLAGS=$(BUILD_FLAGS) TARGET_NAME=$(TARGET_NAME) bash hack/make-rules/build.sh $@
+	BUILD_FLAGS=$(BUILD_FLAGS) TARGET_NAME=$(TARGET_NAME) GOPROXY=$(GOPROXY) bash hack/make-rules/build.sh
 
 # Start a local kubeadmiral cluster for developers.
 #
@@ -44,8 +44,8 @@ build:
 #    2>/dev/null
 .PHONY: dev-up
 dev-up:
-	make clean-local-cluster; \
-	bash hack/make-rules/dev-up.sh; \
+	make clean-local-cluster
+	bash hack/make-rules/dev-up.sh
 	make build
 
 # Local up the KubeAdmiral.

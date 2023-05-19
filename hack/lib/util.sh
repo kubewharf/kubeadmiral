@@ -100,26 +100,6 @@ function util::install_kubectl {
   fi
 }
 
-# project_info generates the project information and the corresponding value
-# for 'ldflags -X' option
-function util::project_info() {
-  KUBEADMIRAL_INFO_PKG="github.com/kubewharf/kubeadmiral/pkg"
-  GIT_VERSION=${GIT_VERSION:-$(git describe --tags --dirty)}
-  GIT_COMMIT_HASH=$(git rev-parse HEAD)
-  if git_status=$(git status --porcelain 2>/dev/null) && [[ -z ${git_status} ]]; then
-    GIT_TREESTATE="clean"
-  else
-    GIT_TREESTATE="dirty"
-  fi
-  BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-
-  LDFLAGS="-X ${KUBEADMIRAL_INFO_PKG}/version.gitVersion=${GIT_VERSION} \
-            -X ${KUBEADMIRAL_INFO_PKG}/version.gitCommit=${GIT_COMMIT_HASH} \
-            -X ${KUBEADMIRAL_INFO_PKG}/version.gitTreeState=${GIT_TREESTATE} \
-            -X ${KUBEADMIRAL_INFO_PKG}/version.buildDate=${BUILD_DATE}"
-  echo ${LDFLAGS}
-}
-
 function util::join_member_cluster() {
   local MEMBER_CLUSTER_NAME=${1}
   local HOST_CLUSTER_CONTEXT=${2}

@@ -9,5 +9,5 @@ FROM --platform=${TARGETPLATFORM} alpine:3.17
 ARG TARGETOS TARGETARCH
 
 RUN apk add --no-cache ca-certificates bash && update-ca-certificates
-COPY --from=builder /build/output/bin/${TARGETOS}/${TARGETARCH}/kubeadmiral-controller-manager /bin/kubeadmiral-controller-manager
-ENTRYPOINT ["/bin/kubeadmiral-controller-manager"]
+COPY --from=builder /build/output/bin/${TARGETOS}/${TARGETARCH}/kubeadmiral-controller-manager kubeadmiral-controller-manager
+ENTRYPOINT ["/kubeadmiral-controller-manager"]
