@@ -71,27 +71,30 @@ var _ = ginkgo.Context("Job Propagation", func() {
 
 	for _, testCase := range testCases {
 		ginkgo.Context(testCase.name, func() {
-			resourcePropagationTest(
-				f,
-				&resourcePropagationTestConfig[*batchv1.Job]{
-					gvr:           batchv1.SchemeGroupVersion.WithResource("jobs"),
-					objectFactory: testCase.jobFactory,
-					clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*batchv1.Job] {
-						return client.BatchV1().Jobs(namespace)
+			ginkgo.It("Should succeed", resourcePropagationTestLabel, func(ctx ginkgo.SpecContext) {
+				resourcePropagationTest(
+					f,
+					&resourcePropagationTestConfig[*batchv1.Job]{
+						gvr:           batchv1.SchemeGroupVersion.WithResource("jobs"),
+						objectFactory: testCase.jobFactory,
+						clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*batchv1.Job] {
+							return client.BatchV1().Jobs(namespace)
+						},
+						isPropagatedResourceWorking: func(
+							_ kubernetes.Interface,
+							_ dynamic.Interface,
+							job *batchv1.Job,
+						) (bool, error) {
+							return resources.IsJobComplete(job), nil
+						},
+						statusCollection: &resourceStatusCollectionTestConfig{
+							gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federatedjobstatuses"),
+							path: "status",
+						},
 					},
-					isPropagatedResourceWorking: func(
-						_ kubernetes.Interface,
-						_ dynamic.Interface,
-						job *batchv1.Job,
-					) (bool, error) {
-						return resources.IsJobComplete(job), nil
-					},
-					statusCollection: &resourceStatusCollectionTestConfig{
-						gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federatedjobstatuses"),
-						path: "status",
-					},
-				},
-			)
+					ctx,
+				)
+			})
 		})
 	}
 })

@@ -30,25 +30,28 @@ import (
 var _ = ginkgo.Describe("Deployment Propagation", func() {
 	f := framework.NewFramework("deployment-propagation", framework.FrameworkOptions{CreateNamespace: true})
 
-	resourcePropagationTest(
-		f,
-		&resourcePropagationTestConfig[*appsv1.Deployment]{
-			gvr:           appsv1.SchemeGroupVersion.WithResource("deployments"),
-			objectFactory: resources.GetSimpleDeployment,
-			clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*appsv1.Deployment] {
-				return client.AppsV1().Deployments(namespace)
+	ginkgo.It("Should succeed", resourcePropagationTestLabel, func(ctx ginkgo.SpecContext) {
+		resourcePropagationTest(
+			f,
+			&resourcePropagationTestConfig[*appsv1.Deployment]{
+				gvr:           appsv1.SchemeGroupVersion.WithResource("deployments"),
+				objectFactory: resources.GetSimpleDeployment,
+				clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*appsv1.Deployment] {
+					return client.AppsV1().Deployments(namespace)
+				},
+				isPropagatedResourceWorking: func(
+					_ kubernetes.Interface,
+					_ dynamic.Interface,
+					deployment *appsv1.Deployment,
+				) (bool, error) {
+					return resources.IsDeploymentProgressing(deployment), nil
+				},
+				statusCollection: &resourceStatusCollectionTestConfig{
+					gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federateddeploymentstatuses"),
+					path: "status",
+				},
 			},
-			isPropagatedResourceWorking: func(
-				_ kubernetes.Interface,
-				_ dynamic.Interface,
-				deployment *appsv1.Deployment,
-			) (bool, error) {
-				return resources.IsDeploymentProgressing(deployment), nil
-			},
-			statusCollection: &resourceStatusCollectionTestConfig{
-				gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federateddeploymentstatuses"),
-				path: "status",
-			},
-		},
-	)
+			ctx,
+		)
+	})
 })
