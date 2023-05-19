@@ -33,6 +33,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/version"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustername"
 )
 
 // FederatedResourceAccessor provides a way to retrieve and visit
@@ -98,6 +99,7 @@ func NewFederatedResourceAccessor(
 		targetNamespace,
 		enqueueObj,
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 
 	if typeConfig.GetNamespaced() {
@@ -129,6 +131,7 @@ func NewFederatedResourceAccessor(
 			targetNamespace,
 			fedNamespaceEnqueue,
 			controllerConfig.Metrics,
+			clustername.Host,
 		)
 	}
 

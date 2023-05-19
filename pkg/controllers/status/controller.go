@@ -47,6 +47,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustername"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
@@ -169,12 +170,14 @@ func newKubeFedStatusController(
 		targetNamespace,
 		enqueueObj,
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 	s.statusStore, s.statusController = util.NewResourceInformer(
 		statusClient,
 		targetNamespace,
 		enqueueObj,
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 	klog.Infof("Status controller %q NewFederatedInformer", federatedAPIResource.Kind)
 
@@ -286,11 +289,11 @@ func (s *KubeFedStatusController) reconcile(qualifiedName common.QualifiedName) 
 	statusKind := s.typeConfig.GetStatusType().Kind
 	key := qualifiedName.String()
 
-	s.metrics.Rate("status.throughput", 1)
+	s.metrics.Counter("status_throughput", 1, stats.Tag{Name: "type", Value: s.typeConfig.Name})
 	klog.V(4).Infof("Starting to reconcile %v %v", statusKind, key)
 	startTime := time.Now()
 	defer func() {
-		s.metrics.Duration("status.latency", startTime)
+		s.metrics.Duration("status_latency", startTime, stats.Tag{Name: "type", Value: s.typeConfig.Name})
 		klog.V(4).Infof("Finished reconciling %v %v (duration: %v)", statusKind, key, time.Since(startTime))
 	}()
 

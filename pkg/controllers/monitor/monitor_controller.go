@@ -38,6 +38,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedtypeconfig"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustername"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	finalizersutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
@@ -111,6 +112,7 @@ func NewMonitorController(config *util.ControllerConfig) (*MonitorController, er
 		util.NoResyncPeriod,
 		c.worker.EnqueueObject,
 		config.Metrics,
+		clustername.Host,
 	)
 	if err != nil {
 		return nil, err

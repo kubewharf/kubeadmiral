@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic/scheme"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustername"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
@@ -50,6 +51,7 @@ func NewGenericInformer(
 	resyncPeriod time.Duration,
 	triggerFunc func(pkgruntime.Object),
 	metrics stats.Metrics,
+	clusterName clustername.Name,
 ) (cache.Store, cache.Controller, error) {
 	return NewGenericInformerWithEventHandler(
 		config,
@@ -58,6 +60,7 @@ func NewGenericInformer(
 		resyncPeriod,
 		NewTriggerOnAllChanges(triggerFunc),
 		metrics,
+		clusterName,
 	)
 }
 
@@ -68,6 +71,7 @@ func NewGenericInformerWithEventHandler(
 	resyncPeriod time.Duration,
 	resourceEventHandlerFuncs *cache.ResourceEventHandlerFuncs,
 	metrics stats.Metrics,
+	clusterName clustername.Name,
 ) (cache.Store, cache.Controller, error) {
 	gvk, err := apiutil.GVKForObject(obj, scheme.Scheme)
 	if err != nil {
@@ -125,12 +129,15 @@ func NewGenericInformerWithEventHandler(
 		resourceEventHandlerFuncs,
 	)
 	go func(metrics stats.Metrics) {
-		tags := []stats.Tag{{Name: "type", Value: gvk.Group + "/" + gvk.Version + "/" + gvk.Kind}}
+		tags := []stats.Tag{
+			{Name: "type", Value: gvk.Group + "/" + gvk.Version + "/" + gvk.Kind},
+			{Name: "cluster", Value: clusterName.MetricValue()},
+		}
 		for {
 			select {
 			case <-time.After(time.Second * 30):
 			}
-			metrics.Store("store.count", len(store.ListKeys()), tags...)
+			metrics.Store("store_count", len(store.ListKeys()), tags...)
 		}
 	}(metrics)
 	return store, controller, nil

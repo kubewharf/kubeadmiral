@@ -41,6 +41,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/statusaggregator/plugins"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustername"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/sourcefeedback"
@@ -162,12 +163,14 @@ func newStatusAggregator(controllerConfig *util.ControllerConfig,
 		targetNamespace,
 		enqueueObj,
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 	a.sourceStore, a.sourceController = util.NewResourceInformer(
 		a.sourceClient,
 		targetNamespace,
 		enqueueObj,
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 	a.informer, err = util.NewFederatedInformer(
 		controllerConfig,
@@ -252,11 +255,11 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.
 	sourceKind := a.typeConfig.GetSourceType().Kind
 	key := qualifiedName.String()
 
-	a.metrics.Rate("status-aggregator.throughput", 1)
+	a.metrics.Counter("status_aggregator_throughput", 1, stats.Tag{Name: "type", Value: a.typeConfig.Name})
 	klog.V(4).Infof("status aggregator for %v starting to reconcile %v", sourceKind, key)
 	startTime := time.Now()
 	defer func() {
-		a.metrics.Duration("status-aggregator.latency", startTime)
+		a.metrics.Duration("status_aggregator_latency", startTime, stats.Tag{Name: "type", Value: a.typeConfig.Name})
 		klog.V(4).
 			Infof("status aggregator for %v finished reconciling %v (duration: %v)", sourceKind, key, time.Since(startTime))
 	}()

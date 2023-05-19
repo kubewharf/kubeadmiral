@@ -137,13 +137,13 @@ func (m *FederatedTypeConfigManager) Run(ctx context.Context) {
 }
 
 func (m *FederatedTypeConfigManager) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
-	_ = m.metrics.Rate("federated-type-config-manager.throughput", 1)
+	m.metrics.Counter("federated_type_config_manager_throughput", 1)
 	key := qualifiedName.String()
 	logger := m.logger.WithValues("federated-type-config", key)
 	startTime := time.Now()
 
 	logger.V(3).Info("Start reconcile")
-	defer m.metrics.Duration("federated-type-config-manager.latency", startTime)
+	defer m.metrics.Duration("federated_type_config_manager_latency", startTime)
 	defer func() {
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()

@@ -36,6 +36,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustername"
 )
 
 const (
@@ -155,12 +156,11 @@ func NewFederatedInformer(
 			return nil, nil, err
 		}
 		targetNamespace := NamespaceForCluster(cluster.Name, config.TargetNamespace)
-		extraTags := map[string]string{"member_cluster": cluster.Name}
 		store, controller := NewManagedResourceInformer(
 			resourceClient,
 			targetNamespace,
 			triggerFunc,
-			extraTags,
+			clustername.Member(cluster.Name),
 			config.Metrics,
 		)
 		return store, controller, nil
@@ -275,6 +275,7 @@ func NewFederatedInformer(
 			},
 		},
 		config.Metrics,
+		clustername.Host,
 	)
 	return federatedInformer, err
 }

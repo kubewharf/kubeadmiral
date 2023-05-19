@@ -37,6 +37,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clustername"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/pendingcontrollers"
@@ -145,6 +146,7 @@ func newController(
 		controllerConfig.TargetNamespace,
 		enqueueObj,
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 
 	getPolicyHandlers := func(labelKey string) *cache.ResourceEventHandlerFuncs {
@@ -172,6 +174,7 @@ func newController(
 		util.NoResyncPeriod,
 		getPolicyHandlers(OverridePolicyNameLabel),
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 	if err != nil {
 		return nil, err
@@ -184,6 +187,7 @@ func newController(
 		util.NoResyncPeriod,
 		getPolicyHandlers(ClusterOverridePolicyNameLabel),
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 	if err != nil {
 		return nil, err
@@ -215,6 +219,7 @@ func newController(
 			},
 		},
 		controllerConfig.Metrics,
+		clustername.Host,
 	)
 	if err != nil {
 		return nil, err
@@ -255,11 +260,11 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 	kind := c.typeConfig.GetFederatedType().Kind
 	key := qualifiedName.String()
 
-	c.metrics.Rate(fmt.Sprintf("%v.throughput", c.name), 1)
+	c.metrics.Counter("override_throughput", 1, stats.Tag{Name: "type", Value: c.typeConfig.Name})
 	klog.V(4).Infof("%s starting to reconcile %s %v", c.name, kind, key)
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("%s.latency", c.name), startTime)
+		c.metrics.Duration("override_latency", startTime, stats.Tag{Name: "type", Value: c.typeConfig.Name})
 		klog.V(4).Infof("%s finished reconciling %s %v (duration: %v)", c.name, kind, key, time.Since(startTime))
 	}()
 

@@ -49,12 +49,12 @@ func DoReportStatusLatency(meters *sync.Map, client stats.Metrics) {
 		if baseMeter.outOfSyncDuration > ReportInterval {
 			tags := make([]stats.Tag, 0)
 			tags = append(tags, stats.Tag{Name: "resourcename", Value: name})
-			client.Timer("totalstatus.latency.ms", baseMeter.outOfSyncDuration.Milliseconds(), tags...)
+			client.Timer("totalstatus_latency_ms", baseMeter.outOfSyncDuration.Milliseconds(), tags...)
 			throughput += 1
 		}
 		return true
 	})
-	client.Store("totalstatus.throughput", throughput)
+	client.Store("totalstatus_throughput", throughput)
 }
 
 func DoReportSyncLatency(meters *sync.Map, client stats.Metrics) {
@@ -73,14 +73,14 @@ func DoReportSyncLatency(meters *sync.Map, client stats.Metrics) {
 				diff := baseMeter.syncSuccessTimestamp.Sub(start.Time)
 				tags := make([]stats.Tag, 0)
 				tags = append(tags, stats.Tag{Name: "resourcename", Value: name})
-				client.Timer("totalsync.latency.ms", diff.Milliseconds(), tags...)
+				client.Timer("totalsync_latency_ms", diff.Milliseconds(), tags...)
 				throughput += 1
 			}
 		}
 		return true
 	})
 
-	client.Store("totalsync.throughput", throughput)
+	client.Store("totalsync_throughput", throughput)
 }
 
 func DoReportLatencyCount(meters *sync.Map, client stats.Metrics) {
@@ -144,20 +144,20 @@ func DoReportLatencyCount(meters *sync.Map, client stats.Metrics) {
 	})
 
 	for k, v := range latencyMetrics {
-		client.Store(k+".count", v[1])
+		client.Store(k+"_count", v[1])
 		klog.Infof("Attempt to report latency count: %s %d", k+".count: ", v[1])
 	}
 
 	for k, v := range latencyMetrics {
-		client.Store(k+".status.count", v[2])
+		client.Store(k+"_status_count", v[2])
 		klog.Infof("Attempt to report latency count: %s %d", k+".status.count: ", v[2])
 	}
 
 	for k, v := range latency5minSyncMetrics {
-		client.Store("typelatency5min.count", v, stats.Tag{Name: "type", Value: k})
+		client.Store("typelatency5min_count", v, stats.Tag{Name: "type", Value: k})
 	}
 
 	for k, v := range latency5minStatusMetrics {
-		client.Store("typelatency5min.status.count", v, stats.Tag{Name: "type", Value: k})
+		client.Store("typelatency5min_status_count", v, stats.Tag{Name: "type", Value: k})
 	}
 }
