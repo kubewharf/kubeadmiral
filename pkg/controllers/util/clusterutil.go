@@ -200,5 +200,6 @@ func BuildClusterConfigWithGenericClient(
 	if err != nil {
 		return nil, fmt.Errorf("cannot build rest config from cluster secret: %w", err)
 	}
+
 	return clusterConfig, nil
 }

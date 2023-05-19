@@ -247,6 +247,12 @@ func (c *FederateController) reconcile(qualifiedName common.QualifiedName) (stat
 				qualifiedName.String(),
 				err,
 			)
+
+			if apierrors.IsInvalid(err) {
+				// if the federated object template is invalid, reenqueueing will not help solve the problem. instead,
+				// we should wait for the source object template to be updated - which will trigger its own reconcile.
+				return worker.StatusErrorNoRetry
+			}
 			return worker.StatusError
 		}
 		c.eventRecorder.Eventf(

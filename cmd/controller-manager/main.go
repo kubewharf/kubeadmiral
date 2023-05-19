@@ -26,7 +26,7 @@ import (
 
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app"
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app/options"
-	"github.com/kubewharf/kubeadmiral/pkg/controllermanager/signals"
+	"github.com/kubewharf/kubeadmiral/pkg/util/signals"
 )
 
 func main() {
@@ -40,10 +40,7 @@ func main() {
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		<-signals.SetupSignalHandler()
-		cancel()
-	}()
+	signals.SetupSignalHandler(cancel)
 
 	app.Run(ctx, opts)
 }

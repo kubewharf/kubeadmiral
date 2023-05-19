@@ -563,9 +563,18 @@ func (s *KubeFedStatusController) latestReplicasetDigests(
 		if len(errs) == 0 {
 			digests = append(digests, digest)
 		} else {
-			for _, err := range errs {
-				runtime.HandleError(err)
+			errList := make([]string, len(errs))
+			for i := range errs {
+				errList[i] = errs[i].Error()
 			}
+			// use a higher log level since replicaset digests are currently not a supported feature
+			klog.V(4).Info(
+				"Failed to get replicaset digest from member object %s %q from cluster %q: %v",
+				targetKind,
+				key,
+				clusterName,
+				strings.Join(errList, ","),
+			)
 		}
 	}
 

@@ -81,8 +81,9 @@ func GetSimpleDeployment(baseName string) *appsv1.Deployment {
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "main",
-							Image: DefaultPodImage,
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Name:            "main",
+							Image:           DefaultPodImage,
 						},
 					},
 				},
@@ -128,9 +129,10 @@ func GetSimpleJob(baseName string) *batchv1.Job {
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{
 						{
-							Name:    "main",
-							Image:   DefaultPodImage,
-							Command: []string{"sleep", "2"},
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Name:            "main",
+							Image:           DefaultPodImage,
+							Command:         []string{"sleep", "2"},
 						},
 					},
 				},
@@ -207,9 +209,10 @@ func GetSimpleV1Beta1CronJob(baseName string) *batchv1b1.CronJob {
 							RestartPolicy: corev1.RestartPolicyNever,
 							Containers: []corev1.Container{
 								{
-									Name:    "main",
-									Image:   DefaultPodImage,
-									Command: []string{"sleep", "2"},
+									ImagePullPolicy: corev1.PullIfNotPresent,
+									Name:            "main",
+									Image:           DefaultPodImage,
+									Command:         []string{"sleep", "2"},
 								},
 							},
 						},
