@@ -99,6 +99,12 @@ func RetainOrMergeClusterFields(
 		if err := retainPodFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
+	case targetGvk == schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"}:
+		// TODO: this is a temporary hack to support Argo Workflow.
+		// We should come up with an extensible framework to support CRDs in the future.
+		if err := retainArgoWorkflow(desiredObj, clusterObj); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -578,6 +584,20 @@ func retainTemplate(
 		}
 
 		if err := utilunstructured.SetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, replicas, nil); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func retainArgoWorkflow(desiredObj, clusterObj *unstructured.Unstructured) error {
+	// Usually status is a subresource and will not be modified with an update request, i.e. it is implicitly retained.
+	// If the status field is not a subresource, we need to explicitly retain it.
+	if status, exists, err := unstructured.NestedFieldNoCopy(clusterObj.Object, common.StatusField); err != nil {
+		return err
+	} else if exists {
+		if err := unstructured.SetNestedField(desiredObj.Object, status, common.StatusField); err != nil {
 			return err
 		}
 	}
