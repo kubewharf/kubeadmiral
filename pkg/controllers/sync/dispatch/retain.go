@@ -37,13 +37,6 @@ import (
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
 
-// RemovalRespectedAnnotations is a list of annotation keys whose removal will be propagated to the cluster object.
-// TODO: make this configurable?
-var RemovalRespectedAnnotations = sets.New(
-	common.CurrentRevisionAnnotation,
-	common.SourceGenerationAnnotation,
-)
-
 const (
 	// see serviceaccount admission plugin in kubernetes
 	ServiceAccountVolumeNamePrefix = "kube-api-access-"
@@ -107,6 +100,7 @@ func mergeAnnotations(desiredObj, clusterObj *unstructured.Unstructured) {
 	mergedAnnotations := mergeStringMaps(
 		desiredObj.GetAnnotations(),
 		clusterObj.GetAnnotations(),
+		sets.New(strings.Split(clusterObj.GetAnnotations()[common.TemplateAnnotationKeys], ",")...),
 	)
 	desiredObj.SetAnnotations(mergedAnnotations)
 }
@@ -115,20 +109,30 @@ func mergeLabels(desiredObj, clusterObj *unstructured.Unstructured) {
 	mergedLabels := mergeStringMaps(
 		desiredObj.GetLabels(),
 		clusterObj.GetLabels(),
+		sets.New(strings.Split(clusterObj.GetAnnotations()[common.TemplateLabelKeys], ",")...),
 	)
 	desiredObj.SetLabels(mergedLabels)
 }
 
 // mergeStringMaps merges string maps (e.g. annotations or labels) from template and observed cluster objects.
 // For the same key in these two maps, value from templateMap takes precedence.
+// Keys deleted from templateMap are computed by taking the asymmetric set difference between lastTemplateKeys and templateMap.
 func mergeStringMaps(
 	templateMap, observedMap map[string]string,
+	lastTemplateKeys sets.Set[string],
 ) map[string]string {
 	if templateMap == nil {
 		templateMap = make(map[string]string, len(observedMap))
 	}
 
+	deletedKeys := lastTemplateKeys.Difference(sets.KeySet(templateMap))
+
 	for k, v := range observedMap {
+		// k=v is previously propagated from template, but now removed from template
+		if deletedKeys.Has(k) {
+			continue
+		}
+
 		if _, ok := templateMap[k]; !ok {
 			templateMap[k] = v
 		}

@@ -23,7 +23,9 @@ package dispatch
 import (
 	"testing"
 
+	"github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
@@ -92,6 +94,113 @@ func TestRetainClusterFields(t *testing.T) {
 			if replicas != testCase.expectedReplicas {
 				t.Fatalf("Expected %d replicas when retainReplicas=%v, got %d", testCase.expectedReplicas, testCase.retainReplicas, replicas)
 			}
+		})
+	}
+}
+
+func TestMergeStringMaps(t *testing.T) {
+	testCases := map[string]struct {
+		template       map[string]string
+		observed       map[string]string
+		lastPropagated sets.Set[string]
+		expected       map[string]string
+	}{
+		"nil annotations": {
+			template:       nil,
+			observed:       nil,
+			lastPropagated: nil,
+			expected:       map[string]string{},
+		},
+		"template and observed have same key-values": {
+			template: map[string]string{
+				"old": "old",
+			},
+			observed: map[string]string{
+				"old": "old",
+			},
+			lastPropagated: sets.New("old"),
+			expected: map[string]string{
+				"old": "old",
+			},
+		},
+		"template has a new key": {
+			template: map[string]string{
+				"old": "old",
+				"new": "new",
+			},
+			observed: map[string]string{
+				"old": "old",
+			},
+			lastPropagated: sets.New("old"),
+			expected: map[string]string{
+				"new": "new",
+				"old": "old",
+			},
+		},
+		"template updated value for an existing key": {
+			template: map[string]string{
+				"old": "new_value",
+			},
+			observed: map[string]string{
+				"old": "old",
+			},
+			lastPropagated: sets.New("old"),
+			expected: map[string]string{
+				"old": "new_value",
+			},
+		},
+		"template removed an existing key": {
+			template: map[string]string{},
+			observed: map[string]string{
+				"old": "old",
+			},
+			lastPropagated: sets.New("old"),
+			expected:       map[string]string{},
+		},
+		"cluster object has a new key": {
+			template: map[string]string{
+				"old": "old",
+			},
+			observed: map[string]string{
+				"new": "new",
+				"old": "old",
+			},
+			lastPropagated: sets.New("old"),
+			expected: map[string]string{
+				"new": "new",
+				"old": "old",
+			},
+		},
+		"cluster updated value for an existing key": {
+			template: map[string]string{
+				"old": "old",
+			},
+			observed: map[string]string{
+				"old": "new_value",
+			},
+			lastPropagated: sets.New("old"),
+			expected: map[string]string{
+				"old": "old",
+			},
+		},
+		"cluster removed an existing key": {
+			template: map[string]string{
+				"old": "old",
+			},
+			observed:       map[string]string{},
+			lastPropagated: sets.New("old"),
+			expected: map[string]string{
+				"old": "old",
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			g := gomega.NewGomegaWithT(t)
+
+			merged := mergeStringMaps(testCase.template, testCase.observed, testCase.lastPropagated)
+			g.Expect(merged).To(gomega.Equal(testCase.expected))
 		})
 	}
 }
