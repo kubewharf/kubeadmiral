@@ -197,6 +197,21 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 		obj.SetFinalizers(nil)
 	}
 
+	// Record the annotation/label keys in the template so we can diff it against the cluster object during retention
+	// to determine whether an annotation/label has been deleted from the template.
+	if _, err := annotationutil.AddAnnotation(
+		obj, common.TemplateAnnotationKeys,
+		strings.Join(sets.List(sets.KeySet(obj.GetAnnotations())), ","),
+	); err != nil {
+		return nil, err
+	}
+	if _, err := annotationutil.AddAnnotation(
+		obj, common.TemplateLabelKeys,
+		strings.Join(sets.List(sets.KeySet(obj.GetLabels())), ","),
+	); err != nil {
+		return nil, err
+	}
+
 	// Avoid having to duplicate these details in the template or have
 	// the name/namespace vary between host and member clusters.
 	// TODO: consider omitting these fields in the template created by federate controller
