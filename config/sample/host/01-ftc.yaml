@@ -469,11 +469,6 @@ spec:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
     - - kubeadmiral.io/follower-controller
-  pathDefinition:
-    labelSelector: spec.selector
-    replicasSpec: spec.replicas
-    replicasStatus: status.replicas
-    readyReplicasStatus: status.readyReplicas
   statusCollection:
     fields:
       - metadata.creationTimestamp
