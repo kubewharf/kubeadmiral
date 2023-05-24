@@ -205,9 +205,16 @@ func updateClusterAPIResources(
 	clusterStatus *fedcorev1a1.FederatedClusterStatus,
 	clusterDiscoveryClient discovery.DiscoveryInterface,
 ) error {
+	logger := klog.FromContext(ctx)
+
 	_, apiResourceLists, err := clusterDiscoveryClient.ServerGroupsAndResources()
 	if err != nil {
-		return fmt.Errorf("failed to list cluster api resources: %w", err)
+		if len(apiResourceLists) == 0 {
+			return fmt.Errorf("failed to list cluster api resources: %w", err)
+		}
+
+		// the returned lists might be non-nil with partial results even in the case of non-nil error.
+		logger.Error(err, "failed to list all cluster api resources")
 	}
 
 	resources := []fedcorev1a1.APIResource{}
@@ -227,6 +234,11 @@ func updateClusterAPIResources(
 		}
 
 		for _, apiResource := range apiResourceList.APIResources {
+			// subresources such as "/status", "/scale" need to be skipped as they are not real APIResources that we are caring about.
+			if strings.Contains(apiResource.Name, "/") {
+				continue
+			}
+
 			item := fedcorev1a1.APIResource{
 				Group:      apiResource.Group,
 				Version:    apiResource.Version,
