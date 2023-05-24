@@ -129,6 +129,14 @@ const (
 	AutoMigrationInfoAnnotation = DefaultPrefix + "auto-migration-info"
 )
 
+// TemplateAnnotationKeys and TemplateLabelKeys are used to store the keys of annotations and labels that are present
+// on the resource template. By persisting these, we can tell whether an annotation/label is deleted from the template
+// and prevent accidental retention.
+const (
+	TemplateAnnotationKeys = DefaultPrefix + "template-annotation-keys"
+	TemplateLabelKeys      = DefaultPrefix + "template-label-keys"
+)
+
 // The following consts are keys used to store information in the federated cluster secret
 
 const (

@@ -37,13 +37,6 @@ import (
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
 
-// RemovalRespectedAnnotations is a list of annotation keys whose removal will be propagated to the cluster object.
-// TODO: make this configurable?
-var RemovalRespectedAnnotations = sets.New(
-	common.CurrentRevisionAnnotation,
-	common.SourceGenerationAnnotation,
-)
-
 const (
 	// see serviceaccount admission plugin in kubernetes
 	ServiceAccountVolumeNamePrefix = "kube-api-access-"
@@ -64,15 +57,8 @@ func RetainOrMergeClusterFields(
 	// controllers in a member cluster.  It is still possible to set the fields
 	// via overrides.
 	desiredObj.SetFinalizers(clusterObj.GetFinalizers())
-	mergedAnnotations := mergeAnnotations(desiredObj.GetAnnotations(), clusterObj.GetAnnotations())
-	// Propagate the removal of special annotations.
-	templateAnnotations := desiredObj.GetAnnotations()
-	for key := range RemovalRespectedAnnotations {
-		if _, ok := templateAnnotations[key]; !ok {
-			delete(mergedAnnotations, key)
-		}
-	}
-	desiredObj.SetAnnotations(mergedAnnotations)
+	mergeAnnotations(desiredObj, clusterObj)
+	mergeLabels(desiredObj, clusterObj)
 
 	switch {
 	case schemautil.IsServiceGvk(targetGvk):
@@ -110,19 +96,49 @@ func RetainOrMergeClusterFields(
 	return nil
 }
 
-// mergeAnnotations merges annotations from template and cluster object.
-// Annotations from clusterAnnotations are copied into templateAnnotations.
-// For the same key in these two maps, value from template is preserved.
-func mergeAnnotations(templateAnnotations, clusterAnnotations map[string]string) map[string]string {
-	if templateAnnotations == nil {
-		return clusterAnnotations
+func mergeAnnotations(desiredObj, clusterObj *unstructured.Unstructured) {
+	mergedAnnotations := mergeStringMaps(
+		desiredObj.GetAnnotations(),
+		clusterObj.GetAnnotations(),
+		sets.New(strings.Split(clusterObj.GetAnnotations()[common.TemplateAnnotationKeys], ",")...),
+	)
+	desiredObj.SetAnnotations(mergedAnnotations)
+}
+
+func mergeLabels(desiredObj, clusterObj *unstructured.Unstructured) {
+	mergedLabels := mergeStringMaps(
+		desiredObj.GetLabels(),
+		clusterObj.GetLabels(),
+		sets.New(strings.Split(clusterObj.GetAnnotations()[common.TemplateLabelKeys], ",")...),
+	)
+	desiredObj.SetLabels(mergedLabels)
+}
+
+// mergeStringMaps merges string maps (e.g. annotations or labels) from template and observed cluster objects.
+// For the same key in these two maps, value from templateMap takes precedence.
+// Keys deleted from templateMap are computed by taking the asymmetric set difference between lastTemplateKeys and templateMap.
+func mergeStringMaps(
+	templateMap, observedMap map[string]string,
+	lastTemplateKeys sets.Set[string],
+) map[string]string {
+	if templateMap == nil {
+		templateMap = make(map[string]string, len(observedMap))
 	}
-	for k, v := range clusterAnnotations {
-		if _, ok := templateAnnotations[k]; !ok {
-			templateAnnotations[k] = v
+
+	deletedKeys := lastTemplateKeys.Difference(sets.KeySet(templateMap))
+
+	for k, v := range observedMap {
+		// k=v is previously propagated from template, but now removed from template
+		if deletedKeys.Has(k) {
+			continue
+		}
+
+		if _, ok := templateMap[k]; !ok {
+			templateMap[k] = v
 		}
 	}
-	return templateAnnotations
+
+	return templateMap
 }
 
 func retainServiceFields(desiredObj, clusterObj *unstructured.Unstructured) error {
