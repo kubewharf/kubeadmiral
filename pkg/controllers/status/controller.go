@@ -60,6 +60,8 @@ const (
 // KubeFedStatusController collects the status of resources in member
 // clusters.
 type KubeFedStatusController struct {
+	name string
+
 	// For triggering reconciliation of all target resources. This is
 	// used when a new cluster becomes available.
 	clusterDeliverer *delayingdeliver.DelayingDeliverer
@@ -137,6 +139,7 @@ func newKubeFedStatusController(
 	}
 
 	s := &KubeFedStatusController{
+		name:                          userAgent,
 		clusterAvailableDelay:         controllerConfig.ClusterAvailableDelay,
 		clusterUnavailableDelay:       controllerConfig.ClusterUnavailableDelay,
 		reconcileOnClusterChangeDelay: time.Second * 3,
@@ -227,6 +230,10 @@ func (s *KubeFedStatusController) Run(stopChan <-chan struct{}) {
 		s.reconcileOnClusterChange()
 	})
 
+	if !cache.WaitForNamedCacheSync(s.name, stopChan, s.HasSynced) {
+		return
+	}
+
 	s.worker.Run(stopChan)
 
 	// Ensure all goroutines are cleaned up when the stop channel closes
@@ -252,23 +259,11 @@ func (s *KubeFedStatusController) HasSynced() bool {
 		klog.V(2).Infof("Status not synced")
 		return false
 	}
-
-	clusters, err := s.informer.GetReadyClusters()
-	if err != nil {
-		runtime.HandleError(errors.Wrap(err, "Failed to get ready clusters"))
-		return false
-	}
-	if !s.informer.GetTargetStore().ClustersSynced(clusters) {
-		return false
-	}
 	return true
 }
 
 // The function triggers reconciliation of all target federated resources.
 func (s *KubeFedStatusController) reconcileOnClusterChange() {
-	if !s.HasSynced() {
-		s.clusterDeliverer.DeliverAt(allClustersKey, nil, time.Now().Add(s.clusterAvailableDelay))
-	}
 	for _, obj := range s.federatedStore.List() {
 		qualifiedName := common.NewQualifiedName(obj.(pkgruntime.Object))
 		s.worker.EnqueueWithDelay(qualifiedName, s.reconcileOnClusterChangeDelay)
@@ -276,10 +271,6 @@ func (s *KubeFedStatusController) reconcileOnClusterChange() {
 }
 
 func (s *KubeFedStatusController) reconcile(qualifiedName common.QualifiedName) worker.Result {
-	if !s.HasSynced() {
-		return worker.Result{RequeueAfter: &s.clusterAvailableDelay}
-	}
-
 	federatedKind := s.typeConfig.GetFederatedType().Kind
 	targetType := s.typeConfig.GetTargetType()
 	targetIsDeployment := schemautil.APIResourceToGVK(&targetType) == appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind)
@@ -315,7 +306,7 @@ func (s *KubeFedStatusController) reconcile(qualifiedName common.QualifiedName) 
 		return worker.Result{RequeueAfter: &s.clusterAvailableDelay}
 	}
 
-	clusterStatus, err := s.clusterStatuses(clusterNames, key)
+	clusterStatus, err := s.clusterStatuses(clusterNames, qualifiedName)
 	if err != nil {
 		return worker.StatusError
 	}
@@ -327,7 +318,7 @@ func (s *KubeFedStatusController) reconcile(qualifiedName common.QualifiedName) 
 
 	var rsDigestsAnnotation string
 	if targetIsDeployment {
-		latestReplicasetDigests, err := s.latestReplicasetDigests(clusterNames, key)
+		latestReplicasetDigests, err := s.latestReplicasetDigests(clusterNames, qualifiedName)
 		if err != nil {
 			return worker.StatusError
 		}
@@ -384,7 +375,7 @@ func (s *KubeFedStatusController) reconcile(qualifiedName common.QualifiedName) 
 			&federatedResource,
 			fedObject,
 			clusterNames,
-			key,
+			qualifiedName,
 		)
 		if err != nil {
 			return worker.StatusError
@@ -482,13 +473,20 @@ func (s *KubeFedStatusController) clusterNames() ([]string, error) {
 // clusterStatuses returns the resource status in member cluster.
 func (s *KubeFedStatusController) clusterStatuses(
 	clusterNames []string,
-	key string,
+	qualifiedName common.QualifiedName,
 ) ([]util.ResourceClusterStatus, error) {
+	key := qualifiedName.String()
 	clusterStatus := []util.ResourceClusterStatus{}
 
 	targetKind := s.typeConfig.GetTargetType().Kind
 	for _, clusterName := range clusterNames {
-		clusterObj, exist, err := s.informer.GetTargetStore().GetByKey(clusterName, key)
+		clusterObj, exist, err := util.GetClusterObject(
+			context.TODO(),
+			s.informer,
+			clusterName,
+			qualifiedName,
+			s.typeConfig.GetTargetType(),
+		)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "Failed to get %s %q from cluster %q", targetKind, key, clusterName)
 			runtime.HandleError(wrappedErr)
@@ -501,12 +499,10 @@ func (s *KubeFedStatusController) clusterStatuses(
 		resourceClusterStatus := util.ResourceClusterStatus{ClusterName: clusterName}
 		collectedFields := map[string]interface{}{}
 
-		unstructuredClusterObj := clusterObj.(*unstructured.Unstructured)
-
 		if s.typeConfig.Spec.StatusCollection != nil {
 			for _, field := range s.typeConfig.Spec.StatusCollection.Fields {
 				fieldVal, found, err := unstructured.NestedFieldCopy(
-					unstructuredClusterObj.Object,
+					clusterObj.Object,
 					strings.Split(field, ".")...)
 				if err != nil || !found {
 					wrappedErr := errors.Wrapf(
@@ -541,13 +537,20 @@ func (s *KubeFedStatusController) clusterStatuses(
 // latestReplicasetDigests returns digests of latest replicaSets in member cluster
 func (s *KubeFedStatusController) latestReplicasetDigests(
 	clusterNames []string,
-	key string,
+	qualifiedName common.QualifiedName,
 ) ([]util.LatestReplicasetDigest, error) {
+	key := qualifiedName.String()
 	digests := []util.LatestReplicasetDigest{}
 	targetKind := s.typeConfig.GetTargetType().Kind
 
 	for _, clusterName := range clusterNames {
-		obj, exist, err := s.informer.GetTargetStore().GetByKey(clusterName, key)
+		clusterObj, exist, err := util.GetClusterObject(
+			context.TODO(),
+			s.informer,
+			clusterName,
+			qualifiedName,
+			s.typeConfig.GetTargetType(),
+		)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "Failed to get %s %q from cluster %q", targetKind, key, clusterName)
 			runtime.HandleError(wrappedErr)
@@ -557,8 +560,7 @@ func (s *KubeFedStatusController) latestReplicasetDigests(
 			continue
 		}
 
-		utd := obj.(*unstructured.Unstructured)
-		digest, errs := util.LatestReplicasetDigestFromObject(clusterName, utd)
+		digest, errs := util.LatestReplicasetDigestFromObject(clusterName, clusterObj)
 
 		if len(errs) == 0 {
 			digests = append(digests, digest)
@@ -584,12 +586,23 @@ func (s *KubeFedStatusController) latestReplicasetDigests(
 	return digests, nil
 }
 
-func (s *KubeFedStatusController) realUpdatedReplicas(clusterNames []string, key, revision string) (string, error) {
+func (s *KubeFedStatusController) realUpdatedReplicas(
+	clusterNames []string,
+	qualifiedName common.QualifiedName,
+	revision string,
+) (string, error) {
+	key := qualifiedName.String()
 	var updatedReplicas int64
 	targetKind := s.typeConfig.GetTargetType().Kind
 
 	for _, clusterName := range clusterNames {
-		obj, exist, err := s.informer.GetTargetStore().GetByKey(clusterName, key)
+		clusterObj, exist, err := util.GetClusterObject(
+			context.TODO(),
+			s.informer,
+			clusterName,
+			qualifiedName,
+			s.typeConfig.GetTargetType(),
+		)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "Failed to get %s %q from cluster %q", targetKind, key, clusterName)
 			runtime.HandleError(wrappedErr)
@@ -598,9 +611,8 @@ func (s *KubeFedStatusController) realUpdatedReplicas(clusterNames []string, key
 		if !exist {
 			continue
 		}
-		utd := obj.(*unstructured.Unstructured)
 		// ignore digest errors for now since we want to try the best to collect the status
-		digest, err := util.ReplicaSetDigestFromObject(utd)
+		digest, err := util.ReplicaSetDigestFromObject(clusterObj)
 		if err != nil {
 			klog.Errorf("failed to get digest for %s in %s: %v", key, clusterName, err)
 			continue
@@ -621,13 +633,13 @@ func (s *KubeFedStatusController) setReplicasAnnotations(
 	federatedResource *util.FederatedResource,
 	fedObject *unstructured.Unstructured,
 	clusterNames []string,
-	key string,
+	qualifedName common.QualifiedName,
 ) (bool, error) {
 	revision, ok := fedObject.GetAnnotations()[common.CurrentRevisionAnnotation]
 	if !ok {
 		return false, nil
 	}
-	updatedReplicas, err := s.realUpdatedReplicas(clusterNames, key, revision)
+	updatedReplicas, err := s.realUpdatedReplicas(clusterNames, qualifedName, revision)
 	if err != nil {
 		return false, err
 	}

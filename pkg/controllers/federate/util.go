@@ -30,6 +30,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
@@ -37,7 +38,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/sourcefeedback"
 )
 
-func templateForSourceObject(sourceObj *unstructured.Unstructured, annotations map[string]string) *unstructured.Unstructured {
+func templateForSourceObject(sourceObj *unstructured.Unstructured, annotations, labels map[string]string) *unstructured.Unstructured {
 	template := sourceObj.DeepCopy()
 	template.SetSelfLink("")
 	template.SetUID("")
@@ -46,6 +47,7 @@ func templateForSourceObject(sourceObj *unstructured.Unstructured, annotations m
 	template.SetCreationTimestamp(metav1.Time{})
 	template.SetDeletionTimestamp(nil)
 	template.SetAnnotations(annotations)
+	template.SetLabels(labels)
 	template.SetOwnerReferences(nil)
 	template.SetFinalizers(nil)
 	template.SetManagedFields(nil)
@@ -65,22 +67,19 @@ func newFederatedObjectForSourceObject(
 	fedObj.SetKind(fedType.Kind)
 	fedObj.SetName(sourceObj.GetName())
 	fedObj.SetNamespace(sourceObj.GetNamespace())
-	fedObj.SetLabels(sourceObj.GetLabels())
 	fedObj.SetOwnerReferences(
 		[]metav1.OwnerReference{*metav1.NewControllerRef(sourceObj, sourceObj.GroupVersionKind())},
 	)
 
 	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObj.GetAnnotations())
-	if federatedAnnotations == nil {
-		federatedAnnotations = make(map[string]string, 1)
-	}
-	federatedAnnotations[common.FederatedObjectAnnotation] = "1"
-
 	fedObj.SetAnnotations(federatedAnnotations)
+
+	federatedLabels, templateLabels := classifyLabels(sourceObj.GetLabels())
+	fedObj.SetLabels(federatedLabels)
 
 	if err := unstructured.SetNestedMap(
 		fedObj.Object,
-		templateForSourceObject(sourceObj, templateAnnotations).Object,
+		templateForSourceObject(sourceObj, templateAnnotations, templateLabels).Object,
 		common.SpecField,
 		common.TemplateField,
 	); err != nil {
@@ -112,30 +111,24 @@ func updateFederatedObjectForSourceObject(
 		isUpdated = true
 	}
 
-	// sync labels
-	currentLabels := fedObject.GetLabels()
-	desiredLabels := sourceObject.GetLabels()
-	if !equality.Semantic.DeepEqual(currentLabels, desiredLabels) {
-		fedObject.SetLabels(desiredLabels)
-		isUpdated = true
-	}
-
 	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObject.GetAnnotations())
-
-	// sync annotations
-	if federatedAnnotations == nil {
-		federatedAnnotations = make(map[string]string, 1)
-	}
-	federatedAnnotations[common.FederatedObjectAnnotation] = "1"
+	// Merge annotations because other controllers may have added annotations to the federated object.
 	newAnnotations, annotationChanges := annotationutil.CopySubmap(
 		federatedAnnotations,
 		fedObject.GetAnnotations(),
 		func(key string) bool {
-			return classifyAnnotation(key)&annotationClassFederated > 0
+			federated, _ := classifyAnnotation(key)
+			return federated
 		},
 	)
 	if annotationChanges > 0 {
 		fedObject.SetAnnotations(newAnnotations)
+		isUpdated = true
+	}
+
+	federatedLabels, templateLabels := classifyLabels(sourceObject.GetLabels())
+	if !equality.Semantic.DeepEqual(federatedLabels, fedObject.GetLabels()) {
+		fedObject.SetLabels(federatedLabels)
 		isUpdated = true
 	}
 
@@ -148,7 +141,7 @@ func updateFederatedObjectForSourceObject(
 	if err != nil {
 		return false, fmt.Errorf("failed to parse template from federated object: %w", err)
 	}
-	targetTemplate := templateForSourceObject(sourceObject, templateAnnotations).Object
+	targetTemplate := templateForSourceObject(sourceObject, templateAnnotations, templateLabels).Object
 	if !foundTemplate || !reflect.DeepEqual(fedObjectTemplate, targetTemplate) {
 		if err := unstructured.SetNestedMap(fedObject.Object, targetTemplate, common.SpecField, common.TemplateField); err != nil {
 			return false, fmt.Errorf("failed to set federated object template: %w", err)
@@ -174,16 +167,6 @@ func updateFederatedObjectForSourceObject(
 
 	return isUpdated, nil
 }
-
-// A bitmask specifying the target copy locations of an annotation.
-type annotationClass uint8
-
-const (
-	// The annotation should be copied to the federated object.
-	annotationClassFederated annotationClass = 1 << iota
-	// The annotation should be copied to the template.
-	annotationClassTemplate
-)
 
 var (
 	// List of annotations that should be copied to the federated object instead of the template from the source
@@ -215,38 +198,68 @@ var (
 		util.OrphanManagedResourcesInternalAnnotation,
 		common.EnableFollowerSchedulingAnnotation,
 	)
+
+	federatedLabels = sets.New(
+		scheduler.PropagationPolicyNameLabel,
+		scheduler.ClusterPropagationPolicyNameLabel,
+		override.OverridePolicyNameLabel,
+		override.ClusterOverridePolicyNameLabel,
+	)
 )
 
-// Splits annotations from a source object into federated annotations and template annotations.
-func classifyAnnotations(annotations map[string]string) (
-	federated map[string]string,
-	template map[string]string,
-) {
-	result := map[annotationClass]map[string]string{}
+func classifyStringMap(
+	src map[string]string,
+	matcher func(key string) (federated, template bool),
+) (federatedMap, templateMap map[string]string) {
+	federatedMap = make(map[string]string, len(src))
+	templateMap = make(map[string]string, len(src))
 
-	for key, value := range annotations {
-		class := classifyAnnotation(key)
-
-		for _, checked := range []annotationClass{annotationClassFederated, annotationClassTemplate} {
-			if (class & checked) > 0 {
-				if _, hasMap := result[checked]; !hasMap {
-					result[checked] = map[string]string{}
-				}
-
-				result[checked][key] = value
-			}
+	for key, value := range src {
+		federated, template := matcher(key)
+		if federated {
+			federatedMap[key] = value
+		}
+		if template {
+			templateMap[key] = value
 		}
 	}
 
-	return result[annotationClassFederated], result[annotationClassTemplate]
+	return federatedMap, templateMap
 }
 
-func classifyAnnotation(annotation string) annotationClass {
+// Splits annotations from a source object into federated annotations and template annotations.
+func classifyAnnotations(annotations map[string]string) (
+	federatedAnnotations map[string]string,
+	templateAnnotations map[string]string,
+) {
+	federatedAnnotations, templateAnnotations = classifyStringMap(annotations, classifyAnnotation)
+	federatedAnnotations[common.FederatedObjectAnnotation] = "1"
+	return federatedAnnotations, templateAnnotations
+}
+
+func classifyAnnotation(annotation string) (federated, template bool) {
+	if ignoredAnnotations.Has(annotation) {
+		return false, false
+	}
+
 	if federatedAnnotations.Has(annotation) {
-		return annotationClassFederated
-	} else if ignoredAnnotations.Has(annotation) {
-		return 0
+		return true, false
 	} else {
-		return annotationClassTemplate
+		return false, true
+	}
+}
+
+func classifyLabels(labels map[string]string) (
+	federatedLabels map[string]string,
+	templateLabels map[string]string,
+) {
+	return classifyStringMap(labels, classifyLabel)
+}
+
+func classifyLabel(labelKey string) (federated, template bool) {
+	if federatedLabels.Has(labelKey) {
+		return true, false
+	} else {
+		return false, true
 	}
 }

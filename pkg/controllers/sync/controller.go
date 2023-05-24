@@ -87,6 +87,8 @@ const (
 // KubeFedSyncController synchronizes the state of federated resources
 // in the host cluster with resources in member clusters.
 type KubeFedSyncController struct {
+	name string
+
 	worker        worker.ReconcileWorker
 	clusterWorker worker.ReconcileWorker
 
@@ -177,6 +179,7 @@ func newKubeFedSyncController(
 	recorder := eventsink.NewDefederatingRecorderMux(kubeClient, userAgent, 4)
 
 	s := &KubeFedSyncController{
+		name:                          userAgent,
 		clusterAvailableDelay:         controllerConfig.ClusterAvailableDelay,
 		clusterUnavailableDelay:       controllerConfig.ClusterUnavailableDelay,
 		reconcileOnClusterChangeDelay: time.Second * 3,
@@ -283,9 +286,12 @@ func (s *KubeFedSyncController) Run(stopChan <-chan struct{}) {
 	s.clusterDeliverer.StartWithHandler(func(_ *deliverutil.DelayingDelivererItem) {
 		s.reconcileOnClusterChange()
 	})
-
 	go s.clusterDeliverer.RunMetricLoop(stopChan, 30*time.Second, s.metrics,
 		deliverutil.NewMetricTags("sync-clusterDeliverer", s.typeConfig.GetTargetType().Kind))
+
+	if !cache.WaitForNamedCacheSync(s.name, stopChan, s.HasSynced) {
+		return
+	}
 
 	s.worker.Run(stopChan)
 	s.clusterWorker.Run(stopChan)
@@ -316,23 +322,11 @@ func (s *KubeFedSyncController) HasSynced() bool {
 		return false
 	}
 
-	// TODO set clusters as ready in the test fixture?
-	clusters, err := s.informer.GetReadyClusters()
-	if err != nil {
-		runtime.HandleError(errors.Wrap(err, "Failed to get ready clusters"))
-		return false
-	}
-	if !s.informer.GetTargetStore().ClustersSynced(clusters) {
-		return false
-	}
 	return true
 }
 
 // The function triggers reconciliation of all target federated resources.
 func (s *KubeFedSyncController) reconcileOnClusterChange() {
-	if !s.HasSynced() {
-		s.clusterDeliverer.DeliverAt(allClustersKey, nil, time.Now().Add(s.clusterAvailableDelay))
-	}
 	s.fedAccessor.VisitFederatedResources(func(obj interface{}) {
 		qualifiedName := common.NewQualifiedName(obj.(pkgruntime.Object))
 		s.worker.EnqueueWithDelay(qualifiedName, s.reconcileOnClusterChangeDelay)
@@ -340,10 +334,6 @@ func (s *KubeFedSyncController) reconcileOnClusterChange() {
 }
 
 func (s *KubeFedSyncController) reconcile(qualifiedName common.QualifiedName) worker.Result {
-	if !s.HasSynced() {
-		return worker.Result{RequeueAfter: &s.clusterAvailableDelay}
-	}
-
 	kind := s.typeConfig.GetFederatedType().Kind
 
 	fedResource, possibleOrphan, err := s.fedAccessor.FederatedResource(qualifiedName)
@@ -482,15 +472,17 @@ func (s *KubeFedSyncController) syncToClusters(fedResource FederatedResource, co
 			continue
 		}
 
-		rawClusterObj, _, err := s.informer.GetTargetStore().GetByKey(clusterName, key)
+		clusterObj, _, err := util.GetClusterObject(
+			context.TODO(),
+			s.informer,
+			clusterName,
+			fedResource.TargetName(),
+			s.typeConfig.GetTargetType(),
+		)
 		if err != nil {
-			wrappedErr := errors.Wrap(err, "Failed to retrieve cached cluster object")
+			wrappedErr := errors.Wrap(err, "failed to get cluster object")
 			dispatcher.RecordClusterError(fedtypesv1a1.CachedRetrievalFailed, clusterName, wrappedErr)
 			continue
-		}
-		var clusterObj *unstructured.Unstructured
-		if rawClusterObj != nil {
-			clusterObj = rawClusterObj.(*unstructured.Unstructured)
 		}
 
 		// Resource should not exist in the named cluster
@@ -956,18 +948,23 @@ func (s *KubeFedSyncController) handleDeletionInClusters(
 			continue
 		}
 
-		key := util.QualifiedNameForCluster(clusterName, qualifiedName).String()
-		rawClusterObj, _, err := s.informer.GetTargetStore().GetByKey(clusterName, key)
+		clusterObj, _, err := util.GetClusterObject(
+			context.TODO(),
+			s.informer,
+			clusterName,
+			qualifiedName,
+			s.typeConfig.GetTargetType(),
+		)
 		if err != nil {
-			wrappedErr := errors.Wrapf(err, "failed to retrieve %s %q for cluster %q", gvk.Kind, key, clusterName)
+			wrappedErr := errors.Wrapf(err, "failed to retrieve %s %q for cluster %q", gvk.Kind, qualifiedName.String(), clusterName)
 			runtime.HandleError(wrappedErr)
 			retrievalFailureClusters = append(retrievalFailureClusters, clusterName)
 			continue
 		}
-		if rawClusterObj == nil {
+		if clusterObj == nil {
 			continue
 		}
-		clusterObj := rawClusterObj.(*unstructured.Unstructured)
+
 		deletionFunc(dispatcher, clusterName, clusterObj)
 	}
 	ok, timeoutErr := dispatcher.Wait()

@@ -168,13 +168,11 @@ func (c *Controller) HasSynced() bool {
 		return false
 	}
 
-	clusters, err := c.federatedInformer.GetReadyClusters()
-	if err != nil {
-		c.logger.Error(err, "failed to get ready clusters")
-		return false
-	}
+	// We do not wait for the individual clusters' informers to sync to prevent a single faulty informer from blocking the
+	// whole automigration controller. If a single cluster's informer is not synced and the cluster objects cannot be
+	// retireved, it will simply be ineligible for automigraiton.
 
-	return c.federatedInformer.GetTargetStore().ClustersSynced(clusters)
+	return true
 }
 
 func (c *Controller) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {

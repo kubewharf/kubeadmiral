@@ -21,6 +21,7 @@ are Copyright 2023 The KubeAdmiral Authors.
 package util
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sync"
@@ -28,7 +29,9 @@ import (
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -36,6 +39,8 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 )
 
 const (
@@ -72,6 +77,9 @@ type FederatedReadOnlyStore interface {
 	// that there may be significant delays in content updates of all kinds and write their
 	// code that it doesn't break if something is slightly out-of-sync.
 	ClustersSynced(clusters []*fedcorev1a1.FederatedCluster) bool
+
+	// Checks whether the store for the specified cluster is there and synced.
+	ClusterSynced(clusterName string) bool
 }
 
 // An interface to retrieve both KubeFedCluster resources and clients
@@ -384,10 +392,8 @@ func (f *federatedInformerImpl) getConfigForClusterUnlocked(clusterName string) 
 	klog.V(4).Infof("Getting config for cluster %q", clusterName)
 	if cluster, found, err := f.getReadyClusterUnlocked(clusterName); found && err == nil {
 		return f.configFactory(cluster)
-	} else {
-		if err != nil {
-			return nil, err
-		}
+	} else if err != nil {
+		return nil, err
 	}
 	return nil, errors.Errorf("cluster %q not found", clusterName)
 }
@@ -451,7 +457,6 @@ func (f *federatedInformerImpl) getClusterUnlocked(key string) (*fedcorev1a1.Fed
 			return cluster, true, nil
 		}
 		return nil, false, errors.Errorf("wrong data in FederatedInformerImpl cluster store: %v", obj)
-
 	} else {
 		return nil, false, err
 	}
@@ -617,4 +622,55 @@ func (fs *federatedStoreImpl) ClustersSynced(clusters []*fedcorev1a1.FederatedCl
 		}
 	}
 	return true
+}
+
+func (fs *federatedStoreImpl) ClusterSynced(clusterName string) bool {
+	fs.federatedInformer.Lock()
+	defer fs.federatedInformer.Unlock()
+
+	if targetInformer, found := fs.federatedInformer.targetInformers[clusterName]; found {
+		return targetInformer.controller.HasSynced()
+	}
+
+	return false
+}
+
+// GetClusterObject is a helper function to get a cluster object. GetClusterObject first attempts to get the object from
+// the federated informer with the given key. However, if the cache for the cluster is not synced, it will send a GET
+// request to the cluster's apiserver to retrieve the object directly.
+func GetClusterObject(
+	ctx context.Context,
+	informer FederatedInformer,
+	clusterName string,
+	qualifedName common.QualifiedName,
+	apiResource metav1.APIResource,
+) (*unstructured.Unstructured, bool, error) {
+	if informer.GetTargetStore().ClusterSynced(clusterName) {
+		clusterObj, exists, err := informer.GetTargetStore().GetByKey(clusterName, qualifedName.String())
+		if err != nil || !exists {
+			return nil, exists, err
+		}
+
+		return clusterObj.(*unstructured.Unstructured), exists, err
+	}
+
+	client, err := informer.GetClientForCluster(clusterName)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get client for cluster %s: %w", clusterName, err)
+	}
+
+	clusterObj := &unstructured.Unstructured{}
+	gvk := schema.APIResourceToGVK(&apiResource)
+	clusterObj.SetKind(gvk.Kind)
+	clusterObj.SetAPIVersion(gvk.GroupVersion().String())
+
+	err = client.Get(ctx, clusterObj, qualifedName.Namespace, qualifedName.Name)
+	if apierrors.IsNotFound(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get object %s with client: %w", qualifedName.String(), err)
+	}
+
+	return clusterObj, true, nil
 }

@@ -237,14 +237,6 @@ func (a *StatusAggregator) HasSynced() bool {
 		return false
 	}
 
-	clusters, err := a.informer.GetReadyClusters()
-	if err != nil {
-		utilruntime.HandleError(errors.Wrap(err, "Failed to get ready clusters"))
-		return false
-	}
-	if !a.informer.GetTargetStore().ClustersSynced(clusters) {
-		return false
-	}
 	return true
 }
 
@@ -283,7 +275,7 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.
 		return worker.StatusAllOK
 	}
 
-	clusterObjs, err := a.clusterObjs(key)
+	clusterObjs, err := a.clusterObjs(qualifiedName)
 	if err != nil {
 		utilruntime.HandleError(err)
 		return worker.StatusError
@@ -342,7 +334,8 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.
 }
 
 // clusterStatuses returns the resource status in member cluster.
-func (a *StatusAggregator) clusterObjs(key string) (map[string]interface{}, error) {
+func (a *StatusAggregator) clusterObjs(qualifiedName common.QualifiedName) (map[string]interface{}, error) {
+	key := qualifiedName.String()
 	clusters, err := a.informer.GetReadyClusters()
 	if err != nil {
 		return nil, err
@@ -351,7 +344,13 @@ func (a *StatusAggregator) clusterObjs(key string) (map[string]interface{}, erro
 	objs := make(map[string]interface{})
 	targetKind := a.typeConfig.GetTargetType().Kind
 	for _, cluster := range clusters {
-		clusterObj, exist, err := a.informer.GetTargetStore().GetByKey(cluster.Name, key)
+		clusterObj, exist, err := util.GetClusterObject(
+			context.TODO(),
+			a.informer,
+			cluster.Name,
+			qualifiedName,
+			a.typeConfig.GetTargetType(),
+		)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "Failed to get %s %q from cluster %q", targetKind, key, cluster.Name)
 			utilruntime.HandleError(wrappedErr)
@@ -367,9 +366,6 @@ func (a *StatusAggregator) clusterObjs(key string) (map[string]interface{}, erro
 
 // The function triggers reconciliation of all target federated resources.
 func (a *StatusAggregator) reconcileOnClusterChange() {
-	if !a.HasSynced() {
-		a.clusterDeliverer.DeliverAt(allClustersKey, nil, time.Now().Add(a.clusterAvailableDelay))
-	}
 	for _, obj := range a.sourceStore.List() {
 		qualifiedName := common.NewQualifiedName(obj.(pkgruntime.Object))
 		a.worker.EnqueueWithDelay(qualifiedName, time.Second*3)
