@@ -31,6 +31,7 @@ import (
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
@@ -1164,7 +1165,17 @@ func (s *KubeFedSyncController) reconcileCluster(qualifiedName common.QualifiedN
 			util.ManagedByKubeFedLabelKey: util.ManagedByKubeFedLabelValue,
 		},
 	)
-	if err != nil {
+	if err == nil && len(objects.Items) > 0 {
+		s.eventRecorder.Eventf(
+			cluster,
+			corev1.EventTypeNormal,
+			EventReasonWaitForCascadingDelete,
+			"waiting for cascading delete of %s",
+			s.typeConfig.GetTargetType().Name,
+		)
+		return worker.Result{RequeueAfter: &s.cascadingDeletionRecheckDelay}
+	}
+	if err != nil && !meta.IsNoMatchError(err) {
 		runtime.HandleError(
 			errors.Wrapf(
 				err,
@@ -1175,18 +1186,8 @@ func (s *KubeFedSyncController) reconcileCluster(qualifiedName common.QualifiedN
 		)
 		return worker.StatusError
 	}
-	if len(objects.Items) > 0 {
-		s.eventRecorder.Eventf(
-			cluster,
-			corev1.EventTypeNormal,
-			EventReasonWaitForCascadingDelete,
-			"waiting for cascading delete of %s",
-			s.typeConfig.GetTargetType().Name,
-		)
-		return worker.Result{RequeueAfter: &s.cascadingDeletionRecheckDelay}
-	}
 
-	// all member objects are deleted, remove finalizer
+	// either all member objects are deleted or the resource does not exist, remove finalizer
 	err = s.removeClusterFinalizer(cluster)
 	if err != nil {
 		runtime.HandleError(err)
