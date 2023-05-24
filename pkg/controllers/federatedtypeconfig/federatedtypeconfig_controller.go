@@ -173,6 +173,26 @@ func (c *Controller) Run(stopChan <-chan struct{}) {
 		return
 	}
 
+	var nsFTC *fedcorev1a1.FederatedTypeConfig
+	ftcs := c.ftcStore.List()
+	for _, obj := range ftcs {
+		ftc := obj.(*fedcorev1a1.FederatedTypeConfig)
+		if ftc.Name == common.NamespaceResource && ftc.GetTargetType().Kind == common.NamespaceKind &&
+			ftc.GetSourceType().Kind == common.NamespaceKind {
+			nsFTC = ftc
+			break
+		}
+	}
+	if nsFTC == nil {
+		// panic if ftc for namespace does not exist, since no other resource can be synced otherwise
+		klog.Fatal("FederatedTypeConfig for namespaces not found")
+	}
+
+	// ensure the federated namespace since it is a requirement for other controllers
+	if err := c.ensureFederatedObjectCrd(nsFTC); err != nil {
+		klog.Fatalf("Failed to ensure FederatedNamespace CRD: %v", err)
+	}
+
 	c.worker.Run(stopChan)
 
 	// Ensure all goroutines are cleaned up when the stop channel closes
@@ -203,6 +223,7 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 	if c.controllerConfig.CreateCrdForFtcs {
 		if err := c.ensureFederatedObjectCrd(typeConfig); err != nil {
 			klog.Error(fmt.Errorf("cannot ensure federated object CRD for %q: %w", typeConfig.Name, err))
+			return worker.StatusError
 		}
 	}
 
