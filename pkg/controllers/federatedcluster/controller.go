@@ -182,30 +182,29 @@ func (c *FederatedClusterController) Run(ctx context.Context) {
 
 func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
 	_ = c.metrics.Rate("federated-cluster-controller.throughput", 1)
-	key := qualifiedName.String()
-	keyedLogger := c.logger.WithValues("control-loop", "reconcile", "key", key)
-	ctx := klog.NewContext(context.TODO(), keyedLogger)
+	logger := c.logger.WithValues("control-loop", "reconcile", "object", qualifiedName.String())
+	ctx := klog.NewContext(context.TODO(), logger)
 	startTime := time.Now()
 
-	keyedLogger.Info("Start reconcile")
+	logger.V(3).Info("Start reconcile")
 	defer c.metrics.Duration("federated-cluster-controller.latency", startTime)
 	defer func() {
-		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcile")
+		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()
 
 	cluster, err := c.clusterLister.Get(qualifiedName.Name)
 	if err != nil && apierrors.IsNotFound(err) {
-		keyedLogger.Info("Observed cluster deletion")
+		logger.V(3).Info("Observed cluster deletion")
 		return worker.StatusAllOK
 	}
 	if err != nil {
-		keyedLogger.Error(err, "Failed to get cluster from store")
+		logger.Error(err, "Failed to get cluster from store")
 		return worker.StatusError
 	}
 	cluster = cluster.DeepCopy()
 
 	if cluster.GetDeletionTimestamp() != nil {
-		keyedLogger.Info("Handle terminating cluster")
+		logger.V(2).Info("Handle terminating cluster")
 		err := handleTerminatingCluster(
 			ctx,
 			cluster,
@@ -218,7 +217,7 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
 			}
-			keyedLogger.Error(err, "Failed to handle terminating cluster")
+			logger.Error(err, "Failed to handle terminating cluster")
 			return worker.StatusError
 		}
 		return worker.StatusAllOK
@@ -229,7 +228,7 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 			// Ignore IsConflict errors because we will retry on the next reconcile
 			return worker.StatusConflict
 		}
-		keyedLogger.Error(err, "Failed to ensure cluster finalizer")
+		logger.Error(err, "Failed to ensure cluster finalizer")
 		return worker.StatusError
 	}
 
@@ -238,7 +237,7 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 	}
 
 	// not joined yet and not failed, so we try to join
-	keyedLogger.Info("Handle unjoined cluster")
+	logger.V(2).Info("Handle unjoined cluster")
 	cluster, newCondition, newJoinPerformed, err := handleNotJoinedCluster(
 		ctx,
 		cluster,
@@ -278,7 +277,7 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 		if cluster, updateErr = c.client.CoreV1alpha1().FederatedClusters().UpdateStatus(
 			ctx, cluster, metav1.UpdateOptions{},
 		); updateErr != nil {
-			keyedLogger.Error(updateErr, "Failed to update cluster status")
+			logger.Error(updateErr, "Failed to update cluster status")
 			err = updateErr
 		}
 	}
@@ -299,30 +298,29 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 }
 
 func (c *FederatedClusterController) collectClusterStatus(qualifiedName common.QualifiedName) (status worker.Result) {
-	key := qualifiedName.String()
-	keyedLogger := c.logger.WithValues("control-loop", "status-collect", "key", key)
-	ctx := klog.NewContext(context.TODO(), keyedLogger)
+	logger := c.logger.WithValues("control-loop", "status-collect", "object", qualifiedName.String())
+	ctx := klog.NewContext(context.TODO(), logger)
 	startTime := time.Now()
 
-	keyedLogger.Info("Start status collection")
+	logger.V(3).Info("Start status collection")
 	defer func() {
-		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished status collection")
+		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished status collection")
 	}()
 
 	cluster, err := c.clusterLister.Get(qualifiedName.Name)
 	if err != nil && apierrors.IsNotFound(err) {
-		keyedLogger.Info("Observed cluster deletion")
+		logger.V(3).Info("Observed cluster deletion")
 		return worker.StatusAllOK
 	}
 	if err != nil {
-		keyedLogger.Error(err, "Failed to get cluster from store")
+		logger.Error(err, "Failed to get cluster from store")
 		return worker.StatusError
 	}
 
 	cluster = cluster.DeepCopy()
 	if shouldCollectClusterStatus(cluster, c.clusterHealthCheckConfig.Period) {
 		if err := collectIndividualClusterStatus(ctx, cluster, c.client, c.federatedClient); err != nil {
-			keyedLogger.Error(err, "Failed to collect cluster status")
+			logger.Error(err, "Failed to collect cluster status")
 			return worker.StatusError
 		}
 	}
