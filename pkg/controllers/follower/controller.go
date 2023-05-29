@@ -263,10 +263,10 @@ func (c *Controller) reconcileLeader(
 	logger := c.logger.WithValues("origin", "reconcileLeader", "type", handles.name, "key", key)
 	startTime := time.Now()
 
-	logger.Info("Starting reconcileLeader")
+	logger.V(3).Info("Starting reconcileLeader")
 	defer func() {
 		c.metrics.Duration(fmt.Sprintf("follower-controller-%s.latency", handles.name), startTime)
-		logger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcileLeader")
+		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcileLeader")
 	}()
 
 	leader := fedtypesv1a1.LeaderReference{
@@ -307,9 +307,6 @@ func (c *Controller) reconcileLeader(
 			}
 			return worker.StatusError
 		}
-	}
-	if logger.V(6).Enabled() {
-		logger.WithValues("followers", desiredFollowers).Info("Got followers")
 	}
 	c.cacheObservedFromLeaders.update(leader, desiredFollowers)
 
@@ -431,10 +428,10 @@ func (c *Controller) reconcileFollower(
 	logger := c.logger.WithValues("origin", "reconcileFollower", "type", handles.name, "key", key)
 	startTime := time.Now()
 
-	logger.Info("Starting reconclieFollower")
+	logger.V(3).Info("Starting reconcileFollower")
 	defer func() {
 		c.metrics.Duration(fmt.Sprintf("follower-controller-%s.latency", handles.name), startTime)
-		logger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcileFollower")
+		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcileFollower")
 	}()
 
 	follower := FollowerReference{
@@ -492,7 +489,7 @@ func (c *Controller) reconcileFollower(
 		)
 		return worker.StatusError
 	} else if updated {
-		logger.V(4).Info("Updated follower to sync with leaders")
+		logger.V(3).Info("Updated follower to sync with leaders")
 	}
 
 	return worker.StatusAllOK
