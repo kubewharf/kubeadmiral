@@ -91,9 +91,9 @@ func update(
 	reason fedtypesv1a1.AggregateReason,
 	collectedStatus CollectedPropagationStatus,
 ) bool {
-	generationUpdated := s.ObservedGeneration != generation
+	generationUpdated := s.SyncedGeneration != generation
 	if generationUpdated {
-		s.ObservedGeneration = generation
+		s.SyncedGeneration = generation
 	}
 
 	collisionCountUpdated := !reflect.DeepEqual(s.CollisionCount, collisionCount)
