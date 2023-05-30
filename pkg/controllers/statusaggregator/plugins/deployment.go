@@ -43,7 +43,7 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 	sourceObject, fedObject *unstructured.Unstructured,
 	clusterObjs map[string]interface{},
 ) (*unstructured.Unstructured, bool, error) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(ctx).WithValues("source-object-name", sourceObject.GetName())
 
 	needUpdate := false
 	digests := []util.LatestReplicasetDigest{}
@@ -63,7 +63,7 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 		var found bool
 		status, found, err := unstructured.NestedMap(utd.Object, common.StatusField)
 		if err != nil || !found {
-			logger.WithValues("sourceObjectName", sourceObject.GetName(), "clusterName", clusterName).
+			logger.WithValues("cluster-name", clusterName).
 				Error(err, "Failed to get status of cluster resource object deployment for cluster")
 			return nil, false, err
 		}
@@ -74,7 +74,7 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 
 		deployStatus := &appsv1.DeploymentStatus{}
 		if err = util.ConvertViaJson(status, deployStatus); err != nil {
-			logger.WithValues("sourceObjectName", sourceObject.GetName(), "clusterName", clusterName).
+			logger.WithValues("cluster-name", clusterName).
 				Error(err, "Failed to convert the status of cluster resource object deployment for cluster")
 			return nil, false, err
 		}
@@ -97,7 +97,7 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 				digests = append(digests, digest)
 			} else {
 				for _, err := range errs {
-					logger.Error(err, "")
+					logger.Error(err, "Failed to get latest replicaset digest from object")
 				}
 			}
 		}
@@ -105,23 +105,20 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 
 	newStatus, err := util.GetUnstructuredStatus(aggregatedStatus)
 	if err != nil {
-		logger.WithValues("sourceObjectName", sourceObject.GetName()).
-			Error(err, "Failed to convert the aggregatedStatus of cluster resource object deployment to status")
+		logger.Error(err, "Failed to convert the aggregatedStatus of cluster resource object deployment to status")
 		return nil, false, err
 	}
 
 	oldStatus, _, err := unstructured.NestedMap(sourceObject.Object, common.StatusField)
 	if err != nil {
-		logger.WithValues("sourceObjectName", sourceObject.GetName()).
-			Error(err, "Failed to get old status of cluster resource object deployment")
+		logger.Error(err, "Failed to get old status of cluster resource object deployment")
 		return nil, false, err
 	}
 
 	// update status of source object if needed
 	if !reflect.DeepEqual(newStatus, oldStatus) {
 		if err := unstructured.SetNestedMap(sourceObject.Object, newStatus, common.StatusField); err != nil {
-			logger.WithValues("sourceObjectName", sourceObject.GetName()).
-				Error(err, "Failed to set the new status of cluster resource object deployment")
+			logger.Error(err, "Failed to set the new status of cluster resource object deployment")
 			return nil, false, err
 		}
 		needUpdate = true
@@ -133,8 +130,7 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 
 	rsDigestsAnnotationBytes, err := json.Marshal(digests)
 	if err != nil {
-		logger.WithValues("sourceObjectName", sourceObject.GetName()).
-			Error(err, "Failed to marshal digests for deployment")
+		logger.Error(err, "Failed to marshal digests for deployment")
 		return nil, false, err
 	}
 
@@ -145,8 +141,7 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 		rsDigestsAnnotation,
 	)
 	if err != nil {
-		logger.WithValues("sourceObjectName", sourceObject.GetName()).
-			Error(err, "Failed to ensure annotations for deployment")
+		logger.Error(err, "Failed to ensure annotations for deployment")
 		return nil, false, err
 	}
 
@@ -158,8 +153,7 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 
 	_, err = annotation.AddAnnotation(sourceObject, util.LatestReplicasetDigestsAnnotation, rsDigestsAnnotation)
 	if err != nil {
-		logger.WithValues("sourceObjectName", sourceObject.GetName()).
-			Error(err, "Failed to add annotations for deployment")
+		logger.Error(err, "Failed to add annotations for deployment")
 		return nil, false, err
 	}
 

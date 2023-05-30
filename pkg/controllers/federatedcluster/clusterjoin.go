@@ -133,7 +133,7 @@ func handleNotJoinedCluster(
 
 	// 3. Get or create system namespace in the cluster, this will also tell us if the cluster is unjoinable
 
-	logger.V(1).WithValues("fedSystemNamespace", fedSystemNamespace).Info("Create or get system namespace in cluster")
+	logger.V(1).WithValues("fed-system-namespace", fedSystemNamespace).Info("Create or get system namespace in cluster")
 	memberFedNamespace, err := clusterKubeClient.CoreV1().Namespaces().Get(ctx, fedSystemNamespace, metav1.GetOptions{ResourceVersion: "0"})
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -289,17 +289,17 @@ func createAuthorizedServiceAccount(
 	clusterName string,
 	errorOnExisting bool,
 ) (string, error) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(ctx).WithValues("member-service-account-name", MemberServiceAccountName)
 
 	// 1. create service account
-	logger.V(1).WithValues("MemberServiceAccountName", MemberServiceAccountName).Info("Creating service account")
+	logger.V(1).Info("Creating service account")
 	err := createServiceAccount(ctx, clusterKubeClient, memberSystemNamespace.Name, MemberServiceAccountName, clusterName, errorOnExisting)
 	if err != nil {
 		return "", fmt.Errorf("failed to create service account %s: %w", MemberServiceAccountName, err)
 	}
 
 	// 2. create service account token secret
-	logger.V(1).WithValues("MemberServiceAccountName", MemberServiceAccountName).Info("Creating service account token secret")
+	logger.V(1).Info("Creating service account token secret")
 	saTokenSecretName, err := createServiceAccountTokenSecret(
 		ctx,
 		clusterKubeClient,
@@ -311,10 +311,10 @@ func createAuthorizedServiceAccount(
 	if err != nil {
 		return "", fmt.Errorf("error creating service account token secret %s : %w", MemberServiceAccountName, err)
 	}
-	logger.V(1).WithValues("saTokenSecretName", saTokenSecretName, "MemberServiceAccountName", MemberServiceAccountName).Info("Created service account token secret for service account")
+	logger.V(1).WithValues("sa-toke-secret-name", saTokenSecretName).Info("Created service account token secret for service account")
 
 	// 3. create rbac
-	logger.V(1).WithValues("MemberServiceAccountName", MemberServiceAccountName).Info("Creating RBAC for service account")
+	logger.V(1).Info("Creating RBAC for service account")
 	err = createClusterRoleAndBinding(ctx, clusterKubeClient, memberSystemNamespace, MemberServiceAccountName, clusterName, errorOnExisting)
 	if err != nil {
 		return "", fmt.Errorf("error creating cluster role and binding for service account %s: %w", MemberServiceAccountName, err)

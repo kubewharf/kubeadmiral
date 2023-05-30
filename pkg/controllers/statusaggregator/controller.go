@@ -195,7 +195,7 @@ func newStatusAggregator(controllerConfig *util.ControllerConfig,
 	if err != nil {
 		return nil, err
 	}
-	a.logger.WithValues("federatedAPIResource.Kind", federatedAPIResource.Kind).Info("Status aggregator NewResourceInformer")
+	a.logger.WithValues("federated-api-resource-kind", federatedAPIResource.Kind).Info("Status aggregator NewResourceInformer")
 	return a, nil
 }
 
@@ -247,51 +247,50 @@ func (a *StatusAggregator) HasSynced() bool {
 }
 
 func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.Result {
-	logger := a.logger.WithValues("object", qualifiedName.String())
-	ctx := klog.NewContext(context.TODO(), logger)
-
 	sourceKind := a.typeConfig.GetSourceType().Kind
 	key := qualifiedName.String()
+	logger := a.logger.WithValues("object", key, "source-kind", sourceKind)
+	ctx := klog.NewContext(context.TODO(), logger)
 
 	a.metrics.Rate("status-aggregator.throughput", 1)
-	logger.V(3).WithValues("sourceKind", sourceKind, "key", key).Info("status aggregator starting to reconcile")
+	logger.V(3).Info("Status aggregator starting to reconcile")
 	startTime := time.Now()
 	defer func() {
 		a.metrics.Duration("status-aggregator.latency", startTime)
-		logger.V(3).WithValues("sourceKind", sourceKind, "key", key, "duration", time.Since(startTime)).Info("status aggregator finished reconciling")
+		logger.V(3).Info("Status aggregator finished reconciling")
 	}()
 
 	sourceObject, err := objectFromCache(a.sourceStore, key)
 	if err != nil {
-		logger.Error(err, "")
+		logger.Error(err, "Failed to get object from cache")
 		return worker.StatusError
 	}
 
 	if sourceObject == nil || sourceObject.GetDeletionTimestamp() != nil {
-		logger.V(3).WithValues("sourceKind", sourceKind, "key", key).Info("No source type found")
+		logger.V(3).Info("No source type found")
 		return worker.StatusAllOK
 	}
 
 	fedObject, err := objectFromCache(a.federatedStore, key)
 	if err != nil {
-		logger.Error(err, "")
+		logger.Error(err, "Failed to get object from cache")
 		return worker.StatusError
 	}
 
 	if fedObject == nil || fedObject.GetDeletionTimestamp() != nil {
-		logger.V(3).WithValues("sourceKind", sourceKind, "key", key).Info("No federated type found")
+		logger.V(3).Info("No federated type found")
 		return worker.StatusAllOK
 	}
 
 	clusterObjs, err := a.clusterObjs(ctx, qualifiedName)
 	if err != nil {
-		logger.Error(err, "")
+		logger.Error(err, "Failed to get cluster objs")
 		return worker.StatusError
 	}
 
 	newObj, needUpdate, err := a.plugin.AggregateStatues(ctx, sourceObject.DeepCopy(), fedObject, clusterObjs)
 	if err != nil {
-		logger.Error(err, "")
+		logger.Error(err, "Failed to aggregate statues")
 		return worker.StatusError
 	}
 
@@ -302,7 +301,7 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.
 	}
 
 	if needUpdate {
-		logger.V(1).WithValues("sourceKind", sourceKind, "key", key).Info("about to update status of source object")
+		logger.V(1).Info("About to update status of source object")
 		_, err = a.sourceClient.Resources(qualifiedName.Namespace).
 			UpdateStatus(context.TODO(), newObj, metav1.UpdateOptions{})
 		if err != nil {
@@ -322,7 +321,7 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.
 		sourcefeedback.PopulateStatusAnnotation(newObj, clusterObjs, &needUpdate)
 
 		if needUpdate {
-			logger.V(1).WithValues("sourceKind", sourceKind, "key", key).Info("about to update annotation of source object")
+			logger.V(1).Info("About to update annotation of source object")
 			_, err = a.sourceClient.Resources(qualifiedName.Namespace).
 				Update(context.TODO(), newObj, metav1.UpdateOptions{})
 			if err != nil {
@@ -363,7 +362,7 @@ func (a *StatusAggregator) clusterObjs(ctx context.Context, qualifiedName common
 		)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "Failed to get %s %q from cluster %q", targetKind, key, cluster.Name)
-			logger.Error(wrappedErr, "")
+			logger.WithValues("cluster-name", cluster.Name).Error(err, "Failed to get object from cluster")
 			return nil, wrappedErr
 		}
 		if exist {

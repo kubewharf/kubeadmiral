@@ -186,7 +186,7 @@ func (c *FederatedClusterController) reconcile(qualifiedName common.QualifiedNam
 	ctx := klog.NewContext(context.TODO(), logger)
 	startTime := time.Now()
 
-	logger.V(3).Info("Start reconcile")
+	logger.V(3).Info("Starting reconcile")
 	defer c.metrics.Duration("federated-cluster-controller.latency", startTime)
 	defer func() {
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")

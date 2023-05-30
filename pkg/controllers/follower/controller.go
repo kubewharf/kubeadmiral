@@ -220,7 +220,7 @@ func NewFollowerController(
 
 func (c *Controller) Run(stopChan <-chan struct{}) {
 	c.logger.Info("Starting controller")
-	defer c.logger.Info("Shutting down controller")
+	defer c.logger.Info("Stopping controller")
 
 	if !cache.WaitForNamedCacheSync(c.name, stopChan, c.HasSynced) {
 		return
@@ -309,7 +309,6 @@ func (c *Controller) reconcileLeader(
 		}
 	}
 	c.cacheObservedFromLeaders.update(leader, desiredFollowers)
-
 	currentFollowers := c.cacheObservedFromFollowers.reverseLookup(leader)
 
 	// enqueue all followers whose desired state may have changed
@@ -489,7 +488,7 @@ func (c *Controller) reconcileFollower(
 		)
 		return worker.StatusError
 	} else if updated {
-		logger.V(3).Info("Updated follower to sync with leaders")
+		logger.V(1).Info("Updated follower to sync with leaders")
 	}
 
 	return worker.StatusAllOK
