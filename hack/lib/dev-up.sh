@@ -18,7 +18,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-function util::create_host_cluster() {
+function dev-up::create_host_cluster() {
   local HOST_CLUSTER_NAME=${1}
   local KUBECONFIG_PATH=${2}
   local MANIFEST_DIR=${3}
@@ -26,10 +26,10 @@ function util::create_host_cluster() {
   local HOST_CONTEXT
 
   if [[ $CLUSTER_PROVIDER == "kind" ]]; then
-    util::create_host_kind_cluster "${HOST_CLUSTER_NAME}" "${KUBECONFIG_PATH}"
+    dev-up::create_host_kind_cluster "${HOST_CLUSTER_NAME}" "${KUBECONFIG_PATH}"
     HOST_CONTEXT="kind-${HOST_CLUSTER_NAME}"
   elif [[ $CLUSTER_PROVIDER == "kwok" ]]; then
-    util::create_host_kwok_cluster "${HOST_CLUSTER_NAME}" "${KUBECONFIG_PATH}"
+    dev-up::create_host_kwok_cluster "${HOST_CLUSTER_NAME}" "${KUBECONFIG_PATH}"
     HOST_CONTEXT="kwok-${HOST_CLUSTER_NAME}"
   else
     echo "Invalid provider, only kwok or kind allowed"
@@ -40,18 +40,13 @@ function util::create_host_cluster() {
   kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" create -f "${CONFIG_DIR}"
 
   NOFED=kubeadmiral.io/no-federated-resource=1
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" annotate deploy -A --all $NOFED
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" annotate daemonset -A --all $NOFED
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" annotate cm -A --all $NOFED
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" annotate secret -A --all $NOFED
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" annotate role -A --all $NOFED
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" annotate rolebinding -A --all $NOFED
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" annotate clusterrole -A --all $NOFED
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" annotate clusterrolebinding -A --all $NOFED
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" annotate svc -A --all $NOFED
+  local target_array=(deploy daemonset cm secret role rolebinding clusterrole clusterrolebinding svc)
+  for target in ${target_array[@]}; do
+    kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" annotate ${target} -A --all ${NOFED}
+  done
 }
 
-function util::create_host_kind_cluster() {
+function dev-up::create_host_kind_cluster() {
   local HOST_CLUSTER_NAME=${1}
   local KUBECONFIG_PATH=${2}
 
@@ -81,7 +76,7 @@ EOF
   docker exec ${HOST_CLUSTER_NAME}-control-plane rm /etc/kubernetes/manifests/kube-scheduler.yaml
 }
 
-function util::create_host_kwok_cluster() {
+function dev-up::create_host_kwok_cluster() {
   local HOST_CLUSTER_NAME=${1}
   local KUBECONFIG_PATH=${2}
   local APISERVER_PORT=$(( $RANDOM + 30000 ))
@@ -105,7 +100,7 @@ EOF
   KUBECONFIG=${KUBECONFIG_PATH} kwokctl create cluster --name="${HOST_CLUSTER_NAME}" --config=<(echo "${KWOK_CONFIG}")
 }
 
-function util::create_member_cluster() {
+function dev-up::create_member_cluster() {
   local MEMBER_CLUSTER_NAME=${1}
   local KUBECONFIG_PATH=${2}
 
@@ -160,58 +155,3 @@ EOF
     exit 1
   fi
 }
-
-function util::join_member_cluster() {
-  local MEMBER_CLUSTER_NAME=${1}
-  local HOST_CLUSTER_NAME=${2}
-  local KUBECONFIG_PATH=${3}
-
-  local HOST_CONTEXT MEMBER_API_ENDPOINT MEMBER_CA MEMBER_CERT MEMBER_KEY
-  if [[ $CLUSTER_PROVIDER == "kind" ]]; then
-    HOST_CONTEXT="kind-${HOST_CLUSTER_NAME}"
-    MEMBER_API_ENDPOINT=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'server:' | awk '{ print $2 }')
-    MEMBER_CA=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'certificate-authority-data:' | awk '{ print $2 }')
-    MEMBER_CERT=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-certificate-data:' | awk '{ print $2 }')
-    MEMBER_KEY=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-key-data:' | awk '{ print $2 }')
-  elif [[ $CLUSTER_PROVIDER == "kwok" ]]; then
-    HOST_CONTEXT="kwok-${HOST_CLUSTER_NAME}"
-    MEMBER_API_ENDPOINT=$(kwokctl get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'server:' | awk '{ print $2 }')
-    MEMBER_CA=$(cat ${KWOK_WORKDIR:-"${HOME}/.kwok/clusters/${MEMBER_CLUSTER_NAME}/pki/ca.crt"} | base64 | tr -d '\n')
-    MEMBER_CERT=$(kwokctl get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-certificate-data:' | awk '{ print $2 }')
-    MEMBER_KEY=$(kwokctl get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-key-data:' | awk '{ print $2 }')
-  else
-    echo "Invalid provider, only kwok or kind allowed"
-    exit 1
-  fi
-
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" create -f - <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ${MEMBER_CLUSTER_NAME}
-  namespace: kube-admiral-system
-type: Opaque
-data:
-  certificate-authority-data: "${MEMBER_CA}"
-  client-certificate-data: "${MEMBER_CERT}"
-  client-key-data: "${MEMBER_KEY}"
-EOF
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CONTEXT}" create -f - <<EOF
-apiVersion: core.kubeadmiral.io/v1alpha1
-kind: FederatedCluster
-metadata:
-  labels:
-    cluster: ${MEMBER_CLUSTER_NAME}
-    name: ${MEMBER_CLUSTER_NAME}
-    idc: kind
-    vdc: kind
-  name: ${MEMBER_CLUSTER_NAME}
-  namespace: kube-admiral-system
-spec:
-  apiEndpoint: ${MEMBER_API_ENDPOINT}
-  useServiceAccount: true
-  secretRef:
-    name: ${MEMBER_CLUSTER_NAME}
-EOF
-}
-

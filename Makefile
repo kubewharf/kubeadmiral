@@ -1,27 +1,105 @@
 SHELL := /bin/bash
 
+# go build arguments
 BUILD_FLAGS :=
-BINARY := manager
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+GOPROXY ?= $(shell go env GOPROXY)
+TARGET_NAME ?= kubeadmiral-controller-manager
+
+# image information
+REGISTRY ?= ghcr.io/kubewharf
+TAG ?= latest
+REGION ?= cn
+
+ifeq (${REGION}, cn)
+GOPROXY := https://goproxy.cn,direct
+endif
 
 .PHONY: all
 all: build
 
 # Production build
+#
+# Args:
+#   BUILD_PLATFORMS: platforms to build. e.g.: linux/amd64,darwin/amd64. The default value is the host platform.
+#
+# Example:
+#   # compile kubeadmiral-controller-manager with the host platform
+#   make build
+#   # compile kubeadmiral-controller-manager with specified platforms
+#   make build BUILD_PLATFORMS=linux/amd64,darwin/amd64
 .PHONY: build
 build:
-	mkdir -p output
-	go build $(BUILD_FLAGS) -o output/$(BINARY) cmd/controller-manager/main.go
+	BUILD_FLAGS=$(BUILD_FLAGS) TARGET_NAME=$(TARGET_NAME) GOPROXY=$(GOPROXY) bash hack/make-rules/build.sh
+
+# Start a local kubeadmiral cluster for developers.
+#
+# It will directly start the kubeadmiral control-plane cluster(excluding the kubeadmiral-controller-manager) and three member-clusters.
+# Users can run the kubeadmiral-controller-manager component through binary for easy debugging, e.g.:
+# ./output/bin/darwin/amd64/kubeadmiral-controller-manager --create-crds-for-ftcs \
+#    --klog-logtostderr=false \
+#    --klog-log-file "./kubeadmiral.log" \
+#    --kubeconfig "$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml" \
+#    2>/dev/null
+.PHONY: dev-up
+dev-up:
+	make clean-local-cluster
+	bash hack/make-rules/dev-up.sh
+	make build
+
+# Local up the KubeAdmiral.
+#
+# Args:
+#   NUM_MEMBER_CLUSTERS: the number of member clusters you want to startup, default is 3, at least 1.
+#   REGION:              region to build. e.g.: 'cn' means china mainland(the default value),
+#                        the script will set the remote mirror address according to the region to speed up the build.
+#
+# Example:
+#   # It will locally start a meta-cluster to deploy the kubeadmiral control-plane, and three member cluster clusters
+#   make local-up
+.PHONY: local-up
+local-up:
+	REGION="$(REGION)" NUM_MEMBER_CLUSTERS="$(NUM_MEMBER_CLUSTERS)" bash hack/make-rules/local-up.sh
 
 # Debug build
 .PHONY: debug
 debug: BUILD_FLAGS+=-race
-debug: BINARY:=$(BINARY)_debug
+debug: TARGET_NAME:=$(TARGET_NAME)_debug
 debug: build
+
+# Build binaries and docker images.
+# The supported OS is linux, and user can specify the arch type (only amd64,arm64,arm are supported)
+#
+# ARGS:
+#   REGISTRY:  image registry, the default value is "ghcr.io/kubewharf"
+#   TAG:       image tag, the default value is "latest"
+#   ARCHS:     list of target architectures, e.g.:amd64,arm64,arm. The default value is host arch
+#   GOPROXY:   it specifies the download address of the dependent package
+#
+# Examples:
+#   # build images with the host arch, it will generate "ghcr.io/kubewharf/kubeadmiral-controller-manager:latest"
+#   make images
+#
+#   # build images with amd64,arm64 arch
+#   # note: If you specify multiple architectures, the image tag will be added with the architecture name,e.g.:
+#   # 		"ghcr.io/kubewharf/kubeadmiral-controller-manager:latest-amd64"
+#   # 		"ghcr.io/kubewharf/kubeadmiral-controller-manager:latest-arm64"
+#   make images ARCHS=amd64,arm64
+.PHONY: images
+images:
+	REGISTRY=$(REGISTRY) TAG=$(TAG) ARCHS=$(ARCHS) GOPROXY=$(GOPROXY) bash hack/make-rules/build-images.sh
 
 # Clean built binaries
 .PHONY: clean
 clean:
-	rm -r output
+	rm -rf output kubeadmiral.log
+
+# Clean up all the local kind clusters and related kubeconfigs
+# Users can clean up the local kind clusters started by the `make local-up` command.
+.PHONY: clean-local-cluster
+clean-local-cluster:
+	bash hack/make-rules/clean-local-cluster.sh
 
 # Generate code and artifacts
 .PHONY: generate
