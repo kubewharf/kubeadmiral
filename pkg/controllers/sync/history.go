@@ -35,7 +35,7 @@ import (
 // syncRevisions update current history revision number, or create current history if need to.
 // It also deduplicates current history, and keeps quantity of history within historyLimit.
 // It returns collision count, latest revision name, current revision name and possible error
-func (s *KubeFedSyncController) syncRevisions(fedResource FederatedResource) (*int32, string, string, error) {
+func (s *SyncController) syncRevisions(fedResource FederatedResource) (*int32, string, string, error) {
 	var (
 		oldRevisions     []*appsv1.ControllerRevision
 		currentRevisions []*appsv1.ControllerRevision
@@ -144,7 +144,7 @@ func IsLabelSubset(x, y map[string]string) bool {
 	return true
 }
 
-func (s *KubeFedSyncController) updateRevisionLabel(
+func (s *SyncController) updateRevisionLabel(
 	revision *appsv1.ControllerRevision,
 	labels map[string]string,
 ) error {
@@ -167,7 +167,7 @@ func (s *KubeFedSyncController) updateRevisionLabel(
 	return nil
 }
 
-func (s *KubeFedSyncController) truncateRevisions(revisions []*appsv1.ControllerRevision, limit int64) error {
+func (s *SyncController) truncateRevisions(revisions []*appsv1.ControllerRevision, limit int64) error {
 	history.SortControllerRevisions(revisions)
 	toKill := len(revisions) - int(limit)
 	for _, revision := range revisions {
@@ -186,7 +186,7 @@ func (s *KubeFedSyncController) truncateRevisions(revisions []*appsv1.Controller
 	return nil
 }
 
-func (s *KubeFedSyncController) listRevisions(fedResource FederatedResource) ([]*appsv1.ControllerRevision, error) {
+func (s *SyncController) listRevisions(fedResource FederatedResource) ([]*appsv1.ControllerRevision, error) {
 	selector := labels.SelectorFromSet(revisionLabels(fedResource))
 	return s.controllerHistory.ListControllerRevisions(fedResource.Object(), selector)
 }
@@ -215,7 +215,7 @@ func newRevision(
 }
 
 // dedupCurRevisions deduplicates current revisions and returns the revision to keep
-func (s *KubeFedSyncController) dedupCurRevisions(
+func (s *SyncController) dedupCurRevisions(
 	dupRevisions []*appsv1.ControllerRevision,
 ) (*appsv1.ControllerRevision, error) {
 	if len(dupRevisions) == 0 {

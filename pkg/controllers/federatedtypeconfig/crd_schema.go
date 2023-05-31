@@ -40,6 +40,9 @@ openAPIV3Schema:
 		status:
 			type: object
 			properties:
+				syncedGeneration:
+					format: int64
+					type: integer
 				clusters:
 					type: array
 					items:

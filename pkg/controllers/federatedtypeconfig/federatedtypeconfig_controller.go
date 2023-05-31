@@ -672,7 +672,7 @@ func (c *Controller) startSyncController(tc *fedcorev1a1.FederatedTypeConfig) er
 		go c.controllerRevisionController.Run(stopChan)
 	}
 
-	err := synccontroller.StartKubeFedSyncController(
+	err := synccontroller.StartSyncController(
 		controllerConfig,
 		stopChan,
 		ftc,

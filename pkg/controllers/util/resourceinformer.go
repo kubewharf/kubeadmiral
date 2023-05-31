@@ -75,7 +75,7 @@ func NewManagedResourceInformer(
 	extraTags map[string]string,
 	metrics stats.Metrics,
 ) (cache.Store, cache.Controller) {
-	labelSelector := labels.Set(map[string]string{ManagedByKubeFedLabelKey: ManagedByKubeFedLabelValue}).
+	labelSelector := labels.Set(map[string]string{ManagedByKubeAdmiralLabelKey: ManagedByKubeAdmiralLabelValue}).
 		AsSelector().
 		String()
 	return newResourceInformer(
