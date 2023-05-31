@@ -33,7 +33,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
@@ -71,14 +70,18 @@ type VersionManager struct {
 	versions map[string]runtimeclient.Object
 
 	client generic.Client
+
+	logger klog.Logger
 }
 
 func NewVersionManager(
+	logger klog.Logger,
 	client generic.Client,
 	namespaced bool,
 	federatedKind, targetKind, namespace string,
 ) *VersionManager {
 	v := &VersionManager{
+		logger:        logger.WithValues("logger-origin", "version-manager"),
 		targetKind:    targetKind,
 		federatedKind: federatedKind,
 		namespace:     namespace,
@@ -185,7 +188,8 @@ func (m *VersionManager) Update(resource VersionedResource,
 
 	if oldStatus != nil && util.PropagatedVersionStatusEquivalent(oldStatus, status) {
 		m.Unlock()
-		klog.V(4).Infof("No update necessary for %s %q", m.adapter.TypeName(), qualifiedName)
+		m.logger.WithValues("versionAdapter-type-name", m.adapter.TypeName(), "version-qualified-name", qualifiedName).
+			V(4).Info("No update necessary")
 		return nil
 	}
 
@@ -222,14 +226,15 @@ func (m *VersionManager) list(stopChan <-chan struct{}) (runtimeclient.ObjectLis
 	err := wait.PollImmediateInfinite(1*time.Second, func() (bool, error) {
 		select {
 		case <-stopChan:
-			klog.V(4).Infof("Halting version manager list due to closed stop channel")
+			m.logger.V(4).Info("Halting version manager list due to closed stop channel")
 			return false, errors.New("")
 		default:
 		}
 		versionList = m.adapter.NewListObject()
 		err := m.client.List(context.TODO(), versionList, m.namespace)
 		if err != nil {
-			runtime.HandleError(errors.Wrapf(err, "Failed to list propagated versions for %q", m.federatedKind))
+			m.logger.WithValues("federated-kind", m.federatedKind).
+				Error(err, "Failed to list propagated versions for federatedKind")
 			// Do not return the error to allow the operation to be retried.
 			return false, nil
 		}
@@ -253,7 +258,7 @@ func (m *VersionManager) load(versionList runtimeclient.ObjectList, stopChan <-c
 	for _, obj := range objs {
 		select {
 		case <-stopChan:
-			klog.V(4).Infof("Halting version manager load due to closed stop channel")
+			m.logger.V(4).Info("Halting version manager load due to closed stop channel")
 			return false
 		default:
 		}
@@ -267,7 +272,8 @@ func (m *VersionManager) load(versionList runtimeclient.ObjectList, stopChan <-c
 	m.Lock()
 	m.hasSynced = true
 	m.Unlock()
-	klog.V(4).Infof("Version manager for %q synced", m.federatedKind)
+	m.logger.WithValues("federated-kind", m.federatedKind).
+		V(4).Info("Version manager for federatedKind synced")
 	return true
 }
 
@@ -289,6 +295,7 @@ func (m *VersionManager) versionQualifiedName(qualifiedName common.QualifiedName
 func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName common.QualifiedName) error {
 	key := qualifiedName.String()
 	adapterType := m.adapter.TypeName()
+	keyedLogger := m.logger.WithValues("versionAdapter-type-name", adapterType, "version-qualified-name", key)
 
 	resourceVersion, err := getResourceVersion(obj)
 	if err != nil {
@@ -303,9 +310,7 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 			var err error
 			resourceVersion, err = m.getResourceVersionFromAPI(qualifiedName)
 			if err != nil {
-				runtime.HandleError(
-					errors.Wrapf(err, "Failed to refresh the resourceVersion for %s %q from the API", adapterType, key),
-				)
+				keyedLogger.Error(err, "Failed to refresh the resourceVersion from the API")
 				return false, nil
 			}
 			refreshVersion = false
@@ -317,17 +322,14 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 			createdObj := obj.DeepCopyObject()
 			err := setResourceVersion(createdObj, "")
 			if err != nil {
-				runtime.HandleError(
-					errors.Wrapf(err, "Failed to clear the resourceVersion for %s %q", adapterType, key),
-				)
+				keyedLogger.Error(err, "Failed to clear the resourceVersion")
 				return false, nil
 			}
 
-			klog.V(4).Infof("Creating %s %q", adapterType, qualifiedName)
+			keyedLogger.V(2).Info("Creating resourceVersion")
 			err = m.client.Create(context.TODO(), createdObj.(runtimeclient.Object))
 			if apierrors.IsAlreadyExists(err) {
-				klog.V(4).
-					Infof("%s %q was created by another process. Will refresh the resourceVersion and attempt to update.", adapterType, qualifiedName)
+				keyedLogger.V(3).Info("ResourceVersion was created by another process. Will refresh the resourceVersion and attempt to update")
 				refreshVersion = true
 				return false, nil
 			}
@@ -338,16 +340,14 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 				return false, err
 			}
 			if err != nil {
-				runtime.HandleError(errors.Wrapf(err, "Failed to create %s %q", adapterType, key))
+				keyedLogger.Error(err, "Failed to create resourceVersion")
 				return false, nil
 			}
 
 			// Update the resource version that will be used for update.
 			resourceVersion, err = getResourceVersion(createdObj)
 			if err != nil {
-				runtime.HandleError(
-					errors.Wrapf(err, "Failed to retrieve the resourceVersion for %s %q", adapterType, key),
-				)
+				keyedLogger.Error(err, "Failed to retrieve the resourceVersion")
 				return false, nil
 			}
 		}
@@ -357,21 +357,19 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 		updatedObj := obj.DeepCopyObject()
 		err := setResourceVersion(updatedObj, resourceVersion)
 		if err != nil {
-			runtime.HandleError(errors.Wrapf(err, "Failed to set the resourceVersion for %s %q", adapterType, key))
+			keyedLogger.Error(err, "Failed to set the resourceVersion")
 			return false, nil
 		}
 
-		klog.V(4).Infof("Updating the status of %s %q", adapterType, qualifiedName)
+		keyedLogger.V(2).Info("Updating the status")
 		err = m.client.UpdateStatus(context.TODO(), updatedObj.(runtimeclient.Object))
 		if apierrors.IsConflict(err) {
-			klog.V(4).
-				Infof("%s %q was updated by another process. Will refresh the resourceVersion and retry the update.", adapterType, qualifiedName)
+			keyedLogger.V(3).Info("ResourceVersion was updated by another process. Will refresh the resourceVersion and retry the update")
 			refreshVersion = true
 			return false, nil
 		}
 		if apierrors.IsNotFound(err) {
-			klog.V(4).
-				Infof("%s %q was deleted by another process. Will clear the resourceVersion and retry the update.", adapterType, qualifiedName)
+			keyedLogger.V(3).Info("ResourceVersion was deleted by another process. Will clear the resourceVersion and retry the update")
 			resourceVersion = ""
 			return false, nil
 		}
@@ -382,7 +380,7 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 			return false, err
 		}
 		if err != nil {
-			runtime.HandleError(errors.Wrapf(err, "Failed to update the status of %s %q", adapterType, key))
+			keyedLogger.Error(err, "Failed to update the status")
 			return false, nil
 		}
 
@@ -393,12 +391,12 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 		// Update the version resource
 		resourceVersion, err = getResourceVersion(updatedObj)
 		if err != nil {
-			runtime.HandleError(errors.Wrapf(err, "Failed to retrieve the resourceVersion for %s %q", adapterType, key))
+			keyedLogger.Error(err, "Failed to retrieve the resourceVersion")
 			return true, nil
 		}
 		err = setResourceVersion(obj, resourceVersion)
 		if err != nil {
-			runtime.HandleError(errors.Wrapf(err, "Failed to set the resourceVersion for %s %q", adapterType, key))
+			keyedLogger.Error(err, "Failed to set the resourceVersion")
 		}
 
 		return true, nil
@@ -410,7 +408,8 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 }
 
 func (m *VersionManager) getResourceVersionFromAPI(qualifiedName common.QualifiedName) (string, error) {
-	klog.V(4).Infof("Retrieving resourceVersion for %s %q from the API", m.federatedKind, qualifiedName)
+	m.logger.WithValues("federated-kind", m.federatedKind, "version-qualified-name", qualifiedName).
+		V(2).Info("Retrieving resourceVersion for %s %q from the API")
 	obj := m.adapter.NewObject()
 	err := m.client.Get(context.TODO(), obj, qualifiedName.Namespace, qualifiedName.Name)
 	if err != nil {

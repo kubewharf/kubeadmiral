@@ -17,6 +17,7 @@ limitations under the License.
 package sync
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -35,7 +36,7 @@ import (
 // syncRevisions update current history revision number, or create current history if need to.
 // It also deduplicates current history, and keeps quantity of history within historyLimit.
 // It returns collision count, latest revision name, current revision name and possible error
-func (s *SyncController) syncRevisions(fedResource FederatedResource) (*int32, string, string, error) {
+func (s *SyncController) syncRevisions(ctx context.Context, fedResource FederatedResource) (*int32, string, string, error) {
 	var (
 		oldRevisions     []*appsv1.ControllerRevision
 		currentRevisions []*appsv1.ControllerRevision
@@ -67,7 +68,7 @@ func (s *SyncController) syncRevisions(fedResource FederatedResource) (*int32, s
 	}
 
 	kind := s.typeConfig.GetFederatedType().Kind
-	key := fedResource.FederatedName().String()
+	kindedKeyedLogger := klog.FromContext(ctx).WithValues("federated-kind", kind)
 	revisionNumber := maxRevision(oldRevisions) + 1
 	switch len(currentRevisions) {
 	case 0:
@@ -75,8 +76,8 @@ func (s *SyncController) syncRevisions(fedResource FederatedResource) (*int32, s
 		if _, err := s.controllerHistory.CreateControllerRevision(fedResource.Object(), updateRevision, collisionCount); err != nil {
 			return collisionCount, "", "", err
 		}
-		klog.V(4).
-			Infof("debug - Created new revision for %s %s: %s, %d", kind, key, updateRevision.Name, updateRevision.Revision)
+		kindedKeyedLogger.WithValues("controllerRevision-name", updateRevision.Name, "revision", updateRevision.Revision).
+			V(4).Info("debug - Created new revision for federated object")
 	default:
 		update, err := s.dedupCurRevisions(currentRevisions)
 		if err != nil {
@@ -87,25 +88,22 @@ func (s *SyncController) syncRevisions(fedResource FederatedResource) (*int32, s
 			if _, err := s.controllerHistory.UpdateControllerRevision(update, revisionNumber); err != nil {
 				return collisionCount, "", "", err
 			}
-			klog.V(4).Infof(
-				"debug - Update revision with new revisionNumber for %s %s: %s, %d, new revisionNumber: %d",
-				kind, key, update.Name, update.Revision, revisionNumber,
-			)
+			kindedKeyedLogger.WithValues("controllerRevision-name", update.Name, "revision", update.Revision, "revisionNumber", revisionNumber).
+				V(4).Info("debug - Update revision with new revisionNumber for federated object")
 		} else if update.Revision >= revisionNumber {
 			labels := revisionLabelsWithOriginalLabel(fedResource)
-			if err := s.updateRevisionLabel(update, labels); err != nil {
+			if err := s.updateRevisionLabel(ctx, update, labels); err != nil {
 				return collisionCount, "", "", err
 			}
-			klog.V(4).Infof("debug - Update revision with new labels for %s %s: %s, %d, labels: %v", kind, key, update.Name, update.Revision, labels)
+			kindedKeyedLogger.WithValues("controllerRevision-name", update.Name, "revision", update.Revision, "labels", labels).
+				V(4).Info("debug - Update revision with new labels for federated object")
 		}
 	}
 
 	// maintain the revision history limit.
-	if err := s.truncateRevisions(oldRevisions, historyLimit); err != nil {
+	if err := s.truncateRevisions(ctx, oldRevisions, historyLimit); err != nil {
 		// it doesn't hurt much on failure
-		kind := s.typeConfig.GetFederatedType().Kind
-		key := fedResource.FederatedName().String()
-		klog.V(4).Infof("Failed to truncate revisionHistory for %s %s: %v", kind, key, err)
+		kindedKeyedLogger.Error(err, "Failed to truncate revisionHistory for federated object")
 	}
 	// revisions are sorted after truncation, so the last one in oldRevisions should be the latest revision
 	var lastRevisionNameWithHash string
@@ -121,7 +119,7 @@ func (s *SyncController) syncRevisions(fedResource FederatedResource) (*int32, s
 	}
 
 	for _, revision := range oldRevisions {
-		if err := s.updateRevisionLabel(revision, revisionLabelsWithOriginalLabel(fedResource)); err != nil {
+		if err := s.updateRevisionLabel(ctx, revision, revisionLabelsWithOriginalLabel(fedResource)); err != nil {
 			return collisionCount, "", "", err
 		}
 	}
@@ -145,9 +143,11 @@ func IsLabelSubset(x, y map[string]string) bool {
 }
 
 func (s *SyncController) updateRevisionLabel(
+	ctx context.Context,
 	revision *appsv1.ControllerRevision,
 	labels map[string]string,
 ) error {
+	keyedLogger := klog.FromContext(ctx)
 	if !IsLabelSubset(revision.GetLabels(), labels) {
 		clone := revision.DeepCopy()
 		for k, v := range labels {
@@ -158,7 +158,8 @@ func (s *SyncController) updateRevisionLabel(
 		clone.Revision = 0
 		if _, err := s.controllerHistory.UpdateControllerRevision(clone, revisionNumber); err != nil {
 			if apierrors.IsNotFound(err) {
-				klog.V(4).Infof("failed to update the revision %s with error %v", revision.Name, err)
+				keyedLogger.WithValues("controllerRevision-name", revision.Name).
+					Error(err, "Failed to update the revision")
 			} else {
 				return err
 			}
@@ -167,16 +168,18 @@ func (s *SyncController) updateRevisionLabel(
 	return nil
 }
 
-func (s *SyncController) truncateRevisions(revisions []*appsv1.ControllerRevision, limit int64) error {
+func (s *SyncController) truncateRevisions(ctx context.Context, revisions []*appsv1.ControllerRevision, limit int64) error {
 	history.SortControllerRevisions(revisions)
 	toKill := len(revisions) - int(limit)
+	keyedLogger := klog.FromContext(ctx)
 	for _, revision := range revisions {
 		if toKill <= 0 {
 			break
 		}
 		if err := s.controllerHistory.DeleteControllerRevision(revision); err != nil {
 			if apierrors.IsNotFound(err) {
-				klog.V(4).Infof("failed to delete the revision %s with error %v", revision.Name, err)
+				keyedLogger.WithValues("controllerRevision-name", revision.Name).
+					Error(err, "Failed to delete the revision")
 			} else {
 				return err
 			}

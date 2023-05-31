@@ -102,23 +102,26 @@ type managedDispatcherImpl struct {
 	rolloutPlans     util.RolloutPlans
 
 	metrics stats.Metrics
+	logger  klog.Logger
 }
 
 func NewManagedDispatcher(
+	logger klog.Logger,
 	clientAccessor clientAccessorFunc,
 	fedResource FederatedResourceForDispatch,
 	skipAdoptingResources bool,
 	metrics stats.Metrics,
 ) ManagedDispatcher {
 	d := &managedDispatcherImpl{
+		logger:                logger.WithValues("logger-origin", "managed-dispatcher"),
 		fedResource:           fedResource,
 		versionMap:            make(map[string]string),
 		statusMap:             make(status.PropagationStatusMap),
 		skipAdoptingResources: skipAdoptingResources,
 		metrics:               metrics,
 	}
-	d.dispatcher = newOperationDispatcher(clientAccessor, d)
-	d.unmanagedDispatcher = newUnmanagedDispatcher(d.dispatcher, d, fedResource.TargetGVK(), fedResource.TargetName())
+	d.dispatcher = newOperationDispatcher(logger, clientAccessor, d)
+	d.unmanagedDispatcher = newUnmanagedDispatcher(logger, d.dispatcher, d, fedResource.TargetGVK(), fedResource.TargetName())
 	return d
 }
 
@@ -283,9 +286,10 @@ func (d *managedDispatcherImpl) planRolloutProcess(clusterObjs map[string]*unstr
 
 	defer func() {
 		if err != nil {
-			klog.V(4).Infof("Generate rollout plans for %s %s met error: %v", gvk, key, err)
+			d.logger.WithValues("target-gvk", gvk, "target-name", key).Error(err, "Failed to generate rollout plans")
 		} else {
-			klog.V(4).Infof("Generate rollout plans for %s %s: %v. Current status: %s", gvk, key, plans, planner)
+			d.logger.WithValues("target-gvk", gvk, "target-name", key, "plans", plans, "current-status", planner).
+				V(4).Info("Generating rollout plans")
 		}
 		SendRolloutPlansToES(planner, plans, r.Object(), err)
 		d.emitRolloutStatus(clusterObjs, selectedClusterNames, planner)
@@ -459,7 +463,8 @@ func (d *managedDispatcherImpl) Update(clusterName string, clusterObj *unstructu
 		if err != nil {
 			return d.recordOperationError(fedtypesv1a1.UpdateFailed, clusterName, op, err)
 		}
-		klog.V(4).Infof("debug - Updated %s %s/%s in %s", obj.GetKind(), obj.GetNamespace(), obj.GetName(), clusterName)
+		d.logger.WithValues("kind", obj.GetKind(), "namespace", obj.GetNamespace(), "name", obj.GetName(), "cluster-name", clusterName).
+			V(4).Info("debug - Updated object in cluster")
 		d.setResourcesUpdated()
 		version = util.ObjectVersion(obj)
 		d.recordVersion(clusterName, version)
@@ -546,8 +551,8 @@ func (d *managedDispatcherImpl) PatchAndKeepTemplate(
 		if err != nil {
 			return d.recordOperationError(fedtypesv1a1.UpdateFailed, clusterName, op, err)
 		}
-		klog.V(4).
-			Infof("debug - Updated and kept template %s %s/%s in %s", obj.GetKind(), obj.GetNamespace(), obj.GetName(), clusterName)
+		d.logger.WithValues("kind", obj.GetKind(), "namespace", obj.GetNamespace(), "name", obj.GetName(), "cluster-name", clusterName).
+			V(4).Info("debug - Updated object and kept template in cluster")
 		d.setResourcesUpdated()
 		version = util.ObjectVersion(obj)
 		d.recordVersion(clusterName, version)
@@ -591,7 +596,7 @@ func (d *managedDispatcherImpl) recordError(clusterName, operation string, err e
 	args := []interface{}{operation, d.fedResource.TargetKind(), targetName, clusterName}
 	eventType := fmt.Sprintf("%sInClusterFailed", strings.Replace(strings.Title(operation), " ", "", -1))
 	eventErr := errors.Wrapf(err, "Failed to "+eventTemplate, args...)
-	klog.Infof("%s with error %s", eventType, eventErr)
+	d.logger.Error(eventErr, eventType)
 	d.fedResource.RecordError(eventType, eventErr)
 	d.metrics.Rate("member_operation_error", 1, []stats.Tag{
 		{Name: "cluster", Value: clusterName},
@@ -673,7 +678,7 @@ func (d *managedDispatcherImpl) emitRolloutStatus(
 	if planner == nil {
 		replicas, err := r.TotalReplicas(selectedClusterNames)
 		if err != nil {
-			klog.Errorf("Skip rollout metrics: failed to get replicas: %v", err)
+			d.logger.Error(err, "Skip rollout metrics: failed to get replicas")
 			return
 		}
 		pathPrefix := []string{common.SpecField, common.TemplateField}
@@ -681,7 +686,7 @@ func (d *managedDispatcherImpl) emitRolloutStatus(
 		maxUnavailablePath := append(pathPrefix, util.MaxUnavailablePathSlice...)
 		maxSurge, maxUnavailable, err := util.RetrieveFencepost(r.Object(), maxSurgePath, maxUnavailablePath, replicas)
 		if err != nil {
-			klog.Errorf("Skip rollout metrics: failed to get maxSurge and maxUnavailable: %v", err)
+			d.logger.Error(err, "Skip rollout metrics: failed to get maxSurge and maxUnavailable")
 			return
 		}
 		_ = d.metrics.Store("sync.rollout.maxSurge", maxSurge, fedTags...)

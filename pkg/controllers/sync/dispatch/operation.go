@@ -26,7 +26,7 @@ import (
 
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/klog/v2"
 
 	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
@@ -60,10 +60,13 @@ type operationDispatcherImpl struct {
 	timeout time.Duration
 
 	recorder dispatchRecorder
+
+	logger klog.Logger
 }
 
-func newOperationDispatcher(clientAccessor clientAccessorFunc, recorder dispatchRecorder) *operationDispatcherImpl {
+func newOperationDispatcher(logger klog.Logger, clientAccessor clientAccessorFunc, recorder dispatchRecorder) *operationDispatcherImpl {
 	return &operationDispatcherImpl{
+		logger:         logger.WithValues("logger-origin", "operation-dispatcher"),
 		clientAccessor: clientAccessor,
 		resultChan:     make(chan bool),
 		timeout:        30 * time.Second, // TODO Make this configurable
@@ -104,7 +107,7 @@ func (d *operationDispatcherImpl) clusterOperation(clusterName, op string, opFun
 	if err != nil {
 		wrappedErr := errors.Wrapf(err, "Error retrieving client for cluster")
 		if d.recorder == nil {
-			runtime.HandleError(wrappedErr)
+			d.logger.Error(wrappedErr, "Failed to retrieve client for cluster")
 		} else {
 			d.recorder.recordOperationError(fedtypesv1a1.ClientRetrievalFailed, clusterName, op, wrappedErr)
 		}
