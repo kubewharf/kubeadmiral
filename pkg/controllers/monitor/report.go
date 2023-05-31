@@ -49,7 +49,7 @@ func DoReportStatusLatency(meters *sync.Map, client stats.Metrics) {
 		if baseMeter.outOfSyncDuration > ReportInterval {
 			tags := make([]stats.Tag, 0)
 			tags = append(tags, stats.Tag{Name: "resourcename", Value: name})
-			client.Timer("totalstatus_latency_ms", baseMeter.outOfSyncDuration.Milliseconds(), tags...)
+			client.Summary("totalstatus_latency_ms", baseMeter.outOfSyncDuration.Milliseconds(), tags...)
 			throughput += 1
 		}
 		return true
@@ -73,7 +73,7 @@ func DoReportSyncLatency(meters *sync.Map, client stats.Metrics) {
 				diff := baseMeter.syncSuccessTimestamp.Sub(start.Time)
 				tags := make([]stats.Tag, 0)
 				tags = append(tags, stats.Tag{Name: "resourcename", Value: name})
-				client.Timer("totalsync_latency_ms", diff.Milliseconds(), tags...)
+				client.Summary("totalsync_latency_ms", diff.Milliseconds(), tags...)
 				throughput += 1
 			}
 		}

@@ -139,7 +139,7 @@ func (metrics *promMetrics) Counter(name string, val interface{}, tags ...stats.
 	once.counter.WithLabelValues(tagValues...).Add(valToFloat64(val))
 }
 
-func (metrics *promMetrics) Timer(name string, val interface{}, tags ...stats.Tag) {
+func (metrics *promMetrics) Summary(name string, val interface{}, tags ...stats.Tag) {
 	once, tagValues := initOnce(metrics, name, tags, func(once *once, tagNames []string) {
 		once.summary = metrics.factory.NewSummaryVec(prometheus.SummaryOpts{
 			Name:       name,
@@ -151,7 +151,7 @@ func (metrics *promMetrics) Timer(name string, val interface{}, tags ...stats.Ta
 }
 
 func (metrics *promMetrics) Duration(name string, start time.Time, tags ...stats.Tag) {
-	duration := time.Since(start).Nanoseconds() / 1000 / 1000
-	key := fmt.Sprintf("%s_ms", name)
-	metrics.Timer(key, duration, tags...)
+	duration := time.Since(start).Seconds()
+	key := fmt.Sprintf("%s_seconds", name)
+	metrics.Summary(key, duration, tags...)
 }

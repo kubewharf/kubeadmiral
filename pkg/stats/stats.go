@@ -33,7 +33,7 @@ type Tag struct {
 type Metrics interface {
 	Store(name string, val interface{}, tags ...Tag)
 	Counter(name string, val interface{}, tags ...Tag)
-	Timer(name string, val interface{}, tags ...Tag)
+	Summary(name string, val interface{}, tags ...Tag)
 	Duration(name string, start time.Time, tags ...Tag)
 }
 
@@ -75,7 +75,7 @@ func (s *mockMetrics) Counter(name string, val interface{}, tags ...Tag) {
 	}
 }
 
-func (s *mockMetrics) Timer(name string, val interface{}, tags ...Tag) {
+func (s *mockMetrics) Summary(name string, val interface{}, tags ...Tag) {
 	if s.logMetrics {
 		fields := convertTToFields(tags)
 		msg := fmt.Sprintf("duration %s_%s <- %v", s.prefix, name, val)
@@ -84,7 +84,7 @@ func (s *mockMetrics) Timer(name string, val interface{}, tags ...Tag) {
 }
 
 func (s *mockMetrics) Duration(name string, start time.Time, tags ...Tag) {
-	duration := time.Since(start).Nanoseconds() / 1000 / 1000
-	key := fmt.Sprintf("%s_ms", name)
-	s.Timer(key, duration, tags...)
+	duration := time.Since(start).Seconds()
+	key := fmt.Sprintf("%s_seconds", name)
+	s.Summary(key, duration, tags...)
 }
