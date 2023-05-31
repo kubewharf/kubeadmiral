@@ -1,0 +1,46 @@
+name: Build docker image
+
+on:
+  push:
+    tags: "*"
+    branches: ["main", "ci-test"]
+
+permissions:
+  packages: write
+
+jobs:
+  image:
+    name: Build docker image
+    runs-on: [ubuntu-20.04]
+    concurrency:
+      group: ${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Docker login for ghcr
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{github.token}}
+
+      - name: Set image tag for release
+        id: tag
+        run: |
+          if [[ ${{github.ref_type}} == tag ]]; then
+            echo "tag=${{github.ref_name}}"
+          else
+            echo "tag=dev"
+          fi >>$GITHUB_OUTPUT
+
+      - name: Build docker image
+        env:
+          REGISTRY: ghcr.io/kubewharf
+          TAG: ${{ steps.tag.outputs.tag }}
+          ARCHS: amd64
+          OUTPUT_TYPE: registry
+        run: bash hack/make-rules/build-images.sh
+
+      - name: Push to ghcr
+        run: docker push ghcr.io/kubewharf/kubeadmiral-controller-manager:${{steps.tag.outputs.tag}}
