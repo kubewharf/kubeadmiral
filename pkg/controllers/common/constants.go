@@ -140,12 +140,12 @@ const (
 	TemplateGeneratorMergePatchAnnotation = FederateControllerPrefix + "template-generator-merge-patch"
 )
 
-// TemplateAnnotationKeys and TemplateLabelKeys are used to store the keys of annotations and labels that are present
-// on the resource template. By persisting these, we can tell whether an annotation/label is deleted from the template
+// PropagatedAnnotationKeys and PropagatedLabelKeys are used to store the keys of annotations and labels that are present
+// on the resource to propagate. By persisting these, we can tell whether an annotation/label is deleted from the propagated
 // and prevent accidental retention.
 const (
-	TemplateAnnotationKeys = DefaultPrefix + "template-annotation-keys"
-	TemplateLabelKeys      = DefaultPrefix + "template-label-keys"
+	PropagatedAnnotationKeys = DefaultPrefix + "propagated-annotation-keys"
+	PropagatedLabelKeys      = DefaultPrefix + "propagated-label-keys"
 )
 
 // The following consts are keys used to store information in the federated cluster secret

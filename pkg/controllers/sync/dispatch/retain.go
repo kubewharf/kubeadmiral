@@ -96,11 +96,25 @@ func RetainOrMergeClusterFields(
 	return nil
 }
 
+func recordPropagatedLabelsAndAnnotations(obj *unstructured.Unstructured) {
+	// Record the propagated annotation/label keys, so we can diff it against the cluster object during retention
+	// to determine whether an annotation/label has been deleted from the template.
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string, 2)
+	}
+
+	annotations[common.PropagatedLabelKeys] = strings.Join(sets.List(sets.KeySet(obj.GetLabels())), ",")
+	annotations[common.PropagatedAnnotationKeys] = strings.Join(sets.List(sets.KeySet(obj.GetAnnotations())), ",")
+
+	obj.SetAnnotations(annotations)
+}
+
 func mergeAnnotations(desiredObj, clusterObj *unstructured.Unstructured) {
 	mergedAnnotations := mergeStringMaps(
 		desiredObj.GetAnnotations(),
 		clusterObj.GetAnnotations(),
-		sets.New(strings.Split(clusterObj.GetAnnotations()[common.TemplateAnnotationKeys], ",")...),
+		sets.New(strings.Split(clusterObj.GetAnnotations()[common.PropagatedAnnotationKeys], ",")...),
 	)
 	desiredObj.SetAnnotations(mergedAnnotations)
 }
@@ -109,7 +123,7 @@ func mergeLabels(desiredObj, clusterObj *unstructured.Unstructured) {
 	mergedLabels := mergeStringMaps(
 		desiredObj.GetLabels(),
 		clusterObj.GetLabels(),
-		sets.New(strings.Split(clusterObj.GetAnnotations()[common.TemplateLabelKeys], ",")...),
+		sets.New(strings.Split(clusterObj.GetAnnotations()[common.PropagatedLabelKeys], ",")...),
 	)
 	desiredObj.SetLabels(mergedLabels)
 }

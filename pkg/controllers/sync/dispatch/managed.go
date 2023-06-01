@@ -342,6 +342,8 @@ func (d *managedDispatcherImpl) Create(clusterName string) {
 			return d.recordOperationError(fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
 		}
 
+		recordPropagatedLabelsAndAnnotations(obj)
+
 		ctx, cancel := context.WithTimeout(context.Background(), d.dispatcher.timeout)
 		defer cancel()
 
@@ -411,15 +413,17 @@ func (d *managedDispatcherImpl) Update(clusterName string, clusterObj *unstructu
 			return d.recordOperationError(fedtypesv1a1.ComputeResourceFailed, clusterName, op, err)
 		}
 
+		err = d.fedResource.ApplyOverrides(obj, clusterName, d.rolloutOverrides(clusterName))
+		if err != nil {
+			return d.recordOperationError(fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
+		}
+
+		recordPropagatedLabelsAndAnnotations(obj)
+
 		err = RetainOrMergeClusterFields(d.fedResource.TargetGVK(), obj, clusterObj, d.fedResource.Object())
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain fields")
 			return d.recordOperationError(fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
-		}
-
-		err = d.fedResource.ApplyOverrides(obj, clusterName, d.rolloutOverrides(clusterName))
-		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
 		}
 
 		err = retainReplicas(obj, clusterObj, d.fedResource.Object(), d.fedResource.TypeConfig())
@@ -493,15 +497,17 @@ func (d *managedDispatcherImpl) PatchAndKeepTemplate(
 			return d.recordOperationError(fedtypesv1a1.ComputeResourceFailed, clusterName, op, err)
 		}
 
+		err = d.fedResource.ApplyOverrides(obj, clusterName, d.rolloutOverrides(clusterName))
+		if err != nil {
+			return d.recordOperationError(fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
+		}
+
+		recordPropagatedLabelsAndAnnotations(obj)
+
 		err = RetainOrMergeClusterFields(d.fedResource.TargetGVK(), obj, clusterObj, d.fedResource.Object())
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain fields")
 			return d.recordOperationError(fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
-		}
-
-		err = d.fedResource.ApplyOverrides(obj, clusterName, d.rolloutOverrides(clusterName))
-		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
 		}
 
 		err = retainReplicas(obj, clusterObj, d.fedResource.Object(), d.fedResource.TypeConfig())
