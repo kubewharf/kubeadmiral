@@ -20,6 +20,8 @@ are Copyright 2023 The KubeAdmiral Authors.
 
 package common
 
+import "k8s.io/apimachinery/pkg/runtime/schema"
+
 const (
 	DefaultFedSystemNamespace = "kube-admiral-system"
 	DefaultPrefix             = "kubeadmiral.io/"
@@ -157,3 +159,15 @@ const (
 	ClusterServiceAccountTokenKey  = "service-account-token-data"
 	ClusterServiceAccountCAKey     = "service-account-ca-data"
 )
+
+var DeploymentGVR = schema.GroupVersionResource{
+	Group:    "apps",
+	Version:  "v1",
+	Resource: "deployments",
+}
+
+var ReplicasetGVR = schema.GroupVersionResource{
+	Group:    "apps",
+	Version:  "v1",
+	Resource: "replicasets",
+}

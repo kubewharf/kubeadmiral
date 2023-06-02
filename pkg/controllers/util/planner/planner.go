@@ -218,7 +218,7 @@ func getDesiredPlan(
 	// Assign each cluster the minimum number of replicas it requested.
 	for _, preference := range preferences {
 		min := minInt64(preference.MinReplicas, remainingReplicas)
-		if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity && capacity < min {
+		if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity && capacity >= 0 && capacity < min {
 			overflow[preference.clusterName] = min - capacity
 			min = capacity
 		}
