@@ -36,12 +36,13 @@ REGISTRY=${REGISTRY:-"ghcr.io/kubewharf"}
 OUTPUT_TYPE=${OUTPUT_TYPE:-"docker"}
 DOCKER_BUILD_ARGS="${DOCKER_BUILD_ARGS:-}"
 GOPROXY=${GOPROXY:-$(go env GOPROXY)}
+REGION=${REGION:-"cn"}
 
 if [[ ${#arch_array[@]} -gt 1 ]]; then
   # If you build images for multiple platforms at one time, the image tag will be added with the architecture name.
   for arch in ${arch_array[@]}; do
-    build::build_images "${REGISTRY}/${COMPENT_NAME}:${TAG}-${arch}" ${DOCKERFILE_PATH} "linux/${arch}" ${OUTPUT_TYPE} "${DOCKER_BUILD_ARGS} --build-arg GOPROXY=${GOPROXY}"
+    build::build_images "${REGISTRY}/${COMPENT_NAME}:${TAG}-${arch}" ${DOCKERFILE_PATH} "linux/${arch}" ${OUTPUT_TYPE} "${DOCKER_BUILD_ARGS} --build-arg GOPROXY=${GOPROXY} --build-arg REGION=${REGION}"
   done
 else
-  build::build_images "${REGISTRY}/${COMPENT_NAME}:${TAG}" ${DOCKERFILE_PATH} "${PLATFORMS}" ${OUTPUT_TYPE} "${DOCKER_BUILD_ARGS} --build-arg GOPROXY=${GOPROXY}"
+  build::build_images "${REGISTRY}/${COMPENT_NAME}:${TAG}" ${DOCKERFILE_PATH} "${PLATFORMS}" ${OUTPUT_TYPE} "${DOCKER_BUILD_ARGS} --build-arg GOPROXY=${GOPROXY} --build-arg REGION=${REGION}"
 fi

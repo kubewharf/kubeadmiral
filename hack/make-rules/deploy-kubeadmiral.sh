@@ -30,10 +30,11 @@ source "${REPO_ROOT}/hack/lib/deploy-kubeadmiral.sh"
 function usage() {
   echo "This script deploys KubeAdmiral control plane components to a given cluster."
   echo "Note: This script is an internal script and is not intended used by end-users."
-  echo "Usage: hack/make-rules/deploy-kubeadmiral.sh <KUBECONFIG> <CONTEXT_NAME> "
+  echo "Usage: hack/make-rules/deploy-kubeadmiral.sh <META_CLUSTER_KUBECONFIG> <CONTEXT_NAME> <HOST_CLUSTER_KUBECONFIG>"
   echo "Example: hack/deploy-kubeadmiral.sh ~/.kube/config kubeadmiral-meta "
-  echo -e "Parameters:\n\tKUBECONFIG\t\t Your cluster's kubeconfig that you want to install to"
+  echo -e "Parameters:\n\tMETA_CLUSTER_KUBECONFIG\t\t Your cluster's kubeconfig that you want to install to"
   echo -e "\tCONTEXT_NAME\t\t The context name in kubeconfig which used to deploy the kubeadmiral control-plane"
+  echo -e "\tHOST_CLUSTER_KUBECONFIG\t\t The kubeconfig path to connect to kubeadmiral"
 }
 
 # check config file existence
@@ -50,6 +51,7 @@ then
   usage
   exit 1
 fi
+HOST_CLUSTER_KUBECONFIG=$3
 HOST_CLUSTER_CONTEXT=${HOST_CLUSTER_CONTEXT:-"kubeadmiral-host"}
 
 # 1. generate certificates and create secrets to save the certificate information in meta cluster
@@ -111,7 +113,7 @@ KUBEADMIRAL_CONTROLLER_MANAGER_LABEL="app=kubeadmiral-controller-manager"
 
 # 2.1 deploy kubeadmiral etcd
 echo -e "\nDeploying the kubeadmiral-etcd."
-kubectl --kubeconfig="${META_CLUSTER_KUBECONFIG}" --context="${META_CLUSTER_NAME}" apply -f "${CONTROLPLANE_DEPLOY_PATH}/etcd.yaml"
+util::deploy_components_according_to_different_region "${REGION}" "${CONTROLPLANE_DEPLOY_PATH}/etcd.yaml" "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}"
 
 # Wait for kubeadmiral-etcd to come up before launching the rest of the components.
 deploy::wait_pod_ready "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}" "${ETCD_POD_LABEL}" "${KUBEADMIRAL_SYSTEM_NAMESPACE}"
@@ -119,7 +121,7 @@ deploy::wait_pod_ready "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}" "${ET
 # 2.2 deploy kube-apiserver
 echo -e "\nDeploying the kubeadmiral-apiserver."
 KUBEADMIRAL_APISERVER_IP=$(deploy::get_apiserver_ip_from_kubeconfig "${META_CLUSTER_NAME}" "${META_CLUSTER_KUBECONFIG}")
-kubectl --kubeconfig="${META_CLUSTER_KUBECONFIG}" --context="${META_CLUSTER_NAME}" apply -f "${CONTROLPLANE_DEPLOY_PATH}/kube-apiserver.yaml"
+util::deploy_components_according_to_different_region "${REGION}" "${CONTROLPLANE_DEPLOY_PATH}/kube-apiserver.yaml" "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}"
 
 # Wait for kubeadmiral-apiserver to come up before launching the rest of the components.
 deploy::wait_pod_ready "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}" "${KUBE_APISERVER_POD_LABEL}" "${KUBEADMIRAL_SYSTEM_NAMESPACE}"
@@ -132,16 +134,16 @@ else
 fi
 
 KUBEADMIRAL_APISERVER_SECURE_PORT=${KUBEADMIRAL_APISERVER_SECURE_PORT:-5443}
-# write kubeadmiral-apiserver config to META_CLUSTER_KUBECONFIG file
-deploy::append_client_kubeconfig "${META_CLUSTER_KUBECONFIG}" "${CERT_DIR}/kubeadmiral.crt" "${CERT_DIR}/kubeadmiral.key" "${KUBEADMIRAL_APISERVER_IP}" "${KUBEADMIRAL_APISERVER_SECURE_PORT}" "${HOST_CLUSTER_CONTEXT}"
+# write kubeadmiral-apiserver config to HOST_CLUSTER_KUBECONFIG file
+deploy::create_client_kubeconfig "${HOST_CLUSTER_KUBECONFIG}" "${CERT_DIR}/kubeadmiral.crt" "${CERT_DIR}/kubeadmiral.key" "${KUBEADMIRAL_APISERVER_IP}" "${KUBEADMIRAL_APISERVER_SECURE_PORT}" "${HOST_CLUSTER_CONTEXT}"
 
 # 2.3 deploy kube-controller-manager
 echo -e "\nDeploying the kubeadmiral-kube-controller-manager."
-kubectl --kubeconfig="${META_CLUSTER_KUBECONFIG}" --context="${META_CLUSTER_NAME}" apply -f "${CONTROLPLANE_DEPLOY_PATH}/kube-controller-manager.yaml"
+util::deploy_components_according_to_different_region "${REGION}" "${CONTROLPLANE_DEPLOY_PATH}/kube-controller-manager.yaml" "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}"
 deploy::wait_pod_ready "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}" "${KUBE_CONTROLLER_MANAGER_LABEL}" "${KUBEADMIRAL_SYSTEM_NAMESPACE}"
 
 # 3. install CRD APIs on kubeadmiral control plane
-if ! kubectl --kubeconfig="${META_CLUSTER_KUBECONFIG}" config get-contexts "${HOST_CLUSTER_CONTEXT}" > /dev/null 2>&1;
+if ! kubectl --kubeconfig="${HOST_CLUSTER_KUBECONFIG}" config get-contexts "${HOST_CLUSTER_CONTEXT}" > /dev/null 2>&1;
 then
   echo -e "ERROR: failed to get context: ${HOST_CLUSTER_CONTEXT}."
   usage
@@ -150,14 +152,14 @@ fi
 
 MANIFEST_DIR=${MANIFEST_DIR:-"${REPO_ROOT}/config/crds"}
 CONFIG_DIR=${CONFIG_DIR:-"${REPO_ROOT}/config/sample/host"}
-kubectl --kubeconfig="${META_CLUSTER_KUBECONFIG}" --context="${HOST_CLUSTER_CONTEXT}" create -f "${MANIFEST_DIR}"
-kubectl --kubeconfig="${META_CLUSTER_KUBECONFIG}" --context="${HOST_CLUSTER_CONTEXT}" create -f "${CONFIG_DIR}"
+kubectl --kubeconfig="${HOST_CLUSTER_KUBECONFIG}" --context="${HOST_CLUSTER_CONTEXT}" create -f "${MANIFEST_DIR}"
+kubectl --kubeconfig="${HOST_CLUSTER_KUBECONFIG}" --context="${HOST_CLUSTER_CONTEXT}" create -f "${CONFIG_DIR}"
 
 # 4. annotate 'no-federated-resource' on some types of resources in the host cluster
 NOFED="kubeadmiral.io/no-federated-resource=1"
 TARGET_ARRAY=(deploy daemonset cm secret role rolebinding clusterrole clusterrolebinding svc)
 for target in ${TARGET_ARRAY[@]}; do
-  kubectl --kubeconfig="${META_CLUSTER_KUBECONFIG}" --context="${HOST_CLUSTER_CONTEXT}" annotate ${target} -A --all ${NOFED}
+  kubectl --kubeconfig="${HOST_CLUSTER_KUBECONFIG}" --context="${HOST_CLUSTER_CONTEXT}" annotate ${target} -A --all ${NOFED}
 done
 
 # 5. deploy kubeadmiral-controller-manager component
