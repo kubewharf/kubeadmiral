@@ -64,3 +64,22 @@ jobs:
           git diff --exit-code && exit 0
           echo "Codegen is not up to date. Please run 'make generate' and commit the changes." >&2
           exit 1
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "1.19"
+
+      - name: install kwok
+        run: go install sigs.k8s.io/kwok/cmd/{kwok,kwokctl}@latest
+        working-directory: /
+      - name: install ginkgo
+        run: go install github.com/onsi/ginkgo/v2/ginkgo@latest
+        working-directory: /
+
+      - name: Run e2e tests
+        run: make e2e
