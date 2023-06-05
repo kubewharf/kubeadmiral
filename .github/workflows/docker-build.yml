@@ -41,6 +41,3 @@ jobs:
           ARCHS: amd64
           OUTPUT_TYPE: registry
         run: bash hack/make-rules/build-images.sh
-
-      - name: Push to ghcr
-        run: docker push ghcr.io/kubewharf/kubeadmiral-controller-manager:${{steps.tag.outputs.tag}}
