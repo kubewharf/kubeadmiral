@@ -69,7 +69,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
       - uses: crate-ci/typos@master
         with:
           config: hack/typos.toml
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "1.19"
+
+      - name: install kwok
+        run: go install sigs.k8s.io/kwok/cmd/{kwok,kwokctl}@latest
+        working-directory: /
+      - name: install ginkgo
+        run: go install github.com/onsi/ginkgo/v2/ginkgo@latest
+        working-directory: /
+
+      - name: Bootstrap cluster
+        run: make local-up
+      - name: Assign kubeconfig
+        run: echo "KUBECONFIG=${HOME}/.kube/kubeadmiral/kubeadmiral.config" >>$GITHUB_ENV
+      - name: Wait for member clusters to join
+        run: make wait-join
+
+      - name: Run e2e tests
+        run: make e2e
