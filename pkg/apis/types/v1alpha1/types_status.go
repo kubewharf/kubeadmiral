@@ -36,10 +36,10 @@ type GenericObjectWithStatus struct {
 }
 
 type GenericFederatedStatus struct {
-	CollisionCount     *int32                 `json:"collisionCount,omitempty"`
-	ObservedGeneration int64                  `json:"observedGeneration,omitempty"`
-	Conditions         []*GenericCondition    `json:"conditions,omitempty"`
-	Clusters           []GenericClusterStatus `json:"clusters,omitempty"`
+	CollisionCount   *int32                 `json:"collisionCount,omitempty"`
+	SyncedGeneration int64                  `json:"syncedGeneration,omitempty"`
+	Conditions       []*GenericCondition    `json:"conditions,omitempty"`
+	Clusters         []GenericClusterStatus `json:"clusters,omitempty"`
 }
 
 type GenericCondition struct {

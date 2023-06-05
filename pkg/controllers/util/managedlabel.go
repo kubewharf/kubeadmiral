@@ -26,11 +26,11 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
-var ManagedByKubeFedLabelKey = common.DefaultPrefix + "managed"
+var ManagedByKubeAdmiralLabelKey = common.DefaultPrefix + "managed"
 
 const (
-	ManagedByKubeFedLabelValue   = "true"
-	UnmanagedByKubeFedLabelValue = "false"
+	ManagedByKubeAdmiralLabelValue   = "true"
+	UnmanagedByKubeAdmiralLabelValue = "false"
 )
 
 // HasManagedLabel indicates whether the given object has the managed
@@ -40,7 +40,7 @@ func HasManagedLabel(obj *unstructured.Unstructured) bool {
 	if labels == nil {
 		return false
 	}
-	return labels[ManagedByKubeFedLabelKey] == ManagedByKubeFedLabelValue
+	return labels[ManagedByKubeAdmiralLabelKey] == ManagedByKubeAdmiralLabelValue
 }
 
 // IsExplicitlyUnmanaged indicates whether the given object has the managed
@@ -50,7 +50,7 @@ func IsExplicitlyUnmanaged(obj *unstructured.Unstructured) bool {
 	if labels == nil {
 		return false
 	}
-	return labels[ManagedByKubeFedLabelKey] == UnmanagedByKubeFedLabelValue
+	return labels[ManagedByKubeAdmiralLabelKey] == UnmanagedByKubeAdmiralLabelValue
 }
 
 // AddManagedLabel ensures that the given object has the managed
@@ -60,7 +60,7 @@ func AddManagedLabel(obj *unstructured.Unstructured) {
 	if labels == nil {
 		labels = make(map[string]string)
 	}
-	labels[ManagedByKubeFedLabelKey] = ManagedByKubeFedLabelValue
+	labels[ManagedByKubeAdmiralLabelKey] = ManagedByKubeAdmiralLabelValue
 	obj.SetLabels(labels)
 }
 
@@ -68,9 +68,9 @@ func AddManagedLabel(obj *unstructured.Unstructured) {
 // managed label.
 func RemoveManagedLabel(obj *unstructured.Unstructured) {
 	labels := obj.GetLabels()
-	if labels == nil || labels[ManagedByKubeFedLabelKey] != ManagedByKubeFedLabelValue {
+	if labels == nil || labels[ManagedByKubeAdmiralLabelKey] != ManagedByKubeAdmiralLabelValue {
 		return
 	}
-	delete(labels, ManagedByKubeFedLabelKey)
+	delete(labels, ManagedByKubeAdmiralLabelKey)
 	obj.SetLabels(labels)
 }

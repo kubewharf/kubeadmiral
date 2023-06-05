@@ -400,8 +400,8 @@ func (d *managedDispatcherImpl) Update(clusterName string, clusterObj *unstructu
 		if util.IsExplicitlyUnmanaged(clusterObj) {
 			err := errors.Errorf(
 				"Unable to manage the object which has label %s: %s",
-				util.ManagedByKubeFedLabelKey,
-				util.UnmanagedByKubeFedLabelValue,
+				util.ManagedByKubeAdmiralLabelKey,
+				util.UnmanagedByKubeAdmiralLabelValue,
 			)
 			return d.recordOperationError(fedtypesv1a1.ManagedLabelFalse, clusterName, op, err)
 		}
@@ -482,8 +482,8 @@ func (d *managedDispatcherImpl) PatchAndKeepTemplate(
 		if util.IsExplicitlyUnmanaged(clusterObj) {
 			err := errors.Errorf(
 				"Unable to manage the object which has label %s: %s",
-				util.ManagedByKubeFedLabelKey,
-				util.UnmanagedByKubeFedLabelValue,
+				util.ManagedByKubeAdmiralLabelKey,
+				util.UnmanagedByKubeAdmiralLabelValue,
 			)
 			return d.recordOperationError(fedtypesv1a1.ManagedLabelFalse, clusterName, op, err)
 		}

@@ -20,15 +20,14 @@ import (
 	"fmt"
 	"reflect"
 
-	meta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
-	SyncSuccessTimestamp          = "syncSuccessTimestamp"
-	LastGeneration                = "lastGereration"
-	LastSyncSucceessGeneration    = "lastSyncSucceessGeneration"
-	LastScheduleSuccessGeneration = "lastScheduleSuccessGeneration"
+	SyncSuccessTimestamp       = "syncSuccessTimestamp"
+	LastGeneration             = "lastGeneration"
+	LastSyncSucceessGeneration = "lastSyncSucceessGeneration"
 )
 
 // HasAnnotationKey returns true if the given object has the given annotation key in its ObjectMeta.
