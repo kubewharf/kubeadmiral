@@ -33,7 +33,7 @@ IFS="," read -ra arch_array <<< "${ARCHS}"
 platform_array=("${arch_array[@]/#/linux/}")
 PLATFORMS=$(IFS=","; echo "${platform_array[*]}")
 REGISTRY=${REGISTRY:-"ghcr.io/kubewharf"}
-OUTPUT_TYPE="docker"
+OUTPUT_TYPE=${OUTPUT_TYPE:-"docker"}
 DOCKER_BUILD_ARGS="${DOCKER_BUILD_ARGS:-}"
 GOPROXY=${GOPROXY:-$(go env GOPROXY)}
 
