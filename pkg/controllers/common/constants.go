@@ -116,7 +116,7 @@ const (
 
 	NoSchedulingAnnotation = DefaultPrefix + "no-scheduling"
 
-	// FederatedObjectAnnotation indicates that that the object was created by the federate controller.
+	// FederatedObjectAnnotation indicates that the object was created by the federate controller.
 	FederatedObjectAnnotation = DefaultPrefix + "federated-object"
 
 	// FollowersAnnotation indicates the additional followers of a leader.
@@ -135,6 +135,9 @@ const (
 	// ObservedLabelKeysAnnotation contains label keys observed in the last reconcile.
 	// It will be in the format of `a,b|c,d`, where `a` and `b` are the keys that are synced from source labels to federated object labels.
 	ObservedLabelKeysAnnotation = FederateControllerPrefix + "observed-labels"
+	// TemplateGeneratorMergePatchAnnotation indicates the merge patch document capable of converting
+	// the source object to the template object.
+	TemplateGeneratorMergePatchAnnotation = FederateControllerPrefix + "template-generator-merge-patch"
 )
 
 // TemplateAnnotationKeys and TemplateLabelKeys are used to store the keys of annotations and labels that are present
