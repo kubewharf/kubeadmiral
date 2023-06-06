@@ -112,7 +112,7 @@ func NewFederatedClusterController(
 		},
 		clusterJoinTimeout: clusterJoinTimeout,
 		metrics:            metrics,
-		logger:             klog.LoggerWithName(klog.Background(), ControllerName),
+		logger:             klog.LoggerWithValues(klog.Background(), "controller", ControllerName),
 	}
 
 	broadcaster := record.NewBroadcaster()

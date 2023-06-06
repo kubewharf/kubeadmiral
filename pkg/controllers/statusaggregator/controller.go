@@ -133,7 +133,7 @@ func newStatusAggregator(controllerConfig *util.ControllerConfig,
 		typeConfig:    typeConfig,
 		plugin:        plugin,
 		metrics:       controllerConfig.Metrics,
-		logger:        klog.LoggerWithName(klog.Background(), ControllerName),
+		logger:        klog.LoggerWithValues(klog.Background(), "controller", ControllerName, "ftc", typeConfig.Name),
 	}
 	var err error
 	a.federatedClient, err = util.NewResourceClient(configWithUserAgent, &federatedAPIResource)
@@ -195,7 +195,6 @@ func newStatusAggregator(controllerConfig *util.ControllerConfig,
 	if err != nil {
 		return nil, err
 	}
-	a.logger.WithValues("federated-api-resource-kind", federatedAPIResource.Kind).Info("Status aggregator NewResourceInformer")
 	return a, nil
 }
 
@@ -212,7 +211,7 @@ func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
 	go a.clusterDeliverer.RunMetricLoop(stopChan, 30*time.Second, a.metrics,
 		delayingdeliver.NewMetricTags("schedulingpreference-clusterDeliverer", a.typeConfig.GetTargetType().Kind))
 	if !cache.WaitForNamedCacheSync(a.name, stopChan, a.HasSynced) {
-		a.logger.WithValues("name", a.name).Error(errors.New(""), "timed out waiting for caches to sync for controller")
+		return
 	}
 	a.worker.Run(stopChan)
 
@@ -220,7 +219,7 @@ func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				a.logger.Error(errors.New("r"), "recovered from panic")
+				a.logger.Error(fmt.Errorf("%v", r), "recovered from panic")
 			}
 		}()
 		<-stopChan
@@ -231,33 +230,34 @@ func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
 
 func (a *StatusAggregator) HasSynced() bool {
 	if !a.informer.ClustersSynced() {
-		a.logger.V(2).Info("Cluster list not synced")
+		a.logger.V(3).Info("Cluster list not synced")
 		return false
 	}
 	if !a.federatedController.HasSynced() {
-		a.logger.V(2).Info("Federated type not synced")
+		a.logger.V(3).Info("Federated type not synced")
 		return false
 	}
 	if !a.sourceController.HasSynced() {
-		a.logger.V(2).Info("Status not synced")
+		a.logger.V(3).Info("Status not synced")
 		return false
 	}
 
 	return true
 }
 
-func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.Result {
+func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
 	sourceKind := a.typeConfig.GetSourceType().Kind
 	key := qualifiedName.String()
-	logger := a.logger.WithValues("object", key, "source-kind", sourceKind)
+	logger := a.logger.WithValues("object", key)
 	ctx := klog.NewContext(context.TODO(), logger)
 
 	a.metrics.Rate("status-aggregator.throughput", 1)
-	logger.V(3).Info("Status aggregator starting to reconcile")
+	logger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
 		a.metrics.Duration("status-aggregator.latency", startTime)
-		logger.V(3).Info("Status aggregator finished reconciling")
+		logger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).
+			Info("Finished reconciling")
 	}()
 
 	sourceObject, err := objectFromCache(a.sourceStore, key)
@@ -290,7 +290,7 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.
 
 	newObj, needUpdate, err := a.plugin.AggregateStatues(ctx, sourceObject.DeepCopy(), fedObject, clusterObjs)
 	if err != nil {
-		logger.Error(err, "Failed to aggregate statues")
+		logger.Error(err, "Failed to aggregate statuses")
 		return worker.StatusError
 	}
 
@@ -301,7 +301,7 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.
 	}
 
 	if needUpdate {
-		logger.V(1).Info("About to update status of source object")
+		logger.V(1).Info("Updating status of source object")
 		_, err = a.sourceClient.Resources(qualifiedName.Namespace).
 			UpdateStatus(context.TODO(), newObj, metav1.UpdateOptions{})
 		if err != nil {
@@ -321,7 +321,7 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.
 		sourcefeedback.PopulateStatusAnnotation(newObj, clusterObjs, &needUpdate)
 
 		if needUpdate {
-			logger.V(1).Info("About to update annotation of source object")
+			logger.V(1).Info("Updating annotation of source object")
 			_, err = a.sourceClient.Resources(qualifiedName.Namespace).
 				Update(context.TODO(), newObj, metav1.UpdateOptions{})
 			if err != nil {

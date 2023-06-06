@@ -38,7 +38,7 @@ func (receiver *SingleClusterPlugin) AggregateStatues(
 	sourceObject, fedObject *unstructured.Unstructured,
 	clusterObjs map[string]interface{},
 ) (*unstructured.Unstructured, bool, error) {
-	logger := klog.FromContext(ctx).WithValues("source-object-name", sourceObject.GetName())
+	logger := klog.FromContext(ctx).WithValues("status-aggregator-plugin", "single-cluster")
 
 	needUpdate := false
 
@@ -49,7 +49,7 @@ func (receiver *SingleClusterPlugin) AggregateStatues(
 
 	if len(clusterObjs) > 1 {
 		logger.WithValues("cluster-objs-len", len(clusterObjs)).
-			Info("FedObject associated with cluster objects, only 1 is supported by default status aggregator plugin")
+			Info("Federated object associated with multiple cluster objects, only 1 is supported")
 		return sourceObject, false, nil
 	}
 
@@ -63,7 +63,7 @@ func (receiver *SingleClusterPlugin) AggregateStatues(
 	newStatus, found, err := unstructured.NestedMap(clusterObj.Object, common.StatusField)
 	if err != nil {
 		logger.WithValues("cluster-name", clusterName).
-			Error(err, "Failed to get status of cluster resource object for cluster")
+			Error(err, "Failed to get status from cluster object")
 		return nil, false, err
 	}
 	if !found || newStatus == nil {
@@ -73,14 +73,14 @@ func (receiver *SingleClusterPlugin) AggregateStatues(
 
 	oldStatus, _, err := unstructured.NestedMap(sourceObject.Object, common.StatusField)
 	if err != nil {
-		logger.Error(err, "Failed to get old status of cluster resource object")
+		logger.Error(err, "Failed to get old status of source object")
 		return nil, false, err
 	}
 
 	// update status of source object if needed
 	if !reflect.DeepEqual(newStatus, oldStatus) {
 		if err := unstructured.SetNestedMap(sourceObject.Object, newStatus, common.StatusField); err != nil {
-			logger.Error(err, "Failed to set the new status of cluster resource object")
+			logger.Error(err, "Failed to set the new status for source object")
 			return nil, false, err
 		}
 

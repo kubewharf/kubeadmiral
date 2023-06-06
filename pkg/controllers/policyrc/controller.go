@@ -81,7 +81,7 @@ func StartController(controllerConfig *util.ControllerConfig,
 	if err != nil {
 		return err
 	}
-	controller.logger.WithValues("federated-kind", typeConfig.GetFederatedType().Kind).Info("Starting policyrc controller")
+	controller.logger.Info("Starting policyrc controller")
 	controller.Run(stopChan)
 	return nil
 }
@@ -99,7 +99,7 @@ func newController(controllerConfig *util.ControllerConfig,
 		name:       userAgent,
 		typeConfig: typeConfig,
 		metrics:    controllerConfig.Metrics,
-		logger:     klog.LoggerWithName(klog.Background(), ControllerName),
+		logger:     klog.LoggerWithValues(klog.Background(), "controller", ControllerName, "ftc", typeConfig.Name),
 	}
 
 	c.countWorker = worker.NewReconcileWorker(
@@ -228,16 +228,16 @@ func (c *Controller) HasSynced() bool {
 	return c.federated.controller.HasSynced()
 }
 
-func (c *Controller) reconcileCount(qualifiedName common.QualifiedName) worker.Result {
-	federatedKind := c.typeConfig.GetFederatedType().Kind
-	logger := c.logger.WithValues("federated-kind", federatedKind, "object", qualifiedName.String())
+func (c *Controller) reconcileCount(qualifiedName common.QualifiedName) (status worker.Result) {
+	logger := c.logger.WithValues("object", qualifiedName.String())
 
 	c.metrics.Rate("policyrc-count-controller.throughput", 1)
 	logger.V(3).Info("Policyrc count controller starting to reconcile")
 	startTime := time.Now()
 	defer func() {
 		c.metrics.Duration("policyrc-count-controller.latency", startTime)
-		logger.V(3).WithValues("duration", time.Since(startTime)).Info("Policyrc count controller finished reconciling")
+		logger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).
+			Info("Policyrc count controller finished reconciling")
 	}()
 
 	fedObjAny, fedObjExists, err := c.federated.store.GetByKey(qualifiedName.String())
@@ -283,8 +283,7 @@ func (c *Controller) reconcilePersist(
 	nsScopeStore, clusterScopeStore cache.Store,
 	counter *Counter,
 ) worker.Result {
-	federatedKind := c.typeConfig.GetFederatedType().Kind
-	logger := c.logger.WithValues("metric-name", metricName, "federated-kind", federatedKind, "object", qualifiedName.String())
+	logger := c.logger.WithValues("object", qualifiedName.String())
 
 	c.metrics.Rate(fmt.Sprintf("policyrc-persist-%s-controller.throughput", metricName), 1)
 	logger.V(3).Info("Policyrc persist controller starting to reconcile")

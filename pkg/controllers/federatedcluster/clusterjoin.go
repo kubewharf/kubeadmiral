@@ -133,7 +133,7 @@ func handleNotJoinedCluster(
 
 	// 3. Get or create system namespace in the cluster, this will also tell us if the cluster is unjoinable
 
-	logger.V(1).WithValues("fed-system-namespace", fedSystemNamespace).Info("Create or get system namespace in cluster")
+	logger.V(2).WithValues("fed-system-namespace", fedSystemNamespace).Info("Get system namespace in cluster")
 	memberFedNamespace, err := clusterKubeClient.CoreV1().Namespaces().Get(ctx, fedSystemNamespace, metav1.GetOptions{ResourceVersion: "0"})
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -186,6 +186,7 @@ func handleNotJoinedCluster(
 			},
 		}
 
+		logger.V(1).WithValues("fed-system-namespace", fedSystemNamespace).Info("Create system namespace in cluster")
 		memberFedNamespace, err = clusterKubeClient.CoreV1().Namespaces().Create(ctx, memberFedNamespace, metav1.CreateOptions{})
 		if err != nil {
 			msg := fmt.Sprintf("Failed to create system namespace: %v", err.Error())
@@ -225,7 +226,7 @@ func handleNotJoinedCluster(
 
 	// 5. Cluster is joined, update condition
 
-	logger.V(3).Info("Cluster joined successfully")
+	logger.V(2).Info("Cluster joined successfully")
 	eventRecorder.Eventf(
 		cluster,
 		corev1.EventTypeNormal, EventReasonJoinClusterSuccess, "Cluster joined successfully",
@@ -253,7 +254,7 @@ func getAndSaveClusterToken(
 		return err
 	}
 
-	logger.V(2).Info("Updating cluster secret")
+	logger.V(1).Info("Updating cluster secret")
 	token, ca, err := getServiceAccountToken(ctx, clusterKubeClient, memberSystemNamespace.Name, saTokenSecretName)
 	if err != nil {
 		return fmt.Errorf("error getting service account token from joining cluster: %w", err)
@@ -290,6 +291,7 @@ func createAuthorizedServiceAccount(
 	errorOnExisting bool,
 ) (string, error) {
 	logger := klog.FromContext(ctx).WithValues("member-service-account-name", MemberServiceAccountName)
+	ctx = klog.NewContext(ctx, logger)
 
 	// 1. create service account
 	logger.V(1).Info("Creating service account")
@@ -311,7 +313,7 @@ func createAuthorizedServiceAccount(
 	if err != nil {
 		return "", fmt.Errorf("error creating service account token secret %s : %w", MemberServiceAccountName, err)
 	}
-	logger.V(1).WithValues("sa-toke-secret-name", saTokenSecretName).Info("Created service account token secret for service account")
+	logger.V(1).WithValues("sa-token-secret-name", saTokenSecretName).Info("Created service account token secret for service account")
 
 	// 3. create rbac
 	logger.V(1).Info("Creating RBAC for service account")
