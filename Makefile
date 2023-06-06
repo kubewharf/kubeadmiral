@@ -76,6 +76,8 @@ debug: build
 #   TAG:       image tag, the default value is "latest"
 #   ARCHS:     list of target architectures, e.g.:amd64,arm64,arm. The default value is host arch
 #   GOPROXY:   it specifies the download address of the dependent package
+#   REGION:    region to build. e.g.: 'cn' means china mainland(the default value),
+#              the script will set the remote mirror address according to the region to speed up the build.
 #
 # Examples:
 #   # build images with the host arch, it will generate "ghcr.io/kubewharf/kubeadmiral-controller-manager:latest"
@@ -88,7 +90,7 @@ debug: build
 #   make images ARCHS=amd64,arm64
 .PHONY: images
 images:
-	REGISTRY=$(REGISTRY) TAG=$(TAG) ARCHS=$(ARCHS) GOPROXY=$(GOPROXY) bash hack/make-rules/build-images.sh
+	REGISTRY=$(REGISTRY) TAG=$(TAG) ARCHS=$(ARCHS) GOPROXY=$(GOPROXY) REGION=$(REGION) bash hack/make-rules/build-images.sh
 
 # Clean built binaries
 .PHONY: clean

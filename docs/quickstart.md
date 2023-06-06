@@ -2,88 +2,74 @@
 
 This guide will cover:
 
-* [Installation](#installation): running KubeAdmiral against a local federation of fake clusters.
+* [Installation](#installation): starting a Kubernetes cluster and installing `KubeAdmiral` on it.
 * [Managing Kubernetes resources](#managing-kubernetes-resources): basic example of propgating a Deployment resource.
+* [Uninstallation](#uninstallation): cleaning up the local kind clusters related with `KubeAdmiral`.
 
 ## Installation
 
-If you wish to develop KubeAdmiral or simply see how it works, you can easily bootstrap a KubeAdmiral control plane on your local machine.
+If you wish to see how `KubeAdmiral` works, you can easily start a cluster that includes the `KubeAdmiral` control plane on your local machine.
 
 ### Prerequisites
 
 Ensure that the following programs are installed:
 
 * [Go](https://go.dev/) version v1.19+
-* [Kind](https://kind.sigs.k8s.io/) version v0.10.0+
+* [Kind](https://kind.sigs.k8s.io/) version v0.14.0+
 * [Kubectl](https://github.com/kubernetes/kubectl) version v0.20.15+
 
 ### 1. Clone the KubeAdmiral repo to your machine
 
 ```console
-git clone https://github.com/kubewharf/kubeadmiral
+$ git clone https://github.com/kubewharf/kubeadmiral
 ```
 
 ### 2. Change to the kubeadmiral directory
 
 ```console
-cd kubeadmiral
+$ cd kubeadmiral
 ```
 
-### 3. Bootstrap Kubernetes clusters
+### 3. Bootstrap clusters and install KubeAdmiral control plane
 
 ```console
-bash hack/dev-up.sh
+$ make local-up
 ```
 
-`hack/dev-up.sh` does the following:
+This command does the following tasks:
 
-1. Starts a host cluster using Kind.
-2. Installs the KubeAdmiral CRDs on the host cluster.
+1. Starts a meta cluster using Kind.
+2. Installs the KubeAdmiral control-plane components on meta cluster.
 3. Starts 3 member clusters using Kind.
 4. Bootstraps the joining of the 3 member clusters.
-5. Exports the cluster kubeconfigs to `$HOME/.kube/kubeadmiral/`
+5. Exports the cluster kubeconfigs to `$HOME/.kube/kubeadmiral`
 
-If everything went well in the previous steps, we should observe the following:
-
-```console
-$ ls $HOME/.kube/kubeadmiral
-
-kubeadmiral-host.yaml kubeadmiral-member-1.yaml kubeadmiral-member-2.yaml kubeadmiral-member-3.yaml
-```
-
-The host cluster is the main entrypoint of a KubeAdmiral instance. KubeAdmiral will propagate resources in the host cluster to the member clusters, which will in turn run the workloads.
-
-You can check any of the member clusters by running:
+If everything went well in the previous steps, we will see the following messages:
 
 ```console
-export KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral-member-{1,2,3}.yaml
+Your local KubeAdmiral has been deployed successfully!
+
+To start using your KubeAdmiral, run:
+  export KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral.config
+  
+To observe the status of KubeAdmiral control-plane components, run:
+  export KUBECONFIG=$HOME/.kube/kubeadmiral/meta.config
+
+To manage your member clusters, run:
+  export KUBECONFIG=$HOME/.kube/members.config
+Please use 'kubectl config use-context kubeadmiral-member-1/kubeadmiral-member-2/kubeadmiral-member-3' to switch to the different member cluster.
 ```
 
-We will mainly be working with the host cluster for the rest of this guide. Before proceeding, go ahead and switch to the host cluster:
+There are two kubeconfigs: `kubeadmiral.config` is the main entrypoint of a KubeAdmiral instance, while `meta.config` is only used for debugging KubeAdmiral installation with the meta cluster.
+
+We will mainly be working with the kubeadmiral control-plane for the rest of this guide. Before proceeding, go ahead and switch to the kubeadmiral cluster:
 
 ```console
-export KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml
+$ export KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral.config
 ```
 
-### 4. Build and run the KubeAdmiral controller-manager
 
-```console
-$ make build
-$ ./output/manager \
-    --create-crds-for-ftcs \
-    --klog-logtostderr=false \
-    --klog-log-file="./kubeadmiral.log" \
-    --kubeconfig="$KUBECONFIG" \
-    2>/dev/null
-```
-
-This runs the KubeAdmiral controller-manager on your local machine. You can check the controller-manager logs in a separate terminal window:
-
-```console
-less ./kubeadmiral.log
-```
-
-### 5. Wait for member clusters to be joined
+### 4. Wait for member clusters to be joined
 
 The KubeAdmiral controller-manager will now handle the joining of the member clusters. Afterwards, we should expect to see the following:
 
@@ -114,13 +100,13 @@ This section describes how to propagate a Deployment to multiple member clusters
 ### 1. Ensure you are still using the host cluster kubeconfig
 
 ```console
-export KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml
+$ export KUBECONFIG=$HOME/.kube/kubeadmiral/kubeadmiral.config
 ```
 
 ### 2. Create the deployment
 
 ```console
-kubectl create -f - <<EOF
+$ kubectl create -f - <<EOF
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -150,7 +136,7 @@ EOF
 ### 3. Create a new propagation policy
 
 ```console
-kubectl create -f - <<EOF
+$ kubectl create -f - <<EOF
 apiVersion: core.kubeadmiral.io/v1alpha1
 kind: PropagationPolicy
 metadata:
@@ -171,7 +157,7 @@ The newly created propagation policy will propagate resources to all clusters.
 Attach the new propagation policy to our deployment by labelling the deployment with the policy's name.
 
 ```console
-kubectl label deployment echo-server kubeadmiral.io/propagation-policy-name=policy-all-clusters
+$ kubectl label deployment echo-server kubeadmiral.io/propagation-policy-name=policy-all-clusters
 ```
 
 ### 5. Wait for the deployment to be propagated to all clusters
@@ -274,3 +260,14 @@ clusterStatus:
 ```
 
 🎉 We have successfully propagated a deployment using KubeAdmiral.
+
+## Uninstallation
+
+You can use the following command to clean up the local kind clusters related with `KubeAdmiral`. This command does the following tasks:
+
+1. Deletes the local kind clusters which name includes `kubeadmiral`.
+2. Deletes the local kubeconfig files associated with the above clusters.
+
+```console
+$ make clean-local-cluster
+```

@@ -175,16 +175,38 @@ function deploy::ensure_cfssl {
   fi
 }
 
-# deploy::append_client_kubeconfig creates a new context including a cluster and a user to the existed kubeconfig file
-function deploy::append_client_kubeconfig {
-    local kubeconfig_path=$1
-    local client_certificate_file=$2
-    local client_key_file=$3
-    local api_host=$4
-    local api_port=$5
-    local client_id=$6
-    local token=${7:-}
-    kubectl config set-cluster "${client_id}" --server=https://"${api_host}:${api_port}" --insecure-skip-tls-verify=true --kubeconfig="${kubeconfig_path}"
-    kubectl config set-credentials "${client_id}" --token="${token}" --client-certificate="${client_certificate_file}" --client-key="${client_key_file}" --embed-certs=true --kubeconfig="${kubeconfig_path}"
-    kubectl config set-context "${client_id}" --cluster="${client_id}" --user="${client_id}" --kubeconfig="${kubeconfig_path}"
+# deploy::create_client_kubeconfig creates a new kubeconfig
+function deploy::create_client_kubeconfig {
+  local kubeconfig_path=$1
+  local client_certificate_file=$2
+  local client_key_file=$3
+  local api_host=$4
+  local api_port=$5
+  local client_id=$6
+  local token=${7:-}
+  cat > ${kubeconfig_path} <<EOF
+apiVersion: v1
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: ""
+  name: ${client_id}
+contexts:
+- context:
+    cluster: ${client_id}
+    user: ${client_id}
+  name: ${client_id}
+current-context: ${client_id}
+kind: Config
+preferences: {}
+users:
+- name: ${client_id}
+  user:
+    client-certificate-data: ""
+    client-key-data: ""
+EOF
+
+  kubectl config set-cluster "${client_id}" --server=https://"${api_host}:${api_port}" --insecure-skip-tls-verify=true --kubeconfig="${kubeconfig_path}"
+  kubectl config set-credentials "${client_id}" --token="${token}" --client-certificate="${client_certificate_file}" --client-key="${client_key_file}" --embed-certs=true --kubeconfig="${kubeconfig_path}"
+  kubectl config set-context "${client_id}" --cluster="${client_id}" --user="${client_id}" --kubeconfig="${kubeconfig_path}"
 }

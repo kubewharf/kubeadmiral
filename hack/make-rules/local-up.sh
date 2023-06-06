@@ -29,10 +29,11 @@ source "${REPO_ROOT}/hack/lib/util.sh"
 source "${REPO_ROOT}/hack/lib/local-up.sh"
 
 # variable define
-KUBECONFIG_PATH=${KUBECONFIG_PATH:-"${HOME}/.kube"}
+KUBECONFIG_PATH=${KUBECONFIG_PATH:-"${HOME}/.kube/kubeadmiral"}
 META_CLUSTER_NAME=${META_CLUSTER_NAME:-"kubeadmiral-meta"}
 HOST_CLUSTER_CONTEXT=${HOST_CLUSTER_CONTEXT:-"kubeadmiral-host"}
-META_CLUSTER_KUBECONFIG=${META_CLUSTER_KUBECONFIG:-"${KUBECONFIG_PATH}/kubeadmiral.config"}
+META_CLUSTER_KUBECONFIG=${META_CLUSTER_KUBECONFIG:-"${KUBECONFIG_PATH}/meta.config"}
+HOST_CLUSTER_KUBECONFIG=${HOST_CLUSTER_KUBECONFIG:-"${KUBECONFIG_PATH}/kubeadmiral.config"}
 KIND_LOG_PATH=${KIND_LOG_PATH:-"${REPO_ROOT}/output/log"}
 MEMBER_CLUSTER_NAME_PREFIX=${MEMBER_CLUSTER_NAME_PREFIX:-"kubeadmiral-member"}
 MEMBER_CLUSTER_KUBECONFIG=${MEMBER_CLUSTER_KUBECONFIG:-"${KUBECONFIG_PATH}/members.config"}
@@ -84,9 +85,10 @@ else
   util::install_kubectl "" "${BS_ARCH}" "${BS_OS}"
 fi
 
+GOPROXY=${GOPROXY:-$(go env GOPROXY)}
 # proxy setting in China mainland
 if [ "${REGION}" == "cn" ]; then
-  util::set_mirror_registry_for_china_mainland ${REPO_ROOT}
+  export GOPROXY=https://goproxy.cn,direct # set domestic go proxy
 fi
 
 # 2. Create meta cluster and member clusters
@@ -122,7 +124,7 @@ fi
 
 # 3. Make image for kubeadmiral-controller-manager and load it to kind cluster
 echo "Making a docker image using local kubeadmiral code..."
-make images ARCHS=${BS_ARCH} TAG="latest" REGISTRY="ghcr.io/kubewharf"
+make images ARCHS=${BS_ARCH} TAG="latest" REGISTRY="ghcr.io/kubewharf" REGION=${REGION} GOPROXY=${GOPROXY}
 
 echo "Waiting for the meta cluster to be ready..."
 util::check_clusters_ready "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}"
@@ -130,7 +132,7 @@ util::check_clusters_ready "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}"
 kind load docker-image "ghcr.io/kubewharf/kubeadmiral-controller-manager:latest" --name="${META_CLUSTER_NAME}"
 
 # 4. Install the KubeAdmiral control-plane components
-bash "${REPO_ROOT}/hack/make-rules/deploy-kubeadmiral.sh" "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}"
+bash "${REPO_ROOT}/hack/make-rules/deploy-kubeadmiral.sh" "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}" "${HOST_CLUSTER_KUBECONFIG}"
 
 # 5. Wait until the member cluster ready
 echo "Waiting for the member clusters to be ready..."
@@ -141,15 +143,16 @@ done
 # 6. Join the member clusters
 echo "Adding member clusters to kubeadmiral..."
 for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
-  util::join_member_cluster "${MEMBER_CLUSTER_NAME_PREFIX}-${i}" "${HOST_CLUSTER_CONTEXT}" "${META_CLUSTER_KUBECONFIG}" "kind"
+  util::join_member_cluster "${MEMBER_CLUSTER_NAME_PREFIX}-${i}" "${HOST_CLUSTER_CONTEXT}" "${HOST_CLUSTER_KUBECONFIG}" "kind"
 done
 
 function print_success() {
   echo -e "${KUBEADMIRAL_GREETING}"
   echo "Your local KubeAdmiral has been deployed successfully!"
   echo -e "\nTo start using your KubeAdmiral, run:"
+  echo -e "  export KUBECONFIG=${HOST_CLUSTER_KUBECONFIG}"
+  echo -e "\nTo observe the status of KubeAdmiral control-plane components, run:"
   echo -e "  export KUBECONFIG=${META_CLUSTER_KUBECONFIG}"
-  echo "Please use 'kubectl config use-context ${META_CLUSTER_NAME}/${HOST_CLUSTER_CONTEXT}' to switch the meta and kubeadmiral control-plane cluster."
   echo -e "\nTo manage your member clusters, run:"
   echo -e "  export KUBECONFIG=${MEMBER_CLUSTER_KUBECONFIG}"
   echo "Please use 'kubectl config use-context ${MEMBER_CLUSTER_NAME_PREFIX}-1/${MEMBER_CLUSTER_NAME_PREFIX}-2/${MEMBER_CLUSTER_NAME_PREFIX}-3' to switch to the different member cluster."

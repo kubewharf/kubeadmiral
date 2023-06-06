@@ -255,28 +255,20 @@ function util::check_clusters_ready() {
   util::wait_for_condition 'ok' "kubectl --kubeconfig ${kubeconfig_path} --context ${context_name} get --raw=/healthz &> /dev/null" 300
 }
 
-# util::set_mirror_registry_for_china_mainland will do proxy setting in China mainland
+# util::deploy_components_according_to_different_region will do proxy setting in China mainland
 # Parameters:
-#  - $1: the root path of repo
-function util::set_mirror_registry_for_china_mainland() {
-  local repo_root=${1}
-  export GOPROXY=https://goproxy.cn,direct # set domestic go proxy
-  # set mirror registry of registry.k8s.io
-  registry_files=( # Yaml files that contain image host 'registry.k8s.io' need to be replaced
-    "config/deploy/controlplane/etcd.yaml"
-    "config/deploy/controlplane/kube-apiserver.yaml"
-    "config/deploy/controlplane/kube-controller-manager.yaml"
-  )
-  for registry_file in "${registry_files[@]}"; do
-    sed -i'' -e "s#registry.k8s.io#registry.aliyuncs.com/google_containers#g" ${repo_root}/${registry_file}
-  done
-
-  # set mirror registry in the dockerfile of components of kubeadmiral
-  dockerfile_list=( # Dockerfile files need to be replaced
-    "hack/dockerfiles/Dockerfile"
-  )
-  for dockerfile in "${dockerfile_list[@]}"; do
-    grep 'mirrors.ustc.edu.cn' ${repo_root}/${dockerfile} > /dev/null || sed -i'' -e "9a\\
-RUN echo -e http://mirrors.ustc.edu.cn/alpine/v3.17/main/ > /etc/apk/repositories" ${repo_root}/${dockerfile}
-  done
+#  - $1: region
+#  - $2: component_path
+#  - $3: kubeconfig_path
+#  - $4: kubeconfig_context
+function util::deploy_components_according_to_different_region() {
+  local region=$1
+  local component_path=$2
+  local kubeconfig_path=$3
+  local kubeconfig_context=$4
+  if [ "${region}" == "cn" ]; then
+    sed -e "s#registry.k8s.io#registry.aliyuncs.com/google_containers#g" "${component_path}" | kubectl --kubeconfig=${kubeconfig_path} --context="${kubeconfig_context}" apply -f -
+  else
+    kubectl --kubeconfig="${kubeconfig_path}" --context="${kubeconfig_context}" apply -f "${component_path}"
+  fi
 }

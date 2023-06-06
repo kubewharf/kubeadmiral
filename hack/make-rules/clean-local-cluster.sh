@@ -23,8 +23,6 @@ if [[ ! $(kind get clusters | grep kubeadmiral ) ]]; then
 else
   kind delete clusters $(kind get clusters | grep kubeadmiral | tr -s "\r\n" " ")
   echo "The following files will be deleted:
-  ${HOME}/.kube/kubeadmiral.config
-  ${HOME}/.kube/members.config
   ${HOME}/.kube/kubeadmiral"
-  rm -rf ${HOME}/.kube/kubeadmiral.config ${HOME}/.kube/members.config ${HOME}/.kube/kubeadmiral
+  rm -rf ${HOME}/.kube/kubeadmiral
 fi
