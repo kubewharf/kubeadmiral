@@ -103,12 +103,13 @@ function util::install_kubectl {
 function util::join_member_cluster() {
   local MEMBER_CLUSTER_NAME=${1}
   local HOST_CLUSTER_CONTEXT=${2}
-  local KUBECONFIG_PATH=${3}
-  local CLUSTER_PROVIDER=${4:-"kind"}
+  local HOST_KUBECONFIG_PATH=${3}
+  local MEMBER_KUBECONFIG_PATH=${4}
+  local CLUSTER_PROVIDER=${5:-"kind"}
 
   local MEMBER_API_ENDPOINT MEMBER_CA MEMBER_CERT MEMBER_KEY
   if [[ $CLUSTER_PROVIDER == "kind" ]]; then
-    MEMBER_API_ENDPOINT=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'server:' | awk '{ print $2 }')
+    MEMBER_API_ENDPOINT=$(cat "${MEMBER_KUBECONFIG_PATH}" | grep 'server:' | awk '{ print $2 }')
     MEMBER_CA=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'certificate-authority-data:' | awk '{ print $2 }')
     MEMBER_CERT=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-certificate-data:' | awk '{ print $2 }')
     MEMBER_KEY=$(kind get kubeconfig --name="${MEMBER_CLUSTER_NAME}" | grep 'client-key-data:' | awk '{ print $2 }')
@@ -122,7 +123,7 @@ function util::join_member_cluster() {
     exit 1
   fi
 
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CLUSTER_CONTEXT}" create -f - <<EOF
+  kubectl --kubeconfig="${HOST_KUBECONFIG_PATH}" --context="${HOST_CLUSTER_CONTEXT}" create -f - <<EOF
 apiVersion: v1
 kind: Secret
 metadata:
@@ -134,7 +135,7 @@ data:
   client-certificate-data: "${MEMBER_CERT}"
   client-key-data: "${MEMBER_KEY}"
 EOF
-  kubectl --kubeconfig="${KUBECONFIG_PATH}" --context="${HOST_CLUSTER_CONTEXT}" create -f - <<EOF
+  kubectl --kubeconfig="${HOST_KUBECONFIG_PATH}" --context="${HOST_CLUSTER_CONTEXT}" create -f - <<EOF
 apiVersion: core.kubeadmiral.io/v1alpha1
 kind: FederatedCluster
 metadata:

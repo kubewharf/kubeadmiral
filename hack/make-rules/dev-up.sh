@@ -72,7 +72,7 @@ if [[ "${NUM_MEMBER_CLUSTERS}" -gt "0" ]]; then
   fi
   # join the member clusters
   for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
-    util::join_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${HOST_CONTEXT}" "${KUBECONFIG_DIR}/${HOST_CLUSTER_NAME}.yaml" "${CLUSTER_PROVIDER}" &
+    util::join_member_cluster "${MEMBER_CLUSTER_NAME}-${i}" "${HOST_CONTEXT}" "${KUBECONFIG_DIR}/${HOST_CLUSTER_NAME}.yaml" "${KUBECONFIG_DIR}/${MEMBER_CLUSTER_NAME}-${i}.yaml" "${CLUSTER_PROVIDER}" &
   done
 fi
 

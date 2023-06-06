@@ -143,7 +143,7 @@ done
 # 6. Join the member clusters
 echo "Adding member clusters to kubeadmiral..."
 for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
-  util::join_member_cluster "${MEMBER_CLUSTER_NAME_PREFIX}-${i}" "${HOST_CLUSTER_CONTEXT}" "${HOST_CLUSTER_KUBECONFIG}" "kind"
+  util::join_member_cluster "${MEMBER_CLUSTER_NAME_PREFIX}-${i}" "${HOST_CLUSTER_CONTEXT}" "${HOST_CLUSTER_KUBECONFIG}" "${MEMBER_CLUSTER_KUBECONFIG_PREFIX}-${i}.config" "kind"
 done
 
 function print_success() {
@@ -153,7 +153,7 @@ function print_success() {
   echo -e "  export KUBECONFIG=${HOST_CLUSTER_KUBECONFIG}"
   echo -e "\nTo observe the status of KubeAdmiral control-plane components, run:"
   echo -e "  export KUBECONFIG=${META_CLUSTER_KUBECONFIG}"
-  echo -e "\nTo manage your member clusters, run one of the following:"
+  echo -e "\nTo inspect your member clusters, run one of the following:"
   for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
       echo -e "  export KUBECONFIG=${MEMBER_CLUSTER_KUBECONFIG_PREFIX}-${i}.config"
   done
