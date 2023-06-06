@@ -36,7 +36,7 @@ META_CLUSTER_KUBECONFIG=${META_CLUSTER_KUBECONFIG:-"${KUBECONFIG_PATH}/meta.conf
 HOST_CLUSTER_KUBECONFIG=${HOST_CLUSTER_KUBECONFIG:-"${KUBECONFIG_PATH}/kubeadmiral.config"}
 KIND_LOG_PATH=${KIND_LOG_PATH:-"${REPO_ROOT}/output/log"}
 MEMBER_CLUSTER_NAME_PREFIX=${MEMBER_CLUSTER_NAME_PREFIX:-"kubeadmiral-member"}
-MEMBER_CLUSTER_KUBECONFIG=${MEMBER_CLUSTER_KUBECONFIG:-"${KUBECONFIG_PATH}/members.config"}
+MEMBER_CLUSTER_KUBECONFIG_PREFIX=${MEMBER_CLUSTER_KUBECONFIG_PREFIX:-"${KUBECONFIG_PATH}/member"}
 NUM_MEMBER_CLUSTERS=${NUM_MEMBER_CLUSTERS:-"3"}
 
 if [[ "${NUM_MEMBER_CLUSTERS}" -le "0" ]]; then
@@ -112,13 +112,13 @@ if [[ -n "${HOST_IPADDRESS}" ]]; then
 
   sed -i'' -e "s/{{member_ipaddress}}/${HOST_IPADDRESS}/g" "${TEMP_PATH}/member.yaml"
   for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
-    local-up::create_cluster "${MEMBER_CLUSTER_NAME_PREFIX}-${i}" "${MEMBER_CLUSTER_KUBECONFIG}" "${KIND_LOG_PATH}" "${TEMP_PATH}/member.yaml"
+    local-up::create_cluster "${MEMBER_CLUSTER_NAME_PREFIX}-${i}" "${MEMBER_CLUSTER_KUBECONFIG_PREFIX}-${i}.config" "${KIND_LOG_PATH}" "${TEMP_PATH}/member.yaml"
   done
 else
   local-up::create_cluster "${META_CLUSTER_NAME}" "${META_CLUSTER_KUBECONFIG}" "${KIND_LOG_PATH}" "${DEPLOY_DIR}/kind-cluster/general-config.yaml"
 
   for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
-    local-up::create_cluster "${MEMBER_CLUSTER_NAME_PREFIX}-${i}" "${MEMBER_CLUSTER_KUBECONFIG}" "${KIND_LOG_PATH}" "${DEPLOY_DIR}/kind-cluster/general-config.yaml"
+    local-up::create_cluster "${MEMBER_CLUSTER_NAME_PREFIX}-${i}" "${MEMBER_CLUSTER_KUBECONFIG_PREFIX}-${i}.config" "${KIND_LOG_PATH}" "${DEPLOY_DIR}/kind-cluster/general-config.yaml"
   done
 fi
 
@@ -137,7 +137,7 @@ bash "${REPO_ROOT}/hack/make-rules/deploy-kubeadmiral.sh" "${META_CLUSTER_KUBECO
 # 5. Wait until the member cluster ready
 echo "Waiting for the member clusters to be ready..."
 for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
-    util::check_clusters_ready "${MEMBER_CLUSTER_KUBECONFIG}" "${MEMBER_CLUSTER_NAME_PREFIX}-${i}"
+    util::check_clusters_ready "${MEMBER_CLUSTER_KUBECONFIG_PREFIX}-${i}.config" "${MEMBER_CLUSTER_NAME_PREFIX}-${i}"
 done
 
 # 6. Join the member clusters
@@ -153,9 +153,10 @@ function print_success() {
   echo -e "  export KUBECONFIG=${HOST_CLUSTER_KUBECONFIG}"
   echo -e "\nTo observe the status of KubeAdmiral control-plane components, run:"
   echo -e "  export KUBECONFIG=${META_CLUSTER_KUBECONFIG}"
-  echo -e "\nTo manage your member clusters, run:"
-  echo -e "  export KUBECONFIG=${MEMBER_CLUSTER_KUBECONFIG}"
-  echo "Please use 'kubectl config use-context ${MEMBER_CLUSTER_NAME_PREFIX}-1/${MEMBER_CLUSTER_NAME_PREFIX}-2/${MEMBER_CLUSTER_NAME_PREFIX}-3' to switch to the different member cluster."
+  echo -e "\nTo manage your member clusters, run one of the following:"
+  for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
+      echo -e "  export KUBECONFIG=${MEMBER_CLUSTER_KUBECONFIG_PREFIX}-${i}.config"
+  done
 }
 
 print_success

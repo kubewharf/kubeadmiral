@@ -60,6 +60,7 @@ dev-up:
 #   make local-up
 .PHONY: local-up
 local-up:
+	make clean-local-cluster
 	REGION="$(REGION)" NUM_MEMBER_CLUSTERS="$(NUM_MEMBER_CLUSTERS)" bash hack/make-rules/local-up.sh
 
 # Debug build
