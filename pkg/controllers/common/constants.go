@@ -24,6 +24,7 @@ const (
 	DefaultFedSystemNamespace = "kube-admiral-system"
 	DefaultPrefix             = "kubeadmiral.io/"
 	InternalPrefix            = "internal." + DefaultPrefix
+	FederateControllerPrefix  = "federate.controller." + DefaultPrefix
 )
 
 const (
@@ -127,6 +128,13 @@ const (
 	PodUnschedulableThresholdAnnotation = InternalPrefix + "pod-unschedulable-threshold"
 	// AutoMigrationInfoAnnotation contains auto migration information.
 	AutoMigrationInfoAnnotation = DefaultPrefix + "auto-migration-info"
+	// ObservedAnnotationKeysAnnotation contains annotation keys observed in the last reconcile.
+	// It will be in the format of `a,b|c,d`, where `a` and `b` are the keys that are synced
+	// from source annotations to federated object annotations.
+	ObservedAnnotationKeysAnnotation = FederateControllerPrefix + "observed-annotations"
+	// ObservedLabelKeysAnnotation contains label keys observed in the last reconcile.
+	// It will be in the format of `a,b|c,d`, where `a` and `b` are the keys that are synced from source labels to federated object labels.
+	ObservedLabelKeysAnnotation = FederateControllerPrefix + "observed-labels"
 )
 
 // TemplateAnnotationKeys and TemplateLabelKeys are used to store the keys of annotations and labels that are present
