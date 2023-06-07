@@ -37,7 +37,7 @@ build:
 #
 # It will directly start the kubeadmiral control-plane cluster(excluding the kubeadmiral-controller-manager) and three member-clusters.
 # Users can run the kubeadmiral-controller-manager component through binary for easy debugging, e.g.:
-# ./output/bin/darwin/amd64/kubeadmiral-controller-manager --create-crds-for-ftcs \
+# ./output/bin/darwin/amd64/kubeadmiral-controller-manager_debug --create-crds-for-ftcs \
 #    --klog-logtostderr=false \
 #    --klog-log-file "./kubeadmiral.log" \
 #    --kubeconfig "$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml" \
@@ -46,7 +46,7 @@ build:
 dev-up:
 	make clean-local-cluster
 	bash hack/make-rules/dev-up.sh
-	make build
+	make debug
 
 # Local up the KubeAdmiral.
 #
@@ -60,6 +60,7 @@ dev-up:
 #   make local-up
 .PHONY: local-up
 local-up:
+	make clean-local-cluster
 	REGION="$(REGION)" NUM_MEMBER_CLUSTERS="$(NUM_MEMBER_CLUSTERS)" bash hack/make-rules/local-up.sh
 
 # Debug build

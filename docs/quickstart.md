@@ -55,12 +55,16 @@ To start using your KubeAdmiral, run:
 To observe the status of KubeAdmiral control-plane components, run:
   export KUBECONFIG=$HOME/.kube/kubeadmiral/meta.config
 
-To manage your member clusters, run:
-  export KUBECONFIG=$HOME/.kube/members.config
-Please use 'kubectl config use-context kubeadmiral-member-1/kubeadmiral-member-2/kubeadmiral-member-3' to switch to the different member cluster.
+To inspect your member clusters, run one of the following:
+  export KUBECONFIG=$HOME/.kube/kubeadmiral/member-1.config
+  export KUBECONFIG=$HOME/.kube/kubeadmiral/member-2.config
+  export KUBECONFIG=$HOME/.kube/kubeadmiral/member-3.config
 ```
 
-There are two kubeconfigs: `kubeadmiral.config` is the main entrypoint of a KubeAdmiral instance, while `meta.config` is only used for debugging KubeAdmiral installation with the meta cluster.
+There are three types of kubeconfig: 
+- `kubeadmiral.config` is the main entrypoint of a KubeAdmiral instance. KubeAdmiral considers resources created in this api-server for propagation;
+- `meta.config` is only used for debugging KubeAdmiral installation with the meta cluster;
+- `member-{1,2,3}.config` are used for inspecting the member clusters.
 
 We will mainly be working with the kubeadmiral control-plane for the rest of this guide. Before proceeding, go ahead and switch to the kubeadmiral cluster:
 
