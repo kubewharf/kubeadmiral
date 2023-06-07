@@ -194,6 +194,7 @@ func (c *FederateController) reconcile(qualifiedName common.QualifiedName) (stat
 		logger.Error(err, "Failed to get source object from store")
 		return worker.StatusError
 	}
+	sourceObject = sourceObject.DeepCopy()
 
 	fedObject, err := c.federatedObjectFromStore(qualifiedName)
 	if err != nil && !apierrors.IsNotFound(err) {
@@ -202,6 +203,8 @@ func (c *FederateController) reconcile(qualifiedName common.QualifiedName) (stat
 	}
 	if apierrors.IsNotFound(err) {
 		fedObject = nil
+	} else {
+		fedObject = fedObject.DeepCopy()
 	}
 
 	federatedAPIResource := c.typeConfig.GetFederatedType()
