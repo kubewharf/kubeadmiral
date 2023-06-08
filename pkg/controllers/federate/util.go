@@ -19,6 +19,8 @@ package federate
 import (
 	"fmt"
 	"reflect"
+	"sort"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -71,11 +73,17 @@ func newFederatedObjectForSourceObject(
 		[]metav1.OwnerReference{*metav1.NewControllerRef(sourceObj, sourceObj.GroupVersionKind())},
 	)
 
-	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObj.GetAnnotations())
-	fedObj.SetAnnotations(federatedAnnotations)
-
 	federatedLabels, templateLabels := classifyLabels(sourceObj.GetLabels())
 	fedObj.SetLabels(federatedLabels)
+
+	observedLabelKeys := generateObservedKeys(sourceObj.GetLabels(), federatedLabels)
+
+	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObj.GetAnnotations())
+	observedAnnotationKeys := generateObservedKeys(sourceObj.GetAnnotations(), federatedAnnotations)
+
+	federatedAnnotations[common.ObservedAnnotationKeysAnnotation] = observedAnnotationKeys
+	federatedAnnotations[common.ObservedLabelKeysAnnotation] = observedLabelKeys
+	fedObj.SetAnnotations(federatedAnnotations)
 
 	if err := unstructured.SetNestedMap(
 		fedObj.Object,
@@ -112,6 +120,16 @@ func updateFederatedObjectForSourceObject(
 	}
 
 	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObject.GetAnnotations())
+
+	// generate observed annotations for source object and recorded in federated object annotation
+	observedAnnotationKeys := generateObservedKeys(sourceObject.GetAnnotations(), federatedAnnotations)
+	fedObjectAnnotations := fedObject.GetAnnotations()
+	if existAnno, exist := fedObjectAnnotations[common.ObservedAnnotationKeysAnnotation]; !exist || existAnno != observedAnnotationKeys {
+		fedObjectAnnotations[common.ObservedAnnotationKeysAnnotation] = observedAnnotationKeys
+		fedObject.SetAnnotations(fedObjectAnnotations)
+		isUpdated = true
+	}
+
 	// Merge annotations because other controllers may have added annotations to the federated object.
 	newAnnotations, annotationChanges := annotationutil.CopySubmap(
 		federatedAnnotations,
@@ -129,6 +147,14 @@ func updateFederatedObjectForSourceObject(
 	federatedLabels, templateLabels := classifyLabels(sourceObject.GetLabels())
 	if !equality.Semantic.DeepEqual(federatedLabels, fedObject.GetLabels()) {
 		fedObject.SetLabels(federatedLabels)
+		isUpdated = true
+	}
+
+	observedLabelKeys := generateObservedKeys(sourceObject.GetLabels(), federatedLabels)
+	fedObjectAnnotations = fedObject.GetAnnotations()
+	if existLabel, exist := fedObjectAnnotations[common.ObservedLabelKeysAnnotation]; !exist || existLabel != observedLabelKeys {
+		fedObjectAnnotations[common.ObservedLabelKeysAnnotation] = observedLabelKeys
+		fedObject.SetAnnotations(fedObjectAnnotations)
 		isUpdated = true
 	}
 
@@ -170,7 +196,7 @@ func updateFederatedObjectForSourceObject(
 
 var (
 	// List of annotations that should be copied to the federated object instead of the template from the source
-	federatedAnnotations = sets.New(
+	federatedAnnotationSet = sets.New(
 		scheduler.SchedulingModeAnnotation,
 		scheduler.StickyClusterAnnotation,
 		util.ConflictResolutionAnnotation,
@@ -188,7 +214,7 @@ var (
 
 	// TODO: Do we need to specify the internal annotations here?
 	// List of annotations that should be ignored on the source object
-	ignoredAnnotations = sets.New(
+	ignoredAnnotationSet = sets.New(
 		RetainReplicasAnnotation,
 		util.LatestReplicasetDigestsAnnotation,
 		sourcefeedback.SchedulingAnnotation,
@@ -199,7 +225,7 @@ var (
 		common.EnableFollowerSchedulingAnnotation,
 	)
 
-	federatedLabels = sets.New(
+	federatedLabelSet = sets.New(
 		scheduler.PropagationPolicyNameLabel,
 		scheduler.ClusterPropagationPolicyNameLabel,
 		override.OverridePolicyNameLabel,
@@ -238,11 +264,11 @@ func classifyAnnotations(annotations map[string]string) (
 }
 
 func classifyAnnotation(annotation string) (federated, template bool) {
-	if ignoredAnnotations.Has(annotation) {
+	if ignoredAnnotationSet.Has(annotation) {
 		return false, false
 	}
 
-	if federatedAnnotations.Has(annotation) {
+	if federatedAnnotationSet.Has(annotation) {
 		return true, false
 	} else {
 		return false, true
@@ -257,9 +283,28 @@ func classifyLabels(labels map[string]string) (
 }
 
 func classifyLabel(labelKey string) (federated, template bool) {
-	if federatedLabels.Has(labelKey) {
+	if federatedLabelSet.Has(labelKey) {
 		return true, false
 	} else {
 		return false, true
 	}
+}
+
+func generateObservedKeys(sourceMap map[string]string, federatedMap map[string]string) string {
+	if len(sourceMap) == 0 {
+		return ""
+	}
+
+	var observedFederatedKeys, observedNonFederatedKeys []string
+	for key := range sourceMap {
+		if _, exist := federatedMap[key]; exist {
+			observedFederatedKeys = append(observedFederatedKeys, key)
+		} else {
+			observedNonFederatedKeys = append(observedNonFederatedKeys, key)
+		}
+	}
+
+	sort.Strings(observedFederatedKeys)
+	sort.Strings(observedNonFederatedKeys)
+	return strings.Join([]string{strings.Join(observedFederatedKeys, ","), strings.Join(observedNonFederatedKeys, ",")}, "|")
 }
