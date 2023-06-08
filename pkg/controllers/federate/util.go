@@ -17,11 +17,13 @@ limitations under the License.
 package federate
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
 
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,20 +81,32 @@ func newFederatedObjectForSourceObject(
 	observedLabelKeys := generateObservedKeys(sourceObj.GetLabels(), federatedLabels)
 
 	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObj.GetAnnotations())
-	observedAnnotationKeys := generateObservedKeys(sourceObj.GetAnnotations(), federatedAnnotations)
+	if federatedAnnotations == nil {
+		federatedAnnotations = make(map[string]string)
+	}
 
+	observedAnnotationKeys := generateObservedKeys(sourceObj.GetAnnotations(), federatedAnnotations)
 	federatedAnnotations[common.ObservedAnnotationKeysAnnotation] = observedAnnotationKeys
 	federatedAnnotations[common.ObservedLabelKeysAnnotation] = observedLabelKeys
-	fedObj.SetAnnotations(federatedAnnotations)
+
+	templateObject := templateForSourceObject(sourceObj, templateAnnotations, templateLabels).Object
 
 	if err := unstructured.SetNestedMap(
 		fedObj.Object,
-		templateForSourceObject(sourceObj, templateAnnotations, templateLabels).Object,
+		templateObject,
 		common.SpecField,
 		common.TemplateField,
 	); err != nil {
 		return nil, err
 	}
+
+	templateGeneratorMergePatch, err := CreateMergePatch(sourceObj, &unstructured.Unstructured{Object: templateObject})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create merge patch for source object: %w", err)
+	}
+
+	federatedAnnotations[common.TemplateGeneratorMergePatchAnnotation] = string(templateGeneratorMergePatch)
+	fedObj.SetAnnotations(federatedAnnotations)
 
 	// For deployment fields
 	if sourceObj.GroupVersionKind() == appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind) {
@@ -121,13 +135,37 @@ func updateFederatedObjectForSourceObject(
 
 	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObject.GetAnnotations())
 
-	// generate observed annotations for source object and recorded in federated object annotation
 	observedAnnotationKeys := generateObservedKeys(sourceObject.GetAnnotations(), federatedAnnotations)
-	fedObjectAnnotations := fedObject.GetAnnotations()
-	if existAnno, exist := fedObjectAnnotations[common.ObservedAnnotationKeysAnnotation]; !exist || existAnno != observedAnnotationKeys {
-		fedObjectAnnotations[common.ObservedAnnotationKeysAnnotation] = observedAnnotationKeys
-		fedObject.SetAnnotations(fedObjectAnnotations)
+
+	federatedLabels, templateLabels := classifyLabels(sourceObject.GetLabels())
+	if !equality.Semantic.DeepEqual(federatedLabels, fedObject.GetLabels()) {
+		fedObject.SetLabels(federatedLabels)
 		isUpdated = true
+	}
+
+	observedLabelKeys := generateObservedKeys(sourceObject.GetLabels(), federatedLabels)
+
+	// sync template
+	fedObjectTemplate, foundTemplate, err := unstructured.NestedMap(
+		fedObject.Object,
+		common.SpecField,
+		common.TemplateField,
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse template from federated object: %w", err)
+	}
+
+	targetTemplate := templateForSourceObject(sourceObject, templateAnnotations, templateLabels).Object
+	if !foundTemplate || !reflect.DeepEqual(fedObjectTemplate, targetTemplate) {
+		if err := unstructured.SetNestedMap(fedObject.Object, targetTemplate, common.SpecField, common.TemplateField); err != nil {
+			return false, fmt.Errorf("failed to set federated object template: %w", err)
+		}
+		isUpdated = true
+	}
+
+	templateGeneratorMergePatch, err := CreateMergePatch(sourceObject, targetTemplate)
+	if err != nil {
+		return false, fmt.Errorf("failed to create merge patch for source object: %w", err)
 	}
 
 	// Merge annotations because other controllers may have added annotations to the federated object.
@@ -139,39 +177,21 @@ func updateFederatedObjectForSourceObject(
 			return federated
 		},
 	)
+
+	for key, desiredValue := range map[string]string{
+		common.ObservedAnnotationKeysAnnotation:      observedAnnotationKeys,
+		common.ObservedLabelKeysAnnotation:           observedLabelKeys,
+		common.TemplateGeneratorMergePatchAnnotation: string(templateGeneratorMergePatch),
+	} {
+		existingValue, exist := newAnnotations[key]
+		if !exist || existingValue != desiredValue {
+			newAnnotations[key] = desiredValue
+			annotationChanges++
+		}
+	}
+
 	if annotationChanges > 0 {
 		fedObject.SetAnnotations(newAnnotations)
-		isUpdated = true
-	}
-
-	federatedLabels, templateLabels := classifyLabels(sourceObject.GetLabels())
-	if !equality.Semantic.DeepEqual(federatedLabels, fedObject.GetLabels()) {
-		fedObject.SetLabels(federatedLabels)
-		isUpdated = true
-	}
-
-	observedLabelKeys := generateObservedKeys(sourceObject.GetLabels(), federatedLabels)
-	fedObjectAnnotations = fedObject.GetAnnotations()
-	if existLabel, exist := fedObjectAnnotations[common.ObservedLabelKeysAnnotation]; !exist || existLabel != observedLabelKeys {
-		fedObjectAnnotations[common.ObservedLabelKeysAnnotation] = observedLabelKeys
-		fedObject.SetAnnotations(fedObjectAnnotations)
-		isUpdated = true
-	}
-
-	// sync template
-	fedObjectTemplate, foundTemplate, err := unstructured.NestedMap(
-		fedObject.Object,
-		common.SpecField,
-		common.TemplateField,
-	)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse template from federated object: %w", err)
-	}
-	targetTemplate := templateForSourceObject(sourceObject, templateAnnotations, templateLabels).Object
-	if !foundTemplate || !reflect.DeepEqual(fedObjectTemplate, targetTemplate) {
-		if err := unstructured.SetNestedMap(fedObject.Object, targetTemplate, common.SpecField, common.TemplateField); err != nil {
-			return false, fmt.Errorf("failed to set federated object template: %w", err)
-		}
 		isUpdated = true
 	}
 
@@ -307,4 +327,24 @@ func generateObservedKeys(sourceMap map[string]string, federatedMap map[string]s
 	sort.Strings(observedFederatedKeys)
 	sort.Strings(observedNonFederatedKeys)
 	return strings.Join([]string{strings.Join(observedFederatedKeys, ","), strings.Join(observedNonFederatedKeys, ",")}, "|")
+}
+
+// CreateMergePatch will return a merge patch document capable of converting
+// the source object to the target object.
+func CreateMergePatch(sourceObject interface{}, targetObject interface{}) ([]byte, error) {
+	sourceJSON, err := json.Marshal(sourceObject)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal source object: %w", err)
+	}
+
+	targetJSON, err := json.Marshal(targetObject)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal target object: %w", err)
+	}
+	patchBytes, err := jsonpatch.CreateMergePatch(sourceJSON, targetJSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create a merge patch: %w", err)
+	}
+
+	return patchBytes, nil
 }
