@@ -299,7 +299,12 @@ func TestLookForMatchedPolicies(t *testing.T) {
 				}
 			}
 
-			foundPolicies, needsRecheckOnError, err := lookForMatchedPolicies(obj, isNamespaced, overridePolicyStore, clusterOverridePolicyStore)
+			foundPolicies, needsRecheckOnError, err := lookForMatchedPolicies(
+				obj,
+				isNamespaced,
+				overridePolicyStore,
+				clusterOverridePolicyStore,
+			)
 			if (err != nil) != testCase.isErrorExpected {
 				t.Fatalf("err = %v, but isErrorExpected = %v", err, testCase.isErrorExpected)
 			}

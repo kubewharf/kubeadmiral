@@ -53,6 +53,7 @@ import (
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
+	federatedclientfake "github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient/fake"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/pendingcontrollers"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
@@ -285,13 +286,24 @@ func doTest(t *testing.T, clientTLS *fedcorev1a1.WebhookTLSConfig, serverTLS *tl
 	gvr := schemautil.APIResourceToGVR(&federatedType)
 	scheduler, err := NewScheduler(
 		ktesting.NewLogger(t, ktesting.NewConfig(ktesting.Verbosity(3))),
-		typeConfig, kubeClient, fedClient, dynamicClient,
+		typeConfig,
+		kubeClient,
+		fedClient,
+		dynamicClient,
 		dynInformerFactory.ForResource(gvr),
 		fedInformerFactory.Core().V1alpha1().PropagationPolicies(),
 		fedInformerFactory.Core().V1alpha1().ClusterPropagationPolicies(),
 		fedInformerFactory.Core().V1alpha1().FederatedClusters(),
 		fedInformerFactory.Core().V1alpha1().SchedulingProfiles(),
 		fedInformerFactory.Core().V1alpha1().SchedulerPluginWebhookConfigurations(),
+		federatedclientfake.New(
+			context.Background(),
+			fedClient,
+			kubeClient,
+			fedInformerFactory.Core().V1alpha1().FederatedClusters(),
+			scheme,
+			nil,
+		),
 		stats.NewMock("test", "kube-admiral", false),
 		1,
 	)

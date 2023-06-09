@@ -17,6 +17,7 @@ limitations under the License.
 package scheduler
 
 import (
+	"context"
 	"testing"
 
 	"github.com/onsi/gomega"
@@ -26,10 +27,12 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/pointer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
+	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
@@ -136,7 +139,14 @@ func TestGetSchedulingUnit(t *testing.T) {
 		},
 	}
 
-	su, err := schedulingUnitForFedObject(typeConfig, &unstructured.Unstructured{Object: fedObjUns}, &policy)
+	su, err := schedulingUnitForFedObject(
+		context.Background(),
+		nil,
+		fedcorev1a1listers.NewFederatedClusterLister(cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})),
+		typeConfig,
+		&unstructured.Unstructured{Object: fedObjUns},
+		&policy,
+	)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	g.Expect(su).To(gomega.Equal(&framework.SchedulingUnit{
@@ -419,7 +429,14 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 					},
 				},
 			}
-			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy)
+			su, err := schedulingUnitForFedObject(
+				context.Background(),
+				nil,
+				fedcorev1a1listers.NewFederatedClusterLister(cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})),
+				typeConfig,
+				obj,
+				test.policy,
+			)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 
 			// override fields we don't want to test
@@ -500,7 +517,14 @@ func TestSchedulingMode(t *testing.T) {
 			obj := &unstructured.Unstructured{Object: make(map[string]interface{})}
 			err := unstructured.SetNestedMap(obj.Object, make(map[string]interface{}), common.TemplatePath...)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
-			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy)
+			su, err := schedulingUnitForFedObject(
+				context.Background(),
+				nil,
+				fedcorev1a1listers.NewFederatedClusterLister(cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})),
+				typeConfig,
+				obj,
+				test.policy,
+			)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 			g.Expect(su.SchedulingMode).To(gomega.Equal(test.expectedResult))
 		})

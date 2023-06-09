@@ -72,7 +72,7 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 
 	var schedulingWeights map[string]int64
 	if dynamicSchedulingEnabled {
-		clusterAvailables := QueryClusterResource(clusters, availableResource)
+		clusterAvailables := QueryAvailable(clusters, su.CurrentUsage)
 		if len(clusters) != len(clusterAvailables) {
 			return clusterReplicasList, framework.NewResult(framework.Error)
 		}
@@ -180,7 +180,7 @@ func CalcWeightLimit(
 	clusters []*fedcorev1a1.FederatedCluster,
 	supplyLimitRatio float64,
 ) (weightLimit map[string]int64, err error) {
-	allocatables := QueryClusterResource(clusters, allocatableResource)
+	allocatables := QueryAllocatable(clusters)
 	if len(allocatables) != len(clusters) {
 		err = fmt.Errorf("allocatables are incomplete: %v", allocatables)
 		return
@@ -267,19 +267,8 @@ func AvailableToPercentage(
 	return
 }
 
-// QueryClusterResource aggregate cluster resources, accept available and allocatable.
-func QueryClusterResource(clusters []*fedcorev1a1.FederatedCluster, resource string) map[string]corev1.ResourceList {
-	switch resource {
-	case availableResource:
-		return QueryAvailable(clusters)
-	case allocatableResource:
-		return QueryAllocatable(clusters)
-	}
-	return nil
-}
-
 // QueryAvailable aggregate cluster available resource.
-func QueryAvailable(clusters []*fedcorev1a1.FederatedCluster) map[string]corev1.ResourceList {
+func QueryAvailable(clusters []*fedcorev1a1.FederatedCluster, currentUsage map[string]framework.Resource) map[string]corev1.ResourceList {
 	ret := make(map[string]corev1.ResourceList)
 	for _, cluster := range clusters {
 		available := make(corev1.ResourceList)
@@ -294,6 +283,13 @@ func QueryAvailable(clusters []*fedcorev1a1.FederatedCluster) map[string]corev1.
 				available[resourceName] = cluster.Status.Resources.Available[resourceName]
 			}
 		}
+
+		usageTmp := currentUsage[cluster.Name]
+		usage := *usageTmp.Clone()
+
+		usage.Add(available)
+		available = usage.ResourceList()
+
 		ret[cluster.GetName()] = available
 	}
 	return ret

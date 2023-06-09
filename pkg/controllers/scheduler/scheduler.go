@@ -50,6 +50,7 @@ import (
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/pendingcontrollers"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
@@ -86,6 +87,8 @@ type Scheduler struct {
 	webhookConfigurationSynced cache.InformerSynced
 	webhookPlugins             sync.Map
 
+	federatedClient federatedclient.FederatedClientFactory
+
 	worker        worker.ReconcileWorker
 	eventRecorder record.EventRecorder
 
@@ -111,18 +114,20 @@ func NewScheduler(
 	clusterInformer fedcorev1a1informers.FederatedClusterInformer,
 	schedulingProfileInformer fedcorev1a1informers.SchedulingProfileInformer,
 	webhookConfigurationInformer fedcorev1a1informers.SchedulerPluginWebhookConfigurationInformer,
+	federatedClient federatedclient.FederatedClientFactory,
 	metrics stats.Metrics,
 	workerCount int,
 ) (*Scheduler, error) {
 	schedulerName := fmt.Sprintf("%s-scheduler", typeConfig.GetFederatedType().Name)
 
 	s := &Scheduler{
-		typeConfig:    typeConfig,
-		name:          schedulerName,
-		fedClient:     fedClient,
-		dynamicClient: dynamicClient,
-		metrics:       metrics,
-		logger:        logger.WithValues("controller", GlobalSchedulerName, "ftc", typeConfig.Name),
+		typeConfig:      typeConfig,
+		name:            schedulerName,
+		fedClient:       fedClient,
+		dynamicClient:   dynamicClient,
+		federatedClient: federatedClient,
+		metrics:         metrics,
+		logger:          logger.WithValues("controller", GlobalSchedulerName, "ftc", typeConfig.Name),
 	}
 
 	s.worker = worker.NewReconcileWorker(
@@ -459,7 +464,7 @@ func (s *Scheduler) schedule(
 		common.NewQualifiedName(policy).String(),
 	)
 
-	schedulingUnit, err := schedulingUnitForFedObject(s.typeConfig, fedObject, policy)
+	schedulingUnit, err := schedulingUnitForFedObject(ctx, s.federatedClient, s.clusterLister, s.typeConfig, fedObject, policy)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to get scheduling unit")
 		s.eventRecorder.Eventf(
