@@ -293,7 +293,7 @@ func dropServiceFields(obj *unstructured.Unstructured) error {
 
 func dropPodFields(obj *unstructured.Unstructured) error {
 	// A general guideline is to always drop and retain fields that are unable to be set by the user and are managed by
-	// the Kubernetes control plane instead. ephemeralContainers falls into this cateogry.
+	// the Kubernetes control plane instead. ephemeralContainers falls into this category.
 	unstructured.RemoveNestedField(obj.Object, "spec", "ephemeralContainers")
 	return nil
 }

@@ -251,7 +251,7 @@ func Test_podInformer(t *testing.T) {
 							return fmt.Errorf("expect no label for pod, but got labels: %v", pod.Labels)
 						}
 						if !clusters[i].enablePruning && pod.Labels == nil {
-							return fmt.Errorf("expected to get lables from pod, but got nil")
+							return fmt.Errorf("expected to get labels from pod, but got nil")
 						}
 						return nil
 					}

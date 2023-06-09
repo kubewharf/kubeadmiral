@@ -47,7 +47,7 @@ func (r *Result) String() string {
 
 type Result struct {
 	Success bool
-	// RequeueAfter is the time to wait before the worker requeues the item. RequeueAFter is ignored if Backoff is true.
+	// RequeueAfter is the time to wait before the worker requeues the item. RequeueAfter is ignored if Backoff is true.
 	RequeueAfter *time.Duration
 	// Backoff indicates if the worker's backoff should be used to requeue the item. If Backoff is true, RequeueAfter is ignored.
 	Backoff bool

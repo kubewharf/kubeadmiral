@@ -301,7 +301,7 @@ func retainPersistentVolumeClaimFields(desiredObj, clusterObj *unstructured.Unst
 
 func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 	// A general guideline is to always drop and retain fields that are unable to be set by the user and are managed by
-	// the Kubernetes control plane instead. ephemeralContainers falls into this cateogry.
+	// the Kubernetes control plane instead. ephemeralContainers falls into this category.
 	if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "ephemeralContainers"); err != nil {
 		return err
 	}

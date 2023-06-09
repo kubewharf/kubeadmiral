@@ -2,7 +2,7 @@
 
 English | [简体中文](./README.zh.md)
 
-KubeAdmiral is a multi-cluster management system for Kubernetes, developed from [Kuberenetes Federation v2](https://github.com/kubernetes-sigs/kubefed). Kubernetes Federation v2 allows users to manage Kubernetes resources across multiple clusters through the use of federated types such as FederatedDeployment, FederatedReplicaSet, FederatedSecret, etc. KubeAdmiral extends the Kubernetes Federation v2 API, providing compatibility with the Kubernetes native API and more powerful resource management capabilities. KubeAdmiral also adds new features such as:
+KubeAdmiral is a multi-cluster management system for Kubernetes, developed from [Kubernetes Federation v2](https://github.com/kubernetes-sigs/kubefed). Kubernetes Federation v2 allows users to manage Kubernetes resources across multiple clusters through the use of federated types such as FederatedDeployment, FederatedReplicaSet, FederatedSecret, etc. KubeAdmiral extends the Kubernetes Federation v2 API, providing compatibility with the Kubernetes native API and more powerful resource management capabilities. KubeAdmiral also adds new features such as:
 
 - A new scheduling framework with a rich set of scheduling plugins.
 - Override policies.

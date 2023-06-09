@@ -180,7 +180,7 @@ func TestFilter(t *testing.T) {
 			cluster:  getSampleCluster("test"),
 			selected: false,
 		},
-		"webhook returns non-200 resopnse": {
+		"webhook returns non-200 response": {
 			webhookErrors: webhookErrors{
 				responseStatusCode: pointer.Int(http.StatusInternalServerError),
 				responseBody:       "XXX",

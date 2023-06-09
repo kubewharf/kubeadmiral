@@ -602,7 +602,7 @@ func (s *SyncController) updateSyncSuccessAnnotations(fedResource FederatedResou
 	generation := obj.GetGeneration()
 	updateAnnotation := true
 
-	if v, ok := annotations[annotationutil.LastSyncSucceessGeneration]; ok {
+	if v, ok := annotations[annotationutil.LastSyncSuccessGeneration]; ok {
 		if strconv.FormatInt(generation, 10) == v {
 			updateAnnotation = false
 		}
@@ -611,7 +611,7 @@ func (s *SyncController) updateSyncSuccessAnnotations(fedResource FederatedResou
 	if updateAnnotation {
 		_, err := annotationutil.AddAnnotation(
 			obj,
-			annotationutil.LastSyncSucceessGeneration,
+			annotationutil.LastSyncSuccessGeneration,
 			strconv.FormatInt(generation, 10),
 		)
 		if err != nil {

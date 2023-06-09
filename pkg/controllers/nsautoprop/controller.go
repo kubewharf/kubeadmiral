@@ -259,7 +259,7 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 	}
 	needsUpdate = needsUpdate || isDirty
 
-	// Set internal versions of the annotations so they do not get overriden by federate controller
+	// Set internal versions of the annotations so they do not get overridden by federate controller
 
 	// Ensure we adopt pre-existing namespaces in member clusters
 	isDirty, err = c.ensureAnnotation(

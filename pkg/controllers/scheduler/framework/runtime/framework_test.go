@@ -118,7 +118,7 @@ type fakeFilterAndScorePlugin struct {
 }
 
 func (*fakeFilterAndScorePlugin) Name() string {
-	panic("unimplemeneted")
+	panic("unimplemented")
 }
 
 var (
@@ -132,7 +132,7 @@ type fakeScoreAndSelectPlugin struct {
 }
 
 func (*fakeScoreAndSelectPlugin) Name() string {
-	panic("unimplemeneted")
+	panic("unimplemented")
 }
 
 var (

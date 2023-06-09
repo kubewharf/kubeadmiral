@@ -27,7 +27,7 @@ import (
 const (
 	SyncSuccessTimestamp       = "syncSuccessTimestamp"
 	LastGeneration             = "lastGeneration"
-	LastSyncSucceessGeneration = "lastSyncSucceessGeneration"
+	LastSyncSuccessGeneration = "lastSyncSuccessGeneration"
 )
 
 // HasAnnotationKey returns true if the given object has the given annotation key in its ObjectMeta.

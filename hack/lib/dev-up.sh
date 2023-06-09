@@ -71,7 +71,7 @@ EOF
   kind create cluster --config=<(echo "${KIND_CONFIG}") --name="${HOST_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG_PATH}"
 
   # ideally we would use InitConfiguration.skipPhases in kubeadmConfigPatches above to disable the kube-scheduler, but
-  # it is only avaiable from v1.22 onwards, so we simply delete the static kube-scheduler pod after the kind cluster is
+  # it is only available from v1.22 onwards, so we simply delete the static kube-scheduler pod after the kind cluster is
   # created for now
   docker exec ${HOST_CLUSTER_NAME}-control-plane rm /etc/kubernetes/manifests/kube-scheduler.yaml
 }
@@ -89,7 +89,7 @@ options:
   kubeVersion: "${KUBE_VERSION}"
   disableKubeScheduler: true
 componentsPatches:
-# we do not need to disable StorageObjectInUseProtection explictly for the apiserver because kwok disables admission plugins by default
+# we do not need to disable StorageObjectInUseProtection explicitly for the apiserver because kwok disables admission plugins by default
 - name: kube-controller-manager
   extraArgs:
   - key: controllers

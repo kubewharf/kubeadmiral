@@ -69,7 +69,7 @@ func processRequest[Req any, Resp any](
 	httpReq *http.Request,
 	handler func(req *Req) *Resp,
 ) {
-	// Validate and decode the requeset
+	// Validate and decode the request
 	if httpReq.Method != http.MethodPost {
 		http.Error(httpRespWriter, "only POST requests are allowed", http.StatusMethodNotAllowed)
 		return

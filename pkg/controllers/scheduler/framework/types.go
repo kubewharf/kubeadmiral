@@ -42,7 +42,7 @@ type SchedulingUnit struct {
 
 	// Only care about the requests resources
 	// TODO(all), limit resources, Best Effort resources
-	// The Resource and total replica could be deliever by resource type
+	// The Resource and total replica could be deliver by resource type
 	// or define by annotations
 	// Describes the schedule request
 	DesiredReplicas *int64
