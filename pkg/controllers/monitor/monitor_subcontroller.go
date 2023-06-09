@@ -268,7 +268,7 @@ func (m *MonitorSubController) reconcileSync(obj *unstructured.Unstructured, bas
 		if strconv.FormatInt(generation, 10) != v {
 			baseMeter.lastUpdateTimestamp = Now()
 
-			lastSyncSuccessGeneration, ok := annotations[annotationutil.LastSyncSucceessGeneration]
+			lastSyncSuccessGeneration, ok := annotations[annotationutil.LastSyncSuccessGeneration]
 			if ok {
 				if strconv.FormatInt(generation, 10) == lastSyncSuccessGeneration {
 					// it seems the sync has already happened.
@@ -278,7 +278,7 @@ func (m *MonitorSubController) reconcileSync(obj *unstructured.Unstructured, bas
 			}
 		} else {
 			// generation is synced
-			lastSyncSuccessGeneration, ok := annotations[annotationutil.LastSyncSucceessGeneration]
+			lastSyncSuccessGeneration, ok := annotations[annotationutil.LastSyncSuccessGeneration]
 			if ok {
 				if strconv.FormatInt(generation, 10) == lastSyncSuccessGeneration {
 					// adjustment for race conditions.

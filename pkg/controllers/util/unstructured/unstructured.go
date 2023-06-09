@@ -27,7 +27,7 @@ import (
 )
 
 // GetInt64FromPath returns value at path (optionally under prefixFields) in the unstructured object as a metav1.LabelSelector.
-// The field value must be a string or a map[string]interface{}, both of which must be convertable into a metav1.LabelSelector.
+// The field value must be a string or a map[string]interface{}, both of which must be convertible into a metav1.LabelSelector.
 func GetLabelSelectorFromPath(obj *unstructured.Unstructured, path string, prefixFields []string) (*metav1.LabelSelector, error) {
 	unsLabelSelector, exists, err := unstructured.NestedFieldNoCopy(
 		obj.Object,

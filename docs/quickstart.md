@@ -98,7 +98,7 @@ The most common usage of KubeAdmiral is to manage Kubernetes resources across mu
 
 This section describes how to propagate a Deployment to multiple member clusters, and view their individual statuses using KubeAdmiral.
 
-<!-- TOOD: link to docs once available -->
+<!-- TODO: link to docs once available -->
 <!-- For more advanced tutorials on resource management, you may refer to our [docs](). -->
 
 ### 1. Ensure you are still using the host cluster kubeconfig

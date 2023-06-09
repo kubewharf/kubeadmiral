@@ -19,7 +19,7 @@ set -o nounset
 set -o pipefail
 
 # local-up::create_cluster creates a kind cluster.
-# Parmeters:
+# Parameters:
 #  - $1: cluster_name, such as "host"
 #  - $2: kubeconfig_path, sets kubeconfig path instead of $KUBECONFIG or $HOME/.kube/config
 #  - $3: log_path, the log file path, such as "/tmp/logs/"

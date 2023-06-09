@@ -1,0 +1,5 @@
+[files]
+extend-exclude = ["go.mod", "go.sum"]
+
+[default.extend-identifiers]
+ANDed = "ANDed"

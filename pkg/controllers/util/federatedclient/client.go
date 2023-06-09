@@ -294,7 +294,7 @@ func (f *federatedClientFactory) processQueueItem(ctx context.Context) {
 		clusterSecretRef,
 		cluster.Spec.UseServiceAccountToken,
 	); err != nil {
-		f.updateCachesWithError(name, fmt.Errorf("failed to bulid rest config from cluster secret: %w", err))
+		f.updateCachesWithError(name, fmt.Errorf("failed to build rest config from cluster secret: %w", err))
 		f.queue.Add(key)
 		return
 	}

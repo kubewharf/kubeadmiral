@@ -98,7 +98,7 @@ func addPlugins(pluginList interface{}, enabledPluginNames []string, pluginsMap 
 type extensionPoint struct {
 	// the set of plugins to be configured at this extension point.
 	plugins []string
-	// a pointer to the slice storing plugins implmentations that will run at this extension point.
+	// a pointer to the slice storing plugins implementations that will run at this extension point.
 	slicePtr interface{}
 }
 

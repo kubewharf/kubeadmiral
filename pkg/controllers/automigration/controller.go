@@ -170,7 +170,7 @@ func (c *Controller) HasSynced() bool {
 
 	// We do not wait for the individual clusters' informers to sync to prevent a single faulty informer from blocking the
 	// whole automigration controller. If a single cluster's informer is not synced and the cluster objects cannot be
-	// retireved, it will simply be ineligible for automigraiton.
+	// retrieved, it will simply be ineligible for automigraiton.
 
 	return true
 }

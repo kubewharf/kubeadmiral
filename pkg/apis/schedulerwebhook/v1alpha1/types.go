@@ -40,7 +40,7 @@ type SchedulingUnit struct {
 	// Duplicate or Divide.
 	SchedulingMode fedcorev1a1.SchedulingMode `json:"schedulingMode"`
 	// DesiredReplicas is the number of replicas requested in the template of the Kubernetes resource. If SchedulingMode
-	// is Duplicated, this is the number of replicas that will be propgated to each selected cluster. If SchedulingMode
+	// is Duplicated, this is the number of replicas that will be propagated to each selected cluster. If SchedulingMode
 	// is Divide, this is the total number of replicas to distribute to all selected member clusters.
 	// If the object is not replica-based, this field will be nil.
 	DesiredReplicas *int64 `json:"desiredReplicas,omitempty"`
