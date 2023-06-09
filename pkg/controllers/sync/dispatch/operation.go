@@ -21,6 +21,7 @@ are Copyright 2023 The KubeAdmiral Authors.
 package dispatch
 
 import (
+	"context"
 	"sync/atomic"
 	"time"
 
@@ -39,7 +40,7 @@ type (
 
 type dispatchRecorder interface {
 	recordEvent(clusterName, operation, operationContinuous string)
-	recordOperationError(status fedtypesv1a1.PropagationStatus, clusterName, operation string, err error) bool
+	recordOperationError(ctx context.Context, status fedtypesv1a1.PropagationStatus, clusterName, operation string, err error) bool
 }
 
 // OperationDispatcher provides an interface to wait for operations
@@ -60,13 +61,10 @@ type operationDispatcherImpl struct {
 	timeout time.Duration
 
 	recorder dispatchRecorder
-
-	logger klog.Logger
 }
 
-func newOperationDispatcher(logger klog.Logger, clientAccessor clientAccessorFunc, recorder dispatchRecorder) *operationDispatcherImpl {
+func newOperationDispatcher(clientAccessor clientAccessorFunc, recorder dispatchRecorder) *operationDispatcherImpl {
 	return &operationDispatcherImpl{
-		logger:         logger.WithValues("logger-origin", "operation-dispatcher"),
 		clientAccessor: clientAccessor,
 		resultChan:     make(chan bool),
 		timeout:        30 * time.Second, // TODO Make this configurable
@@ -101,15 +99,16 @@ func (d *operationDispatcherImpl) Wait() (bool, error) {
 	return ok, nil
 }
 
-func (d *operationDispatcherImpl) clusterOperation(clusterName, op string, opFunc func(generic.Client) bool) {
+func (d *operationDispatcherImpl) clusterOperation(ctx context.Context, clusterName, op string, opFunc func(generic.Client) bool) {
 	// TODO Support cancellation of client calls on timeout.
 	client, err := d.clientAccessor(clusterName)
+	logger := klog.FromContext(ctx)
 	if err != nil {
 		wrappedErr := errors.Wrapf(err, "Error retrieving client for cluster")
 		if d.recorder == nil {
-			d.logger.Error(wrappedErr, "Failed to retrieve client for cluster")
+			logger.Error(wrappedErr, "Failed to retrieve client for cluster")
 		} else {
-			d.recorder.recordOperationError(fedtypesv1a1.ClientRetrievalFailed, clusterName, op, wrappedErr)
+			d.recorder.recordOperationError(ctx, fedtypesv1a1.ClientRetrievalFailed, clusterName, op, wrappedErr)
 		}
 		d.resultChan <- false
 		return

@@ -274,8 +274,7 @@ func (s *StatusController) reconcileOnClusterChange() {
 	}
 }
 
-func (s *StatusController) reconcile(qualifiedName common.QualifiedName) worker.Result {
-	federatedKind := s.typeConfig.GetFederatedType().Kind
+func (s *StatusController) reconcile(qualifiedName common.QualifiedName) (reconcileStatus worker.Result) {
 	targetType := s.typeConfig.GetTargetType()
 	targetIsDeployment := schemautil.APIResourceToGVK(&targetType) == appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind)
 	statusKind := s.typeConfig.GetStatusType().Kind
@@ -288,20 +287,20 @@ func (s *StatusController) reconcile(qualifiedName common.QualifiedName) worker.
 	startTime := time.Now()
 	defer func() {
 		s.metrics.Duration("status.latency", startTime)
-		keyedLogger.WithValues("duration", time.Since(startTime)).
+		keyedLogger.WithValues("duration", time.Since(startTime), "status", reconcileStatus.String()).
 			V(3).Info("Finished reconcile")
 	}()
 
-	fedObject, err := s.objFromCache(ctx, s.federatedStore, federatedKind, key)
+	fedObject, err := s.objFromCache(s.federatedStore, key)
 	if err != nil {
+		keyedLogger.Error(err, "Failed to get federated object from cache")
 		return worker.StatusError
 	}
 
 	if fedObject == nil || fedObject.GetDeletionTimestamp() != nil {
-
 		keyedLogger.V(1).Info("No federated type found, deleting status object")
 		err = s.statusClient.Resources(qualifiedName.Namespace).
-			Delete(context.TODO(), qualifiedName.Name, metav1.DeleteOptions{})
+			Delete(ctx, qualifiedName.Name, metav1.DeleteOptions{})
 		if err != nil && !apierrors.IsNotFound(err) {
 			return worker.StatusError
 		}
@@ -319,8 +318,9 @@ func (s *StatusController) reconcile(qualifiedName common.QualifiedName) worker.
 		return worker.StatusError
 	}
 
-	existingStatus, err := s.objFromCache(ctx, s.statusStore, statusKind, key)
+	existingStatus, err := s.objFromCache(s.statusStore, key)
 	if err != nil {
+		keyedLogger.Error(err, "Failed to get status from cache")
 		return worker.StatusError
 	}
 
@@ -437,10 +437,10 @@ func (s *StatusController) reconcile(qualifiedName common.QualifiedName) worker.
 	return worker.StatusAllOK
 }
 
-func (s *StatusController) rawObjFromCache(ctx context.Context, store cache.Store, kind, key string) (pkgruntime.Object, error) {
+func (s *StatusController) rawObjFromCache(store cache.Store, key string) (pkgruntime.Object, error) {
 	cachedObj, exist, err := store.GetByKey(key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query %s store for %q, err info: %q", kind, key, err)
+		return nil, fmt.Errorf("failed to query store for %q, err info: %w", key, err)
 	}
 	if !exist {
 		return nil, nil
@@ -449,11 +449,10 @@ func (s *StatusController) rawObjFromCache(ctx context.Context, store cache.Stor
 }
 
 func (s *StatusController) objFromCache(
-	ctx context.Context,
 	store cache.Store,
-	kind, key string,
+	key string,
 ) (*unstructured.Unstructured, error) {
-	obj, err := s.rawObjFromCache(ctx, store, kind, key)
+	obj, err := s.rawObjFromCache(store, key)
 	if err != nil {
 		return nil, err
 	}
@@ -489,7 +488,7 @@ func (s *StatusController) clusterStatuses(
 	targetKind := s.typeConfig.GetTargetType().Kind
 	for _, clusterName := range clusterNames {
 		clusterObj, exist, err := util.GetClusterObject(
-			context.TODO(),
+			ctx,
 			s.informer,
 			clusterName,
 			qualifiedName,
@@ -547,7 +546,7 @@ func (s *StatusController) latestReplicasetDigests(
 
 	for _, clusterName := range clusterNames {
 		clusterObj, exist, err := util.GetClusterObject(
-			context.TODO(),
+			ctx,
 			s.informer,
 			clusterName,
 			qualifiedName,
@@ -595,7 +594,7 @@ func (s *StatusController) realUpdatedReplicas(
 
 	for _, clusterName := range clusterNames {
 		clusterObj, exist, err := util.GetClusterObject(
-			context.TODO(),
+			ctx,
 			s.informer,
 			clusterName,
 			qualifiedName,

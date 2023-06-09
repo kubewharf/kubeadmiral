@@ -155,7 +155,7 @@ func StartSyncController(
 	if controllerConfig.MinimizeLatency {
 		controller.minimizeLatency()
 	}
-	controller.logger.WithValues("ftc-kind", typeConfig.GetFederatedType().Kind).Info("Starting sync controller")
+	controller.logger.Info("Starting sync controller")
 	controller.Run(stopChan)
 	return nil
 }
@@ -321,7 +321,7 @@ func (s *SyncController) HasSynced() bool {
 	}
 
 	if s.typeConfig.GetRevisionHistoryEnabled() && !s.revListerSynced() {
-		s.logger.V(3).Info("controllerRevision list not synced")
+		s.logger.V(3).Info("ControllerRevision list not synced")
 		return false
 	}
 
@@ -336,22 +336,24 @@ func (s *SyncController) reconcileOnClusterChange() {
 	})
 }
 
-func (s *SyncController) reconcile(qualifiedName common.QualifiedName) worker.Result {
-	kind := s.typeConfig.GetFederatedType().Kind
-
+func (s *SyncController) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
+	key := qualifiedName.String()
+	keyedLogger := s.logger.WithValues("object", key)
+	ctx := klog.NewContext(context.TODO(), keyedLogger)
 	fedResource, possibleOrphan, err := s.fedAccessor.FederatedResource(qualifiedName)
+
 	if err != nil {
-		s.logger.WithValues("federated-type-kind", kind, "object", qualifiedName.String()).Error(err, "Failed to create FederatedResource helper")
+		keyedLogger.Error(err, "Failed to create FederatedResource helper")
 		return worker.StatusError
 	}
 	if possibleOrphan {
 		apiResource := s.typeConfig.GetTargetType()
 		gvk := schemautil.APIResourceToGVK(&apiResource)
-		s.logger.WithValues("label", util.ManagedByKubeAdmiralLabelKey, "target-type-kind", gvk.Kind, "object", qualifiedName.String()).
-			V(1).Info("Ensuring the removal of the label in member clusters")
-		err = s.removeManagedLabel(gvk, qualifiedName)
+		keyedLogger.WithValues("label", util.ManagedByKubeAdmiralLabelKey).
+			V(2).Info("Ensuring the removal of the label in member clusters")
+		err = s.removeManagedLabel(ctx, gvk, qualifiedName)
 		if err != nil {
-			s.logger.WithValues("label", util.ManagedByKubeAdmiralLabelKey, "target-type-kind", gvk.Kind, "object", qualifiedName.String()).
+			keyedLogger.WithValues("label", util.ManagedByKubeAdmiralLabelKey).
 				Error(err, "Failed to remove the label from object in member clusters")
 			return worker.StatusError
 		}
@@ -362,16 +364,12 @@ func (s *SyncController) reconcile(qualifiedName common.QualifiedName) worker.Re
 		return worker.StatusAllOK
 	}
 
-	key := fedResource.FederatedName().String()
-	federatedKeyLogger := s.logger.WithValues("federated-object", key)
-	ctx := klog.NewContext(context.Background(), federatedKeyLogger)
-
 	s.metrics.Rate("sync.throughput", 1)
-	federatedKeyLogger.WithValues("federated-type-kind", kind).V(3).Info("Starting to reconcile")
+	keyedLogger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
 		s.metrics.Duration("sync.latency", startTime)
-		federatedKeyLogger.WithValues("duration", time.Since(startTime), "federated-type-kind", kind).V(3).Info("Finished reconciling")
+		keyedLogger.WithValues("duration", time.Since(startTime), "status", status).V(3).Info("Finished reconciling")
 	}()
 
 	if fedResource.Object().GetDeletionTimestamp() != nil {
@@ -380,7 +378,7 @@ func (s *SyncController) reconcile(qualifiedName common.QualifiedName) worker.Re
 
 	pendingControllers, err := pendingcontrollers.GetPendingControllers(fedResource.Object())
 	if err != nil {
-		federatedKeyLogger.WithValues("federated-type-kind", kind).Error(err, "Failed to get pending controllers")
+		keyedLogger.Error(err, "Failed to get pending controllers")
 		return worker.StatusError
 	}
 	if len(pendingControllers) > 0 {
@@ -400,10 +398,10 @@ func (s *SyncController) reconcile(qualifiedName common.QualifiedName) worker.Re
 	var lastRevisionNameWithHash, currentRevisionName string
 	collisionCount := fedResource.CollisionCount()
 	if s.typeConfig.GetRevisionHistoryEnabled() {
-		federatedKeyLogger.WithValues("federated-type-kind", kind).V(1).Info("Starting to sync revisions")
+		keyedLogger.V(2).Info("Starting to sync revisions")
 		collisionCount, lastRevisionNameWithHash, currentRevisionName, err = s.syncRevisions(ctx, fedResource)
 		if err != nil {
-			federatedKeyLogger.WithValues("federated-type-kind", kind).Error(err, "Failed to sync revisions")
+			keyedLogger.Error(err, "Failed to sync revisions")
 			fedResource.RecordError("SyncRevisionHistoryError", errors.Wrap(err, "Failed to sync revisions"))
 			return worker.StatusError
 		}
@@ -413,7 +411,7 @@ func (s *SyncController) reconcile(qualifiedName common.QualifiedName) worker.Re
 		if apierrors.IsConflict(err) {
 			return worker.StatusConflict
 		}
-		federatedKeyLogger.WithValues("federated-type-kind", kind).Error(err, "Failed to ensure snnotations")
+		keyedLogger.Error(err, "Failed to ensure annotations")
 		fedResource.RecordError("EnsureAnnotationsErr", errors.Wrap(err, "Failed to ensure annotations"))
 		return worker.StatusError
 	}
@@ -424,7 +422,7 @@ func (s *SyncController) reconcile(qualifiedName common.QualifiedName) worker.Re
 // syncToClusters ensures that the state of the given object is
 // synchronized to member clusters.
 func (s *SyncController) syncToClusters(ctx context.Context, fedResource FederatedResource, collisionCount *int32) worker.Result {
-	federatedKeyLogger := klog.FromContext(ctx)
+	keyedLogger := klog.FromContext(ctx)
 
 	clusters, err := s.informer.GetJoinedClusters()
 	if err != nil {
@@ -444,14 +442,11 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 		return s.setFederatedStatus(ctx, fedResource, collisionCount, fedtypesv1a1.ComputePlacementFailed, nil)
 	}
 
-	kind := fedResource.TargetKind()
-	key := fedResource.TargetName().String()
-	federatedKeyLogger.WithValues("target-kind", kind, "target-object", key, "clusters", strings.Join(selectedClusterNames.List(), ",")).
-		V(1).Info("Ensuring target object in clusters")
+	keyedLogger.WithValues("clusters", strings.Join(selectedClusterNames.List(), ",")).
+		V(2).Info("Ensuring target object in clusters")
 
 	skipAdoptingPreexistingResources := !util.ShouldAdoptPreexistingResources(fedResource.Object())
 	dispatcher := dispatch.NewManagedDispatcher(
-		klog.FromContext(ctx),
 		s.informer.GetClientForCluster,
 		fedResource,
 		skipAdoptingPreexistingResources,
@@ -476,7 +471,7 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 		}
 
 		clusterObj, _, err := util.GetClusterObject(
-			context.TODO(),
+			ctx,
 			s.informer,
 			clusterName,
 			fedResource.TargetName(),
@@ -541,20 +536,19 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 			continue
 		}
 		if clusterObj == nil {
-			dispatcher.Create(clusterName)
+			dispatcher.Create(ctx, clusterName)
 		} else {
-			dispatcher.Update(clusterName, clusterObj)
+			dispatcher.Update(ctx, clusterName, clusterObj)
 		}
 	}
 
 	dispatchOk, timeoutErr := dispatcher.Wait()
 	if !dispatchOk {
-		federatedKeyLogger.WithValues("target-object", key).
-			Error(fmt.Errorf("failed to sync target object to cluster"), "Failed to sync target object to cluster")
+		keyedLogger.Error(nil, "Failed to sync target object to cluster")
 	}
 	if timeoutErr != nil {
 		fedResource.RecordError("OperationTimeoutError", timeoutErr)
-		federatedKeyLogger.WithValues("target-object", key).Error(timeoutErr, "Timeout to sync target object to cluster")
+		keyedLogger.Error(timeoutErr, "Sync to cluster timeout")
 		return worker.StatusError
 	}
 
@@ -575,7 +569,7 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 		// Versioning of federated resources is an optimization to
 		// avoid unnecessary updates, and failure to record version
 		// information does not indicate a failure of propagation.
-		federatedKeyLogger.WithValues("error-info", err).V(3).Info("Failed to record version information")
+		keyedLogger.Error(err, "Failed to record version information")
 	}
 
 	collectedStatus := dispatcher.CollectedStatus()
@@ -630,7 +624,7 @@ func (s *SyncController) updateSyncSuccessAnnotations(ctx context.Context, fedRe
 			return err
 		}
 
-		err = s.hostClusterClient.Update(context.TODO(), obj)
+		err = s.hostClusterClient.Update(ctx, obj)
 		if err != nil {
 			federatedKeyLogger.Error(err, "Failed to update syncSuccessTimestamp annotation of federated object")
 			return err
@@ -646,9 +640,8 @@ func (s *SyncController) setFederatedStatus(ctx context.Context, fedResource Fed
 		collectedStatus = &status.CollectedPropagationStatus{}
 	}
 
-	kind := fedResource.FederatedKind()
 	obj := fedResource.Object()
-	kindedKeyedLogger := klog.FromContext(ctx).WithValues("federated-kind", kind)
+	keyedLogger := klog.FromContext(ctx)
 
 	// Only a single reason for propagation failure is reported at any one time, so only report
 	// NamespaceNotFederated if no other explicit error has been indicated.
@@ -667,7 +660,7 @@ func (s *SyncController) setFederatedStatus(ctx context.Context, fedResource Fed
 		if updateRequired, err := status.SetFederatedStatus(obj, collisionCount, reason, *collectedStatus); err != nil {
 			return false, errors.Wrapf(err, "failed to set the status")
 		} else if !updateRequired {
-			kindedKeyedLogger.V(4).Info("No status update necessary")
+			keyedLogger.V(4).Info("No status update necessary")
 			return true, nil
 		}
 
@@ -685,7 +678,7 @@ func (s *SyncController) setFederatedStatus(ctx context.Context, fedResource Fed
 		return false, errors.Wrapf(err, "failed to update resource")
 	})
 	if err != nil {
-		kindedKeyedLogger.Error(err, "Failed to set propagation status")
+		keyedLogger.Error(err, "Failed to set propagation status")
 		return worker.StatusError
 	}
 
@@ -719,7 +712,7 @@ func (s *SyncController) setFederatedStatus(ctx context.Context, fedResource Fed
 		return false, errors.Wrapf(err, "failed to update resource")
 	})
 	if err != nil {
-		kindedKeyedLogger.Error(err, "Failed to update syncing annotation")
+		keyedLogger.Error(err, "Failed to update syncing annotation")
 		return worker.StatusError
 	}
 
@@ -731,25 +724,25 @@ func (s *SyncController) ensureDeletion(ctx context.Context, fedResource Federat
 
 	key := fedResource.FederatedName().String()
 	kind := fedResource.FederatedKind()
-	kindedKeyedLogger := klog.FromContext(ctx).WithValues("federated-kind", kind)
+	keyedLogger := klog.FromContext(ctx)
 
-	kindedKeyedLogger.V(1).Info("Ensuring deletion of federated object")
+	keyedLogger.V(2).Info("Ensuring deletion of federated object")
 
 	obj := fedResource.Object()
 
 	finalizers := sets.NewString(obj.GetFinalizers()...)
 	if !finalizers.Has(FinalizerSyncController) {
-		kindedKeyedLogger.WithValues("finalizer-name", FinalizerSyncController).
-			V(2).Info("Federated object does not have the finalizer. Nothing to do")
+		keyedLogger.WithValues("finalizer-name", FinalizerSyncController).
+			V(3).Info("Federated object does not have the finalizer. Nothing to do")
 		return worker.StatusAllOK
 	}
 
 	if util.GetOrphaningBehavior(obj) == util.OrphanManagedResourcesAll {
-		kindedKeyedLogger.WithValues("annotation-name", util.OrphanManagedResourcesAnnotation).
-			V(2).Info("Found special annotation on federated object, removing the finalizer")
+		keyedLogger.WithValues("orphaning-behavior", util.OrphanManagedResourcesAll).
+			V(2).Info("Removing the finalizer")
 		err := s.deleteHistory(fedResource)
 		if err != nil {
-			kindedKeyedLogger.Error(err, "Failed to delete history for federated object")
+			keyedLogger.Error(err, "Failed to delete history for federated object")
 			return worker.StatusError
 		}
 		err = s.removeFinalizer(ctx, fedResource)
@@ -757,27 +750,27 @@ func (s *SyncController) ensureDeletion(ctx context.Context, fedResource Federat
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
 			}
-			kindedKeyedLogger.WithValues("finalizer-name", FinalizerSyncController).
+			keyedLogger.WithValues("finalizer-name", FinalizerSyncController).
 				Error(err, "Failed to remove finalizer for federated object")
 			return worker.StatusError
 		}
-		kindedKeyedLogger.WithValues("label-name", util.ManagedByKubeAdmiralLabelKey).
-			V(2).Info("Initiating the removal of the label from resources previously managed by this federated object")
-		err = s.removeManagedLabel(fedResource.TargetGVK(), fedResource.TargetName())
+		keyedLogger.WithValues("label-name", util.ManagedByKubeAdmiralLabelKey).
+			V(2).Info("Removing managed label from resources previously managed by this federated object")
+		err = s.removeManagedLabel(ctx, fedResource.TargetGVK(), fedResource.TargetName())
 		if err != nil {
-			kindedKeyedLogger.WithValues("label-name", util.ManagedByKubeAdmiralLabelKey).
+			keyedLogger.WithValues("label-name", util.ManagedByKubeAdmiralLabelKey).
 				Error(err, "Failed to remove the label from all resources previously managed by this federated object")
 			return worker.StatusError
 		}
 		return worker.StatusAllOK
 	}
 
-	kindedKeyedLogger.V(1).Info("Deleting resources managed by this federated object from member clusters")
+	keyedLogger.V(2).Info("Deleting resources managed by this federated object from member clusters")
 	recheckRequired, err := s.deleteFromClusters(ctx, fedResource)
 	if err != nil {
 		wrappedErr := errors.Wrapf(err, "failed to delete %s %q", kind, key)
 		fedResource.RecordError(string(fedtypesv1a1.EnsureDeletionFailed), wrappedErr)
-		kindedKeyedLogger.Error(err, "Failed to delete federated object")
+		keyedLogger.Error(err, "Failed to delete federated object")
 		return worker.StatusError
 	}
 	if recheckRequired {
@@ -787,7 +780,7 @@ func (s *SyncController) ensureDeletion(ctx context.Context, fedResource Federat
 		if apierrors.IsConflict(err) {
 			return worker.StatusConflict
 		}
-		kindedKeyedLogger.WithValues("finalizer-name", FinalizerSyncController).
+		keyedLogger.WithValues("finalizer-name", FinalizerSyncController).
 			Error(err, "Failed to remove finalizer from the federated object")
 		return worker.StatusError
 	}
@@ -797,10 +790,12 @@ func (s *SyncController) ensureDeletion(ctx context.Context, fedResource Federat
 // removeManagedLabel attempts to remove the managed label from
 // resources with the given name in member clusters.
 func (s *SyncController) removeManagedLabel(
+	ctx context.Context,
 	gvk schema.GroupVersionKind,
 	qualifiedName common.QualifiedName,
 ) error {
 	ok, err := s.handleDeletionInClusters(
+		ctx,
 		gvk,
 		qualifiedName,
 		func(dispatcher dispatch.UnmanagedDispatcher, clusterName string, clusterObj *unstructured.Unstructured) {
@@ -808,7 +803,7 @@ func (s *SyncController) removeManagedLabel(
 				return
 			}
 
-			dispatcher.RemoveManagedLabel(clusterName, clusterObj)
+			dispatcher.RemoveManagedLabel(ctx, clusterName, clusterObj)
 		},
 	)
 	if err != nil {
@@ -829,7 +824,7 @@ func (s *SyncController) deleteFromCluster(
 	respectOrphaningBehavior bool,
 ) {
 	if !respectOrphaningBehavior {
-		dispatcher.Delete(clusterName, clusterObj)
+		dispatcher.Delete(ctx, clusterName, clusterObj)
 		return
 	}
 
@@ -839,11 +834,11 @@ func (s *SyncController) deleteFromCluster(
 	shouldBeOrphaned := orphaningBehavior == util.OrphanManagedResourcesAll ||
 		orphaningBehavior == util.OrphanManagedResourcesAdopted && util.HasAdoptedAnnotation(clusterObj)
 	if shouldBeOrphaned {
-		keyedLogger.WithValues("target-gvk", fedResource.TargetGVK(), "target-name", fedResource.TargetName(), "cluster-name", clusterName).
-			V(4).Info("Resource in cluster is going to be orphaned")
-		dispatcher.RemoveManagedLabel(clusterName, clusterObj)
+		keyedLogger.WithValues("cluster-name", clusterName).
+			V(2).Info("Cluster object is going to be orphaned")
+		dispatcher.RemoveManagedLabel(ctx, clusterName, clusterObj)
 	} else {
-		dispatcher.Delete(clusterName, clusterObj)
+		dispatcher.Delete(ctx, clusterName, clusterObj)
 	}
 }
 
@@ -854,6 +849,7 @@ func (s *SyncController) deleteFromClusters(ctx context.Context, fedResource Fed
 
 	remainingClusters := []string{}
 	ok, err := s.handleDeletionInClusters(
+		ctx,
 		gvk,
 		qualifiedName,
 		func(dispatcher dispatch.UnmanagedDispatcher, clusterName string, clusterObj *unstructured.Unstructured) {
@@ -868,9 +864,8 @@ func (s *SyncController) deleteFromClusters(ctx context.Context, fedResource Fed
 		return false, errors.Errorf("failed to remove managed resources from one or more clusters.")
 	}
 	if len(remainingClusters) > 0 {
-		fedKind := fedResource.FederatedKind()
-		keyedLogger.WithValues("federated-kind", fedKind, "clusters", strings.Join(remainingClusters, ", ")).
-			V(2).Info("Waiting for resources managed by this federated object to be removed from the following clusters")
+		keyedLogger.WithValues("clusters", strings.Join(remainingClusters, ", ")).
+			V(2).Info("Waiting for resources managed by this federated object to be removed from some clusters")
 		return true, nil
 	}
 	err = s.ensureRemovedOrUnmanaged(ctx, fedResource)
@@ -897,7 +892,6 @@ func (s *SyncController) ensureRemovedOrUnmanaged(ctx context.Context, fedResour
 	}
 
 	dispatcher := dispatch.NewCheckUnmanagedDispatcher(
-		klog.FromContext(ctx),
 		s.informer.GetClientForCluster,
 		fedResource.TargetGVK(),
 		fedResource.TargetName(),
@@ -908,7 +902,7 @@ func (s *SyncController) ensureRemovedOrUnmanaged(ctx context.Context, fedResour
 			unreadyClusters = append(unreadyClusters, cluster.Name)
 			continue
 		}
-		dispatcher.CheckRemovedOrUnlabeled(cluster.Name)
+		dispatcher.CheckRemovedOrUnlabeled(ctx, cluster.Name)
 	}
 	ok, timeoutErr := dispatcher.Wait()
 	if timeoutErr != nil {
@@ -926,6 +920,7 @@ func (s *SyncController) ensureRemovedOrUnmanaged(ctx context.Context, fedResour
 // handleDeletionInClusters invokes the provided deletion handler for
 // each managed resource in member clusters.
 func (s *SyncController) handleDeletionInClusters(
+	ctx context.Context,
 	gvk schema.GroupVersionKind,
 	qualifiedName common.QualifiedName,
 	deletionFunc func(dispatcher dispatch.UnmanagedDispatcher, clusterName string, clusterObj *unstructured.Unstructured),
@@ -934,8 +929,9 @@ func (s *SyncController) handleDeletionInClusters(
 	if err != nil {
 		return false, errors.Wrap(err, "failed to get a list of clusters")
 	}
+	keyedLogger := klog.FromContext(ctx)
 
-	dispatcher := dispatch.NewUnmanagedDispatcher(s.logger, s.informer.GetClientForCluster, gvk, qualifiedName)
+	dispatcher := dispatch.NewUnmanagedDispatcher(s.informer.GetClientForCluster, gvk, qualifiedName)
 	retrievalFailureClusters := []string{}
 	unreadyClusters := []string{}
 	for _, cluster := range clusters {
@@ -954,7 +950,7 @@ func (s *SyncController) handleDeletionInClusters(
 			s.typeConfig.GetTargetType(),
 		)
 		if err != nil {
-			s.logger.WithValues("kind", gvk.Kind, "object", qualifiedName.String(), "cluster-name", clusterName).
+			keyedLogger.WithValues("cluster-name", clusterName).
 				Error(err, "Failed to retrieve object in cluster")
 			retrievalFailureClusters = append(retrievalFailureClusters, clusterName)
 			continue
@@ -988,7 +984,7 @@ func (s *SyncController) ensureFinalizer(ctx context.Context, fedResource Federa
 	if err != nil || !isUpdated {
 		return err
 	}
-	keyedLogger.WithValues("federated-kind", fedResource.FederatedKind(), "finalizer-name", FinalizerSyncController).
+	keyedLogger.WithValues("finalizer-name", FinalizerSyncController).
 		V(1).Info("Adding finalizer to federated object")
 	return s.hostClusterClient.Update(context.TODO(), obj)
 }
@@ -1024,8 +1020,7 @@ func (s *SyncController) ensureAnnotations(
 		return nil
 	}
 
-	keyedLogger.WithValues("federated-kind", fedResource.FederatedKind(),
-		"last-revision-annotation-name", common.LastRevisionAnnotation,
+	keyedLogger.WithValues("last-revision-annotation-name", common.LastRevisionAnnotation,
 		"current-revision-annotation-name", common.CurrentRevisionAnnotation).
 		V(1).Info("Adding Latest Revision Annotation and Current Revision Annotation to federated object")
 	if err := s.hostClusterClient.Update(context.TODO(), obj); err != nil {
@@ -1042,8 +1037,8 @@ func (s *SyncController) removeFinalizer(ctx context.Context, fedResource Federa
 	if err != nil || !isUpdated {
 		return err
 	}
-	keyedLogger.WithValues("federated-kind", fedResource.FederatedKind(), "finalizer-name", FinalizerSyncController).
-		V(2).Info("Removing finalizer from federated object")
+	keyedLogger.WithValues("finalizer-name", FinalizerSyncController).
+		V(1).Info("Removing finalizer from federated object")
 	return s.hostClusterClient.Update(context.TODO(), obj)
 }
 
@@ -1101,10 +1096,10 @@ func (s *SyncController) removeClusterFinalizer(ctx context.Context, cluster *fe
 
 func (s *SyncController) reconcileCluster(qualifiedName common.QualifiedName) worker.Result {
 	cluster, found, err := s.informer.GetCluster(qualifiedName.Name)
-	clusteredKeyedLogger := s.logger.WithValues("cluster-name", cluster.Name)
-	ctx := klog.NewContext(context.Background(), clusteredKeyedLogger)
+	logger := s.logger.WithValues("cluster-name", cluster.Name)
+	ctx := klog.NewContext(context.TODO(), logger)
 	if err != nil {
-		clusteredKeyedLogger.Error(err, "Failed to get federated cluster")
+		logger.Error(err, "Failed to get federated cluster")
 		return worker.StatusError
 	}
 	if !found {
@@ -1119,7 +1114,7 @@ func (s *SyncController) reconcileCluster(qualifiedName common.QualifiedName) wo
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
 			}
-			clusteredKeyedLogger.Error(err, "Failed to ensure cluster finalizer")
+			logger.Error(err, "Failed to ensure cluster finalizer")
 			return worker.StatusError
 		}
 		return worker.StatusAllOK
@@ -1132,7 +1127,7 @@ func (s *SyncController) reconcileCluster(qualifiedName common.QualifiedName) wo
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
 			}
-			clusteredKeyedLogger.Error(err, "Failed to remove cluster finalizer")
+			logger.Error(err, "Failed to remove cluster finalizer")
 			return worker.StatusError
 		}
 
@@ -1149,7 +1144,7 @@ func (s *SyncController) reconcileCluster(qualifiedName common.QualifiedName) wo
 			"unable to get cluster client: cluster is not available (check cluster conditions): %v",
 			err,
 		)
-		clusteredKeyedLogger.Error(err, "Failed to get cluster client")
+		logger.Error(err, "Failed to get cluster client")
 		return worker.StatusError
 	}
 
@@ -1178,14 +1173,14 @@ func (s *SyncController) reconcileCluster(qualifiedName common.QualifiedName) wo
 		return worker.Result{RequeueAfter: &s.cascadingDeletionRecheckDelay}
 	}
 	if err != nil && !meta.IsNoMatchError(err) {
-		clusteredKeyedLogger.WithValues("target-type", s.typeConfig.GetTargetType().Name).Error(err, "Failed to list target objects from cluster")
+		logger.Error(err, "Failed to list target objects from cluster")
 		return worker.StatusError
 	}
 
 	// either all member objects are deleted or the resource does not exist, remove finalizer
 	err = s.removeClusterFinalizer(ctx, cluster)
 	if err != nil {
-		clusteredKeyedLogger.Error(err, "Failed to remove cluster finalizer")
+		logger.Error(err, "Failed to remove cluster finalizer")
 		return worker.StatusError
 	}
 

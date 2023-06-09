@@ -49,8 +49,8 @@ const (
 type UnmanagedDispatcher interface {
 	OperationDispatcher
 
-	Delete(clusterName string, clusterObj *unstructured.Unstructured)
-	RemoveManagedLabel(clusterName string, clusterObj *unstructured.Unstructured)
+	Delete(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured)
+	RemoveManagedLabel(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured)
 }
 
 type unmanagedDispatcherImpl struct {
@@ -60,28 +60,24 @@ type unmanagedDispatcherImpl struct {
 	targetName common.QualifiedName
 
 	recorder dispatchRecorder
-	logger   klog.Logger
 }
 
 func NewUnmanagedDispatcher(
-	logger klog.Logger,
 	clientAccessor clientAccessorFunc,
 	targetGVK schema.GroupVersionKind,
 	targetName common.QualifiedName,
 ) UnmanagedDispatcher {
-	dispatcher := newOperationDispatcher(logger.WithValues("logger-origin", "unmanaged-dispatcher"), clientAccessor, nil)
-	return newUnmanagedDispatcher(logger, dispatcher, nil, targetGVK, targetName)
+	dispatcher := newOperationDispatcher(clientAccessor, nil)
+	return newUnmanagedDispatcher(dispatcher, nil, targetGVK, targetName)
 }
 
 func newUnmanagedDispatcher(
-	logger klog.Logger,
 	dispatcher *operationDispatcherImpl,
 	recorder dispatchRecorder,
 	targetGVK schema.GroupVersionKind,
 	targetName common.QualifiedName,
 ) *unmanagedDispatcherImpl {
 	return &unmanagedDispatcherImpl{
-		logger:     logger.WithValues("logger-origin", "unmanaged-dispatcher"),
 		dispatcher: dispatcher,
 		targetGVK:  targetGVK,
 		targetName: targetName,
@@ -93,16 +89,15 @@ func (d *unmanagedDispatcherImpl) Wait() (bool, error) {
 	return d.dispatcher.Wait()
 }
 
-func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstructured.Unstructured) {
+func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured) {
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "delete"
 	const opContinuous = "Deleting"
-	go d.dispatcher.clusterOperation(clusterName, op, func(client generic.Client) bool {
+	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
+		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		targetName := d.targetNameForCluster(clusterName)
-		if d.recorder == nil {
-			d.logger.WithValues("target-kind", d.targetGVK.Kind, "target-name", targetName, "cluster-name", clusterName).
-				V(1).Info("Deleting target object in cluster")
-		} else {
+		keyedLogger.V(1).Info("Deleting target object in cluster")
+		if d.recorder != nil {
 			d.recorder.recordEvent(clusterName, op, opContinuous)
 		}
 
@@ -113,15 +108,15 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstruc
 		if err != nil {
 			if d.recorder == nil {
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
-				d.logger.Error(wrappedErr, "Failed to delete target object in cluster")
+				keyedLogger.Error(wrappedErr, "Failed to delete target object in cluster")
 			} else {
-				d.recorder.recordOperationError(fedtypesv1a1.DeletionFailed, clusterName, op, err)
+				d.recorder.recordOperationError(ctx, fedtypesv1a1.DeletionFailed, clusterName, op, err)
 			}
 			return false
 		}
 		if needUpdate {
 			err := client.Update(
-				context.Background(),
+				ctx,
 				clusterObj,
 			)
 			if apierrors.IsNotFound(err) {
@@ -130,9 +125,9 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstruc
 			if err != nil {
 				if d.recorder == nil {
 					wrappedErr := d.wrapOperationError(err, clusterName, op)
-					d.logger.Error(wrappedErr, "Failed to delete target object in cluster")
+					keyedLogger.Error(wrappedErr, "Failed to delete target object in cluster")
 				} else {
-					d.recorder.recordOperationError(fedtypesv1a1.DeletionFailed, clusterName, op, err)
+					d.recorder.recordOperationError(ctx, fedtypesv1a1.DeletionFailed, clusterName, op, err)
 				}
 				return false
 			}
@@ -146,7 +141,7 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstruc
 		obj := &unstructured.Unstructured{}
 		obj.SetGroupVersionKind(d.targetGVK)
 		err = client.Delete(
-			context.Background(),
+			ctx,
 			obj,
 			targetName.Namespace,
 			targetName.Name,
@@ -165,9 +160,9 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstruc
 		if err != nil {
 			if d.recorder == nil {
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
-				d.logger.Error(wrappedErr, "Failed to delete target object in cluster")
+				keyedLogger.Error(wrappedErr, "Failed to delete target object in cluster")
 			} else {
-				d.recorder.recordOperationError(fedtypesv1a1.DeletionFailed, clusterName, op, err)
+				d.recorder.recordOperationError(ctx, fedtypesv1a1.DeletionFailed, clusterName, op, err)
 			}
 			return false
 		}
@@ -175,15 +170,14 @@ func (d *unmanagedDispatcherImpl) Delete(clusterName string, clusterObj *unstruc
 	})
 }
 
-func (d *unmanagedDispatcherImpl) RemoveManagedLabel(clusterName string, clusterObj *unstructured.Unstructured) {
+func (d *unmanagedDispatcherImpl) RemoveManagedLabel(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured) {
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "remove managed label from"
 	const opContinuous = "Removing managed label from"
-	go d.dispatcher.clusterOperation(clusterName, op, func(client generic.Client) bool {
-		if d.recorder == nil {
-			d.logger.WithValues("target-kind", d.targetGVK.Kind, "target-name", d.targetNameForCluster(clusterName), "cluster-name", clusterName).
-				V(1).Info("Removing managed label from target object in cluster")
-		} else {
+	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
+		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
+		keyedLogger.V(1).Info("Removing managed label from target object in cluster")
+		if d.recorder != nil {
 			d.recorder.recordEvent(clusterName, op, opContinuous)
 		}
 
@@ -194,20 +188,20 @@ func (d *unmanagedDispatcherImpl) RemoveManagedLabel(clusterName string, cluster
 		if _, err := removeRetainObjectFinalizer(updateObj); err != nil {
 			if d.recorder == nil {
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
-				d.logger.Error(wrappedErr, "Failed to remove managed label from target object in cluster")
+				keyedLogger.Error(wrappedErr, "Failed to remove managed label from target object in cluster")
 			} else {
-				d.recorder.recordOperationError(fedtypesv1a1.LabelRemovalFailed, clusterName, op, err)
+				d.recorder.recordOperationError(ctx, fedtypesv1a1.LabelRemovalFailed, clusterName, op, err)
 			}
 			return false
 		}
 
-		err := client.Update(context.Background(), updateObj)
+		err := client.Update(ctx, updateObj)
 		if err != nil {
 			if d.recorder == nil {
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
-				d.logger.Error(wrappedErr, "Failed to remove managed label from target object in cluster")
+				keyedLogger.Error(wrappedErr, "Failed to remove managed label from target object in cluster")
 			} else {
-				d.recorder.recordOperationError(fedtypesv1a1.LabelRemovalFailed, clusterName, op, err)
+				d.recorder.recordOperationError(ctx, fedtypesv1a1.LabelRemovalFailed, clusterName, op, err)
 			}
 			return false
 		}

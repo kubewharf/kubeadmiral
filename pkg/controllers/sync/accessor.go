@@ -87,7 +87,7 @@ func NewFederatedResourceAccessor(
 		fedNamespace:            controllerConfig.FedSystemNamespace,
 		fedNamespaceAPIResource: fedNamespaceAPIResource,
 		eventRecorder:           eventRecorder,
-		logger:                  logger.WithValues("logger-origin", "resource-accessor"),
+		logger:                  logger.WithValues("origin", "resource-accessor"),
 	}
 
 	targetNamespace := controllerConfig.TargetNamespace
@@ -157,17 +157,16 @@ func (a *resourceAccessor) Run(stopChan <-chan struct{}) {
 }
 
 func (a *resourceAccessor) HasSynced() bool {
-	kind := a.typeConfig.GetFederatedType().Kind
 	if !a.versionManager.HasSynced() {
-		a.logger.WithValues("federated-type-kind", kind).V(3).Info("Version manager for federated-type-kind not synced")
+		a.logger.V(3).Info("Version manager not synced")
 		return false
 	}
 	if !a.federatedController.HasSynced() {
-		a.logger.WithValues("federated-type-kind", kind).V(3).Info("Informer for federated-type-kind not synced")
+		a.logger.V(3).Info("Informer not synced")
 		return false
 	}
 	if a.fedNamespaceController != nil && !a.fedNamespaceController.HasSynced() {
-		a.logger.WithValues("federated-type-kind", kind).V(3).Info("FederatedNamespace informer for federated-type-kind not synced")
+		a.logger.V(3).Info("FederatedNamespace informer not synced")
 		return false
 	}
 	return true

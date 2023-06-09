@@ -81,7 +81,7 @@ func NewVersionManager(
 	federatedKind, targetKind, namespace string,
 ) *VersionManager {
 	v := &VersionManager{
-		logger:        logger.WithValues("logger-origin", "version-manager"),
+		logger:        logger.WithValues("origin", "version-manager"),
 		targetKind:    targetKind,
 		federatedKind: federatedKind,
 		namespace:     namespace,
@@ -188,7 +188,7 @@ func (m *VersionManager) Update(resource VersionedResource,
 
 	if oldStatus != nil && util.PropagatedVersionStatusEquivalent(oldStatus, status) {
 		m.Unlock()
-		m.logger.WithValues("versionAdapter-type-name", m.adapter.TypeName(), "version-qualified-name", qualifiedName).
+		m.logger.WithValues("type-name", m.adapter.TypeName(), "version-qualified-name", qualifiedName).
 			V(4).Info("No update necessary")
 		return nil
 	}
@@ -295,7 +295,7 @@ func (m *VersionManager) versionQualifiedName(qualifiedName common.QualifiedName
 func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName common.QualifiedName) error {
 	key := qualifiedName.String()
 	adapterType := m.adapter.TypeName()
-	keyedLogger := m.logger.WithValues("versionAdapter-type-name", adapterType, "version-qualified-name", key)
+	keyedLogger := m.logger.WithValues("type-name", adapterType, "version-qualified-name", key)
 
 	resourceVersion, err := getResourceVersion(obj)
 	if err != nil {
@@ -409,7 +409,7 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 
 func (m *VersionManager) getResourceVersionFromAPI(qualifiedName common.QualifiedName) (string, error) {
 	m.logger.WithValues("federated-kind", m.federatedKind, "version-qualified-name", qualifiedName).
-		V(2).Info("Retrieving resourceVersion for %s %q from the API")
+		V(2).Info("Retrieving resourceVersion from the API")
 	obj := m.adapter.NewObject()
 	err := m.client.Get(context.TODO(), obj, qualifiedName.Namespace, qualifiedName.Name)
 	if err != nil {
