@@ -17,6 +17,7 @@ limitations under the License.
 package plugins
 
 import (
+	"context"
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -33,9 +34,12 @@ func NewSingleClusterPlugin() *SingleClusterPlugin {
 type SingleClusterPlugin struct{}
 
 func (receiver *SingleClusterPlugin) AggregateStatues(
+	ctx context.Context,
 	sourceObject, fedObject *unstructured.Unstructured,
 	clusterObjs map[string]interface{},
 ) (*unstructured.Unstructured, bool, error) {
+	logger := klog.FromContext(ctx).WithValues("status-aggregator-plugin", "single-cluster")
+
 	needUpdate := false
 
 	if len(clusterObjs) == 0 {
@@ -44,11 +48,8 @@ func (receiver *SingleClusterPlugin) AggregateStatues(
 	}
 
 	if len(clusterObjs) > 1 {
-		klog.Warningf(
-			"fedObject %s associated with %d cluster objects, only 1 is supported by default status aggregator plugin.",
-			sourceObject.GetName(),
-			len(clusterObjs),
-		)
+		logger.WithValues("cluster-objs-len", len(clusterObjs)).
+			Info("Federated object associated with multiple cluster objects, only 1 is supported")
 		return sourceObject, false, nil
 	}
 
@@ -61,11 +62,8 @@ func (receiver *SingleClusterPlugin) AggregateStatues(
 
 	newStatus, found, err := unstructured.NestedMap(clusterObj.Object, common.StatusField)
 	if err != nil {
-		klog.Errorf(
-			"Failed to get status of cluster resource object %q for cluster %q",
-			sourceObject.GetName(),
-			clusterName,
-		)
+		logger.WithValues("cluster-name", clusterName).
+			Error(err, "Failed to get status from cluster object")
 		return nil, false, err
 	}
 	if !found || newStatus == nil {
@@ -75,18 +73,14 @@ func (receiver *SingleClusterPlugin) AggregateStatues(
 
 	oldStatus, _, err := unstructured.NestedMap(sourceObject.Object, common.StatusField)
 	if err != nil {
-		klog.Errorf("Failed to get old status of cluster resource object %q with err: %s", sourceObject.GetName(), err)
+		logger.Error(err, "Failed to get old status of source object")
 		return nil, false, err
 	}
 
 	// update status of source object if needed
 	if !reflect.DeepEqual(newStatus, oldStatus) {
 		if err := unstructured.SetNestedMap(sourceObject.Object, newStatus, common.StatusField); err != nil {
-			klog.Errorf(
-				"Failed to set the new status of cluster resource object %q with err %s",
-				sourceObject.GetName(),
-				err,
-			)
+			logger.Error(err, "Failed to set the new status for source object")
 			return nil, false, err
 		}
 

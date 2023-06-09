@@ -40,6 +40,10 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
+const (
+	ControllerName = "policyrc-controller"
+)
+
 var PolicyrcControllerName = common.DefaultPrefix + "policyrc-controller"
 
 type informerPair struct {
@@ -67,6 +71,7 @@ type Controller struct {
 	typeConfig *fedcorev1a1.FederatedTypeConfig
 
 	metrics stats.Metrics
+	logger  klog.Logger
 }
 
 func StartController(controllerConfig *util.ControllerConfig,
@@ -76,7 +81,7 @@ func StartController(controllerConfig *util.ControllerConfig,
 	if err != nil {
 		return err
 	}
-	klog.V(4).Infof("Starting policyrc controller for %q", typeConfig.GetFederatedType().Kind)
+	controller.logger.Info("Starting policyrc controller")
 	controller.Run(stopChan)
 	return nil
 }
@@ -94,6 +99,7 @@ func newController(controllerConfig *util.ControllerConfig,
 		name:       userAgent,
 		typeConfig: typeConfig,
 		metrics:    controllerConfig.Metrics,
+		logger:     klog.LoggerWithValues(klog.Background(), "controller", ControllerName, "ftc", typeConfig.Name),
 	}
 
 	c.countWorker = worker.NewReconcileWorker(
@@ -201,6 +207,9 @@ func newController(controllerConfig *util.ControllerConfig,
 }
 
 func (c *Controller) Run(stopChan <-chan struct{}) {
+	c.logger.Info("Starting controller")
+	defer c.logger.Info("Stopping controller")
+
 	for _, pair := range []informerPair{c.federated, c.pp, c.cpp, c.op, c.cop} {
 		go pair.controller.Run(stopChan)
 	}
@@ -219,17 +228,16 @@ func (c *Controller) HasSynced() bool {
 	return c.federated.controller.HasSynced()
 }
 
-func (c *Controller) reconcileCount(qualifiedName common.QualifiedName) worker.Result {
-	federatedKind := c.typeConfig.GetFederatedType().Kind
-	key := qualifiedName.String()
+func (c *Controller) reconcileCount(qualifiedName common.QualifiedName) (status worker.Result) {
+	logger := c.logger.WithValues("object", qualifiedName.String())
 
 	c.metrics.Rate("policyrc-count-controller.throughput", 1)
-	klog.V(4).Infof("policyrc count controller for %v starting to reconcile %v", federatedKind, key)
+	logger.V(3).Info("Policyrc count controller starting to reconcile")
 	startTime := time.Now()
 	defer func() {
 		c.metrics.Duration("policyrc-count-controller.latency", startTime)
-		klog.V(4).
-			Infof("policyrc count controller for %v finished reconciling %v (duration: %v)", federatedKind, key, time.Since(startTime))
+		logger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).
+			Info("Policyrc count controller finished reconciling")
 	}()
 
 	fedObjAny, fedObjExists, err := c.federated.store.GetByKey(qualifiedName.String())
@@ -275,18 +283,14 @@ func (c *Controller) reconcilePersist(
 	nsScopeStore, clusterScopeStore cache.Store,
 	counter *Counter,
 ) worker.Result {
-	federatedKind := c.typeConfig.GetFederatedType().Kind
-	key := qualifiedName.String()
+	logger := c.logger.WithValues("object", qualifiedName.String())
 
 	c.metrics.Rate(fmt.Sprintf("policyrc-persist-%s-controller.throughput", metricName), 1)
-	klog.V(4).Infof("policyrc persist %s controller for %v starting to reconcile %v", metricName, federatedKind, key)
+	logger.V(3).Info("Policyrc persist controller starting to reconcile")
 	startTime := time.Now()
 	defer func() {
 		c.metrics.Duration(fmt.Sprintf("policyrc-persist-%s-controller.latency", metricName), startTime)
-		klog.V(4).Infof(
-			"policyrc persist %s controller for %v finished reconciling %v (duration: %v)",
-			metricName, federatedKind, key, time.Since(startTime),
-		)
+		logger.V(3).WithValues("duration", time.Since(startTime)).Info("Policyrc persist controller finished reconciling")
 	}()
 
 	store := clusterScopeStore

@@ -29,7 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -49,6 +48,8 @@ import (
 )
 
 const (
+	ControllerName = "status-aggregator-controller"
+
 	allClustersKey = "ALL_CLUSTERS"
 
 	EventReasonUpdateSourceObjectStatus     = "UpdateSourceObjectStatus"
@@ -90,6 +91,7 @@ type StatusAggregator struct {
 	// plugin for source type to aggregate statuses
 	plugin  plugins.Plugin
 	metrics stats.Metrics
+	logger  klog.Logger
 }
 
 func StartStatusAggregator(controllerConfig *util.ControllerConfig,
@@ -131,6 +133,7 @@ func newStatusAggregator(controllerConfig *util.ControllerConfig,
 		typeConfig:    typeConfig,
 		plugin:        plugin,
 		metrics:       controllerConfig.Metrics,
+		logger:        klog.LoggerWithValues(klog.Background(), "controller", ControllerName, "ftc", typeConfig.Name),
 	}
 	var err error
 	a.federatedClient, err = util.NewResourceClient(configWithUserAgent, &federatedAPIResource)
@@ -192,11 +195,13 @@ func newStatusAggregator(controllerConfig *util.ControllerConfig,
 	if err != nil {
 		return nil, err
 	}
-	klog.Infof("Status aggregator %q NewResourceInformer", federatedAPIResource.Kind)
 	return a, nil
 }
 
 func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
+	a.logger.Info("Starting controller")
+	defer a.logger.Info("Stopping controller")
+
 	go a.sourceController.Run(stopChan)
 	go a.federatedController.Run(stopChan)
 	a.informer.Start()
@@ -206,7 +211,7 @@ func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
 	go a.clusterDeliverer.RunMetricLoop(stopChan, 30*time.Second, a.metrics,
 		delayingdeliver.NewMetricTags("schedulingpreference-clusterDeliverer", a.typeConfig.GetTargetType().Kind))
 	if !cache.WaitForNamedCacheSync(a.name, stopChan, a.HasSynced) {
-		utilruntime.HandleError(fmt.Errorf("timed out waiting for caches to sync for controller: %s", a.name))
+		return
 	}
 	a.worker.Run(stopChan)
 
@@ -214,7 +219,7 @@ func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				klog.Warningf("recovered from panic: %v", r)
+				a.logger.Error(fmt.Errorf("%v", r), "recovered from panic")
 			}
 		}()
 		<-stopChan
@@ -225,65 +230,67 @@ func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
 
 func (a *StatusAggregator) HasSynced() bool {
 	if !a.informer.ClustersSynced() {
-		klog.V(2).Infof("Cluster list not synced")
+		a.logger.V(3).Info("Cluster list not synced")
 		return false
 	}
 	if !a.federatedController.HasSynced() {
-		klog.V(2).Infof("Federated type not synced")
+		a.logger.V(3).Info("Federated type not synced")
 		return false
 	}
 	if !a.sourceController.HasSynced() {
-		klog.V(2).Infof("Status not synced")
+		a.logger.V(3).Info("Status not synced")
 		return false
 	}
 
 	return true
 }
 
-func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.Result {
+func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
 	sourceKind := a.typeConfig.GetSourceType().Kind
 	key := qualifiedName.String()
+	logger := a.logger.WithValues("object", key)
+	ctx := klog.NewContext(context.TODO(), logger)
 
 	a.metrics.Rate("status-aggregator.throughput", 1)
-	klog.V(4).Infof("status aggregator for %v starting to reconcile %v", sourceKind, key)
+	logger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
 		a.metrics.Duration("status-aggregator.latency", startTime)
-		klog.V(4).
-			Infof("status aggregator for %v finished reconciling %v (duration: %v)", sourceKind, key, time.Since(startTime))
+		logger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).
+			Info("Finished reconciling")
 	}()
 
 	sourceObject, err := objectFromCache(a.sourceStore, key)
 	if err != nil {
-		utilruntime.HandleError(err)
+		logger.Error(err, "Failed to get object from cache")
 		return worker.StatusError
 	}
 
 	if sourceObject == nil || sourceObject.GetDeletionTimestamp() != nil {
-		klog.V(4).Infof("No source type for %v %v found", sourceKind, key)
+		logger.V(3).Info("No source type found")
 		return worker.StatusAllOK
 	}
 
 	fedObject, err := objectFromCache(a.federatedStore, key)
 	if err != nil {
-		utilruntime.HandleError(err)
+		logger.Error(err, "Failed to get object from cache")
 		return worker.StatusError
 	}
 
 	if fedObject == nil || fedObject.GetDeletionTimestamp() != nil {
-		klog.V(4).Infof("No federated type for %v %v found", sourceKind, key)
+		logger.V(3).Info("No federated type found")
 		return worker.StatusAllOK
 	}
 
-	clusterObjs, err := a.clusterObjs(qualifiedName)
+	clusterObjs, err := a.clusterObjs(ctx, qualifiedName)
 	if err != nil {
-		utilruntime.HandleError(err)
+		logger.Error(err, "Failed to get cluster objs")
 		return worker.StatusError
 	}
 
-	newObj, needUpdate, err := a.plugin.AggregateStatues(sourceObject.DeepCopy(), fedObject, clusterObjs)
+	newObj, needUpdate, err := a.plugin.AggregateStatues(ctx, sourceObject.DeepCopy(), fedObject, clusterObjs)
 	if err != nil {
-		utilruntime.HandleError(err)
+		logger.Error(err, "Failed to aggregate statuses")
 		return worker.StatusError
 	}
 
@@ -294,7 +301,7 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.
 	}
 
 	if needUpdate {
-		klog.V(4).Infof("about to update status of source object %v: %v", sourceKind, key)
+		logger.V(1).Info("Updating status of source object")
 		_, err = a.sourceClient.Resources(qualifiedName.Namespace).
 			UpdateStatus(context.TODO(), newObj, metav1.UpdateOptions{})
 		if err != nil {
@@ -314,7 +321,7 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.
 		sourcefeedback.PopulateStatusAnnotation(newObj, clusterObjs, &needUpdate)
 
 		if needUpdate {
-			klog.V(4).Infof("about to update annotation of source object %v: %v", sourceKind, key)
+			logger.V(1).Info("Updating annotation of source object")
 			_, err = a.sourceClient.Resources(qualifiedName.Namespace).
 				Update(context.TODO(), newObj, metav1.UpdateOptions{})
 			if err != nil {
@@ -334,7 +341,9 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) worker.
 }
 
 // clusterStatuses returns the resource status in member cluster.
-func (a *StatusAggregator) clusterObjs(qualifiedName common.QualifiedName) (map[string]interface{}, error) {
+func (a *StatusAggregator) clusterObjs(ctx context.Context, qualifiedName common.QualifiedName) (map[string]interface{}, error) {
+	logger := klog.FromContext(ctx)
+
 	key := qualifiedName.String()
 	clusters, err := a.informer.GetReadyClusters()
 	if err != nil {
@@ -353,7 +362,7 @@ func (a *StatusAggregator) clusterObjs(qualifiedName common.QualifiedName) (map[
 		)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "Failed to get %s %q from cluster %q", targetKind, key, cluster.Name)
-			utilruntime.HandleError(wrappedErr)
+			logger.WithValues("cluster-name", cluster.Name).Error(err, "Failed to get object from cluster")
 			return nil, wrappedErr
 		}
 		if exist {

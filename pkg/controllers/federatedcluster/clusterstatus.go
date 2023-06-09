@@ -89,7 +89,7 @@ func collectIndividualClusterStatus(
 
 	conditionTime := metav1.Now()
 
-	offlineStatus, readyStatus := checkReadyByHealthz(ctx, discoveryClient, logger)
+	offlineStatus, readyStatus := checkReadyByHealthz(ctx, discoveryClient)
 	var readyReason, readyMessage string
 	switch readyStatus {
 	case corev1.ConditionTrue:
@@ -141,8 +141,9 @@ func collectIndividualClusterStatus(
 func checkReadyByHealthz(
 	ctx context.Context,
 	clusterDiscoveryClient discovery.DiscoveryInterface,
-	logger klog.Logger,
 ) (offline, ready corev1.ConditionStatus) {
+	logger := klog.FromContext(ctx)
+
 	body, err := clusterDiscoveryClient.RESTClient().Get().AbsPath("/healthz").Do(ctx).Raw()
 	if err != nil {
 		logger.Error(err, "Cluster health check failed")

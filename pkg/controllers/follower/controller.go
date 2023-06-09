@@ -143,7 +143,7 @@ func NewFollowerController(
 		name:                       ControllerName,
 		eventRecorder:              eventsink.NewDefederatingRecorderMux(kubeClient, ControllerName, 4),
 		metrics:                    metrics,
-		logger:                     klog.LoggerWithName(klog.Background(), ControllerName),
+		logger:                     klog.LoggerWithValues(klog.Background(), "controller", ControllerName),
 		sourceToFederatedGKMap:     make(map[schema.GroupKind]schema.GroupKind),
 		leaderTypeHandles:          make(map[schema.GroupKind]*typeHandles),
 		followerTypeHandles:        make(map[schema.GroupKind]*typeHandles),
@@ -220,7 +220,7 @@ func NewFollowerController(
 
 func (c *Controller) Run(stopChan <-chan struct{}) {
 	c.logger.Info("Starting controller")
-	defer c.logger.Info("Shutting down controller")
+	defer c.logger.Info("Stopping controller")
 
 	if !cache.WaitForNamedCacheSync(c.name, stopChan, c.HasSynced) {
 		return
@@ -263,10 +263,10 @@ func (c *Controller) reconcileLeader(
 	logger := c.logger.WithValues("origin", "reconcileLeader", "type", handles.name, "key", key)
 	startTime := time.Now()
 
-	logger.Info("Starting reconcileLeader")
+	logger.V(3).Info("Starting reconcileLeader")
 	defer func() {
 		c.metrics.Duration(fmt.Sprintf("follower-controller-%s.latency", handles.name), startTime)
-		logger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcileLeader")
+		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcileLeader")
 	}()
 
 	leader := fedtypesv1a1.LeaderReference{
@@ -308,11 +308,7 @@ func (c *Controller) reconcileLeader(
 			return worker.StatusError
 		}
 	}
-	if logger.V(6).Enabled() {
-		logger.WithValues("followers", desiredFollowers).Info("Got followers")
-	}
 	c.cacheObservedFromLeaders.update(leader, desiredFollowers)
-
 	currentFollowers := c.cacheObservedFromFollowers.reverseLookup(leader)
 
 	// enqueue all followers whose desired state may have changed
@@ -339,6 +335,7 @@ func (c *Controller) reconcileLeader(
 			return worker.StatusError
 		}
 		if updated {
+			logger.V(1).Info("Updating leader to sync with pending controllers")
 			_, err = handles.client.Namespace(fedObj.GetNamespace()).
 				Update(context.Background(), fedObj, metav1.UpdateOptions{})
 			if err != nil {
@@ -381,12 +378,15 @@ func (c *Controller) inferFollowers(
 }
 
 func (c *Controller) updateFollower(
+	ctx context.Context,
 	handles *typeHandles,
 	followerUns *unstructured.Unstructured,
 	followerObj *fedtypesv1a1.GenericFederatedFollower,
 	leadersChanged bool,
 	leaders []fedtypesv1a1.LeaderReference,
 ) (updated bool, err error) {
+	logger := klog.FromContext(ctx)
+
 	if leadersChanged {
 		if err := fedtypesv1a1.SetFollows(followerUns, leaders); err != nil {
 			return false, fmt.Errorf("set leaders on follower: %w", err)
@@ -408,6 +408,7 @@ func (c *Controller) updateFollower(
 
 	needsUpdate := leadersChanged || placementsChanged
 	if needsUpdate {
+		logger.V(1).Info("Updating follower to sync with leaders")
 		_, err = handles.client.Namespace(followerUns.GetNamespace()).
 			Update(context.TODO(), followerUns, metav1.UpdateOptions{})
 		if err != nil {
@@ -429,12 +430,13 @@ func (c *Controller) reconcileFollower(
 	c.metrics.Rate(fmt.Sprintf("follower-controller-%s.throughput", handles.name), 1)
 	key := qualifiedName.String()
 	logger := c.logger.WithValues("origin", "reconcileFollower", "type", handles.name, "key", key)
+	ctx := klog.NewContext(context.TODO(), logger)
 	startTime := time.Now()
 
-	logger.Info("Starting reconclieFollower")
+	logger.V(3).Info("Starting reconcileFollower")
 	defer func() {
 		c.metrics.Duration(fmt.Sprintf("follower-controller-%s.latency", handles.name), startTime)
-		logger.WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcileFollower")
+		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcileFollower")
 	}()
 
 	follower := FollowerReference{
@@ -472,6 +474,7 @@ func (c *Controller) reconcileFollower(
 
 	leadersChanged := !equality.Semantic.DeepEqual(desiredLeaders, currentLeaders)
 	updated, err := c.updateFollower(
+		ctx,
 		handles,
 		followerUns,
 		followerObj,
@@ -492,7 +495,7 @@ func (c *Controller) reconcileFollower(
 		)
 		return worker.StatusError
 	} else if updated {
-		logger.V(4).Info("Updated follower to sync with leaders")
+		logger.V(1).Info("Updated follower to sync with leaders")
 	}
 
 	return worker.StatusAllOK

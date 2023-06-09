@@ -17,6 +17,8 @@ limitations under the License.
 package plugins
 
 import (
+	"context"
+
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -28,6 +30,7 @@ import (
 type Plugin interface {
 	// AggregateStatues aggregates member cluster object statues to source object status and returns the latter
 	AggregateStatues(
+		ctx context.Context,
 		sourceObject, fedObject *unstructured.Unstructured,
 		clusterObjs map[string]interface{},
 	) (*unstructured.Unstructured, bool, error)
