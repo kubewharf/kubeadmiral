@@ -165,9 +165,3 @@ var DeploymentGVR = schema.GroupVersionResource{
 	Version:  "v1",
 	Resource: "deployments",
 }
-
-var ReplicasetGVR = schema.GroupVersionResource{
-	Group:    "apps",
-	Version:  "v1",
-	Resource: "replicasets",
-}

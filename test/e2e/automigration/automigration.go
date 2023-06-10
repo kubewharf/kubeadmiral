@@ -59,21 +59,25 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 	var propPolicy *fedcorev1a1.PropagationPolicy
 
 	ginkgo.JustBeforeEach(func(ctx ginkgo.SpecContext) {
-		// This JustBeforeEach node gets 3 member clusters fto use in the automigration e2e tests and also generates a
+		// This JustBeforeEach node gets 3 member clusters to use in the automigration e2e tests and also generates a
 		// propagation policy that distributes replicas evenly across all 3 member clusters. Note that the propagation
 		// policy is not created to allow for each test to modify it if required.
 		ginkgo.By("Getting clusters", func() {
 			clusterList, err := f.HostFedClient().CoreV1alpha1().FederatedClusters().List(ctx, metav1.ListOptions{})
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 
-			candidateClustes := make([]*fedcorev1a1.FederatedCluster, len(clusterList.Items))
+			candidateClusters := make([]*fedcorev1a1.FederatedCluster, len(clusterList.Items))
 			for i := range clusterList.Items {
-				candidateClustes[i] = &clusterList.Items[i]
+				candidateClusters[i] = &clusterList.Items[i]
 			}
-			candidateClustes = util.FilterOutE2ETestObjects(candidateClustes)
-			gomega.Expect(len(candidateClustes)).To(gomega.BeNumerically(">=", 3), "At least 3 clusters are required for this test")
+			candidateClusters = util.FilterOutE2ETestObjects(candidateClusters)
+			gomega.Expect(len(candidateClusters)).To(gomega.BeNumerically(">=", 3), "At least 3 clusters are required for this test")
 
-			clusters = candidateClustes[:3]
+			sort.Slice(candidateClusters, func(i, j int) bool {
+				return candidateClusters[i].Name < candidateClusters[j].Name
+			})
+
+			clusters = candidateClusters[:3]
 		})
 
 		propPolicy = policies.PropagationPolicyForClustersWithPlacements(f.Name(), clusters)
@@ -93,9 +97,6 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 	})
 
 	ginkgo.It("Should automatically migrate unschedulable pods", func(ctx context.Context) {
-		sort.Slice(clusters, func(i, j int) bool {
-			return clusters[i].Name < clusters[j].Name
-		})
 		clusterToMigrateFrom := clusters[0]
 
 		var err error
@@ -239,12 +240,20 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 		})
 	})
 
-	ginkgo.It("Should migrate unschedulable pods properly with overlapping label selectors", func(ctx context.Context) {
+	ginkgo.It("Automigration of 2 deployments with overlapping selectors should not affect each other", func(ctx context.Context) {
+		// This test case ensures that automigration of 2 deployments with overlapping label selectors do not affect
+		// each other. One possible consequence if not handled properly is the unexpected scaling of the 2 deployments.
+		//
+		// Consider deployments dp-a and dp-b with overlapping selectors:
+		//
+		// If dp-a has some unschedulable pods, automigration would create extra replicas in other clusters to migrate
+		// these pods. If mishandled, these pods might be wrongly counted as dp-b's. If this happens, automigration
+		// would attempt to migrate these "extra" pods for dp-b. If the migrated replicas for dp-b are unschedulable as
+		// well, they would subsequently be counted as dp-a's and trigger a second round of migration for dp-a. In the
+		// worst case, this would result in an infinite scaling loop.
+
 		// 1. Get test clusters
 
-		sort.Slice(clusters, func(i, j int) bool {
-			return clusters[i].Name < clusters[j].Name
-		})
 		clusterToMigrateFromForDp1 := clusters[0]
 		clusterToMigrateFromForDp2 := clusters[2]
 
@@ -255,7 +264,37 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 		replicasPerCluster := int32(3)
 		totalReplicas := int32(len(clusters)) * replicasPerCluster
 
+		expectedFinalDistributionDp1 := map[string]int32{}
+		for _, cluster := range clusters {
+			if cluster.Name == clusterToMigrateFromForDp1.Name {
+				expectedFinalDistributionDp1[cluster.Name] = replicasPerCluster
+			} else {
+				// The deployment in clusterToMigrateFromForDp1 will only have 1 schedulable pod (refer to
+				// getOverridePolicy below). The remaining should be migrated to the remaining clusters evenly (based on
+				// the propagation policy above).
+				expectedFinalDistributionDp1[cluster.Name] = replicasPerCluster + ((replicasPerCluster)-1)/int32(len(clusters)-1)
+			}
+		}
+
+		// If overlapping labels were not accounted for properly, automigration may not occur properly for dp2 because
+		// dp1's ready pods in clusterToMigrateFrom may be wrongly counted as dp2's.
+		expectedFinalDistributionDp2 := map[string]int32{}
+		for _, cluster := range clusters {
+			if cluster.Name == clusterToMigrateFromForDp2.Name || cluster.Name == clusterToMigrateFromForDp1.Name {
+				expectedFinalDistributionDp2[cluster.Name] = replicasPerCluster
+			} else {
+				// Because of pod anti-affinity, we expect 0 pods to be able to run in both clusterToMigrateFromForDp1
+				// and clusterToMigrateFromForDp2 as both clusters should already contain pods from dp1 that have the
+				// same labels (refer to getOverridePolicy below). These 2 * replicasPerCluster pods should be
+				// distributed evenly among the remaining clusters.
+				expectedFinalDistributionDp2[cluster.Name] = replicasPerCluster + (2*replicasPerCluster)/int32(len(clusters)-2)
+			}
+		}
+
 		// 3. Initialize deployments
+
+		antiAffinityPodLabelKey := "automigration-test"
+		antiAffinityPodLabelValue := "automigration-test"
 
 		dp1 := resources.GetSimpleDeployment(f.Name())
 		dp1.Spec.Replicas = pointer.Int32(totalReplicas)
@@ -267,6 +306,10 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 				MaxSurge: &maxSurge,
 			},
 		}
+		if dp1.Spec.Template.Labels == nil {
+			dp1.Spec.Template.Labels = map[string]string{}
+		}
+		dp1.Spec.Template.Labels[antiAffinityPodLabelKey] = antiAffinityPodLabelValue
 		dp2 := dp1.DeepCopy()
 
 		// 4. Create policies
@@ -285,13 +328,6 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 		// in a given cluster using a combination of node affinity and pod anti-affinity.
 		getOverridePolicy := func(cluster *fedcorev1a1.FederatedCluster, deploy *appsv1.Deployment) *fedcorev1a1.OverridePolicy {
 			var selectedNode string
-			var selectedLabelKey, selectedLabelValue string
-
-			for k, v := range dp1.Spec.Template.GetLabels() {
-				selectedLabelKey = k
-				selectedLabelValue = v
-				break
-			}
 
 			nodeList, err := f.ClusterKubeClient(ctx, clusterToMigrateFromForDp1).CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 			gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
@@ -329,8 +365,8 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 								Raw: []byte(
 									fmt.Sprintf(
 										`[{"labelSelector": {"matchLabels": {"%s": "%s"}}, "topologyKey": "kubernetes.io/hostname"}]`,
-										selectedLabelKey,
-										selectedLabelValue,
+										antiAffinityPodLabelKey,
+										antiAffinityPodLabelValue,
 									),
 								),
 							},
@@ -399,22 +435,12 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 					ctx, dp2.Name, metav1.GetOptions{},
 				)
 				gomega.Expect(err).ToNot(gomega.HaveOccurred())
-				g.Expect(clusterDp.Spec.Replicas).To(gomega.HaveValue(gomega.Equal(replicasPerCluster)))
-			}).WithTimeout(5 * time.Second).Should(gomega.Succeed())
+				g.Expect(clusterDp.Spec.Replicas).To(gomega.HaveValue(gomega.Equal(newReplicaCounts[clusterToMigrateFrom.Name])))
+			}).WithTimeout(assertNoAutoMigrationDuration).Should(gomega.Succeed())
 		}
 
-		expectedDistributionDp1 := map[string]int32{}
-		for _, cluster := range clusters {
-			if cluster.Name == clusterToMigrateFromForDp1.Name {
-				continue
-			}
-
-			// The deployment in clusterToMigrateFromForDp1 will only have 1 schedulable pod. The remaining should be
-			// migrated to the remaining clusters evenly (based on the propagation policy).
-			expectedDistributionDp1[cluster.Name] = replicasPerCluster + ((replicasPerCluster)-1)/int32(len(clusters)-1)
-		}
 		ginkgo.By("Check pods migrated for original deployment", func() {
-			checkPodsMigrated(dp1.Name, clusterToMigrateFromForDp1, expectedDistributionDp1)
+			checkPodsMigrated(dp1.Name, clusterToMigrateFromForDp1, expectedFinalDistributionDp1)
 		})
 
 		// Create a new deployment with overlapping selectors
@@ -429,25 +455,8 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 		})
 
-		// If overlapping labels were not accounted for properly, automigration may not occur properly for dp2 because
-		// dp1's ready pods in clusterToMigrateFrom may be wrongly counted as dp2's.
-		expectedDistributionDp2 := map[string]int32{}
-		for _, cluster := range clusters {
-			if cluster.Name == clusterToMigrateFromForDp2.Name {
-				continue
-			}
-			if cluster.Name == clusterToMigrateFromForDp1.Name {
-				expectedDistributionDp2[cluster.Name] = replicasPerCluster
-			} else {
-				// Because of pod anti-affinity, we expect 0 pods to be able to run in both clusterToMigrateFromForDp1
-				// and clusterToMigrateFromForDp2 (both clusters should already contain pods from dp1 that have the
-				// same labels). These 2 * replicasPerCluster pods should be distributed evenly among the remaining
-				// clusters.
-				expectedDistributionDp2[cluster.Name] = replicasPerCluster + (2*replicasPerCluster)/int32(len(clusters)-2)
-			}
-		}
 		ginkgo.By("Check pods migrated for overlapping deployment", func() {
-			checkPodsMigrated(dp2.Name, clusterToMigrateFromForDp2, expectedDistributionDp2)
+			checkPodsMigrated(dp2.Name, clusterToMigrateFromForDp2, expectedFinalDistributionDp2)
 		})
 
 		// Similarly, automigration may have occurred unnecessarily for dp1 because dp2's unschedulable pods in
@@ -467,12 +476,7 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 						ctx, dp1.Name, metav1.GetOptions{},
 					)
 					gomega.Expect(err).ToNot(gomega.HaveOccurred())
-
-					if cluster.Name == clusterToMigrateFromForDp1.Name {
-						g.Expect(clusterDp.Spec.Replicas).To(gomega.HaveValue(gomega.Equal(replicasPerCluster)))
-					} else {
-						g.Expect(clusterDp.Spec.Replicas).To(gomega.HaveValue(gomega.Equal(expectedDistributionDp1[cluster.Name])))
-					}
+					g.Expect(clusterDp.Spec.Replicas).To(gomega.HaveValue(gomega.Equal(expectedFinalDistributionDp1[cluster.Name])))
 				}
 			}).WithTimeout(assertNoAutoMigrationDuration).Should(gomega.Succeed())
 		})
@@ -546,6 +550,7 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 					}
 					g.Expect(err).NotTo(gomega.HaveOccurred())
 					g.Expect(clusterDp1.Spec.Replicas).To(gomega.HaveValue(gomega.Equal(replicasPerCluster)))
+					g.Expect(clusterDp1.Status.ReadyReplicas).To(gomega.BeZero())
 
 					clusterDp2, err := f.ClusterKubeClient(ctx, c).AppsV1().Deployments(f.TestNamespace().Name).Get(
 						ctx, dp2.Name, metav1.GetOptions{},
@@ -555,6 +560,7 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 					}
 					g.Expect(err).NotTo(gomega.HaveOccurred())
 					g.Expect(clusterDp2.Spec.Replicas).To(gomega.HaveValue(gomega.Equal(replicasPerCluster)))
+					g.Expect(clusterDp2.Status.ReadyReplicas).To(gomega.BeZero())
 				}).WithPolling(defaultPollingInterval).Should(gomega.Succeed())
 			})
 		})

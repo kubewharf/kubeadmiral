@@ -77,6 +77,9 @@ func (a byWeight) Less(i, j int) bool {
 //   - a map that contains information how many replicas will be possible to run in a cluster.
 //   - a map that contains information how many extra replicas would be nice to schedule in a cluster so,
 //     if by chance, they are scheduled we will be closer to the desired replicas layout.
+//
+// NOTE: The planner's algorithm DOES NOT SUPPORT negative values, and it is the caller's responsibility to sanitize
+// the corresponding arguments before passing them into this method.
 func Plan(
 	rsp *ReplicaSchedulingPreference,
 	totalReplicas int64,
@@ -218,7 +221,7 @@ func getDesiredPlan(
 	// Assign each cluster the minimum number of replicas it requested.
 	for _, preference := range preferences {
 		min := minInt64(preference.MinReplicas, remainingReplicas)
-		if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity && capacity >= 0 && capacity < min {
+		if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity && capacity < min {
 			overflow[preference.clusterName] = min - capacity
 			min = capacity
 		}

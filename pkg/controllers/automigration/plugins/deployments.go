@@ -23,8 +23,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -63,6 +61,10 @@ func (*deploymentPlugin) GetPodsForClusterObject(
 	}
 
 	newRS := deploymentutil.FindNewReplicaSet(deployment, rsList)
+	if newRS == nil {
+		return []*corev1.Pod{}, nil
+	}
+
 	podList, err := deploymentutil.ListPods(
 		deployment,
 		[]*appsv1.ReplicaSet{newRS},
@@ -93,20 +95,12 @@ func (*deploymentPlugin) GetPodsForClusterObject(
 var _ Plugin = &deploymentPlugin{}
 
 func convertListOptions(ns string, opts *metav1.ListOptions) (*client.ListOptions, error) {
-	labelSelector, err := labels.Parse(opts.LabelSelector)
-	if err != nil {
-		return nil, err
-	}
-	fieldSelector, err := fields.ParseSelector(opts.FieldSelector)
-	if err != nil {
-		return nil, err
-	}
+	opts = opts.DeepCopy()
+	// list from watch cache
+	opts.ResourceVersion = "0"
 
 	return &client.ListOptions{
-		LabelSelector: labelSelector,
-		FieldSelector: fieldSelector,
-		Namespace:     ns,
-		Limit:         opts.Limit,
-		Continue:      opts.Continue,
+		Namespace: ns,
+		Raw:       opts,
 	}, nil
 }

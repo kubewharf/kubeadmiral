@@ -302,23 +302,14 @@ func (c *Controller) estimateCapacity(
 
 	for _, clusterObj := range clusterObjs {
 		keyedLogger := keyedLogger.WithValues("cluster", clusterObj.ClusterName)
+		ctx := klog.NewContext(ctx, keyedLogger)
 
 		unsClusterObj := clusterObj.Object.(*unstructured.Unstructured)
 
-		// NOTE: these should follow Deployment's status semantics and should not include terminating pods
-		//
-		// What if some workloads do not have a field that represents the totalReplicas or readyReplicas?
-		// Since we are now using desiredReplicas - unschedulablePods to calculate estimatedCapacity, retrieving the
-		// totalReplicas and readyReplicas is now merely for optimization.
-		//
-		// TODO: consider tolerating errors here
+		// This is an optimization to skip pod listing when there are no unschedulable pods.
 		totalReplicas, readyReplicas, err := c.getTotalAndReadyReplicas(unsClusterObj)
-		if err != nil {
-			keyedLogger.Error(err, "Failed to get total and ready replicas from object")
-			continue
-		}
-		if totalReplicas == readyReplicas {
-			// no unschedulable pods, avoid unnecessary pod listing
+		if err == nil && totalReplicas == readyReplicas {
+			keyedLogger.V(3).Info("No unschedulable pods found, skip estimating capacity")
 			continue
 		}
 
@@ -339,21 +330,33 @@ func (c *Controller) estimateCapacity(
 		}
 
 		unschedulable, nextCrossIn := countUnschedulablePods(pods, time.Now(), unschedulableThreshold)
-		podAnalysisVerbosity := 3
 
-		if unschedulable > 0 {
-			if int64(unschedulable) > desiredReplicas {
-				estimatedCapacity[clusterObj.ClusterName] = 0
-			} else {
-				estimatedCapacity[clusterObj.ClusterName] = desiredReplicas - int64(unschedulable)
-			}
-			podAnalysisVerbosity = 2
+		var clusterEstimatedCapacity int64
+		if len(pods) >= int(desiredReplicas) {
+			// When len(pods) >= desiredReplicas, we can immediately determine the capacity by taking the number of
+			// schedulable pods.
+			clusterEstimatedCapacity = int64(len(pods) - unschedulable)
+		} else {
+			// If len(pods) < desiredReplicas, we have uncreated pods. We must treat the uncreated pods as schedulable
+			// to prevent them from being unnecessarily migrated before creation.
+			clusterEstimatedCapacity = desiredReplicas - int64(unschedulable)
 		}
 
-		keyedLogger.V(podAnalysisVerbosity).Info("Analyzed pods",
+		if clusterEstimatedCapacity >= desiredReplicas {
+			// There is no need to migrate any pods. We skip writing estimatedCapacity information to avoid unnecessary
+			// reconciliation by the scheduler.
+			continue
+		} else if clusterEstimatedCapacity < 0 {
+			// estimatedCapacity should never be < 0. Nonetheless, this safeguard is required since the planner's
+			// algorithm does not support negative estimatedCapacity.
+			clusterEstimatedCapacity = 0
+		}
+
+		estimatedCapacity[clusterObj.ClusterName] = clusterEstimatedCapacity
+
+		keyedLogger.V(2).Info("Analyzed pods",
+			"total", len(pods),
 			"desired", desiredReplicas,
-			"total", totalReplicas,
-			"ready", readyReplicas,
 			"unschedulable", unschedulable,
 		)
 
