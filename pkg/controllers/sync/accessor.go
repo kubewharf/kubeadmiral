@@ -68,9 +68,12 @@ type resourceAccessor struct {
 
 	// Records events on the federated resource
 	eventRecorder record.EventRecorder
+
+	logger klog.Logger
 }
 
 func NewFederatedResourceAccessor(
+	logger klog.Logger,
 	controllerConfig *util.ControllerConfig,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	fedNamespaceAPIResource *metav1.APIResource,
@@ -84,6 +87,7 @@ func NewFederatedResourceAccessor(
 		fedNamespace:            controllerConfig.FedSystemNamespace,
 		fedNamespaceAPIResource: fedNamespaceAPIResource,
 		eventRecorder:           eventRecorder,
+		logger:                  logger.WithValues("origin", "resource-accessor"),
 	}
 
 	targetNamespace := controllerConfig.TargetNamespace
@@ -133,6 +137,7 @@ func NewFederatedResourceAccessor(
 	}
 
 	a.versionManager = version.NewVersionManager(
+		logger,
 		client,
 		typeConfig.GetNamespaced(),
 		typeConfig.GetFederatedType().Kind,
@@ -152,17 +157,16 @@ func (a *resourceAccessor) Run(stopChan <-chan struct{}) {
 }
 
 func (a *resourceAccessor) HasSynced() bool {
-	kind := a.typeConfig.GetFederatedType().Kind
 	if !a.versionManager.HasSynced() {
-		klog.V(2).Infof("Version manager for %s not synced", kind)
+		a.logger.V(3).Info("Version manager not synced")
 		return false
 	}
 	if !a.federatedController.HasSynced() {
-		klog.V(2).Infof("Informer for %s not synced", kind)
+		a.logger.V(3).Info("Informer not synced")
 		return false
 	}
 	if a.fedNamespaceController != nil && !a.fedNamespaceController.HasSynced() {
-		klog.V(2).Infof("FederatedNamespace informer for %s not synced", kind)
+		a.logger.V(3).Info("FederatedNamespace informer not synced")
 		return false
 	}
 	return true
@@ -170,7 +174,6 @@ func (a *resourceAccessor) HasSynced() bool {
 
 func (a *resourceAccessor) FederatedResource(eventSource common.QualifiedName) (FederatedResource, bool, error) {
 	if a.typeConfig.GetTargetType().Kind == common.NamespaceKind && a.isSystemNamespace(eventSource.Name) {
-		klog.V(7).Infof("Ignoring system namespace %q", eventSource.Name)
 		return nil, false, nil
 	}
 

@@ -694,7 +694,7 @@ func (c *Controller) startStatusController(statusKey string, tc *fedcorev1a1.Fed
 	kind := tc.Spec.FederatedType.Kind
 	stopChan := make(chan struct{})
 	ftc := tc.DeepCopyObject().(*fedcorev1a1.FederatedTypeConfig)
-	err := statuscontroller.StartKubeFedStatusController(c.controllerConfig, stopChan, ftc)
+	err := statuscontroller.StartStatusController(c.controllerConfig, stopChan, ftc)
 	if err != nil {
 		close(stopChan)
 		return errors.Wrapf(err, "Error starting status controller for %q", kind)

@@ -22,12 +22,11 @@ package dispatch
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/klog/v2"
 
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
@@ -38,7 +37,7 @@ import (
 type CheckUnmanagedDispatcher interface {
 	OperationDispatcher
 
-	CheckRemovedOrUnlabeled(clusterName string)
+	CheckRemovedOrUnlabeled(ctx context.Context, clusterName string)
 }
 
 type checkUnmanagedDispatcherImpl struct {
@@ -68,15 +67,15 @@ func (d *checkUnmanagedDispatcherImpl) Wait() (bool, error) {
 // CheckRemovedOrUnlabeled checks that a resource either does not
 // exist in the given cluster, or if it does exist, that it does not
 // have the managed label.
-func (d *checkUnmanagedDispatcherImpl) CheckRemovedOrUnlabeled(clusterName string) {
+func (d *checkUnmanagedDispatcherImpl) CheckRemovedOrUnlabeled(ctx context.Context, clusterName string) {
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "check for deletion of resource or removal of managed label from"
-	const opContinuous = "Checking for deletion of resource or removal of managed label from"
-	go d.dispatcher.clusterOperation(clusterName, op, func(client generic.Client) bool {
+	errLogMessage := fmt.Sprintf("Failed to %s target obj", op)
+	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
+		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		targetName := d.targetNameForCluster(clusterName)
 
-		klog.V(2).Infof(eventTemplate, opContinuous, d.targetGVK.Kind, targetName, clusterName)
-
+		keyedLogger.V(2).Info("Checking for deletion of resource or removal of managed label from target obj")
 		clusterObj := &unstructured.Unstructured{}
 		clusterObj.SetGroupVersionKind(d.targetGVK)
 		err := client.Get(context.Background(), clusterObj, targetName.Namespace, targetName.Name)
@@ -84,22 +83,17 @@ func (d *checkUnmanagedDispatcherImpl) CheckRemovedOrUnlabeled(clusterName strin
 			return true
 		}
 		if err != nil {
-			wrappedErr := d.wrapOperationError(err, clusterName, op)
-			runtime.HandleError(wrappedErr)
+			keyedLogger.Error(fmt.Errorf("failed to get resource: %w", err), errLogMessage)
 			return false
 		}
 		if clusterObj.GetDeletionTimestamp() != nil {
-			err = errors.Errorf("resource is pending deletion")
-			wrappedErr := d.wrapOperationError(err, clusterName, op)
-			runtime.HandleError(wrappedErr)
+			keyedLogger.Error(fmt.Errorf("resource is pending deletion"), errLogMessage)
 			return false
 		}
 		if !util.HasManagedLabel(clusterObj) {
 			return true
 		}
-		err = errors.Errorf("resource still has the managed label")
-		wrappedErr := d.wrapOperationError(err, clusterName, op)
-		runtime.HandleError(wrappedErr)
+		keyedLogger.Error(fmt.Errorf("resource still has the managed label"), errLogMessage)
 		return false
 	})
 }

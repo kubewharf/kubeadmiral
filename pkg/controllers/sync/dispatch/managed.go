@@ -78,8 +78,8 @@ type FederatedResourceForDispatch interface {
 type ManagedDispatcher interface {
 	UnmanagedDispatcher
 
-	Create(clusterName string)
-	Update(clusterName string, clusterObj *unstructured.Unstructured)
+	Create(ctx context.Context, clusterName string)
+	Update(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured)
 	VersionMap() map[string]string
 	CollectedStatus() status.CollectedPropagationStatus
 	RecordClusterError(propStatus fedtypesv1a1.PropagationStatus, clusterName string, err error)
@@ -156,7 +156,7 @@ func (d *managedDispatcherImpl) Wait() (bool, error) {
 }
 
 // Deprecated: this method is not used and outdated, but should be kept to reintegrate rollout planner in the future
-func (d *managedDispatcherImpl) Dispatch(targetGetter targetAccessorFunc, clusters []*fedcorev1a1.FederatedCluster,
+func (d *managedDispatcherImpl) Dispatch(ctx context.Context, targetGetter targetAccessorFunc, clusters []*fedcorev1a1.FederatedCluster,
 	selectedClusterNames sets.String, rolloutPlanEnabled bool,
 ) {
 	clusterObjs := make(map[string]*unstructured.Unstructured)
@@ -211,7 +211,7 @@ func (d *managedDispatcherImpl) Dispatch(targetGetter targetAccessorFunc, cluste
 		}
 	}
 	if rolloutPlanEnabled {
-		clusterPlans, err := d.planRolloutProcess(clusterObjs, selectedClusterNames, toDelete)
+		clusterPlans, err := d.planRolloutProcess(ctx, clusterObjs, selectedClusterNames, toDelete)
 		if err != nil {
 			d.fedResource.RecordError(string(fedtypesv1a1.PlanRolloutFailed), err)
 		}
@@ -228,31 +228,31 @@ func (d *managedDispatcherImpl) Dispatch(targetGetter targetAccessorFunc, cluste
 			if !planned {
 				if clusterObj != nil {
 					// dispatch without updating template
-					d.PatchAndKeepTemplate(clusterName, clusterObj, true)
+					d.PatchAndKeepTemplate(ctx, clusterName, clusterObj, true)
 				}
 				continue
 			}
 			if toDelete.Has(clusterName) && (plan.Replicas == nil || plan.Replicas != nil && *plan.Replicas == 0) {
-				d.Delete(clusterName, clusterObj)
+				d.Delete(ctx, clusterName, clusterObj)
 				continue
 			}
 			if clusterObj == nil {
-				d.Create(clusterName)
+				d.Create(ctx, clusterName)
 				continue
 			}
 			if plan.OnlyPatchReplicas && plan.Replicas != nil {
-				d.PatchAndKeepTemplate(clusterName, clusterObj, false)
+				d.PatchAndKeepTemplate(ctx, clusterName, clusterObj, false)
 				continue
 			}
-			d.Update(clusterName, clusterObj)
+			d.Update(ctx, clusterName, clusterObj)
 		}
 		return
 	}
 
-	d.emitRolloutStatus(clusterObjs, selectedClusterNames, nil)
+	d.emitRolloutStatus(ctx, clusterObjs, selectedClusterNames, nil)
 	for clusterName, clusterObj := range clusterObjs {
 		if toDelete.Has(clusterName) {
-			d.Delete(clusterName, clusterObj)
+			d.Delete(ctx, clusterName, clusterObj)
 			continue
 		}
 
@@ -261,14 +261,14 @@ func (d *managedDispatcherImpl) Dispatch(targetGetter targetAccessorFunc, cluste
 		// subsequent operations.  Otherwise the object won't be found
 		// but an add operation will fail with AlreadyExists.
 		if clusterObj == nil {
-			d.Create(clusterName)
+			d.Create(ctx, clusterName)
 		} else {
-			d.Update(clusterName, clusterObj)
+			d.Update(ctx, clusterName, clusterObj)
 		}
 	}
 }
 
-func (d *managedDispatcherImpl) planRolloutProcess(clusterObjs map[string]*unstructured.Unstructured,
+func (d *managedDispatcherImpl) planRolloutProcess(ctx context.Context, clusterObjs map[string]*unstructured.Unstructured,
 	selectedClusterNames, toDelete sets.String,
 ) (util.RolloutPlans, error) {
 	var (
@@ -279,16 +279,17 @@ func (d *managedDispatcherImpl) planRolloutProcess(clusterObjs map[string]*unstr
 		plans    util.RolloutPlans
 		replicas int32
 		err      error
+		logger   = klog.FromContext(ctx)
 	)
 
 	defer func() {
 		if err != nil {
-			klog.V(4).Infof("Generate rollout plans for %s %s met error: %v", gvk, key, err)
+			logger.Error(err, "Failed to generate rollout plans")
 		} else {
-			klog.V(4).Infof("Generate rollout plans for %s %s: %v. Current status: %s", gvk, key, plans, planner)
+			logger.WithValues("plans", plans, "current-status", planner).V(4).Info("Generating rollout plans")
 		}
 		SendRolloutPlansToES(planner, plans, r.Object(), err)
-		d.emitRolloutStatus(clusterObjs, selectedClusterNames, planner)
+		d.emitRolloutStatus(ctx, clusterObjs, selectedClusterNames, planner)
 	}()
 
 	if gvk != appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind) {
@@ -320,7 +321,7 @@ func (d *managedDispatcherImpl) planRolloutProcess(clusterObjs map[string]*unstr
 	return plans, nil
 }
 
-func (d *managedDispatcherImpl) Create(clusterName string) {
+func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) {
 	// Default the status to an operation-specific timeout.  Otherwise
 	// when a timeout occurs it won't be possible to determine which
 	// operation timed out.  The timeout status will be cleared by
@@ -329,24 +330,26 @@ func (d *managedDispatcherImpl) Create(clusterName string) {
 
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "create"
-	go d.dispatcher.clusterOperation(clusterName, op, func(client generic.Client) bool {
+	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
+		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		d.recordEvent(clusterName, op, "Creating")
 
 		obj, err := d.fedResource.ObjectForCluster(clusterName)
 		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.ComputeResourceFailed, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.ComputeResourceFailed, clusterName, op, err)
 		}
 
 		err = d.fedResource.ApplyOverrides(obj, clusterName, d.rolloutOverrides(clusterName))
 		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
 		}
 
 		recordPropagatedLabelsAndAnnotations(obj)
 
-		ctx, cancel := context.WithTimeout(context.Background(), d.dispatcher.timeout)
+		ctx, cancel := context.WithTimeout(ctx, d.dispatcher.timeout)
 		defer cancel()
 
+		keyedLogger.V(1).Info("Creating target object in cluster")
 		err = client.Create(ctx, obj)
 		if err == nil {
 			version := util.ObjectVersion(obj)
@@ -359,7 +362,7 @@ func (d *managedDispatcherImpl) Create(clusterName string) {
 		alreadyExists := apierrors.IsAlreadyExists(err) ||
 			d.fedResource.TargetGVK() == corev1.SchemeGroupVersion.WithKind(common.NamespaceKind) && apierrors.IsServerTimeout(err)
 		if !alreadyExists {
-			return d.recordOperationError(fedtypesv1a1.CreationFailed, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.CreationFailed, clusterName, op, err)
 		}
 
 		// Attempt to update the existing resource to ensure that it
@@ -367,11 +370,12 @@ func (d *managedDispatcherImpl) Create(clusterName string) {
 		err = client.Get(ctx, obj, obj.GetNamespace(), obj.GetName())
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retrieve object potentially requiring adoption")
-			return d.recordOperationError(fedtypesv1a1.RetrievalFailed, clusterName, op, wrappedErr)
+			return d.recordOperationError(ctx, fedtypesv1a1.RetrievalFailed, clusterName, op, wrappedErr)
 		}
 
 		if d.skipAdoptingResources {
 			return d.recordOperationError(
+				ctx,
 				fedtypesv1a1.AlreadyExists,
 				clusterName,
 				op,
@@ -380,6 +384,7 @@ func (d *managedDispatcherImpl) Create(clusterName string) {
 		}
 
 		d.recordError(
+			ctx,
 			clusterName,
 			op,
 			errors.Errorf("An update will be attempted instead of a creation due to an existing resource"),
@@ -388,34 +393,35 @@ func (d *managedDispatcherImpl) Create(clusterName string) {
 			// If the object was not managed by us, mark it as adopted.
 			annotation.AddAnnotation(obj, util.AdoptedAnnotation, common.AnnotationValueTrue)
 		}
-		d.Update(clusterName, obj)
+		d.Update(ctx, clusterName, obj)
 		return true
 	})
 }
 
-func (d *managedDispatcherImpl) Update(clusterName string, clusterObj *unstructured.Unstructured) {
+func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured) {
 	d.RecordStatus(clusterName, fedtypesv1a1.UpdateTimedOut)
 
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "update"
-	go d.dispatcher.clusterOperation(clusterName, op, func(client generic.Client) bool {
+	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
+		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		if util.IsExplicitlyUnmanaged(clusterObj) {
 			err := errors.Errorf(
 				"Unable to manage the object which has label %s: %s",
 				util.ManagedByKubeAdmiralLabelKey,
 				util.UnmanagedByKubeAdmiralLabelValue,
 			)
-			return d.recordOperationError(fedtypesv1a1.ManagedLabelFalse, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.ManagedLabelFalse, clusterName, op, err)
 		}
 
 		obj, err := d.fedResource.ObjectForCluster(clusterName)
 		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.ComputeResourceFailed, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.ComputeResourceFailed, clusterName, op, err)
 		}
 
 		err = d.fedResource.ApplyOverrides(obj, clusterName, d.rolloutOverrides(clusterName))
 		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
 		}
 
 		recordPropagatedLabelsAndAnnotations(obj)
@@ -423,26 +429,26 @@ func (d *managedDispatcherImpl) Update(clusterName string, clusterObj *unstructu
 		err = RetainOrMergeClusterFields(d.fedResource.TargetGVK(), obj, clusterObj, d.fedResource.Object())
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain fields")
-			return d.recordOperationError(fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+			return d.recordOperationError(ctx, fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
 		}
 
 		err = retainReplicas(obj, clusterObj, d.fedResource.Object(), d.fedResource.TypeConfig())
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain replicas")
-			return d.recordOperationError(fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+			return d.recordOperationError(ctx, fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
 		}
 
 		if d.fedResource.TargetGVK() == appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind) {
 			err = setLastReplicasetName(obj, clusterObj)
 			if err != nil {
 				wrappedErr := errors.Wrapf(err, "failed to set last replicaset name")
-				return d.recordOperationError(fedtypesv1a1.SetLastReplicasetNameFailed, clusterName, op, wrappedErr)
+				return d.recordOperationError(ctx, fedtypesv1a1.SetLastReplicasetNameFailed, clusterName, op, wrappedErr)
 			}
 		}
 
 		version, err := d.fedResource.VersionForCluster(clusterName)
 		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.VersionRetrievalFailed, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.VersionRetrievalFailed, clusterName, op, err)
 		}
 
 		if !util.ObjectNeedsUpdate(obj, clusterObj, version, d.fedResource.TypeConfig()) {
@@ -455,11 +461,11 @@ func (d *managedDispatcherImpl) Update(clusterName string, clusterObj *unstructu
 		// Only record an event if the resource is not current
 		d.recordEvent(clusterName, op, "Updating")
 
-		err = client.Update(context.Background(), obj)
+		keyedLogger.V(1).Info("Updating target object in cluster")
+		err = client.Update(ctx, obj)
 		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.UpdateFailed, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.UpdateFailed, clusterName, op, err)
 		}
-		klog.V(4).Infof("debug - Updated %s %s/%s in %s", obj.GetKind(), obj.GetNamespace(), obj.GetName(), clusterName)
 		d.setResourcesUpdated()
 		version = util.ObjectVersion(obj)
 		d.recordVersion(clusterName, version)
@@ -467,13 +473,14 @@ func (d *managedDispatcherImpl) Update(clusterName string, clusterObj *unstructu
 	})
 }
 
-func (d *managedDispatcherImpl) Delete(clusterName string, clusterObj *unstructured.Unstructured) {
+func (d *managedDispatcherImpl) Delete(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured) {
 	d.RecordStatus(clusterName, fedtypesv1a1.DeletionTimedOut)
 
-	d.unmanagedDispatcher.Delete(clusterName, clusterObj)
+	d.unmanagedDispatcher.Delete(ctx, clusterName, clusterObj)
 }
 
 func (d *managedDispatcherImpl) PatchAndKeepTemplate(
+	ctx context.Context,
 	clusterName string,
 	clusterObj *unstructured.Unstructured,
 	keepRolloutSettings bool,
@@ -482,24 +489,25 @@ func (d *managedDispatcherImpl) PatchAndKeepTemplate(
 
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "update"
-	go d.dispatcher.clusterOperation(clusterName, op, func(client generic.Client) bool {
+	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
+		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		if util.IsExplicitlyUnmanaged(clusterObj) {
 			err := errors.Errorf(
 				"Unable to manage the object which has label %s: %s",
 				util.ManagedByKubeAdmiralLabelKey,
 				util.UnmanagedByKubeAdmiralLabelValue,
 			)
-			return d.recordOperationError(fedtypesv1a1.ManagedLabelFalse, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.ManagedLabelFalse, clusterName, op, err)
 		}
 
 		obj, err := d.fedResource.ObjectForCluster(clusterName)
 		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.ComputeResourceFailed, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.ComputeResourceFailed, clusterName, op, err)
 		}
 
 		err = d.fedResource.ApplyOverrides(obj, clusterName, d.rolloutOverrides(clusterName))
 		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
 		}
 
 		recordPropagatedLabelsAndAnnotations(obj)
@@ -507,29 +515,29 @@ func (d *managedDispatcherImpl) PatchAndKeepTemplate(
 		err = RetainOrMergeClusterFields(d.fedResource.TargetGVK(), obj, clusterObj, d.fedResource.Object())
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain fields")
-			return d.recordOperationError(fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+			return d.recordOperationError(ctx, fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
 		}
 
 		err = retainReplicas(obj, clusterObj, d.fedResource.Object(), d.fedResource.TypeConfig())
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain replicas")
-			return d.recordOperationError(fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+			return d.recordOperationError(ctx, fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
 		}
 
 		if d.fedResource.TargetGVK() == appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind) {
 			if err = retainTemplate(obj, clusterObj, d.fedResource.TypeConfig(), keepRolloutSettings); err != nil {
 				wrappedErr := errors.Wrapf(err, "failed to retain template")
-				return d.recordOperationError(fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+				return d.recordOperationError(ctx, fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
 			}
 			if err = setLastReplicasetName(obj, clusterObj); err != nil {
 				wrappedErr := errors.Wrapf(err, "failed to set last replicaset name")
-				return d.recordOperationError(fedtypesv1a1.SetLastReplicasetNameFailed, clusterName, op, wrappedErr)
+				return d.recordOperationError(ctx, fedtypesv1a1.SetLastReplicasetNameFailed, clusterName, op, wrappedErr)
 			}
 		}
 
 		version, err := d.fedResource.VersionForCluster(clusterName)
 		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.VersionRetrievalFailed, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.VersionRetrievalFailed, clusterName, op, err)
 		}
 
 		if !util.ObjectNeedsUpdate(obj, clusterObj, version, d.fedResource.TypeConfig()) {
@@ -542,12 +550,11 @@ func (d *managedDispatcherImpl) PatchAndKeepTemplate(
 		// Only record an event if the resource is not current
 		d.recordEvent(clusterName, op, "Updating")
 
-		err = client.Update(context.Background(), obj)
+		keyedLogger.V(1).Info("Patching and keeping template for target object in cluster")
+		err = client.Update(ctx, obj)
 		if err != nil {
-			return d.recordOperationError(fedtypesv1a1.UpdateFailed, clusterName, op, err)
+			return d.recordOperationError(ctx, fedtypesv1a1.UpdateFailed, clusterName, op, err)
 		}
-		klog.V(4).
-			Infof("debug - Updated and kept template %s %s/%s in %s", obj.GetKind(), obj.GetNamespace(), obj.GetName(), clusterName)
 		d.setResourcesUpdated()
 		version = util.ObjectVersion(obj)
 		d.recordVersion(clusterName, version)
@@ -555,10 +562,10 @@ func (d *managedDispatcherImpl) PatchAndKeepTemplate(
 	})
 }
 
-func (d *managedDispatcherImpl) RemoveManagedLabel(clusterName string, clusterObj *unstructured.Unstructured) {
+func (d *managedDispatcherImpl) RemoveManagedLabel(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured) {
 	d.RecordStatus(clusterName, fedtypesv1a1.LabelRemovalTimedOut)
 
-	d.unmanagedDispatcher.RemoveManagedLabel(clusterName, clusterObj)
+	d.unmanagedDispatcher.RemoveManagedLabel(ctx, clusterName, clusterObj)
 }
 
 func (d *managedDispatcherImpl) RecordClusterError(
@@ -577,21 +584,23 @@ func (d *managedDispatcherImpl) RecordStatus(clusterName string, propStatus fedt
 }
 
 func (d *managedDispatcherImpl) recordOperationError(
+	ctx context.Context,
 	propStatus fedtypesv1a1.PropagationStatus,
 	clusterName, operation string,
 	err error,
 ) bool {
-	d.recordError(clusterName, operation, err)
+	d.recordError(ctx, clusterName, operation, err)
 	d.RecordStatus(clusterName, propStatus)
 	return false
 }
 
-func (d *managedDispatcherImpl) recordError(clusterName, operation string, err error) {
+func (d *managedDispatcherImpl) recordError(ctx context.Context, clusterName, operation string, err error) {
 	targetName := d.unmanagedDispatcher.targetNameForCluster(clusterName)
 	args := []interface{}{operation, d.fedResource.TargetKind(), targetName, clusterName}
 	eventType := fmt.Sprintf("%sInClusterFailed", strings.Replace(strings.Title(operation), " ", "", -1))
 	eventErr := errors.Wrapf(err, "Failed to "+eventTemplate, args...)
-	klog.Infof("%s with error %s", eventType, eventErr)
+	logger := klog.FromContext(ctx)
+	logger.Error(eventErr, "event", eventType, "Operation failed with error")
 	d.fedResource.RecordError(eventType, eventErr)
 	d.metrics.Rate("member_operation_error", 1, []stats.Tag{
 		{Name: "cluster", Value: clusterName},
@@ -652,6 +661,7 @@ func (d *managedDispatcherImpl) rolloutOverrides(clusterName string) fedtypesv1a
 
 // emitRolloutStatus temporarily emit status metrics during rollout for observation
 func (d *managedDispatcherImpl) emitRolloutStatus(
+	ctx context.Context,
 	clusterObjs map[string]*unstructured.Unstructured,
 	selectedClusterNames sets.String,
 	planner *util.RolloutPlanner,
@@ -668,12 +678,13 @@ func (d *managedDispatcherImpl) emitRolloutStatus(
 		{Name: "cluster", Value: fedClusterName},
 		{Name: "ismember", Value: "false"},
 	}
+	logger := klog.FromContext(ctx)
 
 	// settings
 	if planner == nil {
 		replicas, err := r.TotalReplicas(selectedClusterNames)
 		if err != nil {
-			klog.Errorf("Skip rollout metrics: failed to get replicas: %v", err)
+			logger.Error(err, "Skip rollout metrics: failed to get replicas")
 			return
 		}
 		pathPrefix := []string{common.SpecField, common.TemplateField}
@@ -681,7 +692,7 @@ func (d *managedDispatcherImpl) emitRolloutStatus(
 		maxUnavailablePath := append(pathPrefix, util.MaxUnavailablePathSlice...)
 		maxSurge, maxUnavailable, err := util.RetrieveFencepost(r.Object(), maxSurgePath, maxUnavailablePath, replicas)
 		if err != nil {
-			klog.Errorf("Skip rollout metrics: failed to get maxSurge and maxUnavailable: %v", err)
+			logger.Error(err, "Skip rollout metrics: failed to get maxSurge and maxUnavailable")
 			return
 		}
 		_ = d.metrics.Store("sync.rollout.maxSurge", maxSurge, fedTags...)

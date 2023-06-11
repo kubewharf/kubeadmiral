@@ -21,12 +21,13 @@ are Copyright 2023 The KubeAdmiral Authors.
 package dispatch
 
 import (
+	"context"
 	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/klog/v2"
 
 	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
@@ -39,7 +40,7 @@ type (
 
 type dispatchRecorder interface {
 	recordEvent(clusterName, operation, operationContinuous string)
-	recordOperationError(status fedtypesv1a1.PropagationStatus, clusterName, operation string, err error) bool
+	recordOperationError(ctx context.Context, status fedtypesv1a1.PropagationStatus, clusterName, operation string, err error) bool
 }
 
 // OperationDispatcher provides an interface to wait for operations
@@ -98,15 +99,16 @@ func (d *operationDispatcherImpl) Wait() (bool, error) {
 	return ok, nil
 }
 
-func (d *operationDispatcherImpl) clusterOperation(clusterName, op string, opFunc func(generic.Client) bool) {
+func (d *operationDispatcherImpl) clusterOperation(ctx context.Context, clusterName, op string, opFunc func(generic.Client) bool) {
 	// TODO Support cancellation of client calls on timeout.
 	client, err := d.clientAccessor(clusterName)
+	logger := klog.FromContext(ctx)
 	if err != nil {
 		wrappedErr := errors.Wrapf(err, "Error retrieving client for cluster")
 		if d.recorder == nil {
-			runtime.HandleError(wrappedErr)
+			logger.Error(wrappedErr, "Failed to retrieve client for cluster")
 		} else {
-			d.recorder.recordOperationError(fedtypesv1a1.ClientRetrievalFailed, clusterName, op, wrappedErr)
+			d.recorder.recordOperationError(ctx, fedtypesv1a1.ClientRetrievalFailed, clusterName, op, wrappedErr)
 		}
 		d.resultChan <- false
 		return
