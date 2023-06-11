@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 # go build arguments
-BUILD_FLAGS :=
+BUILD_FLAGS ?=
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 GOPROXY ?= $(shell go env GOPROXY)
@@ -79,19 +79,26 @@ debug: build
 #   GOPROXY:   it specifies the download address of the dependent package
 #   REGION:    region to build. e.g.: 'cn' means china mainland(the default value),
 #              the script will set the remote mirror address according to the region to speed up the build.
+#   DOCKER_BUILD_ARGS: additional parameters of the Dockerfile need to be passed in during the image building process,
+#                      e.g.: `--build-arg BUILD_FLAGS=-race`
+#   DOCKERFILE_PATH:   the Dockerfile path used by docker build, default is `kubeadmiral/hack/dockerfiles/Dockerfile`
 #
 # Examples:
 #   # build images with the host arch, it will generate "ghcr.io/kubewharf/kubeadmiral-controller-manager:latest"
 #   make images
 #
-#   # build images with amd64,arm64 arch
+#   # build images with amd64,arm64 arch, and use the mirror source in mainland China during the image building process
 #   # note: If you specify multiple architectures, the image tag will be added with the architecture name,e.g.:
 #   # 		"ghcr.io/kubewharf/kubeadmiral-controller-manager:latest-amd64"
 #   # 		"ghcr.io/kubewharf/kubeadmiral-controller-manager:latest-arm64"
-#   make images ARCHS=amd64,arm64
+#   make images ARCHS=amd64,arm64 REGION="cn"
+#
+#   # enable race detection in go build
+#   make images DOCKER_BUILD_ARGS="--build-arg BUILD_FLAGS=-race"
 .PHONY: images
 images:
-	REGISTRY=$(REGISTRY) TAG=$(TAG) ARCHS=$(ARCHS) GOPROXY=$(GOPROXY) REGION=$(REGION) bash hack/make-rules/build-images.sh
+	REGISTRY=$(REGISTRY) TAG=$(TAG) ARCHS=$(ARCHS) GOPROXY=$(GOPROXY) REGION=$(REGION) \
+		DOCKER_BUILD_ARGS="$(DOCKER_BUILD_ARGS)" DOCKERFILE_PATH="$(DOCKERFILE_PATH)" bash hack/make-rules/build-images.sh
 
 # Clean built binaries
 .PHONY: clean
