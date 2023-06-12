@@ -100,7 +100,7 @@ type schedulingTriggers struct {
 	// a map from each cluster to its taints
 	ClusterTaints []keyValue[string, []corev1.Taint] `json:"clusterTaints"`
 	// a map from each cluster to its apiresources
-	ClusterAPIResourceTypes []keyValue[string, []fedcorev1a1.APIResource]
+	ClusterAPIResourceTypes []keyValue[string, []fedcorev1a1.APIResource] `json:"clusterAPIResourceTypes"`
 }
 
 func (s *Scheduler) computeSchedulingTriggerHash(
