@@ -1095,9 +1095,10 @@ func (s *SyncController) removeClusterFinalizer(ctx context.Context, cluster *fe
 }
 
 func (s *SyncController) reconcileCluster(qualifiedName common.QualifiedName) worker.Result {
-	cluster, found, err := s.informer.GetCluster(qualifiedName.Name)
-	logger := s.logger.WithValues("cluster-name", cluster.Name)
+	logger := s.logger.WithValues("cluster-name", qualifiedName.String())
 	ctx := klog.NewContext(context.TODO(), logger)
+
+	cluster, found, err := s.informer.GetCluster(qualifiedName.Name)
 	if err != nil {
 		logger.Error(err, "Failed to get federated cluster")
 		return worker.StatusError
