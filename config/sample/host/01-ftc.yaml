@@ -687,3 +687,40 @@ spec:
     fields:
       - metadata.creationTimestamp
       - status
+---
+apiVersion: core.kubeadmiral.io/v1alpha1
+kind: FederatedTypeConfig
+metadata:
+  name: customresourcedefinitions.apiextensions.k8s.io
+spec:
+  federatedType:
+    group: types.kubeadmiral.io
+    kind: FederatedCustomResourceDefinition
+    pluralName: federatedcustomresourcedefinitions
+    scope: Cluster
+    version: v1alpha1
+  targetType:
+    kind: CustomResourceDefinition
+    pluralName: customresourcedefinitions
+    scope: Cluster
+    version: v1
+    group: apiextensions.k8s.io
+  sourceType:
+    kind: CustomResourceDefinition
+    pluralName: customresourcedefinitions
+    scope: Cluster
+    version: v1
+    group: apiextensions.k8s.io
+  statusType:
+    group: types.kubeadmiral.io
+    kind: FederatedCustomResourceDefinitionStatus
+    pluralName: federatedcustomresourcedefinitionstatuses
+    scope: Cluster
+    version: v1alpha1
+  controllers:
+    - - kubeadmiral.io/global-scheduler
+    - - kubeadmiral.io/overridepolicy-controller
+  statusCollection:
+    fields:
+      - metadata.creationTimestamp
+      - status
