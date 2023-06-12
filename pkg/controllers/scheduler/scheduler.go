@@ -160,7 +160,8 @@ func NewScheduler(
 		UpdateFunc: func(oldUntyped, newUntyped interface{}) {
 			oldCluster, newCluster := oldUntyped.(*fedcorev1a1.FederatedCluster), newUntyped.(*fedcorev1a1.FederatedCluster)
 			if !equality.Semantic.DeepEqual(oldCluster.Labels, newCluster.Labels) ||
-				!equality.Semantic.DeepEqual(oldCluster.Spec.Taints, newCluster.Spec.Taints) {
+				!equality.Semantic.DeepEqual(oldCluster.Spec.Taints, newCluster.Spec.Taints) || 
+				!equality.Semantic.DeepEqual(oldCluster.Status.APIResourceTypes, newCluster.Status.APIResourceTypes) {
 				s.enqueueFederatedObjectsForCluster(newCluster)
 			}
 		},
