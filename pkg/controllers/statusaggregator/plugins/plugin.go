@@ -20,6 +20,8 @@ import (
 	"context"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -40,6 +42,8 @@ type Plugin interface {
 var pluginsMap = map[schema.GroupVersionKind]Plugin{
 	appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind):  NewDeploymentPlugin(),
 	appsv1.SchemeGroupVersion.WithKind(common.StatefulSetKind): NewSingleClusterPlugin(),
+	batchv1.SchemeGroupVersion.WithKind(common.JobKind):        NewJobPlugin(),
+	corev1.SchemeGroupVersion.WithKind(common.PodKind):         NewPodPlugin(),
 }
 
 func GetPlugin(apiResource *metav1.APIResource) Plugin {
