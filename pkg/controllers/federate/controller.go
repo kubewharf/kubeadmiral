@@ -132,9 +132,17 @@ func NewFederateController(
 	c.sourceObjectSynced = sourceObjectInformer.Informer().HasSynced
 	sourceObjectInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
+			if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+				obj = tombstone.Obj
+				if obj == nil {
+					return false
+				}
+			}
+
 			metaObj, err := meta.Accessor(obj)
 			if err != nil {
 				c.logger.Error(err, fmt.Sprintf("Received source object with invalid type %T", obj))
+				return false
 			}
 			return metaObj.GetNamespace() != c.fedSystemNamespace
 		},
@@ -145,9 +153,17 @@ func NewFederateController(
 	c.federatedObjectSynced = federatedObjectInformer.Informer().HasSynced
 	federatedObjectInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
+			if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+				obj = tombstone.Obj
+				if obj == nil {
+					return false
+				}
+			}
+
 			metaObj, err := meta.Accessor(obj)
 			if err != nil {
 				c.logger.Error(err, fmt.Sprintf("Received federated object with invalid type %T", obj))
+				return false
 			}
 			return metaObj.GetNamespace() != c.fedSystemNamespace
 		},

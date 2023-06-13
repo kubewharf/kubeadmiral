@@ -113,6 +113,13 @@ func NewFederatedClientsetFactory(
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
+			if deleted, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+				// This object might be stale but ok for our current usage.
+				obj = deleted.Obj
+				if obj == nil {
+					return
+				}
+			}
 			c := obj.(*fedcorev1a1.FederatedCluster)
 			factory.enqueueCluster(c)
 		},
