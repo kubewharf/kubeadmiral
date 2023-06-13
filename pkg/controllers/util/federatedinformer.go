@@ -30,6 +30,7 @@ import (
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
@@ -667,6 +668,9 @@ func GetClusterObject(
 
 	err = client.Get(ctx, clusterObj, qualifedName.Namespace, qualifedName.Name)
 	if apierrors.IsNotFound(err) {
+		return nil, false, nil
+	}
+	if meta.IsNoMatchError(err) {
 		return nil, false, nil
 	}
 	if err != nil {
