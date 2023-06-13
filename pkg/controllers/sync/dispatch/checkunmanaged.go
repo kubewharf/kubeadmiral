@@ -32,6 +32,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
 )
 
 type CheckUnmanagedDispatcher interface {
@@ -90,7 +91,7 @@ func (d *checkUnmanagedDispatcherImpl) CheckRemovedOrUnlabeled(ctx context.Conte
 			keyedLogger.Error(fmt.Errorf("resource is pending deletion"), errLogMessage)
 			return false
 		}
-		if !util.HasManagedLabel(clusterObj) {
+		if !managedlabel.HasManagedLabel(clusterObj) {
 			return true
 		}
 		keyedLogger.Error(fmt.Errorf("resource still has the managed label"), errLogMessage)

@@ -41,7 +41,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 )
 
@@ -676,7 +676,7 @@ func GetClusterObject(
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get object %s with client: %w", qualifedName.String(), err)
 	}
-	if !util.HasManagedLabel(clusterObj) {
+	if !managedlabel.HasManagedLabel(clusterObj) {
 		return nil, false, nil
 	}
 
