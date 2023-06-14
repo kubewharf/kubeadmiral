@@ -30,6 +30,7 @@ import (
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
@@ -40,6 +41,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 )
 
@@ -668,8 +670,14 @@ func GetClusterObject(
 	if apierrors.IsNotFound(err) {
 		return nil, false, nil
 	}
+	if meta.IsNoMatchError(err) {
+		return nil, false, nil
+	}
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get object %s with client: %w", qualifedName.String(), err)
+	}
+	if !managedlabel.HasManagedLabel(clusterObj) {
+		return nil, false, nil
 	}
 
 	return clusterObj, true, nil

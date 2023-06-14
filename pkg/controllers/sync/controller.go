@@ -58,6 +58,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
 	finalizersutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/history"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/pendingcontrollers"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/sourcefeedback"
@@ -349,11 +350,11 @@ func (s *SyncController) reconcile(qualifiedName common.QualifiedName) (status w
 	if possibleOrphan {
 		apiResource := s.typeConfig.GetTargetType()
 		gvk := schemautil.APIResourceToGVK(&apiResource)
-		keyedLogger.WithValues("label", util.ManagedByKubeAdmiralLabelKey).
+		keyedLogger.WithValues("label", managedlabel.ManagedByKubeAdmiralLabelKey).
 			V(2).Info("Ensuring the removal of the label in member clusters")
 		err = s.removeManagedLabel(ctx, gvk, qualifiedName)
 		if err != nil {
-			keyedLogger.WithValues("label", util.ManagedByKubeAdmiralLabelKey).
+			keyedLogger.WithValues("label", managedlabel.ManagedByKubeAdmiralLabelKey).
 				Error(err, "Failed to remove the label from object in member clusters")
 			return worker.StatusError
 		}
@@ -754,11 +755,11 @@ func (s *SyncController) ensureDeletion(ctx context.Context, fedResource Federat
 				Error(err, "Failed to remove finalizer for federated object")
 			return worker.StatusError
 		}
-		keyedLogger.WithValues("label-name", util.ManagedByKubeAdmiralLabelKey).
+		keyedLogger.WithValues("label-name", managedlabel.ManagedByKubeAdmiralLabelKey).
 			V(2).Info("Removing managed label from resources previously managed by this federated object")
 		err = s.removeManagedLabel(ctx, fedResource.TargetGVK(), fedResource.TargetName())
 		if err != nil {
-			keyedLogger.WithValues("label-name", util.ManagedByKubeAdmiralLabelKey).
+			keyedLogger.WithValues("label-name", managedlabel.ManagedByKubeAdmiralLabelKey).
 				Error(err, "Failed to remove the label from all resources previously managed by this federated object")
 			return worker.StatusError
 		}
@@ -1160,7 +1161,7 @@ func (s *SyncController) reconcileCluster(qualifiedName common.QualifiedName) wo
 		runtimeclient.Limit(1),
 		runtimeclient.InNamespace(corev1.NamespaceAll),
 		runtimeclient.MatchingLabels{
-			util.ManagedByKubeAdmiralLabelKey: util.ManagedByKubeAdmiralLabelValue,
+			managedlabel.ManagedByKubeAdmiralLabelKey: managedlabel.ManagedByKubeAdmiralLabelValue,
 		},
 	)
 	if err == nil && len(objects.Items) > 0 {
