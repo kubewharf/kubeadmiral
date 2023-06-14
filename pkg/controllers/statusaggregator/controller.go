@@ -42,6 +42,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/propagationstatus"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/sourcefeedback"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
@@ -288,7 +289,13 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) (status
 		return worker.StatusError
 	}
 
-	newObj, needUpdate, err := a.plugin.AggregateStatues(ctx, sourceObject.DeepCopy(), fedObject, clusterObjs)
+	clusterObjsUpToDate, err := propagationstatus.IsResourcePropagated(sourceObject, fedObject)
+	if err != nil {
+		logger.Error(err, "Failed to check if resource is propagated")
+		return worker.StatusError
+	}
+
+	newObj, needUpdate, err := a.plugin.AggregateStatuses(ctx, sourceObject, fedObject, clusterObjs, clusterObjsUpToDate)
 	if err != nil {
 		logger.Error(err, "Failed to aggregate statuses")
 		return worker.StatusError
