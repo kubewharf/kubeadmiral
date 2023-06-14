@@ -57,9 +57,9 @@ Propagation policy changes:
 
 Cluster changes:
 1. cluster creation
-2. cluster ready condition change
-3. cluster labels change
-2. cluster taints change
+2. cluster labels change
+3. cluster taints change
+4. cluster apiresource changes
 
 Simply checking for these triggers in the event handlers is insufficient. This is because when the controller restarts, all objects will be
 "created" again, causing mass rescheduling for all objects. Thus, we hash the scheduling triggers and write it into the federated object's
@@ -99,6 +99,8 @@ type schedulingTriggers struct {
 	ClusterLabels []keyValue[string, []keyValue[string, string]] `json:"clusterLabels"`
 	// a map from each cluster to its taints
 	ClusterTaints []keyValue[string, []corev1.Taint] `json:"clusterTaints"`
+	// a map from each cluster to its apiresources
+	ClusterAPIResourceTypes []keyValue[string, []fedcorev1a1.APIResource] `json:"clusterAPIResourceTypes"`
 }
 
 func (s *Scheduler) computeSchedulingTriggerHash(
@@ -129,6 +131,7 @@ func (s *Scheduler) computeSchedulingTriggerHash(
 
 	trigger.ClusterLabels = getClusterLabels(clusters)
 	trigger.ClusterTaints = getClusterTaints(clusters)
+	trigger.ClusterAPIResourceTypes = getClusterAPIResourceTypes(clusters)
 
 	triggerBytes, err := json.Marshal(trigger)
 	if err != nil {
@@ -223,6 +226,37 @@ func getClusterTaints(clusters []*fedcorev1a1.FederatedCluster) []keyValue[strin
 			}
 		})
 		ret[cluster.Name] = taints
+	}
+	return sortMap(ret)
+}
+
+func getClusterAPIResourceTypes(clusters []*fedcorev1a1.FederatedCluster) []keyValue[string, []fedcorev1a1.APIResource] {
+	ret := make(map[string][]fedcorev1a1.APIResource)
+
+	for _, cluster := range clusters {
+		types := make([]fedcorev1a1.APIResource, len(cluster.Status.APIResourceTypes))
+		copy(types, cluster.Status.APIResourceTypes)
+
+		// NOTE: we must sort the slice to ensure deterministic hashing
+		sort.Slice(types, func(i, j int) bool {
+			lhs, rhs := types[i], types[j]
+			switch {
+			case lhs.Group != rhs.Group:
+				return lhs.Group < rhs.Group
+			case lhs.Version != rhs.Version:
+				return lhs.Version < rhs.Version
+			case lhs.Kind != rhs.Kind:
+				return lhs.Kind != rhs.Kind
+			case lhs.PluralName != rhs.PluralName:
+				return lhs.PluralName < rhs.PluralName
+			case lhs.Scope != rhs.Scope:
+				return lhs.Scope < rhs.Scope
+			default:
+				return false
+			}
+		})
+
+		ret[cluster.Name] = types
 	}
 	return sortMap(ret)
 }
