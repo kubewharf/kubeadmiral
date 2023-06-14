@@ -28,11 +28,12 @@ import (
 )
 
 type Plugin interface {
-	// AggregateStatues aggregates member cluster object statues to source object status and returns the latter
-	AggregateStatues(
+	// AggregateStatuses aggregates member cluster object statues to source object status and returns the latter
+	AggregateStatuses(
 		ctx context.Context,
 		sourceObject, fedObject *unstructured.Unstructured,
 		clusterObjs map[string]interface{},
+		clusterObjsUpToDate bool,
 	) (*unstructured.Unstructured, bool, error)
 }
 

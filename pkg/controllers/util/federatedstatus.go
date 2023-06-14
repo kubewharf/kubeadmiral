@@ -56,6 +56,7 @@ type FederatedResource struct {
 // ResourceClusterStatus defines the status of federated resource within a cluster
 type ResourceClusterStatus struct {
 	ClusterName     string                 `json:"clusterName,omitempty"`
+	Error           string                 `json:"error,omitempty"`
 	CollectedFields map[string]interface{} `json:"collectedFields,omitempty"`
 }
 
