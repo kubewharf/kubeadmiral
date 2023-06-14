@@ -160,7 +160,8 @@ func NewScheduler(
 		UpdateFunc: func(oldUntyped, newUntyped interface{}) {
 			oldCluster, newCluster := oldUntyped.(*fedcorev1a1.FederatedCluster), newUntyped.(*fedcorev1a1.FederatedCluster)
 			if !equality.Semantic.DeepEqual(oldCluster.Labels, newCluster.Labels) ||
-				!equality.Semantic.DeepEqual(oldCluster.Spec.Taints, newCluster.Spec.Taints) {
+				!equality.Semantic.DeepEqual(oldCluster.Spec.Taints, newCluster.Spec.Taints) ||
+				!equality.Semantic.DeepEqual(oldCluster.Status.APIResourceTypes, newCluster.Status.APIResourceTypes) {
 				s.enqueueFederatedObjectsForCluster(newCluster)
 			}
 		},
@@ -523,7 +524,7 @@ func (s *Scheduler) persistSchedulingResult(
 		)
 		return worker.StatusError
 	}
-	pendingControllersChanged, err := s.updatePendingControllers(fedObject, schedulingResultsChanged)
+	_, err = s.updatePendingControllers(fedObject, schedulingResultsChanged)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to update pending controllers")
 		s.eventRecorder.Eventf(
@@ -536,11 +537,8 @@ func (s *Scheduler) persistSchedulingResult(
 		return worker.StatusError
 	}
 
-	needsUpdate := schedulingResultsChanged || pendingControllersChanged
-	if !needsUpdate {
-		return worker.StatusAllOK
-	}
-
+	// We always update the federated object because the fact that scheduling even occurred minimally implies that the
+	// scheduling trigger hash must have changed.
 	keyedLogger.V(1).Info("Updating federated object")
 	if _, err := s.federatedObjectClient.Namespace(fedObject.GetNamespace()).Update(
 		ctx,

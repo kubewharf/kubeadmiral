@@ -36,7 +36,7 @@ REGISTRY=${REGISTRY:-"ghcr.io/kubewharf"}
 OUTPUT_TYPE=${OUTPUT_TYPE:-"docker"}
 GOPROXY=${GOPROXY:-$(go env GOPROXY)}
 REGION=${REGION:-"cn"}
-DOCKER_BUILD_ARGS="${DOCKER_BUILD_ARGS} --build-arg GOPROXY=${GOPROXY} --build-arg REGION=${REGION}"
+DOCKER_BUILD_ARGS="${DOCKER_BUILD_ARGS:-} --build-arg GOPROXY=${GOPROXY} --build-arg REGION=${REGION}"
 
 if [[ ${#arch_array[@]} -gt 1 ]]; then
   # If you build images for multiple platforms at one time, the image tag will be added with the architecture name.

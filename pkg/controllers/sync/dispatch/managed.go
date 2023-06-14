@@ -43,6 +43,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/status"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
@@ -389,7 +390,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 			op,
 			errors.Errorf("An update will be attempted instead of a creation due to an existing resource"),
 		)
-		if !util.HasManagedLabel(obj) {
+		if !managedlabel.HasManagedLabel(obj) {
 			// If the object was not managed by us, mark it as adopted.
 			annotation.AddAnnotation(obj, util.AdoptedAnnotation, common.AnnotationValueTrue)
 		}
@@ -405,11 +406,11 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 	const op = "update"
 	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
-		if util.IsExplicitlyUnmanaged(clusterObj) {
+		if managedlabel.IsExplicitlyUnmanaged(clusterObj) {
 			err := errors.Errorf(
 				"Unable to manage the object which has label %s: %s",
-				util.ManagedByKubeAdmiralLabelKey,
-				util.UnmanagedByKubeAdmiralLabelValue,
+				managedlabel.ManagedByKubeAdmiralLabelKey,
+				managedlabel.UnmanagedByKubeAdmiralLabelValue,
 			)
 			return d.recordOperationError(ctx, fedtypesv1a1.ManagedLabelFalse, clusterName, op, err)
 		}
@@ -491,11 +492,11 @@ func (d *managedDispatcherImpl) PatchAndKeepTemplate(
 	const op = "update"
 	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
-		if util.IsExplicitlyUnmanaged(clusterObj) {
+		if managedlabel.IsExplicitlyUnmanaged(clusterObj) {
 			err := errors.Errorf(
 				"Unable to manage the object which has label %s: %s",
-				util.ManagedByKubeAdmiralLabelKey,
-				util.UnmanagedByKubeAdmiralLabelValue,
+				managedlabel.ManagedByKubeAdmiralLabelKey,
+				managedlabel.UnmanagedByKubeAdmiralLabelValue,
 			)
 			return d.recordOperationError(ctx, fedtypesv1a1.ManagedLabelFalse, clusterName, op, err)
 		}

@@ -37,6 +37,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
 )
 
 const (
@@ -184,7 +185,7 @@ func (d *unmanagedDispatcherImpl) RemoveManagedLabel(ctx context.Context, cluste
 		// Avoid mutating the resource in the informer cache
 		updateObj := clusterObj.DeepCopy()
 
-		util.RemoveManagedLabel(updateObj)
+		managedlabel.RemoveManagedLabel(updateObj)
 		if _, err := removeRetainObjectFinalizer(updateObj); err != nil {
 			if d.recorder == nil {
 				wrappedErr := d.wrapOperationError(err, clusterName, op)

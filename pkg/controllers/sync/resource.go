@@ -44,6 +44,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
@@ -219,7 +220,7 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 	// If the template does not specify an api version, default it to
 	// the one configured for the target type in the FTC.
 	if len(obj.GetAPIVersion()) == 0 {
-		obj.SetAPIVersion(fmt.Sprintf("%s/%s", targetAPIResource.Group, targetAPIResource.Version))
+		obj.SetAPIVersion(schema.GroupVersion{Group: targetAPIResource.Group, Version: targetAPIResource.Version}.String())
 	}
 
 	// set current revision
@@ -324,7 +325,7 @@ func (r *federatedResource) ApplyOverrides(
 	// Ensure that resources managed by KubeFed always have the
 	// managed label.  The label is intended to be targeted by all the
 	// KubeFed controllers.
-	util.AddManagedLabel(obj)
+	managedlabel.AddManagedLabel(obj)
 
 	return nil
 }

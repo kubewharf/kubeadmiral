@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
@@ -75,7 +76,7 @@ func NewManagedResourceInformer(
 	extraTags map[string]string,
 	metrics stats.Metrics,
 ) (cache.Store, cache.Controller) {
-	labelSelector := labels.Set(map[string]string{ManagedByKubeAdmiralLabelKey: ManagedByKubeAdmiralLabelValue}).
+	labelSelector := labels.Set(map[string]string{managedlabel.ManagedByKubeAdmiralLabelKey: managedlabel.ManagedByKubeAdmiralLabelValue}).
 		AsSelector().
 		String()
 	return newResourceInformer(
