@@ -27,13 +27,11 @@ import (
 // and a time.Duration representing the time from now
 // when the new unschedulable pod will cross the threshold, if any.
 func countUnschedulablePods(
-	podList *corev1.PodList,
+	podList []*corev1.Pod,
 	currentTime time.Time,
 	unschedulableThreshold time.Duration,
 ) (unschedulableCount int, nextCrossIn *time.Duration) {
-	for i := range podList.Items {
-		pod := &podList.Items[i]
-
+	for _, pod := range podList {
 		if pod.GetDeletionTimestamp() != nil {
 			continue
 		}
