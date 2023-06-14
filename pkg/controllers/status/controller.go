@@ -32,13 +32,16 @@ import (
 
 	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -47,6 +50,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
@@ -55,6 +59,10 @@ import (
 const (
 	StatusControllerName = "status-controller"
 	allClustersKey       = "ALL_CLUSTERS"
+)
+
+const (
+	EventReasonGetObjectStatusError = "GetObjectStatusError"
 )
 
 // StatusController collects the status of resources in member clusters.
@@ -90,9 +98,10 @@ type StatusController struct {
 	client       genericclient.Client
 	statusClient util.ResourceClient
 
-	fedNamespace string
-	metrics      stats.Metrics
-	logger       klog.Logger
+	fedNamespace  string
+	metrics       stats.Metrics
+	logger        klog.Logger
+	eventRecorder record.EventRecorder
 }
 
 // StartStatusController starts a new status controller for a type config
@@ -126,6 +135,10 @@ func newStatusController(
 	userAgent := fmt.Sprintf("%s-federate-status-controller", strings.ToLower(statusAPIResource.Kind))
 	configCopy := rest.CopyConfig(controllerConfig.KubeConfig)
 	rest.AddUserAgent(configCopy, userAgent)
+	kubeClient, err := kubeclient.NewForConfig(configCopy)
+	if err != nil {
+		return nil, err
+	}
 	client := genericclient.NewForConfigOrDieWithUserAgent(controllerConfig.KubeConfig, userAgent)
 
 	federatedTypeClient, err := util.NewResourceClient(controllerConfig.KubeConfig, &federatedAPIResource)
@@ -153,6 +166,7 @@ func newStatusController(
 		fedNamespace:                  controllerConfig.FedSystemNamespace,
 		metrics:                       controllerConfig.Metrics,
 		logger:                        logger,
+		eventRecorder:                 eventsink.NewDefederatingRecorderMux(kubeClient, StatusControllerName, 6),
 	}
 
 	s.worker = worker.NewReconcileWorker(
@@ -313,10 +327,7 @@ func (s *StatusController) reconcile(qualifiedName common.QualifiedName) (reconc
 		return worker.Result{RequeueAfter: &s.clusterAvailableDelay}
 	}
 
-	clusterStatus, err := s.clusterStatuses(ctx, clusterNames, qualifiedName)
-	if err != nil {
-		return worker.StatusError
-	}
+	clusterStatus := s.clusterStatuses(ctx, fedObject, clusterNames, qualifiedName)
 
 	existingStatus, err := s.objFromCache(s.statusStore, key)
 	if err != nil {
@@ -328,13 +339,14 @@ func (s *StatusController) reconcile(qualifiedName common.QualifiedName) (reconc
 	if targetIsDeployment {
 		latestReplicasetDigests, err := s.latestReplicasetDigests(ctx, clusterNames, qualifiedName)
 		if err != nil {
-			return worker.StatusError
+			keyedLogger.Error(err, "Failed to get latest replicaset digests")
+		} else {
+			rsDigestsAnnotationBytes, err := json.Marshal(latestReplicasetDigests)
+			if err != nil {
+				return worker.StatusError
+			}
+			rsDigestsAnnotation = string(rsDigestsAnnotationBytes)
 		}
-		rsDigestsAnnotationBytes, err := json.Marshal(latestReplicasetDigests)
-		if err != nil {
-			return worker.StatusError
-		}
-		rsDigestsAnnotation = string(rsDigestsAnnotationBytes)
 	}
 
 	var hasRSDigestsAnnotation bool
@@ -387,7 +399,7 @@ func (s *StatusController) reconcile(qualifiedName common.QualifiedName) (reconc
 			qualifiedName,
 		)
 		if err != nil {
-			return worker.StatusError
+			keyedLogger.Error(err, "Failed to set annotations about replicas")
 		}
 	}
 
@@ -478,15 +490,18 @@ func (s *StatusController) clusterNames() ([]string, error) {
 // clusterStatuses returns the resource status in member cluster.
 func (s *StatusController) clusterStatuses(
 	ctx context.Context,
+	fedObject *unstructured.Unstructured,
 	clusterNames []string,
 	qualifiedName common.QualifiedName,
-) ([]util.ResourceClusterStatus, error) {
-	key := qualifiedName.String()
+) []util.ResourceClusterStatus {
 	clusterStatus := []util.ResourceClusterStatus{}
 	keyedLogger := klog.FromContext(ctx)
+	// collect errors during status collection and record them as event
+	errList := []string{}
 
-	targetKind := s.typeConfig.GetTargetType().Kind
 	for _, clusterName := range clusterNames {
+		resourceClusterStatus := util.ResourceClusterStatus{ClusterName: clusterName}
+
 		clusterObj, exist, err := util.GetClusterObject(
 			ctx,
 			s.informer,
@@ -496,14 +511,18 @@ func (s *StatusController) clusterStatuses(
 		)
 		if err != nil {
 			keyedLogger.WithValues("cluster-name", clusterName).Error(err, "Failed to get object from cluster")
-			return nil, errors.Wrapf(err, "Failed to get %s %q from cluster %q", targetKind, key, clusterName)
+			errMsg := fmt.Sprintf("Failed to get object from cluster, error info: %s", err.Error())
+			resourceClusterStatus.Error = errMsg
+			clusterStatus = append(clusterStatus, resourceClusterStatus)
+			errList = append(errList, fmt.Sprintf("cluster-name: %s, error-info: %s", clusterName, errMsg))
+			continue
 		}
 		if !exist {
 			continue
 		}
 
-		resourceClusterStatus := util.ResourceClusterStatus{ClusterName: clusterName}
 		collectedFields := map[string]interface{}{}
+		failedFields := []string{}
 
 		if s.typeConfig.Spec.StatusCollection != nil {
 			for _, field := range s.typeConfig.Spec.StatusCollection.Fields {
@@ -513,24 +532,44 @@ func (s *StatusController) clusterStatuses(
 				if err != nil || !found {
 					keyedLogger.WithValues("status-field", field, "cluster-name", clusterName).
 						Error(err, "Failed to get status field value")
+					if err != nil {
+						failedFields = append(failedFields, fmt.Sprintf("%s: %s", field, err.Error()))
+					} else {
+						failedFields = append(failedFields, fmt.Sprintf("%s: not found", field))
+					}
 					continue
 				}
 
 				err = unstructured.SetNestedField(collectedFields, fieldVal, strings.Split(field, ".")...)
 				if err != nil {
-					return nil, err
+					keyedLogger.WithValues("status-field", field, "cluster-name", clusterName).
+						Error(err, "Failed to set status field value")
+					continue
 				}
 			}
 		}
 
 		resourceClusterStatus.CollectedFields = collectedFields
+		if len(failedFields) > 0 {
+			sort.Slice(failedFields, func(i, j int) bool {
+				return failedFields[i] < failedFields[j]
+			})
+			resourceClusterStatus.Error = fmt.Sprintf("Failed to get those fields: %s", strings.Join(failedFields, ", "))
+			errList = append(errList, fmt.Sprintf("cluster-name: %s, error-info: %s", clusterName, resourceClusterStatus.Error))
+		}
 		clusterStatus = append(clusterStatus, resourceClusterStatus)
 	}
+
+	s.eventRecorder.Eventf(
+		fedObject,
+		corev1.EventTypeWarning, EventReasonGetObjectStatusError,
+		fmt.Sprintf("Failed to get some cluster status, error info: %s", strings.Join(errList, ". ")),
+	)
 
 	sort.Slice(clusterStatus, func(i, j int) bool {
 		return clusterStatus[i].ClusterName < clusterStatus[j].ClusterName
 	})
-	return clusterStatus, nil
+	return clusterStatus
 }
 
 // latestReplicasetDigests returns digests of latest replicaSets in member cluster
@@ -553,7 +592,6 @@ func (s *StatusController) latestReplicasetDigests(
 			s.typeConfig.GetTargetType(),
 		)
 		if err != nil {
-			keyedLogger.WithValues("cluster-name", clusterName).Error(err, "Failed to get object from cluster")
 			return nil, errors.Wrapf(err, "Failed to get %s %q from cluster %q", targetKind, key, clusterName)
 		}
 		if !exist {
@@ -601,7 +639,6 @@ func (s *StatusController) realUpdatedReplicas(
 			s.typeConfig.GetTargetType(),
 		)
 		if err != nil {
-			keyedLogger.WithValues("cluster-name", clusterName).Error(err, "Failed to get object from cluster")
 			return "", errors.Wrapf(err, "Failed to get %s %q from cluster %q", targetKind, key, clusterName)
 		}
 		if !exist {
