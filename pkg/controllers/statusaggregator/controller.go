@@ -297,7 +297,6 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) (status
 
 	newObj, needUpdate, err := a.plugin.AggregateStatuses(ctx, sourceObject, fedObject, clusterObjs, clusterObjsUpToDate)
 	if err != nil {
-		logger.Error(err, "Failed to aggregate statuses")
 		return worker.StatusError
 	}
 
