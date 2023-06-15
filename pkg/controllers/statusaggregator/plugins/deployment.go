@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/klog/v2"
 
+	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
@@ -38,14 +39,15 @@ func NewDeploymentPlugin() *DeploymentPlugin {
 	return &DeploymentPlugin{}
 }
 
-func (receiver *DeploymentPlugin) AggregateStatues(
+func (receiver *DeploymentPlugin) AggregateStatuses(
 	ctx context.Context,
 	sourceObject, fedObject *unstructured.Unstructured,
 	clusterObjs map[string]interface{},
+	clusterObjsUpToDate bool,
 ) (*unstructured.Unstructured, bool, error) {
 	logger := klog.FromContext(ctx).WithValues("status-aggregator-plugin", "deployments")
 
-	needUpdate := false
+	needUpdate, needUpdateObservedGeneration := false, true
 	digests := []util.LatestReplicasetDigest{}
 
 	sourceDeployment := &appsv1.Deployment{}
@@ -53,8 +55,24 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 		return nil, false, err
 	}
 
-	aggregatedStatus := &appsv1.DeploymentStatus{
-		ObservedGeneration: sourceDeployment.Generation,
+	aggregatedStatus := &appsv1.DeploymentStatus{}
+
+	resource := &fedtypesv1a1.GenericObjectWithStatus{}
+	err := util.UnstructuredToInterface(fedObject, resource)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to unmarshall to generic resource: %w", err)
+	}
+
+	if !clusterObjsUpToDate {
+		logger.V(3).Info("Cluster objects are not up to date")
+		needUpdateObservedGeneration = false
+	}
+
+	clusterSyncedGenerations := make(map[string]int64)
+	if resource.Status != nil {
+		for _, cluster := range resource.Status.Clusters {
+			clusterSyncedGenerations[cluster.Name] = cluster.Generation
+		}
 	}
 
 	for clusterName, clusterObj := range clusterObjs {
@@ -65,18 +83,22 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 		var found bool
 		status, found, err := unstructured.NestedMap(utd.Object, common.StatusField)
 		if err != nil || !found {
-			logger.Error(err, "Failed to get status of cluster object")
 			return nil, false, err
 		}
 
 		if status == nil {
+			needUpdateObservedGeneration = false
 			continue
 		}
 
 		deployStatus := &appsv1.DeploymentStatus{}
 		if err = util.ConvertViaJson(status, deployStatus); err != nil {
-			logger.Error(err, "Failed to convert the status of cluster object")
 			return nil, false, err
+		}
+
+		// If the cluster's controller has not observed the latest synced generation, its status will be out-of-date.
+		if gen, exist := clusterSyncedGenerations[clusterName]; !exist || gen != deployStatus.ObservedGeneration {
+			needUpdateObservedGeneration = false
 		}
 
 		aggregatedStatus.Replicas += deployStatus.Replicas
@@ -103,22 +125,28 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 		}
 	}
 
+	// We only update the source object's observed generation after it has been federated and synced,
+	// and we have aggregated the statuses of the latest cluster objects.
+	// It is only at this point where we can "successfully observe" the latest generation of the source object.
+	if needUpdateObservedGeneration {
+		aggregatedStatus.ObservedGeneration = sourceDeployment.Generation
+	} else {
+		aggregatedStatus.ObservedGeneration = sourceDeployment.Status.ObservedGeneration
+	}
+
 	newStatus, err := util.GetUnstructuredStatus(aggregatedStatus)
 	if err != nil {
-		logger.Error(err, "Failed to convert aggregated status to unstructured")
 		return nil, false, err
 	}
 
 	oldStatus, _, err := unstructured.NestedMap(sourceObject.Object, common.StatusField)
 	if err != nil {
-		logger.Error(err, "Failed to get old status of source object")
 		return nil, false, err
 	}
 
 	// update status of source object if needed
 	if !reflect.DeepEqual(newStatus, oldStatus) {
 		if err := unstructured.SetNestedMap(sourceObject.Object, newStatus, common.StatusField); err != nil {
-			logger.Error(err, "Failed to set the new status on source object")
 			return nil, false, err
 		}
 		needUpdate = true
@@ -130,7 +158,6 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 
 	rsDigestsAnnotationBytes, err := json.Marshal(digests)
 	if err != nil {
-		logger.Error(err, "Failed to marshal digests for deployment")
 		return nil, false, err
 	}
 
@@ -141,7 +168,6 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 		rsDigestsAnnotation,
 	)
 	if err != nil {
-		logger.Error(err, "Failed to ensure annotations for deployment")
 		return nil, false, err
 	}
 
@@ -153,7 +179,6 @@ func (receiver *DeploymentPlugin) AggregateStatues(
 
 	_, err = annotation.AddAnnotation(sourceObject, util.LatestReplicasetDigestsAnnotation, rsDigestsAnnotation)
 	if err != nil {
-		logger.Error(err, "Failed to add annotations for deployment")
 		return nil, false, err
 	}
 

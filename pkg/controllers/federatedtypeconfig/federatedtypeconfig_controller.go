@@ -220,7 +220,8 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 	// TODO(marun) Perform this defaulting in a webhook
 	SetFederatedTypeConfigDefaults(typeConfig)
 
-	if c.controllerConfig.CreateCrdForFtcs {
+	deleted := typeConfig.DeletionTimestamp != nil
+	if c.controllerConfig.CreateCrdForFtcs && !deleted {
 		if err := c.ensureFederatedObjectCrd(typeConfig); err != nil {
 			klog.Error(fmt.Errorf("cannot ensure federated object CRD for %q: %w", typeConfig.Name, err))
 			return worker.StatusError
@@ -286,7 +287,6 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 	namespaceAutoPropagationStopChan, namespaceAutoPropagationRunning := c.getStopChannel(namespaceAutoPropagationKey)
 	overridePolicyStopChan, overridePolicyRunning := c.getStopChannel(overridePolicyKey)
 
-	deleted := typeConfig.DeletionTimestamp != nil
 	if deleted {
 		if syncRunning {
 			c.stopController(typeConfig.Name, syncStopChan)

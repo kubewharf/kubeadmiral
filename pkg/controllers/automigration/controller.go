@@ -34,10 +34,10 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/automigration/plugins"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
@@ -301,24 +301,28 @@ func (c *Controller) estimateCapacity(
 	estimatedCapacity := make(map[string]int64, len(clusterObjs))
 
 	for _, clusterObj := range clusterObjs {
-		unsObj := clusterObj.Object.(*unstructured.Unstructured)
+		keyedLogger := keyedLogger.WithValues("cluster", clusterObj.ClusterName)
+		ctx := klog.NewContext(ctx, keyedLogger)
 
-		// NOTE: these should follow Deployment's status semantics and should not include terminating pods
-		totalReplicas, readyReplicas, err := c.getTotalAndReadyReplicas(unsObj)
-		if err != nil {
-			keyedLogger.Error(err, "Failed to get total and ready replicas from object", "cluster", clusterObj.ClusterName)
+		unsClusterObj := clusterObj.Object.(*unstructured.Unstructured)
+
+		// This is an optimization to skip pod listing when there are no unschedulable pods.
+		totalReplicas, readyReplicas, err := c.getTotalAndReadyReplicas(unsClusterObj)
+		if err == nil && totalReplicas == readyReplicas {
+			keyedLogger.V(3).Info("No unschedulable pods found, skip estimating capacity")
 			continue
 		}
 
-		if totalReplicas == readyReplicas {
-			// no unschedulable pods
+		desiredReplicas, err := c.getDesiredReplicas(unsClusterObj)
+		if err != nil {
+			keyedLogger.Error(err, "Failed to get desired replicas from object")
 			continue
 		}
 
-		keyedLogger.V(2).Info("Getting pods from cluster", "cluster", clusterObj.ClusterName)
-		pods, clusterNeedsBackoff, err := c.getPodsFromCluster(ctx, unsObj, clusterObj.ClusterName)
+		keyedLogger.V(2).Info("Getting pods from cluster")
+		pods, clusterNeedsBackoff, err := c.getPodsFromCluster(ctx, unsClusterObj, clusterObj.ClusterName)
 		if err != nil {
-			keyedLogger.Error(err, "Failed to get pods from cluster", "cluster", clusterObj.ClusterName)
+			keyedLogger.Error(err, "Failed to get pods from cluster")
 			if clusterNeedsBackoff {
 				needsBackoff = true
 			}
@@ -326,15 +330,36 @@ func (c *Controller) estimateCapacity(
 		}
 
 		unschedulable, nextCrossIn := countUnschedulablePods(pods, time.Now(), unschedulableThreshold)
-		keyedLogger.V(3).Info("Analyzed pods",
-			"cluster", clusterObj.ClusterName,
-			"total", totalReplicas,
-			"ready", readyReplicas,
+
+		var clusterEstimatedCapacity int64
+		if len(pods) >= int(desiredReplicas) {
+			// When len(pods) >= desiredReplicas, we can immediately determine the capacity by taking the number of
+			// schedulable pods.
+			clusterEstimatedCapacity = int64(len(pods) - unschedulable)
+		} else {
+			// If len(pods) < desiredReplicas, we have uncreated pods. We must treat the uncreated pods as schedulable
+			// to prevent them from being unnecessarily migrated before creation.
+			clusterEstimatedCapacity = desiredReplicas - int64(unschedulable)
+		}
+
+		if clusterEstimatedCapacity >= desiredReplicas {
+			// There is no need to migrate any pods. We skip writing estimatedCapacity information to avoid unnecessary
+			// reconciliation by the scheduler.
+			continue
+		} else if clusterEstimatedCapacity < 0 {
+			// estimatedCapacity should never be < 0. Nonetheless, this safeguard is required since the planner's
+			// algorithm does not support negative estimatedCapacity.
+			clusterEstimatedCapacity = 0
+		}
+
+		estimatedCapacity[clusterObj.ClusterName] = clusterEstimatedCapacity
+
+		keyedLogger.V(2).Info("Analyzed pods",
+			"total", len(pods),
+			"desired", desiredReplicas,
 			"unschedulable", unschedulable,
 		)
-		if unschedulable > 0 {
-			estimatedCapacity[clusterObj.ClusterName] = totalReplicas - int64(unschedulable)
-		}
+
 		if nextCrossIn != nil && (retryAfter == nil || *nextCrossIn < *retryAfter) {
 			retryAfter = nextCrossIn
 		}
@@ -377,43 +402,38 @@ func (c *Controller) getTotalAndReadyReplicas(
 	return totalReplicas, readyReplicas, nil
 }
 
-func (c *Controller) getPodsFromCluster(
-	ctx context.Context,
-	unsObj *unstructured.Unstructured,
-	clusterName string,
-) (*corev1.PodList, bool, error) {
-	labelSelector, err := utilunstructured.GetLabelSelectorFromPath(unsObj, c.typeConfig.Spec.PathDefinition.LabelSelector, nil)
+func (c *Controller) getDesiredReplicas(unsObj *unstructured.Unstructured) (int64, error) {
+	desiredReplicas, err := utilunstructured.GetInt64FromPath(unsObj, c.typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to get label selector from object: %w", err)
-	}
-	if labelSelector == nil {
-		return nil, false, fmt.Errorf("missing label selector on object")
+		return 0, fmt.Errorf("desired replicas: %w", err)
+	} else if desiredReplicas == nil {
+		return 0, fmt.Errorf("no desired replicas at %s", c.typeConfig.Spec.PathDefinition.ReplicasSpec)
 	}
 
-	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
+	return *desiredReplicas, nil
+}
+
+func (c *Controller) getPodsFromCluster(
+	ctx context.Context,
+	unsClusterObj *unstructured.Unstructured,
+	clusterName string,
+) ([]*corev1.Pod, bool, error) {
+	plugin, err := plugins.ResolvePlugin(c.typeConfig)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to convert label selector to selector: %w", err)
+		return nil, false, fmt.Errorf("failed to get plugin for FTC: %w", err)
 	}
 
 	client, err := c.federatedInformer.GetClientForCluster(clusterName)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to get client for cluster: %w", err)
+		return nil, true, fmt.Errorf("failed to get client for cluster: %w", err)
 	}
 
-	podList := &corev1.PodList{}
-	err = client.ListWithOptions(
-		ctx,
-		podList,
-		&runtimeclient.ListOptions{
-			Namespace:     unsObj.GetNamespace(),
-			LabelSelector: selector,
-			Raw: &metav1.ListOptions{
-				ResourceVersion: "0",
-			},
-		})
+	pods, err := plugin.GetPodsForClusterObject(ctx, unsClusterObj, plugins.ClusterHandle{
+		Client: client,
+	})
 	if err != nil {
-		return nil, true, fmt.Errorf("failed to list pods: %w", err)
+		return nil, true, fmt.Errorf("failed to get pods for federated object: %w", err)
 	}
 
-	return podList, false, nil
+	return pods, false, nil
 }

@@ -30,16 +30,14 @@ func doCheck(
 	t *testing.T,
 	now time.Time,
 	threshold time.Duration,
-	pods []corev1.Pod,
+	pods []*corev1.Pod,
 	expectedUnschedulable int,
 	expectedNextCrossIn *time.Duration,
 ) {
 	t.Helper()
 	assert := assert.New(t)
 
-	unschedulableCount, nextCrossIn := countUnschedulablePods(
-		&corev1.PodList{Items: pods}, now, threshold,
-	)
+	unschedulableCount, nextCrossIn := countUnschedulablePods(pods, now, threshold)
 	assert.Equal(expectedUnschedulable, unschedulableCount)
 	assert.Equal(expectedNextCrossIn, nextCrossIn)
 }
@@ -54,47 +52,47 @@ func TestCountUnschedulablePods(t *testing.T) {
 	crossingIn10s := newPod(false, false, now.Add(10*time.Second-threshold))
 	crossingIn20s := newPod(false, false, now.Add(20*time.Second-threshold))
 
-	doCheck(t, now, time.Minute, []corev1.Pod{
-		*okPod,
-		*okPod,
-		*okPod,
+	doCheck(t, now, time.Minute, []*corev1.Pod{
+		okPod,
+		okPod,
+		okPod,
 	}, 0, nil)
 
-	doCheck(t, now, time.Minute, []corev1.Pod{
-		*okPod,
-		*okPod,
-		*unschedulablePod,
+	doCheck(t, now, time.Minute, []*corev1.Pod{
+		okPod,
+		okPod,
+		unschedulablePod,
 	}, 1, nil)
 
-	doCheck(t, now, time.Minute, []corev1.Pod{
-		*okPod,
-		*okPod,
-		*crossingIn10s,
+	doCheck(t, now, time.Minute, []*corev1.Pod{
+		okPod,
+		okPod,
+		crossingIn10s,
 	}, 0, pointer.Duration(10*time.Second))
 
-	doCheck(t, now, time.Minute, []corev1.Pod{
-		*okPod,
-		*okPod,
-		*unschedulablePod,
-		*crossingIn20s,
+	doCheck(t, now, time.Minute, []*corev1.Pod{
+		okPod,
+		okPod,
+		unschedulablePod,
+		crossingIn20s,
 	}, 1, pointer.Duration(20*time.Second))
 
-	doCheck(t, now, time.Minute, []corev1.Pod{
-		*okPod,
-		*okPod,
-		*unschedulablePod,
-		*unschedulablePod,
-		*crossingIn10s,
-		*crossingIn20s,
+	doCheck(t, now, time.Minute, []*corev1.Pod{
+		okPod,
+		okPod,
+		unschedulablePod,
+		unschedulablePod,
+		crossingIn10s,
+		crossingIn20s,
 	}, 2, pointer.Duration(10*time.Second))
 
-	doCheck(t, now, time.Minute, []corev1.Pod{
-		*okPod,
-		*okPod,
-		*unschedulablePod,
-		*unschedulableTerminatingPod,
-		*crossingIn10s,
-		*crossingIn20s,
+	doCheck(t, now, time.Minute, []*corev1.Pod{
+		okPod,
+		okPod,
+		unschedulablePod,
+		unschedulableTerminatingPod,
+		crossingIn10s,
+		crossingIn20s,
 	}, 1, pointer.Duration(10*time.Second))
 }
 

@@ -125,12 +125,16 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 		currentReplicas[cluster] = totalReplicas
 	}
 
-	var estimatedCapacity map[string]int64
+	estimatedCapacity := map[string]int64{}
 	keepUnschedulableReplicas := false
 	if autoMigration := su.AutoMigration; autoMigration != nil {
 		keepUnschedulableReplicas = autoMigration.KeepUnschedulableReplicas
 		if info := autoMigration.Info; info != nil {
-			estimatedCapacity = info.EstimatedCapacity
+			for cluster, ec := range info.EstimatedCapacity {
+				if ec >= 0 {
+					estimatedCapacity[cluster] = ec
+				}
+			}
 		}
 	}
 

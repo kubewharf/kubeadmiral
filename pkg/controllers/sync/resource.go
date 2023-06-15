@@ -44,6 +44,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
@@ -324,7 +325,7 @@ func (r *federatedResource) ApplyOverrides(
 	// Ensure that resources managed by KubeFed always have the
 	// managed label.  The label is intended to be targeted by all the
 	// KubeFed controllers.
-	util.AddManagedLabel(obj)
+	managedlabel.AddManagedLabel(obj)
 
 	return nil
 }
