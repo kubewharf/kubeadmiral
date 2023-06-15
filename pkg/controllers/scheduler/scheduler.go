@@ -155,8 +155,17 @@ func NewScheduler(
 	s.clusterLister = clusterInformer.Lister()
 	s.clusterSynced = clusterInformer.Informer().HasSynced
 	clusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { s.enqueueFederatedObjectsForCluster(obj.(pkgruntime.Object)) },
-		DeleteFunc: func(obj interface{}) { s.enqueueFederatedObjectsForCluster(obj.(pkgruntime.Object)) },
+		AddFunc: func(obj interface{}) { s.enqueueFederatedObjectsForCluster(obj.(pkgruntime.Object)) },
+		DeleteFunc: func(obj interface{}) {
+			if deleted, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+				// This object might be stale but ok for our current usage.
+				obj = deleted.Obj
+				if obj == nil {
+					return
+				}
+			}
+			s.enqueueFederatedObjectsForCluster(obj.(pkgruntime.Object))
+		},
 		UpdateFunc: func(oldUntyped, newUntyped interface{}) {
 			oldCluster, newCluster := oldUntyped.(*fedcorev1a1.FederatedCluster), newUntyped.(*fedcorev1a1.FederatedCluster)
 			if !equality.Semantic.DeepEqual(oldCluster.Labels, newCluster.Labels) ||
@@ -185,6 +194,13 @@ func NewScheduler(
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
+			if deleted, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+				// This object might be stale but ok for our current usage.
+				obj = deleted.Obj
+				if obj == nil {
+					return
+				}
+			}
 			s.webhookPlugins.Delete(obj.(*fedcorev1a1.SchedulerPluginWebhookConfiguration).Name)
 		},
 	})
