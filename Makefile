@@ -10,7 +10,7 @@ TARGET_NAME ?= kubeadmiral-controller-manager
 # image information
 REGISTRY ?= ghcr.io/kubewharf
 TAG ?= latest
-REGION ?= cn
+REGION ?=
 
 ifeq (${REGION}, cn)
 GOPROXY := https://goproxy.cn,direct
@@ -52,7 +52,7 @@ dev-up:
 #
 # Args:
 #   NUM_MEMBER_CLUSTERS: the number of member clusters you want to startup, default is 3, at least 1.
-#   REGION:              region to build. e.g.: 'cn' means china mainland(the default value),
+#   REGION:              region to build. e.g.: 'cn' means China mainland,
 #                        the script will set the remote mirror address according to the region to speed up the build.
 #
 # Example:
