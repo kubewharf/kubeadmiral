@@ -10,10 +10,14 @@ import (
 
 type CoreV1alpha1Interface interface {
 	RESTClient() rest.Interface
+	ClusterCollectedStatusesGetter
+	ClusterFederatedObjectsGetter
 	ClusterOverridePoliciesGetter
 	ClusterPropagatedVersionsGetter
 	ClusterPropagationPoliciesGetter
+	CollectedStatusesGetter
 	FederatedClustersGetter
+	FederatedObjectsGetter
 	FederatedTypeConfigsGetter
 	OverridePoliciesGetter
 	PropagatedVersionsGetter
@@ -25,6 +29,14 @@ type CoreV1alpha1Interface interface {
 // CoreV1alpha1Client is used to interact with features provided by the core.kubeadmiral.io group.
 type CoreV1alpha1Client struct {
 	restClient rest.Interface
+}
+
+func (c *CoreV1alpha1Client) ClusterCollectedStatuses() ClusterCollectedStatusInterface {
+	return newClusterCollectedStatuses(c)
+}
+
+func (c *CoreV1alpha1Client) ClusterFederatedObjects() ClusterFederatedObjectInterface {
+	return newClusterFederatedObjects(c)
 }
 
 func (c *CoreV1alpha1Client) ClusterOverridePolicies() ClusterOverridePolicyInterface {
@@ -39,8 +51,16 @@ func (c *CoreV1alpha1Client) ClusterPropagationPolicies() ClusterPropagationPoli
 	return newClusterPropagationPolicies(c)
 }
 
+func (c *CoreV1alpha1Client) CollectedStatuses(namespace string) CollectedStatusInterface {
+	return newCollectedStatuses(c, namespace)
+}
+
 func (c *CoreV1alpha1Client) FederatedClusters() FederatedClusterInterface {
 	return newFederatedClusters(c)
+}
+
+func (c *CoreV1alpha1Client) FederatedObjects(namespace string) FederatedObjectInterface {
+	return newFederatedObjects(c, namespace)
 }
 
 func (c *CoreV1alpha1Client) FederatedTypeConfigs() FederatedTypeConfigInterface {

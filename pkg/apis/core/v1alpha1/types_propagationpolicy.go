@@ -78,17 +78,17 @@ type PropagationPolicySpec struct {
 	// A empty or nil ClusterAffinity selects everything.
 	// +optional
 	ClusterAffinity []ClusterSelectorTerm `json:"clusterAffinity,omitempty"`
-	// Tolerations describe a set of cluster taints that the policy tolerates
+	// Tolerations describe a set of cluster taints that the policy tolerates.
 	// +optional
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
-	// MaxClusters is the maximum number of replicas that the federated object can be propagated to
+	// MaxClusters is the maximum number of replicas that the federated object can be propagated to.
 	// The maximum number of clusters is unbounded if no value is provided.
 	// +optional
 	MaxClusters *int64 `json:"maxClusters,omitempty"`
 
-	// Placement is an explicit list of clusters used to select member clusters to propagate resources
+	// Placement is an explicit list of clusters used to select member clusters to propagate resources to.
 	// +optional
-	Placements []Placement `json:"placement,omitempty"`
+	Placements []DesiredPlacement `json:"placement,omitempty"`
 
 	// DisableFollowerScheduling is a boolean that determines if follower scheduling is disabled.
 	// Resources that depend on other resources (e.g. deployments) are called leaders,
@@ -118,14 +118,14 @@ type PropagationPolicyStatus struct {
 type SchedulingMode string
 
 const (
-	// Duplicate mode means the federated object will be duplicated to member clusters
+	// Duplicate mode means the federated object will be duplicated to member clusters.
 	SchedulingModeDuplicate SchedulingMode = "Duplicate"
-	// Divide mode means the federated object's replicas will be divided between member clusters
+	// Divide mode means the federated object's replicas will be divided between member clusters.
 	SchedulingModeDivide SchedulingMode = "Divide"
 )
 
-// Placement describes a cluster that a federated object can be propagated to and its propagation preferences.
-type Placement struct {
+// DesiredPlacement describes a cluster that a federated object can be propagated to and its propagation preferences.
+type DesiredPlacement struct {
 	// Cluster is the name of the FederatedCluster to propagate to.
 	Cluster string `json:"cluster"`
 	// Preferences contains the cluster's propagation preferences.

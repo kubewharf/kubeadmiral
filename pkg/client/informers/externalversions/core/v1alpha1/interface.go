@@ -8,14 +8,22 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// ClusterCollectedStatuses returns a ClusterCollectedStatusInformer.
+	ClusterCollectedStatuses() ClusterCollectedStatusInformer
+	// ClusterFederatedObjects returns a ClusterFederatedObjectInformer.
+	ClusterFederatedObjects() ClusterFederatedObjectInformer
 	// ClusterOverridePolicies returns a ClusterOverridePolicyInformer.
 	ClusterOverridePolicies() ClusterOverridePolicyInformer
 	// ClusterPropagatedVersions returns a ClusterPropagatedVersionInformer.
 	ClusterPropagatedVersions() ClusterPropagatedVersionInformer
 	// ClusterPropagationPolicies returns a ClusterPropagationPolicyInformer.
 	ClusterPropagationPolicies() ClusterPropagationPolicyInformer
+	// CollectedStatuses returns a CollectedStatusInformer.
+	CollectedStatuses() CollectedStatusInformer
 	// FederatedClusters returns a FederatedClusterInformer.
 	FederatedClusters() FederatedClusterInformer
+	// FederatedObjects returns a FederatedObjectInformer.
+	FederatedObjects() FederatedObjectInformer
 	// FederatedTypeConfigs returns a FederatedTypeConfigInformer.
 	FederatedTypeConfigs() FederatedTypeConfigInformer
 	// OverridePolicies returns a OverridePolicyInformer.
@@ -41,6 +49,16 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
+// ClusterCollectedStatuses returns a ClusterCollectedStatusInformer.
+func (v *version) ClusterCollectedStatuses() ClusterCollectedStatusInformer {
+	return &clusterCollectedStatusInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// ClusterFederatedObjects returns a ClusterFederatedObjectInformer.
+func (v *version) ClusterFederatedObjects() ClusterFederatedObjectInformer {
+	return &clusterFederatedObjectInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
 // ClusterOverridePolicies returns a ClusterOverridePolicyInformer.
 func (v *version) ClusterOverridePolicies() ClusterOverridePolicyInformer {
 	return &clusterOverridePolicyInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
@@ -56,9 +74,19 @@ func (v *version) ClusterPropagationPolicies() ClusterPropagationPolicyInformer 
 	return &clusterPropagationPolicyInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
+// CollectedStatuses returns a CollectedStatusInformer.
+func (v *version) CollectedStatuses() CollectedStatusInformer {
+	return &collectedStatusInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
 // FederatedClusters returns a FederatedClusterInformer.
 func (v *version) FederatedClusters() FederatedClusterInformer {
 	return &federatedClusterInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// FederatedObjects returns a FederatedObjectInformer.
+func (v *version) FederatedObjects() FederatedObjectInformer {
+	return &federatedObjectInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // FederatedTypeConfigs returns a FederatedTypeConfigInformer.
