@@ -25,30 +25,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const (
-	StatusAggregationEnabled  StatusAggregationMode = "Enabled"
-	StatusAggregationDisabled StatusAggregationMode = "Disabled"
-
-	RevisionHistoryEnabled  RevisionHistoryMode = "Enabled"
-	RevisionHistoryDisabled RevisionHistoryMode = "Disabled"
-
-	RolloutPlanEnabled  RolloutPlanMode = "Enabled"
-	RolloutPlanDisabled RolloutPlanMode = "Disabled"
-)
-
 // +genclient
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:validation:Required
 // +kubebuilder:resource:path=federatedtypeconfigs,shortName=ftc,scope=Cluster
 // +kubebuilder:subresource:status
 
-// FederatedTypeConfig is the Schema for the federatedtypeconfigs API
+// FederatedTypeConfig specifies an API resource type to federate and various type-specific options.
 type FederatedTypeConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   FederatedTypeConfigSpec   `json:"spec,omitempty"`
-	Status FederatedTypeConfigStatus `json:"status,omitempty"`
+	Spec FederatedTypeConfigSpec `json:"spec"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -61,53 +50,37 @@ type FederatedTypeConfigList struct {
 }
 
 type FederatedTypeConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// The API resource type to be federated.
+	SourceType APIResource `json:"sourceType"`
 
-	// The configuration of the source type. If set, each object of the source
-	// type will be federated to object of the federated type with the same name
-	// and namespace.
-	SourceType *APIResource `json:"sourceType,omitempty"`
-	// The configuration of the target type. If not set, the pluralName and
-	// groupName fields will be set from the metadata.name of this resource. The
-	// kind field must be set.
-	TargetType APIResource `json:"targetType"`
-	// Configuration for the federated type that defines (via
-	// template, placement and overrides fields) how the target type
-	// should appear in multiple cluster.
-	FederatedType APIResource `json:"federatedType"`
-	// Configuration for the status type that holds information about which type
-	// holds the status of the federated resource. If not provided, the group
-	// and version will default to those provided for the federated type api
-	// resource.
+	// Configuration for StatusAggregation. If left empty, the StatusAggregation feature will be disabled.
 	// +optional
-	StatusType *APIResource `json:"statusType,omitempty"`
-
-	// Whether or not Status object should be populated.
+	StatusAggregation *StatusAggregationConfig `json:"statusAggregation,omitempty"`
+	// Configuration for RevisionHistory. If left empty, the RevisionHistory feature will be disabled.
 	// +optional
-	StatusCollection *StatusCollection `json:"statusCollection,omitempty"`
-	// Whether or not Status should be aggregated to source type object
-	StatusAggregation *StatusAggregationMode `json:"statusAggregation,omitempty"`
-	// Whether or not keep revisionHistory for the federatedType resource
-	RevisionHistory *RevisionHistoryMode `json:"revisionHistory,omitempty"`
-	// Whether or not to plan the rollout process
+	RevisionHistory *RevisionHistoryConfig `json:"revisionHistory,omitempty"`
+	// Configuration for RolloutPlan. If left empty, the RolloutPlan feature will be disabled.
 	// +optional
-	RolloutPlan *RolloutPlanMode `json:"rolloutPlan,omitempty"`
-	// Configurations for auto migration.
+	RolloutPlan *RolloutPlanConfig `json:"rolloutPlan,omitempty"`
+	// Configuration for StatusCollection. If left empty, the StatusCollection feature will be disabled.
+	// +optional
+	StatusCollection *StatusCollectionConfig `json:"statusCollection,omitempty"`
+	// Configuration for AutoMigration. If left empty, the AutoMigration feature will be disabled.
 	// +optional
 	AutoMigration *AutoMigrationConfig `json:"autoMigration,omitempty"`
 
-	// The controllers that must run before the resource can be propagated to member clusters.
+	// The controllers that must run before the source object can be propagated to member clusters.
 	// Each inner slice specifies a step. Step T must complete before step T+1 can commence.
 	// Controllers within each step can execute in parallel.
 	// +optional
 	Controllers [][]string `json:"controllers,omitempty"`
 
-	// Defines the paths in the target object schema.
+	// Defines the paths to various fields in the target object's schema.
 	// +optional
 	PathDefinition PathDefinition `json:"pathDefinition,omitempty"`
 }
 
+// PathDefinition contains paths to various fields in the source object that are required by controllers.
 type PathDefinition struct {
 	// Path to a metav1.LabelSelector field that selects the replicas for this object.
 	// E.g. `spec.selector` for Deployment and ReplicaSet.
@@ -135,47 +108,51 @@ type PathDefinition struct {
 	ReadyReplicasStatus string `json:"readyReplicasStatus,omitempty"`
 }
 
-// FederatedTypeConfigStatus defines the observed state of FederatedTypeConfig
-type FederatedTypeConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// ObservedGeneration is the generation as observed by the controller consuming the FederatedTypeConfig.
-	ObservedGeneration int64 `json:"observedGeneration"`
-}
-
-// StatusCollection defines the fields that the status controller needs to collect
-type StatusCollection struct {
+// StatusCollectionConfig defines the configurations for the StatusCollection feature.
+type StatusCollectionConfig struct {
+	// Whether or not to enable status collection.
+	Enabled bool `json:"enabled"`
+	// Contains the fields to be collected during status collection. Each field is a dot separated string that
+	// corresponds to its path in the source object's schema.
+	// E.g. `metadata.creationTimestamp`.
 	Fields []string `json:"fields,omitempty"`
 }
 
-// StatusAggregationMode defines the state of status aggregation.
-type StatusAggregationMode string
-
-type RevisionHistoryMode string
-
-type RolloutPlanMode string
-
-type AutoMigrationConfig struct {
-	// Whether or not to enable auto migration.
+// StatusAggregationConfig defines the configurations for the StatusAggregation feature.
+type StatusAggregationConfig struct {
+	// Whether or not to enable status aggregation.
 	Enabled bool `json:"enabled"`
 }
 
-// APIResource defines how to configure the dynamic client for an API resource.
-type APIResource struct {
-	// metav1.GroupVersion is not used since the json annotation of
-	// the fields enforces them as mandatory.
+// RevisionHistoryConfig defines the configurations for the RevisionHistory feature.
+type RevisionHistoryConfig struct {
+	// Whether or not preserve a RevisionHistory for the federated object during updates.
+	Enabled bool `json:"enabled"`
+}
 
+// RolloutPlanConfig defines the configurations for the RolloutPlan feature.
+type RolloutPlanConfig struct {
+	// Whether or not to synchronize the rollout process across clusters.
+	Enabled bool `json:"enabled"`
+}
+
+// AutoMigrationConfig defines the configurations for the AutoMigration feature.
+type AutoMigrationConfig struct {
+	// Whether or not to automatically migrate unschedulable pods to a different cluster.
+	Enabled bool `json:"enabled"`
+}
+
+// APIResource represents a Kubernetes API resource.
+type APIResource struct {
 	// Group of the resource.
 	// +optional
 	Group string `json:"group,omitempty"`
 	// Version of the resource.
 	Version string `json:"version"`
-	// Camel-cased singular name of the resource (e.g. ConfigMap)
+	// Kind of the resource.
 	Kind string `json:"kind"`
-	// Lower-cased plural name of the resource (e.g. configmaps).  If
-	// not provided, it will be computed by lower-casing the kind and
-	// suffixing an 's'.
+	// Lower-cased plural name of the resource (e.g. configmaps).  If not provided,
+	// 	it will be computed by lower-casing the kind and suffixing an 's'.
 	PluralName string `json:"pluralName"`
 	// Scope of the resource.
 	Scope apiextv1beta1.ResourceScope `json:"scope"`

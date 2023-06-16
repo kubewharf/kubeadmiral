@@ -351,7 +351,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 						"label": "value1",
 					},
 					MaxClusters: pointer.Int64(5),
-					Placements: []fedcorev1a1.Placement{
+					Placements: []fedcorev1a1.ClusterReference{
 						{
 							Cluster: "cluster1",
 						},

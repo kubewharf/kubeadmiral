@@ -37,14 +37,22 @@ func (f *genericInformer) Lister() cache.GenericLister {
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
 	// Group=core.kubeadmiral.io, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithResource("clustercollectedstatuses"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().ClusterCollectedStatuses().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("clusterfederatedobjects"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().ClusterFederatedObjects().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("clusteroverridepolicies"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().ClusterOverridePolicies().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("clusterpropagatedversions"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().ClusterPropagatedVersions().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("clusterpropagationpolicies"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().ClusterPropagationPolicies().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("collectedstatuses"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().CollectedStatuses().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("federatedclusters"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().FederatedClusters().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("federatedobjects"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().FederatedObjects().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("federatedtypeconfigs"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().FederatedTypeConfigs().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("overridepolicies"):

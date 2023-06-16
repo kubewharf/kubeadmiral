@@ -62,7 +62,7 @@ type SchedulingUnit struct {
 	// MaxClusters is the max clusters set in the PropgationPolicy.
 	MaxClusters *int64 `json:"maxClusters,omitempty"`
 	// Placements is the placements set in the PropgationPolicy.
-	Placements []fedcorev1a1.Placement `json:"placements,omitempty"`
+	Placements []fedcorev1a1.DesiredPlacement `json:"placements,omitempty"`
 }
 
 type FilterRequest struct {
