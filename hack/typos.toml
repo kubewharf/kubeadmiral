@@ -1,5 +1,9 @@
 [files]
-extend-exclude = ["go.mod", "go.sum"]
+extend-exclude = ["go.mod", "go.sum", "config/crds/"]
+
+[default]
+extend-ignore-re = ["shortName=[a-z]+"]
 
 [default.extend-identifiers]
 ANDed = "ANDed"
+

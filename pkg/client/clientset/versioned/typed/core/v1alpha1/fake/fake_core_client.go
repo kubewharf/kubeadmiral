@@ -12,6 +12,14 @@ type FakeCoreV1alpha1 struct {
 	*testing.Fake
 }
 
+func (c *FakeCoreV1alpha1) ClusterCollectedStatuses() v1alpha1.ClusterCollectedStatusInterface {
+	return &FakeClusterCollectedStatuses{c}
+}
+
+func (c *FakeCoreV1alpha1) ClusterFederatedObjects() v1alpha1.ClusterFederatedObjectInterface {
+	return &FakeClusterFederatedObjects{c}
+}
+
 func (c *FakeCoreV1alpha1) ClusterOverridePolicies() v1alpha1.ClusterOverridePolicyInterface {
 	return &FakeClusterOverridePolicies{c}
 }
@@ -24,8 +32,16 @@ func (c *FakeCoreV1alpha1) ClusterPropagationPolicies() v1alpha1.ClusterPropagat
 	return &FakeClusterPropagationPolicies{c}
 }
 
+func (c *FakeCoreV1alpha1) CollectedStatuses(namespace string) v1alpha1.CollectedStatusInterface {
+	return &FakeCollectedStatuses{c, namespace}
+}
+
 func (c *FakeCoreV1alpha1) FederatedClusters() v1alpha1.FederatedClusterInterface {
 	return &FakeFederatedClusters{c}
+}
+
+func (c *FakeCoreV1alpha1) FederatedObjects(namespace string) v1alpha1.FederatedObjectInterface {
+	return &FakeFederatedObjects{c, namespace}
 }
 
 func (c *FakeCoreV1alpha1) FederatedTypeConfigs() v1alpha1.FederatedTypeConfigInterface {

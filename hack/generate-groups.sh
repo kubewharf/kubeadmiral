@@ -30,7 +30,6 @@ YQ_VERSION=${YQ_VERSION:-"v4.33.1"}
 MODULE_NAME=${MODULE_NAME:-"github.com/kubewharf/kubeadmiral"}
 groups=(
   core/v1alpha1
-  types/v1alpha1
 )
 
 # install code-generator binaries

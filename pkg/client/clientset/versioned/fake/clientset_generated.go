@@ -6,8 +6,6 @@ import (
 	clientset "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	corev1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	fakecorev1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1/fake"
-	typesv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/types/v1alpha1"
-	faketypesv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/types/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -65,9 +63,4 @@ var _ clientset.Interface = &Clientset{}
 // CoreV1alpha1 retrieves the CoreV1alpha1Client
 func (c *Clientset) CoreV1alpha1() corev1alpha1.CoreV1alpha1Interface {
 	return &fakecorev1alpha1.FakeCoreV1alpha1{Fake: &c.Fake}
-}
-
-// TypesV1alpha1 retrieves the TypesV1alpha1Client
-func (c *Clientset) TypesV1alpha1() typesv1alpha1.TypesV1alpha1Interface {
-	return &faketypesv1alpha1.FakeTypesV1alpha1{Fake: &c.Fake}
 }

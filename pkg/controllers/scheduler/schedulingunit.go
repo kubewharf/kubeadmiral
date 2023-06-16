@@ -473,7 +473,7 @@ func getWeightsFromObject(object *unstructured.Unstructured) (map[string]int64, 
 		return nil, false
 	}
 
-	var placements []fedcorev1a1.Placement
+	var placements []fedcorev1a1.ClusterReference
 	err := json.Unmarshal([]byte(annotation), &placements)
 	if err != nil {
 		klog.Errorf(
@@ -531,7 +531,7 @@ func getMinReplicasFromObject(object *unstructured.Unstructured) (map[string]int
 		return nil, false
 	}
 
-	var placements []fedcorev1a1.Placement
+	var placements []fedcorev1a1.ClusterReference
 	err := json.Unmarshal([]byte(annotation), &placements)
 	if err != nil {
 		klog.Errorf(
@@ -589,7 +589,7 @@ func getMaxReplicasFromObject(object *unstructured.Unstructured) (map[string]int
 		return nil, false
 	}
 
-	var placements []fedcorev1a1.Placement
+	var placements []fedcorev1a1.ClusterReference
 	err := json.Unmarshal([]byte(annotation), &placements)
 	if err != nil {
 		klog.Errorf(
@@ -647,7 +647,7 @@ func getClusterNamesFromObject(object *unstructured.Unstructured) (map[string]st
 		return nil, false
 	}
 
-	var placements []fedcorev1a1.Placement
+	var placements []fedcorev1a1.ClusterReference
 	err := json.Unmarshal([]byte(annotation), &placements)
 	if err != nil {
 		klog.Errorf(

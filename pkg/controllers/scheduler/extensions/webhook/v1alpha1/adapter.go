@@ -38,7 +38,7 @@ func ConvertSchedulingUnit(su *framework.SchedulingUnit) *schedwebhookv1a1.Sched
 		}
 	}
 
-	placements := []fedcorev1a1.Placement{}
+	placements := []fedcorev1a1.ClusterReference{}
 	for cluster := range su.ClusterNames {
 		var weight *int64
 		if w, ok := su.Weights[cluster]; ok {
@@ -50,7 +50,7 @@ func ConvertSchedulingUnit(su *framework.SchedulingUnit) *schedwebhookv1a1.Sched
 			maxReplicas = &max
 		}
 
-		placement := fedcorev1a1.Placement{
+		placement := fedcorev1a1.ClusterReference{
 			Cluster: cluster,
 			Preferences: fedcorev1a1.Preferences{
 				MinReplicas: su.MinReplicas[cluster],
