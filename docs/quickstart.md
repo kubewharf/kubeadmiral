@@ -3,8 +3,8 @@
 This guide will cover:
 
 * [Installation](#installation): starting a Kubernetes cluster and installing `KubeAdmiral` on it.
-* [Managing Kubernetes resources](#managing-kubernetes-resources): basic example of propgating a Deployment resource.
-* [Uninstallation](#uninstallation): cleaning up the local kind clusters related with `KubeAdmiral`.
+* [Managing Kubernetes resources](#managing-kubernetes-resources): basic example of propagating a Deployment resource.
+* [Uninstallation](#uninstallation): cleaning up the local kind clusters related to `KubeAdmiral`.
 
 ## Installation
 
