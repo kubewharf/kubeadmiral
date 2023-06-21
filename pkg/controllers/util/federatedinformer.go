@@ -30,6 +30,7 @@ import (
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
@@ -666,8 +667,9 @@ func GetClusterObject(
 	clusterObj.SetAPIVersion(gvk.GroupVersion().String())
 
 	err = client.Get(ctx, clusterObj, qualifedName.Namespace, qualifedName.Name)
-	// the NotFound error includes the resource does not exist and the api path does not exist
-	if apierrors.IsNotFound(err) {
+	// The NotFound error includes the resource does not exist and the api path does not exist.
+	// The NoMatch error is returned when the GVK does not exist in the client's Scheme cache.
+	if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
 		return nil, false, nil
 	}
 	if err != nil {

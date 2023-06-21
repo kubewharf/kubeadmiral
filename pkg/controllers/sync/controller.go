@@ -31,6 +31,7 @@ import (
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
@@ -1176,8 +1177,10 @@ func (s *SyncController) reconcileCluster(qualifiedName common.QualifiedName) wo
 
 	// The CRD may be deleted before the CR, and then the member cluster will be stuck
 	// in the cascade deletion because the api no longer exists. So we need to ignore
-	// the NotFound error.
-	if err != nil && !apierrors.IsNotFound(err) {
+	// the NoMatch and NotFound error.
+	// Whether to return NoMatch or NotFound depends on whether the client has visited CR,
+	// if so, returns NotFound (because the client has a scheme cache), otherwise returns NoMatch.
+	if err != nil && !(meta.IsNoMatchError(err) || apierrors.IsNotFound(err)) {
 		logger.Error(err, "Failed to list target objects from cluster")
 		return worker.StatusError
 	}
