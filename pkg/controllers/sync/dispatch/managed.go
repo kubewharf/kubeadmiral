@@ -347,11 +347,11 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 
 		recordPropagatedLabelsAndAnnotations(obj)
 
-		ctx, cancel := context.WithTimeout(ctx, d.dispatcher.timeout)
+		ctxWithTimeout, cancel := context.WithTimeout(ctx, d.dispatcher.timeout)
 		defer cancel()
 
 		keyedLogger.V(1).Info("Creating target object in cluster")
-		err = client.Create(ctx, obj)
+		err = client.Create(ctxWithTimeout, obj)
 		if err == nil {
 			version := util.ObjectVersion(obj)
 			d.recordVersion(clusterName, version)
@@ -363,20 +363,20 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		alreadyExists := apierrors.IsAlreadyExists(err) ||
 			d.fedResource.TargetGVK() == corev1.SchemeGroupVersion.WithKind(common.NamespaceKind) && apierrors.IsServerTimeout(err)
 		if !alreadyExists {
-			return d.recordOperationError(ctx, fedtypesv1a1.CreationFailed, clusterName, op, err)
+			return d.recordOperationError(ctxWithTimeout, fedtypesv1a1.CreationFailed, clusterName, op, err)
 		}
 
 		// Attempt to update the existing resource to ensure that it
 		// is labeled as a managed resource.
-		err = client.Get(ctx, obj, obj.GetNamespace(), obj.GetName())
+		err = client.Get(ctxWithTimeout, obj, obj.GetNamespace(), obj.GetName())
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retrieve object potentially requiring adoption")
-			return d.recordOperationError(ctx, fedtypesv1a1.RetrievalFailed, clusterName, op, wrappedErr)
+			return d.recordOperationError(ctxWithTimeout, fedtypesv1a1.RetrievalFailed, clusterName, op, wrappedErr)
 		}
 
 		if d.skipAdoptingResources {
 			return d.recordOperationError(
-				ctx,
+				ctxWithTimeout,
 				fedtypesv1a1.AlreadyExists,
 				clusterName,
 				op,
@@ -385,7 +385,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		}
 
 		d.recordError(
-			ctx,
+			ctxWithTimeout,
 			clusterName,
 			op,
 			errors.Errorf("An update will be attempted instead of a creation due to an existing resource"),
