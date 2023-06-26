@@ -16,7 +16,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2
-	golang.org/x/sync v0.2.0
+	golang.org/x/sync v0.3.0
 	k8s.io/api v0.26.6
 	k8s.io/apiextensions-apiserver v0.26.6
 	k8s.io/apimachinery v0.26.6
