@@ -18,7 +18,7 @@ func (m *multiClusterInformerManager) ForCluster(
 	ctx context.Context,
 	cluster string,
 	client dynamic.Interface,
-) SingleClusterInformerManager {
+) error {
 	m.Lock()
 	defer m.Unlock()
 
@@ -41,10 +41,10 @@ func (m *multiClusterInformerManager) ForCluster(
 		}
 	}()
 
-	return m.managers[cluster]
+	return nil
 }
 
-func (m *multiClusterInformerManager) GetCluster(ctx context.Context, cluster string) SingleClusterInformerManager {
+func (m *multiClusterInformerManager) GetManager(cluster string) SingleClusterInformerManager {
 	m.Lock()
 	defer m.Unlock()
 
@@ -52,20 +52,6 @@ func (m *multiClusterInformerManager) GetCluster(ctx context.Context, cluster st
 	if !ok {
 		return nil
 	}
-
-	m.references[cluster]++
-
-	go func() {
-		m.Lock()
-		defer m.Unlock()
-
-		m.references[cluster]--
-		if m.references[cluster] == 0 {
-			m.managers[cluster].Shutdown()
-			delete(m.managers, cluster)
-			delete(m.references, cluster)
-		}
-	}()
 
 	return manager
 }

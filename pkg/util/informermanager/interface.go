@@ -9,30 +9,27 @@ import (
 )
 
 type SingleClusterInformerManager interface {
-	// Starts an informer for the given GroupResourceVersion. The informer is guaranteed to run for as long as the given
-	// context remains uncancelled. If there is already a running informer for the GroupVersionResource, the existing
-	// informer is also guarnateed to run for as long as the given context remains uncancelled.
+	// Starts an informer for the given GroupResourceVersion if there isn't already one running. The new/existing
+	// informer is guaranteed to run as long as the given context remains uncancelled.
 	ForResource(ctx context.Context, gvr schema.GroupVersionResource) error
-	// Same as ForResource but registers the given event handler to the new or existing informer. Additionally, the
-	// event handler is automatically unregisterd when the given context is cancelled.
+	// Same as ForResource, but registers the given event handler to the new/existing informer. The event handler is
+	// additionally unregistered when the given context expires.
 	ForResourceWithEventHandler(ctx context.Context, gvr schema.GroupVersionResource, eventHandler cache.ResourceEventHandler) error
 
-	// Same as ForResource, but also returns a lister that is backed by the new or existing informer.
-	ListerForResource(ctx context.Context, gvr schema.GroupVersionResource) (cache.GenericLister, cache.InformerSynced, error)
+	// Returns the lister for the given GroupResourceVersion's informer. The informer must have been started with
+	// ForResource or FourResourceWithEventHandler and still be running.
+	GetLister(gvr schema.GroupVersionResource) (cache.GenericLister, cache.InformerSynced)
 
-	// Stops all running informers.
+	// Forcibly stops all running informers and prevents any new informers from being started.
 	Shutdown()
 }
 
 type MultiClusterInformerManager interface {
-	// Starts and returns a SingleClusterInformerManager for the given cluster. The informer manager is guaranteed to
-	// run for as long as the context remains uncancelled. If there is already a running informer manager for the given
-	// cluster, the old informer manager is returned and the old infomer is also guaranteed to run for as long as the
-	// given context remains uncancelled.
-	ForCluster(ctx context.Context, cluster string, client dynamic.Interface) SingleClusterInformerManager
+	// Starts aninformer manager for the given cluster if there isn't already one running. The new/existing informer
+	// manager is guaranteed to run as long as the given context remains uncancelled.
+	ForCluster(ctx context.Context, cluster string, client dynamic.Interface) error
 
 	// Returns a cluster's SingleClusterInformerManager. The informer manager must have been started with ForCluster
-	// previously and still be running. The informer is guaranteed to run for as long as the given context remains
-	// uncancelled. If there is no running informer manager for the given cluster, nil is returned.
-	GetCluster(ctx context.Context, cluster string) SingleClusterInformerManager
+	// previously and still be running.
+	GetManager(cluster string) SingleClusterInformerManager
 }

@@ -36,56 +36,15 @@ func NewSingleClusterInformerManager(client dynamic.Interface) SingleClusterInfo
 }
 
 func (m *singleClusterInformerManager) ForResource(ctx context.Context, gvr schema.GroupVersionResource) error {
-	_, _, err := m.addInformerReference(ctx, gvr, nil)
-	return err
-}
-
-func (m *singleClusterInformerManager) ForResourceWithEventHandler(
-	ctx context.Context,
-	gvr schema.GroupVersionResource,
-	eventHandler cache.ResourceEventHandler,
-) error {
-	_, _, err := m.addInformerReference(ctx, gvr, eventHandler)
-	return err
-}
-
-func (m *singleClusterInformerManager) ListerForResource(
-	ctx context.Context,
-	gvr schema.GroupVersionResource,
-) (cache.GenericLister, cache.InformerSynced, error) {
-	return m.addInformerReference(ctx, gvr, nil)
-}
-
-func (m *singleClusterInformerManager) Shutdown() {
-	m.Lock()
-	defer m.Unlock()
-
-	m.stopped = true
-	for gvr, stopCh := range m.stopChs {
-		close(stopCh)
-		delete(m.informers, gvr)
-		delete(m.stopChs, gvr)
-		delete(m.references, gvr)
-	}
-}
-
-func (m *singleClusterInformerManager) addInformerReference(
-	ctx context.Context,
-	gvr schema.GroupVersionResource,
-	eventHandler cache.ResourceEventHandler,
-) (cache.GenericLister, cache.InformerSynced, error) {
 	m.Lock()
 	defer m.Unlock()
 
 	if m.stopped {
-		return nil, nil, fmt.Errorf("informer manager is shut down")
+		return fmt.Errorf("informer manager is shut down")
 	}
 
-	var registration cache.ResourceEventHandlerRegistration
-	var err error
-
 	if _, ok := m.informers[gvr]; !ok {
-		informer := dynamicinformer.NewFilteredDynamicInformer(
+		m.informers[gvr] = dynamicinformer.NewFilteredDynamicInformer(
 			m.client,
 			gvr,
 			metav1.NamespaceAll,
@@ -93,24 +52,11 @@ func (m *singleClusterInformerManager) addInformerReference(
 			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
 			nil,
 		)
-		if eventHandler != nil {
-			if registration, err = m.informers[gvr].Informer().AddEventHandler(eventHandler); err != nil {
-				return nil, nil, err
-			}
-		}
-
-		m.informers[gvr] = informer
 		m.stopChs[gvr] = make(chan struct{})
 		m.references[gvr] = 1
 
 		m.informers[gvr].Informer().Run(m.stopChs[gvr])
 	} else {
-		if eventHandler != nil {
-			if registration, err = m.informers[gvr].Informer().AddEventHandler(eventHandler); err != nil {
-				return nil, nil, err
-			}
-		}
-
 		m.references[gvr]++
 	}
 
@@ -125,9 +71,70 @@ func (m *singleClusterInformerManager) addInformerReference(
 		}
 
 		m.references[gvr]--
-		if registration != nil {
-			m.informers[gvr].Informer().RemoveEventHandler(registration)
+		if m.references[gvr] == 0 {
+			close(m.stopChs[gvr])
+			delete(m.informers, gvr)
+			delete(m.stopChs, gvr)
+			delete(m.references, gvr)
 		}
+	}()
+
+	return nil
+}
+
+func (m *singleClusterInformerManager) ForResourceWithEventHandler(
+	ctx context.Context,
+	gvr schema.GroupVersionResource,
+	eventHandler cache.ResourceEventHandler,
+) error {
+	m.Lock()
+	defer m.Unlock()
+
+	if m.stopped {
+		return fmt.Errorf("informer manager is shut down")
+	}
+
+	var registration cache.ResourceEventHandlerRegistration
+	var err error
+
+	if informer, ok := m.informers[gvr]; !ok {
+		informer := dynamicinformer.NewFilteredDynamicInformer(
+			m.client,
+			gvr,
+			metav1.NamespaceAll,
+			0,
+			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
+			nil,
+		)
+		if registration, err = informer.Informer().AddEventHandler(eventHandler); err != nil {
+			return err
+		}
+
+		// Only start and cache if event handler added successfully to make method atomic
+		m.informers[gvr] = informer
+		m.stopChs[gvr] = make(chan struct{})
+		m.references[gvr] = 1
+
+		m.informers[gvr].Informer().Run(m.stopChs[gvr])
+	} else {
+		if registration, err = informer.Informer().AddEventHandler(eventHandler); err != nil {
+			return err
+		}
+		m.references[gvr]++
+	}
+
+	go func() {
+		<-ctx.Done()
+
+		m.Lock()
+		defer m.Unlock()
+
+		if m.stopped {
+			return
+		}
+
+		m.references[gvr]--
+		m.informers[gvr].Informer().RemoveEventHandler(registration)
 
 		if m.references[gvr] == 0 {
 			close(m.stopChs[gvr])
@@ -137,7 +144,34 @@ func (m *singleClusterInformerManager) addInformerReference(
 		}
 	}()
 
-	return m.informers[gvr].Lister(), m.informers[gvr].Informer().HasSynced, nil
+	return nil
+}
+
+func (m *singleClusterInformerManager) GetLister(
+	gvr schema.GroupVersionResource,
+) (cache.GenericLister, cache.InformerSynced) {
+	m.Lock()
+	defer m.Unlock()
+
+	informer, ok := m.informers[gvr]
+	if !ok {
+		return nil, nil
+	}
+
+	return informer.Lister(), informer.Informer().HasSynced
+}
+
+func (m *singleClusterInformerManager) Shutdown() {
+	m.Lock()
+	defer m.Unlock()
+
+	m.stopped = true
+	for gvr, stopCh := range m.stopChs {
+		close(stopCh)
+		delete(m.informers, gvr)
+		delete(m.stopChs, gvr)
+		delete(m.references, gvr)
+	}
 }
 
 var _ SingleClusterInformerManager = &singleClusterInformerManager{}
