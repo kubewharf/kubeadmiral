@@ -18,7 +18,7 @@ require (
 	golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2
 	golang.org/x/sync v0.2.0
 	k8s.io/api v0.26.6
-	k8s.io/apiextensions-apiserver v0.26.5
+	k8s.io/apiextensions-apiserver v0.26.6
 	k8s.io/apimachinery v0.26.6
 	k8s.io/client-go v0.26.6
 	k8s.io/klog/v2 v2.90.1
