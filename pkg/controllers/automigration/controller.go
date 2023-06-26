@@ -27,6 +27,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	dynamicclient "k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
@@ -34,6 +35,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
@@ -139,7 +141,27 @@ func NewAutoMigrationController(
 			// enqueue with a delay to simulate a rudimentary rate limiter
 			c.worker.EnqueueWithDelay(common.NewQualifiedName(o), 10*time.Second)
 		},
-		&util.ClusterLifecycleHandlerFuncs{},
+		&util.ClusterLifecycleHandlerFuncs{
+			AdditionalClusterUpdatingHandler: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) {
+				if !newCluster.DeletionTimestamp.IsZero() {
+					return
+				}
+				oldAvailableResources := oldCluster.Status.Resources.Available
+				newAvailableResources := newCluster.Status.Resources.Available
+
+				keyedLogger := c.logger.WithValues("control-loop", "cluster-updating", "cluster", newCluster.Name)
+				ctx := klog.NewContext(context.TODO(), keyedLogger)
+
+				for k, newValue := range newAvailableResources {
+					// If the current amount of any resource is greater than the previous value,
+					// try to trigger the capacity estimation for the pending pods.
+					if oldValue, ok := oldAvailableResources[k]; !ok || newValue.Cmp(oldValue) > 0 {
+						c.reconcileOnClusterResourceChange(ctx, newCluster)
+						return
+					}
+				}
+			},
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create federated informer: %w", err)
@@ -224,7 +246,10 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) (status worke
 		}
 	} else {
 		// Keep the annotation up-to-date if auto migration is enabled.
-		keyedLogger.V(3).Info("Auto migration is enabled")
+		keyedLogger.V(3).Info(
+			"Auto migration is enabled",
+			"unschedulable-threshold", unschedulableThreshold,
+		)
 		clusterObjs, err := c.federatedInformer.GetTargetStore().GetFromAllClusters(key)
 		if err != nil {
 			keyedLogger.Error(err, "Failed to get objects from federated informer stores")
@@ -331,6 +356,16 @@ func (c *Controller) estimateCapacity(
 
 		unschedulable, nextCrossIn := countUnschedulablePods(pods, time.Now(), unschedulableThreshold)
 
+		keyedLogger.V(2).Info("Analyzed pods",
+			"total", len(pods),
+			"desired", desiredReplicas,
+			"unschedulable", unschedulable,
+			"next-cross-in", nextCrossIn,
+		)
+		if nextCrossIn != nil && (retryAfter == nil || *nextCrossIn < *retryAfter) {
+			retryAfter = nextCrossIn
+		}
+
 		var clusterEstimatedCapacity int64
 		if len(pods) >= int(desiredReplicas) {
 			// When len(pods) >= desiredReplicas, we can immediately determine the capacity by taking the number of
@@ -353,16 +388,6 @@ func (c *Controller) estimateCapacity(
 		}
 
 		estimatedCapacity[clusterObj.ClusterName] = clusterEstimatedCapacity
-
-		keyedLogger.V(2).Info("Analyzed pods",
-			"total", len(pods),
-			"desired", desiredReplicas,
-			"unschedulable", unschedulable,
-		)
-
-		if nextCrossIn != nil && (retryAfter == nil || *nextCrossIn < *retryAfter) {
-			retryAfter = nextCrossIn
-		}
 	}
 
 	var result *worker.Result
@@ -436,4 +461,68 @@ func (c *Controller) getPodsFromCluster(
 	}
 
 	return pods, false, nil
+}
+
+func (c *Controller) reconcileOnClusterResourceChange(ctx context.Context, cluster *fedcorev1a1.FederatedCluster) {
+	keyedLogger := klog.FromContext(ctx)
+	keyedLogger.V(2).Info("Observed a cluster resource change")
+
+	data, err := c.federatedInformer.GetTargetStore().ListFromCluster(cluster.Name)
+	if err != nil {
+		keyedLogger.Error(err, "Failed to list target objects from cluster")
+		return
+	}
+	client, err := c.federatedInformer.GetClientForCluster(cluster.Name)
+	if err != nil {
+		keyedLogger.Error(err, "Failed to get client for cluster")
+		return
+	}
+
+	for _, objectInterface := range data {
+		object := objectInterface.(*unstructured.Unstructured)
+		qualifiedName := common.NewQualifiedName(object)
+
+		keyedLogger := keyedLogger.WithValues("object", qualifiedName.String())
+		ctx := klog.NewContext(ctx, keyedLogger)
+
+		labelSelector, err := utilunstructured.GetLabelSelectorFromPath(object, c.typeConfig.Spec.PathDefinition.LabelSelector, nil)
+		if err != nil {
+			keyedLogger.Error(err, "Failed to get label selector from object")
+			continue
+		}
+		if labelSelector.Size() == 0 {
+			keyedLogger.Error(nil, "Missing label selector on object")
+			continue
+		}
+
+		selector, err := metav1.LabelSelectorAsSelector(labelSelector)
+		if err != nil {
+			keyedLogger.Error(err, "Failed to convert label selector to selector")
+			continue
+		}
+
+		podList := &corev1.PodList{}
+		err = client.ListWithOptions(
+			ctx,
+			podList,
+			&runtimeclient.ListOptions{
+				Namespace:     object.GetNamespace(),
+				LabelSelector: selector,
+				Raw: &metav1.ListOptions{
+					ResourceVersion: "0",
+				},
+				FieldSelector: runtimeclient.MatchingFieldsSelector{
+					Selector: fields.OneTermEqualSelector("status.phase", string(corev1.PodPending)),
+				},
+				Limit: 1,
+			},
+		)
+		if err != nil {
+			keyedLogger.Error(err, "Failed to list pods")
+			continue
+		}
+		if len(podList.Items) > 0 {
+			c.worker.Enqueue(qualifiedName)
+		}
+	}
 }

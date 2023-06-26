@@ -138,13 +138,15 @@ type TargetInformerFactory func(*fedcorev1a1.FederatedCluster, *restclient.Confi
 // A structure with cluster lifecycle handler functions. Cluster is available (and ClusterAvailable is fired)
 // when it is created in federated etcd and ready. Cluster becomes unavailable (and ClusterUnavailable is fired)
 // when it is either deleted or becomes not ready. When cluster spec (IP)is modified both ClusterAvailable
-// and ClusterUnavailable are fired.
+// and ClusterUnavailable are fired. When Cluster is updating, AdditionalClusterUpdatingHandler is fired.
 type ClusterLifecycleHandlerFuncs struct {
 	// Fired when the cluster becomes available.
 	ClusterAvailable func(*fedcorev1a1.FederatedCluster)
 	// Fired when the cluster becomes unavailable. The second arg contains data that was present
 	// in the cluster before deletion.
 	ClusterUnavailable func(*fedcorev1a1.FederatedCluster, []interface{})
+	// Fired when the cluster is in updating.
+	AdditionalClusterUpdatingHandler func(oldCluster, newCluster *fedcorev1a1.FederatedCluster)
 }
 
 // Builds a FederatedInformer for the given configuration.
@@ -281,6 +283,10 @@ func NewFederatedInformer(
 					}
 				} else {
 					// klog.V(7).Infof("Cluster %v not updated to %v as ready status and specs are identical", oldCluster, curCluster)
+				}
+
+				if clusterLifecycle.AdditionalClusterUpdatingHandler != nil {
+					clusterLifecycle.AdditionalClusterUpdatingHandler(oldCluster, curCluster)
 				}
 			},
 		},
