@@ -88,6 +88,7 @@ func NewMultiClusterFTCControllerBase(
 		ftcContexts:            map[string]context.Context{},
 		ftcCancelFuncs:         map[string]context.CancelFunc{},
 		clusterCancelFuncs:     map[string]context.CancelFunc{},
+		clusterClients:         map[string]dynamic.Interface{},
 		ftcQueue:               workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
 		clusterQueue:           workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
 		logger:                 klog.LoggerWithName(klog.Background(), "multi-cluster-ftc-controller-base"),
