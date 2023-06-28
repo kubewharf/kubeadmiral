@@ -543,6 +543,7 @@ spec:
     pluralName: federatedjobstatuses
     scope: Namespaced
     version: v1alpha1
+  statusAggregation: Enabled
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
