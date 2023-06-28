@@ -54,6 +54,8 @@ func (m *multiClusterInformerManager) ForCluster(
 	m.references[cluster]++
 
 	go func() {
+		<-ctx.Done()
+
 		m.Lock()
 		defer m.Unlock()
 

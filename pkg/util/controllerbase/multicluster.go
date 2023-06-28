@@ -247,7 +247,7 @@ func (b *MultiClusterFTCControllerBase) processNextFTC(ctx context.Context) {
 		return
 	}
 
-	if b.handleFTCUpdate(name, ftc); err != nil {
+	if err := b.handleFTCUpdate(name, ftc); err != nil {
 		b.logger.Error(err, "Failed to handle FTC update")
 		b.ftcQueue.Add(key)
 	}
@@ -269,7 +269,7 @@ func (b *MultiClusterFTCControllerBase) processNextCluster(ctx context.Context) 
 
 	cluster, err := b.clusterInformer.Lister().Get(name)
 
-	if apierrors.IsNotFound(err) || util.IsClusterJoined(&cluster.Status) {
+	if apierrors.IsNotFound(err) || !util.IsClusterJoined(&cluster.Status) {
 		if err := b.handleClusterUnjoin(name); err != nil {
 			b.logger.Error(err, "Failed to handle cluster unjoin")
 			b.clusterQueue.Add(key)
@@ -283,7 +283,7 @@ func (b *MultiClusterFTCControllerBase) processNextCluster(ctx context.Context) 
 		return
 	}
 
-	if b.handleClusterJoin(name, cluster); err != nil {
+	if err := b.handleClusterJoin(name, cluster); err != nil {
 		b.logger.Error(err, "Failed to handle cluster update")
 		b.clusterQueue.Add(key)
 	}
@@ -302,28 +302,30 @@ func (b *MultiClusterFTCControllerBase) handleFTCUpdate(name string, ftc *fedcor
 	gvr := schemautil.APIResourceToGVR(ftc.GetSourceType())
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
-	for _, generator := range b.eventHandlerGenerators {
-		for clusterName := range b.clusterCancelFuncs {
-			cluster, err := b.clusterInformer.Lister().Get(clusterName)
-			if err != nil {
-				cancelFunc()
-				return fmt.Errorf("failed to get cluster %s from store", clusterName)
-			}
+	for clusterName := range b.clusterCancelFuncs {
+		manager := b.informerManager.GetManager(clusterName)
+		if manager == nil {
+			cancelFunc()
+			return fmt.Errorf("failed to get SingleClusterInformerManager for cluster %s", clusterName)
+		}
+		if err := manager.ForResource(ctx, gvr); err != nil {
+			cancelFunc()
+			return fmt.Errorf("failed to start informer for resource: %w", err)
+		}
 
+		cluster, err := b.clusterInformer.Lister().Get(clusterName)
+		if err != nil {
+			cancelFunc()
+			return fmt.Errorf("failed to get cluster %s from store", clusterName)
+		}
+
+		for _, generator := range b.eventHandlerGenerators {
 			handler := generator(ftc, cluster)
-			if handler == nil {
-				continue
-			}
-
-			manager := b.informerManager.GetManager(clusterName)
-			if manager == nil {
-				cancelFunc()
-				return fmt.Errorf("failed to get SingleClusterInformerManager for cluster %s", clusterName)
-			}
-
-			if err := manager.ForResourceWithEventHandler(ctx, gvr, handler); err != nil {
-				cancelFunc()
-				return fmt.Errorf("failed to add event handler: %w", err)
+			if handler != nil {
+				if err := manager.ForResourceWithEventHandler(ctx, gvr, handler); err != nil {
+					cancelFunc()
+					return fmt.Errorf("failed to add event handler: %w", err)
+				}
 			}
 		}
 	}
@@ -352,6 +354,7 @@ func (b *MultiClusterFTCControllerBase) handleClusterJoin(name string, cluster *
 	if cancelFunc, ok := b.clusterCancelFuncs[name]; ok {
 		cancelFunc()
 		delete(b.clusterCancelFuncs, name)
+		delete(b.clusterClients, name)
 	}
 
 	clusterConfig, err := util.BuildClusterConfig(cluster, b.kubeClient, b.baseClientConfig, b.fedSystemNamespace)
@@ -382,16 +385,18 @@ func (b *MultiClusterFTCControllerBase) handleClusterJoin(name string, cluster *
 		}
 
 		gvr := schemautil.APIResourceToGVR(ftc.GetSourceType())
+		if err := manager.ForResource(ftcCtx, gvr); err != nil {
+			cancelFunc()
+			return fmt.Errorf("failed to start informer for resource: %w", err)
+		}
 
 		for _, generator := range b.eventHandlerGenerators {
 			handler := generator(ftc, cluster)
-			if handler == nil {
-				continue
-			}
-
-			if err := manager.ForResourceWithEventHandler(ftcCtx, gvr, handler); err != nil {
-				cancelFunc()
-				return fmt.Errorf("failed to add event handler: %w", err)
+			if handler != nil {
+				if err := manager.ForResourceWithEventHandler(ftcCtx, gvr, handler); err != nil {
+					cancelFunc()
+					return fmt.Errorf("failed to add event handler: %w", err)
+				}
 			}
 		}
 	}

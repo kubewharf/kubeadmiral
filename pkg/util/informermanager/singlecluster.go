@@ -71,7 +71,7 @@ func (m *singleClusterInformerManager) ForResource(ctx context.Context, gvr sche
 		m.stopChs[gvr] = make(chan struct{})
 		m.references[gvr] = 1
 
-		m.informers[gvr].Informer().Run(m.stopChs[gvr])
+		go m.informers[gvr].Informer().Run(m.stopChs[gvr])
 	} else {
 		m.references[gvr]++
 	}
@@ -131,7 +131,7 @@ func (m *singleClusterInformerManager) ForResourceWithEventHandler(
 		m.stopChs[gvr] = make(chan struct{})
 		m.references[gvr] = 1
 
-		m.informers[gvr].Informer().Run(m.stopChs[gvr])
+		go m.informers[gvr].Informer().Run(m.stopChs[gvr])
 	} else {
 		if registration, err = informer.Informer().AddEventHandler(eventHandler); err != nil {
 			return err
