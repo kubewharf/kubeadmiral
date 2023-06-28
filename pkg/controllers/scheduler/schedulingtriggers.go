@@ -107,6 +107,7 @@ func (s *Scheduler) computeSchedulingTriggerHash(
 	fedObject *unstructured.Unstructured,
 	policy fedcorev1a1.GenericPropagationPolicy,
 	clusters []*fedcorev1a1.FederatedCluster,
+	templateHash string,
 ) (string, error) {
 	trigger := &schedulingTriggers{}
 
@@ -121,9 +122,16 @@ func (s *Scheduler) computeSchedulingTriggerHash(
 	if policy != nil {
 		trigger.PolicyName = policy.GetName()
 		trigger.PolicyGeneration = policy.GetGeneration()
+		annotations := fedObject.GetAnnotations()
+		if policy.GetSpec().ApplyPolicy == fedcorev1a1.ApplyLater {
+			if templateHash == annotations[common.LastAppliedTemplateHashAnnotation] {
+				g := annotations[common.LastAppliedPropagationPolicyGenerationAnnotation]
+				trigger.PolicyGeneration, _ = strconv.ParseInt(g, 10, 64)
+			}
+		}
 		if policy.GetSpec().AutoMigration != nil {
 			// Only consider auto-migration annotation when auto-migration is enabled in the policy.
-			if value, exists := fedObject.GetAnnotations()[common.AutoMigrationInfoAnnotation]; exists {
+			if value, exists := annotations[common.AutoMigrationInfoAnnotation]; exists {
 				trigger.AutoMigrationInfo = &value
 			}
 		}

@@ -19,6 +19,7 @@ package scheduler
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
@@ -176,6 +177,26 @@ func getTemplate(fedObject *unstructured.Unstructured) (*metav1.PartialObjectMet
 		return nil, fmt.Errorf("template cannot be converted from unstructured: %w", err)
 	}
 	return &obj, nil
+}
+
+func getTemplateHash(fedObject *unstructured.Unstructured) (string, error) {
+	tpl, exists, err := unstructured.NestedMap(fedObject.Object, common.TemplatePath...)
+	if err != nil {
+		return "", fmt.Errorf("error retrieving template: %w", err)
+	}
+	if !exists {
+		return "", fmt.Errorf("template not found")
+	}
+	tplBytes, err := json.Marshal(tpl)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal object template: %w", err)
+	}
+
+	hash := fnv.New32()
+	if _, err = hash.Write(tplBytes); err != nil {
+		return "", fmt.Errorf("failed to compute template hash: %w", err)
+	}
+	return strconv.FormatInt(int64(hash.Sum32()), 10), nil
 }
 
 func getCurrentReplicasFromObject(
