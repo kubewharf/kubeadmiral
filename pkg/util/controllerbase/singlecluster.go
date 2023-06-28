@@ -46,7 +46,7 @@ type FTCControllerBase struct {
 	ftcInformer     fedcorev1a1informers.FederatedTypeConfigInformer
 	informerManager informermanager.SingleClusterInformerManager
 
-	lock                   sync.Mutex
+	lock                   *sync.Mutex
 	started                bool
 	eventHandlerGenerators []EventHandlerGenerator
 	cancelFuncs            map[string]context.CancelFunc
@@ -62,7 +62,7 @@ func NewFTCControllerBase(
 	base := &FTCControllerBase{
 		ftcInformer:            ftcInformer,
 		informerManager:        informermanager.NewSingleClusterInformerManager(dynamicClient),
-		lock:                   sync.Mutex{},
+		lock:                   &sync.Mutex{},
 		started:                false,
 		eventHandlerGenerators: []EventHandlerGenerator{},
 		cancelFuncs:            map[string]context.CancelFunc{},

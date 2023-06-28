@@ -39,6 +39,8 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
+type MultiClusterEventHandlerGenerator func(ftc *fedcorev1a1.FederatedTypeConfig, cluster *fedcorev1a1.FederatedCluster) cache.ResourceEventHandler
+
 // MultiClusterFTCControllerBase provides an interface for controllers that need to dynamically register event handlers
 // and perform reconciliation for objects in member clusters based on FederatedTypeConfigs. MultiClusterFTCControllerBase
 // will listen to FTC events and maintain informers for the source type of each FTC for all joined member clusters. It
@@ -53,12 +55,13 @@ type MultiClusterFTCControllerBase struct {
 
 	informerManager informermanager.MultiClusterInformerManager
 
-	lock                   sync.Mutex
+	lock                   *sync.Mutex
 	started                bool
-	eventHandlerGenerators []EventHandlerGenerator
+	eventHandlerGenerators []MultiClusterEventHandlerGenerator
 	ftcContexts            map[string]context.Context
 	ftcCancelFuncs         map[string]context.CancelFunc
 	clusterCancelFuncs     map[string]context.CancelFunc
+	clusterClients         map[string]dynamic.Interface
 
 	ftcQueue     workqueue.Interface
 	clusterQueue workqueue.Interface
@@ -79,9 +82,9 @@ func NewMultiClusterFTCControllerBase(
 		ftcInformer:            ftcInformer,
 		clusterInformer:        clusterInformer,
 		informerManager:        informermanager.NewMultiClusterInformerManager(),
-		lock:                   sync.Mutex{},
+		lock:                   &sync.Mutex{},
 		started:                false,
-		eventHandlerGenerators: []EventHandlerGenerator{},
+		eventHandlerGenerators: []MultiClusterEventHandlerGenerator{},
 		ftcContexts:            map[string]context.Context{},
 		ftcCancelFuncs:         map[string]context.CancelFunc{},
 		clusterCancelFuncs:     map[string]context.CancelFunc{},
@@ -138,7 +141,7 @@ func NewMultiClusterFTCControllerBase(
 //
 // NOTE: event handlers generated for a FTC may be temporarily registered more than once, so it is important to ensure
 // that the generated event handlers are idempotent.
-func (b *MultiClusterFTCControllerBase) AddEventHandlerGenerator(generator EventHandlerGenerator) error {
+func (b *MultiClusterFTCControllerBase) AddEventHandlerGenerator(generator MultiClusterEventHandlerGenerator) error {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
@@ -151,7 +154,7 @@ func (b *MultiClusterFTCControllerBase) AddEventHandlerGenerator(generator Event
 }
 
 // Returns a lister for the given GVR if it exists. The lister for a FTC's source type and the given cluster will
-// eventually exist as long as the FTC and cluster exists in the view of the FTCControllerBase.
+// eventually exist as long as the FTC and cluster exists in the view of the MutliClusterControllerBase.
 func (b *MultiClusterFTCControllerBase) GetResourceLister(
 	cluster string,
 	gvr schema.GroupVersionResource,
@@ -161,6 +164,16 @@ func (b *MultiClusterFTCControllerBase) GetResourceLister(
 		return nil, nil
 	}
 	return manager.GetLister(gvr)
+}
+
+// Returns a client for the given cluster if it exists. The client will eventually exist as long as the cluster exists
+// in the view of the MultiClusterFTCControllerBase.
+func (b *MultiClusterFTCControllerBase) GetClusterClient(cluster string) dynamic.Interface {
+	client, ok := b.clusterClients[cluster]
+	if !ok {
+		return nil
+	}
+	return client
 }
 
 // Returns the FTC lister used by the MultiClusterFTCControllerBase.
@@ -289,16 +302,22 @@ func (b *MultiClusterFTCControllerBase) handleFTCUpdate(name string, ftc *fedcor
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	for _, generator := range b.eventHandlerGenerators {
-		handler := generator(ftc)
-		if handler == nil {
-			continue
-		}
+		for clusterName := range b.clusterCancelFuncs {
+			cluster, err := b.clusterInformer.Lister().Get(clusterName)
+			if err != nil {
+				cancelFunc()
+				return fmt.Errorf("failed to get cluster %s from store", clusterName)
+			}
 
-		for cluster := range b.clusterCancelFuncs {
-			manager := b.informerManager.GetManager(cluster)
+			handler := generator(ftc, cluster)
+			if handler == nil {
+				continue
+			}
+
+			manager := b.informerManager.GetManager(clusterName)
 			if manager == nil {
 				cancelFunc()
-				return fmt.Errorf("failed to get SingleClusterInformerManager for cluster %s", cluster)
+				return fmt.Errorf("failed to get SingleClusterInformerManager for cluster %s", clusterName)
 			}
 
 			if err := manager.ForResourceWithEventHandler(ctx, gvr, handler); err != nil {
@@ -364,7 +383,7 @@ func (b *MultiClusterFTCControllerBase) handleClusterJoin(name string, cluster *
 		gvr := schemautil.APIResourceToGVR(ftc.GetSourceType())
 
 		for _, generator := range b.eventHandlerGenerators {
-			handler := generator(ftc)
+			handler := generator(ftc, cluster)
 			if handler == nil {
 				continue
 			}
@@ -377,6 +396,7 @@ func (b *MultiClusterFTCControllerBase) handleClusterJoin(name string, cluster *
 	}
 
 	b.clusterCancelFuncs[name] = cancelFunc
+	b.clusterClients[name] = clusterClient
 	return nil
 }
 
@@ -387,6 +407,7 @@ func (b *MultiClusterFTCControllerBase) handleClusterUnjoin(name string) error {
 	if cancelFunc, ok := b.clusterCancelFuncs[name]; ok {
 		cancelFunc()
 		delete(b.clusterCancelFuncs, name)
+		delete(b.clusterClients, name)
 	}
 
 	return nil
