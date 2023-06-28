@@ -30,6 +30,14 @@ type multiClusterInformerManager struct {
 	references map[string]int64
 }
 
+func NewMultiClusterInformerManager() MultiClusterInformerManager {
+	return &multiClusterInformerManager{
+		Mutex:      sync.Mutex{},
+		managers:   map[string]SingleClusterInformerManager{},
+		references: map[string]int64{},
+	}
+}
+
 func (m *multiClusterInformerManager) ForCluster(
 	ctx context.Context,
 	cluster string,
