@@ -331,6 +331,17 @@ func (c *Controller) estimateCapacity(
 
 		unschedulable, nextCrossIn := countUnschedulablePods(pods, time.Now(), unschedulableThreshold)
 
+		keyedLogger.V(2).Info("Analyzed pods",
+			"total", len(pods),
+			"desired", desiredReplicas,
+			"unschedulable", unschedulable,
+			"next-cross-in", nextCrossIn,
+		)
+
+		if nextCrossIn != nil && (retryAfter == nil || *nextCrossIn < *retryAfter) {
+			retryAfter = nextCrossIn
+		}
+
 		var clusterEstimatedCapacity int64
 		if len(pods) >= int(desiredReplicas) {
 			// When len(pods) >= desiredReplicas, we can immediately determine the capacity by taking the number of
@@ -353,16 +364,6 @@ func (c *Controller) estimateCapacity(
 		}
 
 		estimatedCapacity[clusterObj.ClusterName] = clusterEstimatedCapacity
-
-		keyedLogger.V(2).Info("Analyzed pods",
-			"total", len(pods),
-			"desired", desiredReplicas,
-			"unschedulable", unschedulable,
-		)
-
-		if nextCrossIn != nil && (retryAfter == nil || *nextCrossIn < *retryAfter) {
-			retryAfter = nextCrossIn
-		}
 	}
 
 	var result *worker.Result
