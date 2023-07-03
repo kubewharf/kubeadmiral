@@ -2,13 +2,21 @@
 
 package v1alpha1
 
+type ClusterCollectedStatusExpansion interface{}
+
+type ClusterFederatedObjectExpansion interface{}
+
 type ClusterOverridePolicyExpansion interface{}
 
 type ClusterPropagatedVersionExpansion interface{}
 
 type ClusterPropagationPolicyExpansion interface{}
 
+type CollectedStatusExpansion interface{}
+
 type FederatedClusterExpansion interface{}
+
+type FederatedObjectExpansion interface{}
 
 type FederatedTypeConfigExpansion interface{}
 

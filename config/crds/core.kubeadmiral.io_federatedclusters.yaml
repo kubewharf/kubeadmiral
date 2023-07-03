@@ -107,15 +107,13 @@ spec:
                 description: The list of api resource types defined in the federated
                   cluster
                 items:
-                  description: APIResource defines how to configure the dynamic client
-                    for an API resource.
+                  description: APIResource represents a Kubernetes API resource.
                   properties:
                     group:
                       description: Group of the resource.
                       type: string
                     kind:
-                      description: Camel-cased singular name of the resource (e.g.
-                        ConfigMap)
+                      description: Kind of the resource.
                       type: string
                     pluralName:
                       description: Lower-cased plural name of the resource (e.g. configmaps).  If

@@ -155,7 +155,7 @@ func TestConvertSchedulingUnit(t *testing.T) {
 					},
 				},
 				MaxClusters: pointer.Int64(5),
-				Placements: []fedcorev1a1.Placement{
+				Placements: []fedcorev1a1.DesiredPlacement{
 					{
 						Cluster: "cluster1",
 					},
@@ -348,7 +348,7 @@ func TestConvertSchedulingUnit(t *testing.T) {
 					},
 				},
 				MaxClusters: pointer.Int64(5),
-				Placements: []fedcorev1a1.Placement{
+				Placements: []fedcorev1a1.DesiredPlacement{
 					{
 						Cluster: "cluster1",
 					},

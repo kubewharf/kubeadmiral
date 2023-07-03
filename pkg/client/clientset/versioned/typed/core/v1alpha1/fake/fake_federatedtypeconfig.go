@@ -80,17 +80,6 @@ func (c *FakeFederatedTypeConfigs) Update(ctx context.Context, federatedTypeConf
 	return obj.(*v1alpha1.FederatedTypeConfig), err
 }
 
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeFederatedTypeConfigs) UpdateStatus(ctx context.Context, federatedTypeConfig *v1alpha1.FederatedTypeConfig, opts v1.UpdateOptions) (*v1alpha1.FederatedTypeConfig, error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(federatedtypeconfigsResource, "status", federatedTypeConfig), &v1alpha1.FederatedTypeConfig{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.FederatedTypeConfig), err
-}
-
 // Delete takes name of the federatedTypeConfig and deletes it. Returns an error if one occurs.
 func (c *FakeFederatedTypeConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.

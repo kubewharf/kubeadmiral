@@ -124,13 +124,13 @@ spec:
                   description: DisableFollowerScheduling is a boolean that determines if follower scheduling is disabled. Resources that depend on other resources (e.g. deployments) are called leaders, and resources that are depended on (e.g. configmaps and secrets) are called followers. If a leader enables follower scheduling, its followers will additionally be scheduled to clusters where the leader is scheduled.
                   type: boolean
                 maxClusters:
-                  description: MaxClusters is the maximum number of replicas that the federated object can be propagated to The maximum number of clusters is unbounded if no value is provided.
+                  description: MaxClusters is the maximum number of replicas that the federated object can be propagated to. The maximum number of clusters is unbounded if no value is provided.
                   format: int64
                   type: integer
                 placement:
-                  description: Placement is an explicit list of clusters used to select member clusters to propagate resources
+                  description: Placement is an explicit list of clusters used to select member clusters to propagate resources to.
                   items:
-                    description: Placement describes a cluster that a federated object can be propagated to and its propagation preferences.
+                    description: DesiredPlacement describes a cluster that a federated object can be propagated to and its propagation preferences.
                     properties:
                       cluster:
                         description: Cluster is the name of the FederatedCluster to propagate to.
@@ -180,7 +180,7 @@ spec:
                   description: StickyCluster determines if a federated object can be rescheduled.
                   type: boolean
                 tolerations:
-                  description: Tolerations describe a set of cluster taints that the policy tolerates
+                  description: Tolerations describe a set of cluster taints that the policy tolerates.
                   items:
                     description: The pod this Toleration is attached to tolerates any taint that matches the triple <key,value,effect> using the matching operator <operator>.
                     properties:

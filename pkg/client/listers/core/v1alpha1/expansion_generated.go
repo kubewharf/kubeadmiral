@@ -2,6 +2,14 @@
 
 package v1alpha1
 
+// ClusterCollectedStatusListerExpansion allows custom methods to be added to
+// ClusterCollectedStatusLister.
+type ClusterCollectedStatusListerExpansion interface{}
+
+// ClusterFederatedObjectListerExpansion allows custom methods to be added to
+// ClusterFederatedObjectLister.
+type ClusterFederatedObjectListerExpansion interface{}
+
 // ClusterOverridePolicyListerExpansion allows custom methods to be added to
 // ClusterOverridePolicyLister.
 type ClusterOverridePolicyListerExpansion interface{}
@@ -14,9 +22,25 @@ type ClusterPropagatedVersionListerExpansion interface{}
 // ClusterPropagationPolicyLister.
 type ClusterPropagationPolicyListerExpansion interface{}
 
+// CollectedStatusListerExpansion allows custom methods to be added to
+// CollectedStatusLister.
+type CollectedStatusListerExpansion interface{}
+
+// CollectedStatusNamespaceListerExpansion allows custom methods to be added to
+// CollectedStatusNamespaceLister.
+type CollectedStatusNamespaceListerExpansion interface{}
+
 // FederatedClusterListerExpansion allows custom methods to be added to
 // FederatedClusterLister.
 type FederatedClusterListerExpansion interface{}
+
+// FederatedObjectListerExpansion allows custom methods to be added to
+// FederatedObjectLister.
+type FederatedObjectListerExpansion interface{}
+
+// FederatedObjectNamespaceListerExpansion allows custom methods to be added to
+// FederatedObjectNamespaceLister.
+type FederatedObjectNamespaceListerExpansion interface{}
 
 // FederatedTypeConfigListerExpansion allows custom methods to be added to
 // FederatedTypeConfigLister.
