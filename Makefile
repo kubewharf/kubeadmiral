@@ -139,6 +139,9 @@ test:
 	sed '/generated/d' coverage0.out > coverage.out
 	rm coverage0.out
 
+wait-join:
+	kubectl --kubeconfig=$(KUBECONFIG) wait --for=condition=Ready fcluster -l 'no...such...label!=no-such-value'
+
 # Run e2e tests
 .PHONY: e2e
 e2e:
