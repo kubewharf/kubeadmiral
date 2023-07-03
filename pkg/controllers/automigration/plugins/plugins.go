@@ -40,6 +40,12 @@ type Plugin interface {
 		obj *unstructured.Unstructured,
 		handle ClusterHandle,
 	) ([]*corev1.Pod, error)
+
+	GetTargetObjectFromPod(
+		ctx context.Context,
+		pod *corev1.Pod,
+		handle ClusterHandle,
+	) (obj *unstructured.Unstructured, found bool, err error)
 }
 
 var nativePlugins = map[schema.GroupVersionResource]Plugin{

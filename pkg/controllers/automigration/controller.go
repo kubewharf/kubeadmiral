@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicclient "k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	kubeclient "k8s.io/client-go/kubernetes"
@@ -43,6 +44,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
@@ -70,7 +72,8 @@ type Controller struct {
 	federatedObjectClient   dynamicclient.NamespaceableResourceInterface
 	federatedObjectInformer informers.GenericInformer
 
-	federatedInformer util.FederatedInformer
+	federatedInformer       util.FederatedInformer
+	federatedInformerForPod util.FederatedInformer
 
 	worker worker.ReconcileWorker
 
@@ -145,6 +148,71 @@ func NewAutoMigrationController(
 		return nil, fmt.Errorf("failed to create federated informer: %w", err)
 	}
 
+	c.federatedInformerForPod, err = util.NewFederatedInformerWithEventHandler(
+		controllerConfig,
+		genericFedClient,
+		controllerConfig.KubeConfig,
+		&metav1.APIResource{
+			Name:       "pods",
+			Namespaced: true,
+			Group:      corev1.GroupName,
+			Version:    "v1",
+			Kind:       common.PodKind,
+		},
+		&util.ResourceEventHandlerFuncsForCluster{
+			UpdateFunc: func(oldObj, newObj interface{}, cluster *fedcorev1a1.FederatedCluster) {
+				keyedLogger := c.logger.WithValues("cluster", cluster.Name)
+				ctx := klog.NewContext(context.TODO(), keyedLogger)
+
+				unsNewObj, ok := newObj.(*unstructured.Unstructured)
+				if !ok {
+					keyedLogger.Error(nil, fmt.Sprintf("Internal error: newObj not of Unstructured type: %v", newObj))
+					return
+				}
+				if unsNewObj.GetDeletionTimestamp() != nil {
+					return
+				}
+				unsOldObj, ok := oldObj.(*unstructured.Unstructured)
+				if !ok {
+					keyedLogger.Error(nil, fmt.Sprintf("Internal error: oldObj not of Unstructured type: %v", oldObj))
+					return
+				}
+
+				newPod := &corev1.Pod{}
+				oldPod := &corev1.Pod{}
+				if err := pkgruntime.DefaultUnstructuredConverter.FromUnstructured(unsNewObj.Object, newPod); err != nil {
+					keyedLogger.Error(nil, fmt.Sprintf("Internal error: newObj not of Pod type: %v", unsNewObj))
+					return
+				}
+				if err := pkgruntime.DefaultUnstructuredConverter.FromUnstructured(unsOldObj.Object, oldPod); err != nil {
+					keyedLogger.Error(nil, fmt.Sprintf("Internal error: oldObj not of Pod type: %v", unsOldObj))
+					return
+				}
+
+				if !podScheduledConditionChanged(oldPod, newPod) {
+					return
+				}
+
+				qualifiedName, found, err := c.getSourceObjFromCluster(ctx, newPod, cluster.Name)
+				if err != nil || !found {
+					keyedLogger.V(3).Info(
+						"Failed to get source object form pod",
+						"pod", common.NewQualifiedName(newPod),
+						"err", err,
+					)
+					return
+				}
+				// enqueue with a delay to simulate a rudimentary rate limiter
+				c.worker.EnqueueWithDelay(*qualifiedName, 10*time.Second)
+			},
+		},
+		nil,
+		&util.ClusterLifecycleHandlerFuncs{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create federated informer for pod: %w", err)
+	}
+
 	return c, nil
 }
 
@@ -154,6 +222,8 @@ func (c *Controller) Run(ctx context.Context) {
 
 	c.federatedInformer.Start()
 	defer c.federatedInformer.Stop()
+	c.federatedInformerForPod.Start()
+	defer c.federatedInformerForPod.Stop()
 
 	if !cache.WaitForNamedCacheSync(c.name, ctx.Done(), c.HasSynced) {
 		return
@@ -164,7 +234,9 @@ func (c *Controller) Run(ctx context.Context) {
 }
 
 func (c *Controller) HasSynced() bool {
-	if !c.federatedObjectInformer.Informer().HasSynced() || !c.federatedInformer.ClustersSynced() {
+	if !c.federatedObjectInformer.Informer().HasSynced() ||
+		!c.federatedInformer.ClustersSynced() ||
+		!c.federatedInformerForPod.ClustersSynced() {
 		return false
 	}
 
@@ -185,7 +257,7 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) (status worke
 	keyedLogger.V(3).Info("Start reconcile")
 	defer func() {
 		c.metrics.Duration(fmt.Sprintf("%s.latency", c.name), startTime)
-		keyedLogger.V(3).Info("Finished reconcile", "duration", time.Since(startTime), "status", status.String())
+		keyedLogger.V(3).Info("Finished reconcile", "duration", time.Since(startTime), "status", status)
 	}()
 
 	fedObject, err := util.UnstructuredFromStore(c.federatedObjectInformer.Informer().GetStore(), key)
@@ -335,7 +407,6 @@ func (c *Controller) estimateCapacity(
 			"total", len(pods),
 			"desired", desiredReplicas,
 			"unschedulable", unschedulable,
-			"next-cross-in", nextCrossIn,
 		)
 
 		if nextCrossIn != nil && (retryAfter == nil || *nextCrossIn < *retryAfter) {
@@ -437,4 +508,45 @@ func (c *Controller) getPodsFromCluster(
 	}
 
 	return pods, false, nil
+}
+
+func (c *Controller) getSourceObjFromCluster(
+	ctx context.Context,
+	pod *corev1.Pod,
+	clusterName string,
+) (sourceQualified *common.QualifiedName, found bool, err error) {
+	plugin, err := plugins.ResolvePlugin(c.typeConfig)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get plugin for FTC: %w", err)
+	}
+
+	client, err := c.federatedInformer.GetClientForCluster(clusterName)
+	if err != nil {
+		return nil, true, fmt.Errorf("failed to get client for cluster: %w", err)
+	}
+
+	object, found, err := plugin.GetTargetObjectFromPod(ctx, pod, plugins.ClusterHandle{
+		Client: client,
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get target object form pod: %w", err)
+	}
+	if !found {
+		return nil, false, nil
+	}
+
+	gv, err := schema.ParseGroupVersion(object.GetAPIVersion())
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to parse APIVersion form obj: %w", err)
+	}
+	qualifiedName := common.NewQualifiedName(object)
+	targetType := c.typeConfig.GetTargetType()
+	managed := object.GetLabels()[managedlabel.ManagedByKubeAdmiralLabelKey] == managedlabel.ManagedByKubeAdmiralLabelValue
+
+	if targetType.Group != gv.Group || targetType.Kind != object.GetKind() || !managed {
+		return nil, false, fmt.Errorf("got obj %s, but it's not the target type or not managed by admiral: {Group:%s Kind:%s Managed:%t}",
+			qualifiedName.String(), gv.Group, object.GetKind(), managed)
+	}
+
+	return &qualifiedName, true, nil
 }

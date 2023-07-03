@@ -26,7 +26,15 @@ This file is lifted from k8s.io/kubernetes/pkg/controller/controller_utils.go
 package controller
 
 import (
+	"context"
+
 	apps "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
 )
 
 // ReplicaSetsByCreationTimestamp sorts a list of ReplicaSet by creation timestamp, using their names as a tie breaker.
@@ -39,4 +47,32 @@ func (o ReplicaSetsByCreationTimestamp) Less(i, j int) bool {
 		return o[i].Name < o[j].Name
 	}
 	return o[i].CreationTimestamp.Before(&o[j].CreationTimestamp)
+}
+
+// GetSpecifiedOwner returns the object of the owner matches the gvk.
+func GetSpecifiedOwnerFromSourceObj(
+	ctx context.Context,
+	client generic.Client,
+	sourceObj client.Object,
+	gvk schema.GroupVersionKind,
+) (obj *unstructured.Unstructured, found bool, err error) {
+	var owner *metav1.OwnerReference
+	for _, o := range sourceObj.GetOwnerReferences() {
+		if o.APIVersion == gvk.GroupVersion().String() && o.Kind == gvk.Kind {
+			owner = &o
+			break
+		}
+	}
+	if owner == nil || client == nil {
+		return nil, false, nil
+	}
+
+	obj = &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(gvk)
+	err = client.Get(ctx, obj, sourceObj.GetNamespace(), owner.Name)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return obj, true, nil
 }
