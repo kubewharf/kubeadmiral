@@ -14,24 +14,28 @@ import (
 // EventHandlerGenerator is used by InformerManger and FederatedInformerManager to generate and register
 // ResourceEventHandlers for each FTC's source type informer.
 type EventHandlerGenerator struct {
-	// Predicate is called for each FTC add or update event. Predicate should return True only if a new
-	// ResoureEventHandler should be generated and registered for the given FTC. Previous event handlers registered for
-	// this EventHandlerGenerator will also be removed.
+	// Predicate is called each time a FTC is reconciled to determine if a event handler needs to be registered for this
+	// EventHandlerGenerator. If Predicate returns false, any previously registered event handler for this
+	// EventHandlerGenerator will also be unregistered.
 	//
-	// Note: we should be cautious about registering new ResourceEventHandler as it will receive synthetic add events
-	// for every object in the informer's cache.
-	Predicate func(oldFTC, newFTC *fedcorev1a1.FederatedTypeConfig) bool
-	// Generator is used to generate a ResourceEventHandler for the given FTC. If nil is returned, no
-	// ResourceEventHandler will be registered.
+	// Note: updating of event handlers is intentionally unsupported as registering a new event handler would cause all
+	// existing objects in the cache to be sent to it as add events, potentially causing performance problems. In other
+	// words, if Predicate returns true and there is already a registered event handler for this EventHandlerGenerator,
+	// a new event handler will not be generated.
+	Predicate func(ftc *fedcorev1a1.FederatedTypeConfig) bool
+	// Generator is used to generate a ResourceEventHandler for the given FTC. Generator MUST not return nil.
 	Generator func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler
 }
 
 // InformerManager provides an interface for controllers that need to dynamically register event handlers and access
 // objects based on FederatedTypeConfigs. InformerManager will listen to FTC events and maintain informers for the
 // source type of each FTC.
+//
+// Having multiple FTCs with the same source type is not supported and will cause InformerManager to behave incorrectly.
+// Updating FTC source types is also not supported and will also cause InformerManager to behave incorrectly.
 type InformerManager interface {
 	// Adds an EventHandler used to generate and register ResourceEventHandlers for each FTC's source type informer.
-	AddEventHandlerGenerator(generator EventHandlerGenerator) error
+	AddEventHandlerGenerator(generator *EventHandlerGenerator) error
 	// Returns a lister for the given GroupResourceVersion if it exists. The lister for each FTC's source type will
 	// eventually exist.
 	GetResourceLister(gvr schema.GroupVersionResource) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool)
@@ -52,7 +56,7 @@ type ClusterEventHandler struct {
 	// ClusterEventHandler should be called for the the given event.
 	Predicate ClusterEventPredicate
 	// Callback is a function that accepts a FederatedCluster object.
-	Callback  func(cluster *fedcorev1a1.FederatedCluster)
+	Callback func(cluster *fedcorev1a1.FederatedCluster)
 }
 
 // ClusterEventPredicate determines if a callback should be called for a given cluster event.
@@ -61,9 +65,13 @@ type ClusterEventPredicate func(oldCluster, newCluster *fedcorev1a1.FederatedClu
 // FederatedInformerManager provides an interface for controllers that need to dynamically register event handlers and
 // access objects in member clusters based on FederatedTypeConfigs. FederatedInformerManager will listen to FTC events
 // and maintian informers for each FTC's source type and joined member cluster.
+//
+// Having multiple FTCs with the same source type is not supported and will cause FederatedInformerManager to behave
+// incorrectly. Updating FTC source types is also not supported and will also cause InformerManager to behave
+// incorrectly.
 type FederatedInformerManager interface {
 	// Adds an EventHandler used to generate and register ResourceEventHandlers for each FTC's source type informer.
-	AddEventHandlerGenerator(generator EventHandlerGenerator) error
+	AddEventHandlerGenerator(generator *EventHandlerGenerator) error
 	// Returns a lister for the given GroupResourceVersion and cluster if it exists. The lister for each FTC's source
 	// type and cluster will eventually exist.
 	GetResourceLister(

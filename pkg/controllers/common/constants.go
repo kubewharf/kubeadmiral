@@ -166,6 +166,24 @@ var DeploymentGVR = schema.GroupVersionResource{
 	Resource: "deployments",
 }
 
+var ConfigMapGVR = schema.GroupVersionResource{
+	Group:    "",
+	Version:  "v1",
+	Resource: "configmaps",
+}
+
+var SecretGVR = schema.GroupVersionResource{
+	Group:    "",
+	Version:  "v1",
+	Resource: "secrets",
+}
+
+var DaemonSetGVR = schema.GroupVersionResource{
+	Group:    "apps",
+	Version:  "v1",
+	Resource: "daemonsets",
+}
+
 // MaxFederatedObjectNameLength defines the max length of a federated object name.
 // A custom resource name must be a DNS subdomain as defined in RFC1123 with a maximum length of 253.
 // For more information about the custom resource validator, please refer to
