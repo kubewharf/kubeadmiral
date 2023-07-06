@@ -20,7 +20,12 @@ are Copyright 2023 The KubeAdmiral Authors.
 
 package util
 
-import "github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+import (
+	"fmt"
+	"hash/fnv"
+
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+)
 
 // The functions in this file are exposed as variables to allow them
 // to be overridden for testing purposes. Simulated scale testing
@@ -51,3 +56,54 @@ func qualifiedNameForCluster(clusterName string, qualifiedName common.QualifiedN
 // QualifiedNameForCluster returns the qualified name to use for the
 // given cluster.
 var QualifiedNameForCluster = qualifiedNameForCluster
+
+// GenerateFederatedObjectName generates a federated object name from source object name and ftc name.
+func GenerateFederatedObjectName(objectName, ftcName string) string {
+	transformedName, transformed := transformObjectName(objectName)
+	federatedName := fmt.Sprintf("%s-%s", transformedName, ftcName)
+	if transformed {
+		federatedName = fmt.Sprintf("%s-%d", federatedName, fnvHashFunc(objectName))
+	}
+
+	if len(federatedName) > common.MaxFederatedObjectNameLength {
+		nameHash := fmt.Sprint(fnvHashFunc(federatedName))
+		federatedName = fmt.Sprintf("%s-%s", federatedName[:common.MaxFederatedObjectNameLength-len(nameHash)-1], nameHash)
+	}
+
+	return federatedName
+}
+
+// transformObjectName will transform the object name as follows:
+// - upper case letters are transformed into lower case letters
+// - characters that cannot appear in a DNS subdomain as defined in RFC 1123 are replaced with dots
+// For more information about the DNS subdomain name, please refer to
+// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names.
+func transformObjectName(objectName string) (string, bool) {
+	transformed := false
+	transformedName := []byte(objectName)
+
+	const caseDiff byte = 'a' - 'A'
+
+	for i, ch := range transformedName {
+		if ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '.' || ch == '-' {
+			continue
+		}
+
+		transformed = true
+		if ch >= 'A' && ch <= 'Z' {
+			// transform uppercase letters into lowercase
+			transformedName[i] = caseDiff + ch
+		} else {
+			// transform any other illegal characters to dots
+			transformedName[i] = '.'
+		}
+	}
+
+	return string(transformedName), transformed
+}
+
+func fnvHashFunc(key string) uint32 {
+	hash := fnv.New32()
+	hash.Write([]byte(key))
+	return hash.Sum32()
+}

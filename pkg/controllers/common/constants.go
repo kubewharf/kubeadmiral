@@ -167,3 +167,11 @@ var DeploymentGVR = schema.GroupVersionResource{
 	Version:  "v1",
 	Resource: "deployments",
 }
+
+// MaxFederatedObjectNameLength defines the max length of a federated object name.
+// A custom resource name must be a DNS subdomain as defined in RFC1123 with a maximum length of 253.
+// For more information about the custom resource validator, please refer to
+// https://github.com/kubernetes/kubernetes/blob/a17149e/staging/src/k8s.io/apiextensions-apiserver/pkg/registry/customresource/validator.go#L61
+//
+//nolint:lll
+const MaxFederatedObjectNameLength = 253
