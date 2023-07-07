@@ -79,7 +79,7 @@ type FederatedInformerManager interface {
 		cluster string,
 	) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool)
 	// Returns a client for the given cluster if it exists. The client for each cluster will eventually exist.
-	GetClusterClient(cluster string) (dynamic.Interface, bool)
+	GetClusterClient(cluster string) (client dynamic.Interface, exists bool)
 
 	// Returns the FederatedTypeConfig lister used by the FederatedInformerManager.
 	GetFederatedTypeConfigLister() fedcorev1a1listers.FederatedTypeConfigLister
@@ -90,8 +90,10 @@ type FederatedInformerManager interface {
 
 	// Adds a ClusterEventHandler that can be used by controllers to hook into the cluster events received by the
 	// FederatedInformerManager.
-	AddClusterEventHandler(handler ClusterEventHandler) error
+	AddClusterEventHandler(handler *ClusterEventHandler) error
 
 	// Starts processing FederatedTypeConfig and FederatedCluster events.
 	Start(ctx context.Context)
 }
+
+type ClusterClientGetter func(cluster *fedcorev1a1.FederatedCluster) (dynamic.Interface, error)
