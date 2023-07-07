@@ -31,8 +31,8 @@ type EventHandlerGenerator struct {
 // objects based on FederatedTypeConfigs. InformerManager will listen to FTC events and maintain informers for the
 // source type of each FTC.
 //
-// Having multiple FTCs with the same source type is not supported and will cause InformerManager to behave incorrectly.
-// Updating FTC source types is also not supported and will also cause InformerManager to behave incorrectly.
+// Having multiple FTCs with the same source type is not supported and may cause InformerManager to behave incorrectly.
+// Updating FTC source types is also not supported and may also cause InformerManager to behave incorrectly.
 type InformerManager interface {
 	// Adds an EventHandler used to generate and register ResourceEventHandlers for each FTC's source type informer.
 	AddEventHandlerGenerator(generator *EventHandlerGenerator) error
@@ -66,8 +66,11 @@ type ClusterEventPredicate func(oldCluster, newCluster *fedcorev1a1.FederatedClu
 // access objects in member clusters based on FederatedTypeConfigs. FederatedInformerManager will listen to FTC events
 // and maintian informers for each FTC's source type and joined member cluster.
 //
-// Having multiple FTCs with the same source type is not supported and will cause FederatedInformerManager to behave
-// incorrectly. Updating FTC source types is also not supported and will also cause InformerManager to behave
+// Having multiple FTCs with the same source type is not supported and may cause FederatedInformerManager to behave
+// incorrectly. Updating FTC source types is also not supported and may also cause FederatedInformerManager to behave
+// incorrectly.
+//
+// Updating Cluster connection details is also not supported and may cause FederatedInformerManager to behave
 // incorrectly.
 type FederatedInformerManager interface {
 	// Adds an EventHandler used to generate and register ResourceEventHandlers for each FTC's source type informer.
@@ -96,4 +99,12 @@ type FederatedInformerManager interface {
 	Start(ctx context.Context)
 }
 
-type ClusterClientGetter func(cluster *fedcorev1a1.FederatedCluster) (dynamic.Interface, error)
+// ClusterClientGetter is used by the FederatedInformerManager to create clients for joined member clusters.
+type ClusterClientGetter struct {
+	// ConnectionHash should return a string that uniquely identifies the combination of parameters used to generate the
+	// cluster client. A change in the connection hash indicates a need to create a new client for a given member
+	// cluster.
+	ConnectionHash func(cluster *fedcorev1a1.FederatedCluster) string
+	// ClientGetter returns a dynamic client for the given member cluster.
+	ClientGetter   func(cluster *fedcorev1a1.FederatedCluster) (dynamic.Interface, error)
+}

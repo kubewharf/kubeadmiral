@@ -129,8 +129,9 @@ func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) (err 
 
 	if oldGVR, exists := m.gvrMapping.Lookup(ftcName); exists {
 		if oldGVR != gvr {
-			// this might occur if a ftc was deleted and recreated with a different source type within a short period of
-			// time and we skipped processing the deletion. we simply process the ftc deletion and reenqueue.
+			// This might occur if a ftc was deleted and recreated with a different source type within a short period of
+			// time and we missed processing the deletion. We simply process the ftc deletion and reenqueue. Note:
+			// updating of ftc source types, however, is still not a supported use case.
 			err := m.processFTCDeletionUnlocked(ftcName)
 			return err, true
 		}
@@ -138,7 +139,7 @@ func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) (err 
 		informer = m.informers[ftcName]
 	} else {
 		if err := m.gvrMapping.Add(ftcName, gvr); err != nil {
-			// there must be another ftc with the same source type GVR.
+			// There must be another ftc with the same source type GVR.
 			return fmt.Errorf("source type is already referenced by another FederatedTypeConfig: %w", err), false
 		}
 
