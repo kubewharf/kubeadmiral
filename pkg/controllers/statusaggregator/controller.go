@@ -33,6 +33,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -50,8 +51,6 @@ import (
 
 const (
 	ControllerName = "status-aggregator-controller"
-
-	allClustersKey = "ALL_CLUSTERS"
 
 	EventReasonUpdateSourceObjectStatus     = "UpdateSourceObjectStatus"
 	EventReasonUpdateSourceObjectAnnotation = "UpdateSourceObjectAnnotation"
@@ -80,7 +79,7 @@ type StatusAggregator struct {
 	informer util.FederatedInformer
 	// For triggering reconciliation of all target resources. This is
 	// used when a new cluster becomes available.
-	clusterDeliverer        *delayingdeliver.DelayingDeliverer
+	clusterQueue            workqueue.DelayingInterface
 	clusterAvailableDelay   time.Duration
 	clusterUnavailableDelay time.Duration
 	objectEnqueueDelay      time.Duration
@@ -146,8 +145,8 @@ func newStatusAggregator(controllerConfig *util.ControllerConfig,
 		return nil, err
 	}
 
-	// Build deliverer for triggering cluster reconciliations.
-	a.clusterDeliverer = delayingdeliver.NewDelayingDeliverer()
+	// Build queue for triggering cluster reconciliations.
+	a.clusterQueue = workqueue.NewNamedDelayingQueue("status-aggregator-cluster-queue")
 	a.clusterAvailableDelay = controllerConfig.ClusterAvailableDelay
 	a.clusterUnavailableDelay = controllerConfig.ClusterUnavailableDelay
 	a.objectEnqueueDelay = 10 * time.Second
@@ -185,11 +184,11 @@ func newStatusAggregator(controllerConfig *util.ControllerConfig,
 		&util.ClusterLifecycleHandlerFuncs{
 			ClusterAvailable: func(cluster *fedcorev1a1.FederatedCluster) {
 				// When new cluster becomes available process all the target resources again.
-				a.clusterDeliverer.DeliverAt(allClustersKey, nil, time.Now().Add(a.clusterAvailableDelay))
+				a.clusterQueue.AddAfter(struct{}{}, a.clusterAvailableDelay)
 			},
 			// When a cluster becomes unavailable process all the target resources again.
 			ClusterUnavailable: func(cluster *fedcorev1a1.FederatedCluster, _ []interface{}) {
-				a.clusterDeliverer.DeliverAt(allClustersKey, nil, time.Now().Add(a.clusterUnavailableDelay))
+				a.clusterQueue.AddAfter(struct{}{}, a.clusterUnavailableDelay)
 			},
 		},
 	)
@@ -206,11 +205,15 @@ func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
 	go a.sourceController.Run(stopChan)
 	go a.federatedController.Run(stopChan)
 	a.informer.Start()
-	a.clusterDeliverer.StartWithHandler(func(_ *delayingdeliver.DelayingDelivererItem) {
-		a.reconcileOnClusterChange()
-	})
-	go a.clusterDeliverer.RunMetricLoop(stopChan, 30*time.Second, a.metrics,
-		delayingdeliver.NewMetricTags("schedulingpreference-clusterDeliverer", a.typeConfig.GetTargetType().Kind))
+	go func() {
+		for {
+			_, shutdown := a.clusterQueue.Get()
+			if shutdown {
+				break
+			}
+			a.reconcileOnClusterChange()
+		}
+	}()
 	if !cache.WaitForNamedCacheSync(a.name, stopChan, a.HasSynced) {
 		return
 	}
@@ -225,7 +228,7 @@ func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
 		}()
 		<-stopChan
 		a.informer.Stop()
-		a.clusterDeliverer.Stop()
+		a.clusterQueue.ShutDown()
 	}()
 }
 
