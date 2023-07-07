@@ -42,6 +42,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -58,7 +59,6 @@ import (
 
 const (
 	StatusControllerName = "status-controller"
-	allClustersKey       = "ALL_CLUSTERS"
 )
 
 const (
@@ -71,7 +71,7 @@ type StatusController struct {
 
 	// For triggering reconciliation of all target resources. This is
 	// used when a new cluster becomes available.
-	clusterDeliverer *delayingdeliver.DelayingDeliverer
+	clusterQueue workqueue.DelayingInterface
 
 	// Informer for resources in member clusters
 	informer util.FederatedInformer
@@ -177,8 +177,8 @@ func newStatusController(
 		delayingdeliver.NewMetricTags("status-worker", typeConfig.GetTargetType().Kind),
 	)
 
-	// Build deliverer for triggering cluster reconciliations.
-	s.clusterDeliverer = delayingdeliver.NewDelayingDeliverer()
+	// Build queue for triggering cluster reconciliations.
+	s.clusterQueue = workqueue.NewNamedDelayingQueue("status-controller-cluster-queue")
 
 	// Start informers on the resources for the federated type
 	enqueueObj := s.worker.EnqueueObject
@@ -214,11 +214,11 @@ func newStatusController(
 		&util.ClusterLifecycleHandlerFuncs{
 			ClusterAvailable: func(cluster *fedcorev1a1.FederatedCluster) {
 				// When new cluster becomes available process all the target resources again.
-				s.clusterDeliverer.DeliverAt(allClustersKey, nil, time.Now().Add(s.clusterAvailableDelay))
+				s.clusterQueue.AddAfter(struct{}{}, s.clusterAvailableDelay)
 			},
 			// When a cluster becomes unavailable process all the target resources again.
 			ClusterUnavailable: func(cluster *fedcorev1a1.FederatedCluster, _ []interface{}) {
-				s.clusterDeliverer.DeliverAt(allClustersKey, nil, time.Now().Add(s.clusterUnavailableDelay))
+				s.clusterQueue.AddAfter(struct{}{}, s.clusterUnavailableDelay)
 			},
 		},
 	)
@@ -239,14 +239,18 @@ func (s *StatusController) minimizeLatency() {
 
 // Run runs the status controller
 func (s *StatusController) Run(stopChan <-chan struct{}) {
-	go s.clusterDeliverer.RunMetricLoop(stopChan, 30*time.Second, s.metrics,
-		delayingdeliver.NewMetricTags("status-clusterDeliverer", s.typeConfig.GetTargetType().Kind))
 	go s.federatedController.Run(stopChan)
 	go s.statusController.Run(stopChan)
 	s.informer.Start()
-	s.clusterDeliverer.StartWithHandler(func(_ *delayingdeliver.DelayingDelivererItem) {
-		s.reconcileOnClusterChange()
-	})
+	go func() {
+		for {
+			_, shutdown := s.clusterQueue.Get()
+			if shutdown {
+				break
+			}
+			s.reconcileOnClusterChange()
+		}
+	}()
 
 	if !cache.WaitForNamedCacheSync(s.name, stopChan, s.HasSynced) {
 		return
@@ -258,7 +262,7 @@ func (s *StatusController) Run(stopChan <-chan struct{}) {
 	go func() {
 		<-stopChan
 		s.informer.Stop()
-		s.clusterDeliverer.Stop()
+		s.clusterQueue.ShutDown()
 	}()
 }
 

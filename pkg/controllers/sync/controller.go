@@ -43,6 +43,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -54,7 +55,6 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/status"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
-	deliverutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
 	finalizersutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/history"
@@ -67,7 +67,6 @@ import (
 )
 
 const (
-	allClustersKey                         = "ALL_CLUSTERS"
 	EventReasonWaitForCascadingDelete      = "WaitForCascadingDelete"
 	EventReasonWaitForCascadingDeleteError = "WaitForCascadingDeleteError"
 	SyncControllerName                     = "sync-controller"
@@ -95,7 +94,7 @@ type SyncController struct {
 
 	// For triggering reconciliation of all target resources. This is
 	// used when a new cluster becomes available.
-	clusterDeliverer *deliverutil.DelayingDeliverer
+	clusterQueue workqueue.DelayingInterface
 
 	// Informer for resources in member clusters
 	informer util.FederatedInformer
@@ -223,11 +222,12 @@ func newSyncController(
 		deliverutil.NewMetricTags("sync-worker", typeConfig.GetTargetType().Kind),
 	)
 
+	// TODO: do we need both clusterWorker and clusterQueue?
 	s.clusterWorker = worker.NewReconcileWorker(s.reconcileCluster, worker.RateLimiterOptions{}, 1, controllerConfig.Metrics,
 		deliverutil.NewMetricTags("sync-cluster-worker", typeConfig.GetTargetType().Kind))
 
-	// Build deliverer for triggering cluster reconciliations.
-	s.clusterDeliverer = deliverutil.NewDelayingDeliverer()
+	// Build queue for triggering cluster reconciliations.
+	s.clusterQueue = workqueue.NewNamedDelayingQueue("sync-controller-cluster-queue")
 
 	targetAPIResource := typeConfig.GetTargetType()
 
@@ -245,12 +245,12 @@ func newSyncController(
 			ClusterAvailable: func(cluster *fedcorev1a1.FederatedCluster) {
 				// When new cluster becomes available process all the target resources again.
 				s.clusterWorker.EnqueueObject(cluster)
-				s.clusterDeliverer.DeliverAt(allClustersKey, nil, time.Now().Add(s.clusterAvailableDelay))
+				s.clusterQueue.AddAfter(struct{}{}, s.clusterAvailableDelay)
 			},
 			// When a cluster becomes unavailable process all the target resources again.
 			ClusterUnavailable: func(cluster *fedcorev1a1.FederatedCluster, _ []interface{}) {
 				s.clusterWorker.EnqueueObject(cluster)
-				s.clusterDeliverer.DeliverAt(allClustersKey, nil, time.Now().Add(s.clusterUnavailableDelay))
+				s.clusterQueue.AddAfter(struct{}{}, s.clusterUnavailableDelay)
 			},
 		},
 	)
@@ -287,11 +287,15 @@ func (s *SyncController) minimizeLatency() {
 func (s *SyncController) Run(stopChan <-chan struct{}) {
 	s.fedAccessor.Run(stopChan)
 	s.informer.Start()
-	s.clusterDeliverer.StartWithHandler(func(_ *deliverutil.DelayingDelivererItem) {
-		s.reconcileOnClusterChange()
-	})
-	go s.clusterDeliverer.RunMetricLoop(stopChan, 30*time.Second, s.metrics,
-		deliverutil.NewMetricTags("sync-clusterDeliverer", s.typeConfig.GetTargetType().Kind))
+	go func() {
+		for {
+			_, shutdown := s.clusterQueue.Get()
+			if shutdown {
+				break
+			}
+			s.reconcileOnClusterChange()
+		}
+	}()
 
 	if !cache.WaitForNamedCacheSync(s.name, stopChan, s.HasSynced) {
 		return
@@ -304,7 +308,7 @@ func (s *SyncController) Run(stopChan <-chan struct{}) {
 	go func() {
 		<-stopChan
 		s.informer.Stop()
-		s.clusterDeliverer.Stop()
+		s.clusterQueue.ShutDown()
 	}()
 }
 
