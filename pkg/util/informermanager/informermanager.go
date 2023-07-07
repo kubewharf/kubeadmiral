@@ -20,6 +20,7 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
+	"github.com/kubewharf/kubeadmiral/pkg/util/tools"
 )
 
 type informerManager struct {
@@ -32,7 +33,7 @@ type informerManager struct {
 
 	eventHandlerGenerators []*EventHandlerGenerator
 
-	gvrMapping map[schema.GroupVersionResource]string
+	gvrMapping *tools.BijectionMap[string, schema.GroupVersionResource]
 
 	informers                 map[string]informers.GenericInformer
 	informerStopChs           map[string]chan struct{}
@@ -49,7 +50,7 @@ func NewInformerManager(client dynamic.Interface, ftcInformer fedcorev1a1informe
 		client:                    client,
 		ftcInformer:               ftcInformer,
 		eventHandlerGenerators:    []*EventHandlerGenerator{},
-		gvrMapping:                map[schema.GroupVersionResource]string{},
+		gvrMapping:                tools.NewBijectionMap[string, schema.GroupVersionResource](),
 		informers:                 map[string]informers.GenericInformer{},
 		informerStopChs:           map[string]chan struct{}{},
 		eventHandlerRegistrations: map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{},
@@ -103,13 +104,20 @@ func (m *informerManager) worker() {
 		return
 	}
 
-	if err := m.processFTC(ftc); err != nil {
-		m.logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
+	err, needReenqueue := m.processFTC(ftc)
+	if err != nil {
+		if needReenqueue {
+			m.logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
+		} else {
+			m.logger.Error(err, "Failed to process FederatedTypeConfig")
+		}
+	}
+	if needReenqueue {
 		m.queue.Add(key)
 	}
 }
 
-func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) error {
+func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) (err error, needReenqueue bool) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -117,10 +125,23 @@ func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) error
 	apiResource := ftc.GetSourceType()
 	gvr := schemautil.APIResourceToGVR(&apiResource)
 
-	m.gvrMapping[gvr] = ftcName
+	var informer informers.GenericInformer
 
-	informer, ok := m.informers[ftcName]
-	if !ok {
+	if oldGVR, exists := m.gvrMapping.Lookup(ftcName); exists {
+		if oldGVR != gvr {
+			// this might occur if a ftc was deleted and recreated with a different source type within a short period of
+			// time and we skipped processing the deletion. we simply process the ftc deletion and reenqueue.
+			err := m.processFTCDeletionUnlocked(ftcName)
+			return err, true
+		}
+
+		informer = m.informers[ftcName]
+	} else {
+		if err := m.gvrMapping.Add(ftcName, gvr); err != nil {
+			// there must be another ftc with the same source type GVR.
+			return fmt.Errorf("source type is already referenced by another FederatedTypeConfig: %w", err), false
+		}
+
 		informer = dynamicinformer.NewFilteredDynamicInformer(
 			m.client,
 			gvr,
@@ -146,7 +167,7 @@ func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) error
 		switch {
 		case !shouldRegister && oldRegistrationExists:
 			if err := informer.Informer().RemoveEventHandler(oldRegistration); err != nil {
-				return fmt.Errorf("failed to unregister event handler: %w", err)
+				return fmt.Errorf("failed to unregister event handler: %w", err), true
 			}
 			delete(registrations, generator)
 
@@ -154,34 +175,32 @@ func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) error
 			handler := generator.Generator(ftc)
 			newRegistration, err := informer.Informer().AddEventHandler(handler)
 			if err != nil {
-				return fmt.Errorf("failed to register event handler: %w", err)
+				return fmt.Errorf("failed to register event handler: %w", err), true
 			}
 			registrations[generator] = newRegistration
 		}
 	}
 
-	return nil
+	return nil, false
 }
 
 func (m *informerManager) processFTCDeletion(ftcName string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	stopCh, ok := m.informerStopChs[ftcName]
-	if !ok {
-		return nil
+	return m.processFTCDeletionUnlocked(ftcName)
+}
+
+func (m *informerManager) processFTCDeletionUnlocked(ftcName string) error {
+	if stopCh, ok := m.informerStopChs[ftcName]; ok {
+		close(stopCh)
 	}
 
-	close(stopCh)
+	m.gvrMapping.Delete(ftcName)
+
 	delete(m.informers, ftcName)
 	delete(m.informerStopChs, ftcName)
 	delete(m.eventHandlerRegistrations, ftcName)
-
-	for gvr, ftc := range m.gvrMapping {
-		if ftc == ftcName {
-			delete(m.gvrMapping, gvr)
-		}
-	}
 
 	return nil
 }
@@ -208,7 +227,7 @@ func (m *informerManager) GetResourceLister(
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	ftc, ok := m.gvrMapping[gvr]
+	ftc, ok := m.gvrMapping.ReverseLookup(gvr)
 	if !ok {
 		return nil, nil, false
 	}

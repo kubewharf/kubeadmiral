@@ -20,138 +20,138 @@ are Copyright 2023 The KubeAdmiral Authors.
 
 package util
 
-import (
-	"fmt"
-	"reflect"
-	"sort"
-	"strconv"
-	"strings"
+// import (
+// 	"fmt"
+// 	"reflect"
+// 	"sort"
+// 	"strconv"
+// 	"strings"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+// 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
-)
+// 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+// 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
+// )
 
-const (
-	generationPrefix      = "gen:"
-	resourceVersionPrefix = "rv:"
-)
+// const (
+// 	generationPrefix      = "gen:"
+// 	resourceVersionPrefix = "rv:"
+// )
 
-// ObjectVersion retrieves the field type-prefixed value used for
-// determining currency of the given cluster object.
-func ObjectVersion(clusterObj *unstructured.Unstructured) string {
-	generation := clusterObj.GetGeneration()
-	if generation != 0 {
-		return fmt.Sprintf("%s%d", generationPrefix, generation)
-	}
-	return fmt.Sprintf("%s%s", resourceVersionPrefix, clusterObj.GetResourceVersion())
-}
+// // ObjectVersion retrieves the field type-prefixed value used for
+// // determining currency of the given cluster object.
+// func ObjectVersion(clusterObj *unstructured.Unstructured) string {
+// 	generation := clusterObj.GetGeneration()
+// 	if generation != 0 {
+// 		return fmt.Sprintf("%s%d", generationPrefix, generation)
+// 	}
+// 	return fmt.Sprintf("%s%s", resourceVersionPrefix, clusterObj.GetResourceVersion())
+// }
 
-// ObjectNeedsUpdate determines whether the 2 objects provided cluster
-// object needs to be updated according to the desired object and the
-// recorded version.
-func ObjectNeedsUpdate(
-	desiredObj, clusterObj *unstructured.Unstructured,
-	recordedVersion string,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) bool {
-	targetVersion := ObjectVersion(clusterObj)
+// // ObjectNeedsUpdate determines whether the 2 objects provided cluster
+// // object needs to be updated according to the desired object and the
+// // recorded version.
+// func ObjectNeedsUpdate(
+// 	desiredObj, clusterObj *unstructured.Unstructured,
+// 	recordedVersion string,
+// 	typeConfig *fedcorev1a1.FederatedTypeConfig,
+// ) bool {
+// 	targetVersion := ObjectVersion(clusterObj)
 
-	if recordedVersion != targetVersion {
-		return true
-	}
+// 	if recordedVersion != targetVersion {
+// 		return true
+// 	}
 
-	needUpdate := true
-	if desiredReplicas, err := utilunstructured.GetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil); err == nil {
-		if currentReplicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil); err == nil {
-			if desiredReplicas == nil && currentReplicas == nil ||
-				desiredReplicas != nil && currentReplicas != nil && *desiredReplicas == *currentReplicas {
-				needUpdate = false
-			}
-		}
-	}
-	if needUpdate {
-		return true
-	}
+// 	needUpdate := true
+// 	if desiredReplicas, err := utilunstructured.GetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil); err == nil {
+// 		if currentReplicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil); err == nil {
+// 			if desiredReplicas == nil && currentReplicas == nil ||
+// 				desiredReplicas != nil && currentReplicas != nil && *desiredReplicas == *currentReplicas {
+// 				needUpdate = false
+// 			}
+// 		}
+// 	}
+// 	if needUpdate {
+// 		return true
+// 	}
 
-	needUpdate = true
-	if desiredMaxSurge, ok, err := unstructured.NestedString(desiredObj.Object, MaxSurgePathSlice...); err == nil {
-		if currentMaxSurge, ok2, err := unstructured.NestedString(clusterObj.Object, MaxSurgePathSlice...); err == nil &&
-			ok == ok2 {
-			if desiredMaxSurge == currentMaxSurge {
-				needUpdate = false
-			}
-		}
-	} else if desiredMaxSurge, ok, err := unstructured.NestedInt64(desiredObj.Object, MaxSurgePathSlice...); err == nil {
-		if currentMaxSurge, ok2, err := unstructured.NestedInt64(clusterObj.Object, MaxSurgePathSlice...); err == nil && ok == ok2 {
-			if desiredMaxSurge == currentMaxSurge {
-				needUpdate = false
-			}
-		}
-	}
-	if needUpdate {
-		return true
-	}
+// 	needUpdate = true
+// 	if desiredMaxSurge, ok, err := unstructured.NestedString(desiredObj.Object, MaxSurgePathSlice...); err == nil {
+// 		if currentMaxSurge, ok2, err := unstructured.NestedString(clusterObj.Object, MaxSurgePathSlice...); err == nil &&
+// 			ok == ok2 {
+// 			if desiredMaxSurge == currentMaxSurge {
+// 				needUpdate = false
+// 			}
+// 		}
+// 	} else if desiredMaxSurge, ok, err := unstructured.NestedInt64(desiredObj.Object, MaxSurgePathSlice...); err == nil {
+// 		if currentMaxSurge, ok2, err := unstructured.NestedInt64(clusterObj.Object, MaxSurgePathSlice...); err == nil && ok == ok2 {
+// 			if desiredMaxSurge == currentMaxSurge {
+// 				needUpdate = false
+// 			}
+// 		}
+// 	}
+// 	if needUpdate {
+// 		return true
+// 	}
 
-	needUpdate = true
-	if desiredMaxUnavailable, ok, err := unstructured.NestedString(desiredObj.Object, MaxUnavailablePathSlice...); err == nil {
-		if currentMaxUnavailable, ok2, err := unstructured.NestedString(clusterObj.Object, MaxUnavailablePathSlice...); err == nil &&
-			ok == ok2 {
-			if desiredMaxUnavailable == currentMaxUnavailable {
-				needUpdate = false
-			}
-		}
-	} else if desiredMaxUnavailable, ok, err := unstructured.NestedInt64(desiredObj.Object, MaxUnavailablePathSlice...); err == nil {
-		if currentMaxUnavailable, ok2, err := unstructured.NestedInt64(clusterObj.Object, MaxUnavailablePathSlice...); err == nil && ok == ok2 {
-			if desiredMaxUnavailable == currentMaxUnavailable {
-				needUpdate = false
-			}
-		}
-	}
-	if needUpdate {
-		return true
-	}
-	// If versions match and the version is sourced from the
-	// generation field, a further check of metadata equivalency is
-	// required.
-	return strings.HasPrefix(targetVersion, generationPrefix) && !ObjectMetaObjEquivalent(desiredObj, clusterObj)
-}
+// 	needUpdate = true
+// 	if desiredMaxUnavailable, ok, err := unstructured.NestedString(desiredObj.Object, MaxUnavailablePathSlice...); err == nil {
+// 		if currentMaxUnavailable, ok2, err := unstructured.NestedString(clusterObj.Object, MaxUnavailablePathSlice...); err == nil &&
+// 			ok == ok2 {
+// 			if desiredMaxUnavailable == currentMaxUnavailable {
+// 				needUpdate = false
+// 			}
+// 		}
+// 	} else if desiredMaxUnavailable, ok, err := unstructured.NestedInt64(desiredObj.Object, MaxUnavailablePathSlice...); err == nil {
+// 		if currentMaxUnavailable, ok2, err := unstructured.NestedInt64(clusterObj.Object, MaxUnavailablePathSlice...); err == nil && ok == ok2 {
+// 			if desiredMaxUnavailable == currentMaxUnavailable {
+// 				needUpdate = false
+// 			}
+// 		}
+// 	}
+// 	if needUpdate {
+// 		return true
+// 	}
+// 	// If versions match and the version is sourced from the
+// 	// generation field, a further check of metadata equivalency is
+// 	// required.
+// 	return strings.HasPrefix(targetVersion, generationPrefix) && !ObjectMetaObjEquivalent(desiredObj, clusterObj)
+// }
 
-// SortClusterVersions ASCII sorts the given cluster versions slice
-// based on cluster name.
-func SortClusterVersions(versions []fedcorev1a1.ClusterObjectVersion) {
-	sort.Slice(versions, func(i, j int) bool {
-		return versions[i].ClusterName < versions[j].ClusterName
-	})
-}
+// // SortClusterVersions ASCII sorts the given cluster versions slice
+// // based on cluster name.
+// func SortClusterVersions(versions []fedcorev1a1.ClusterObjectVersion) {
+// 	sort.Slice(versions, func(i, j int) bool {
+// 		return versions[i].ClusterName < versions[j].ClusterName
+// 	})
+// }
 
-// PropagatedVersionStatusEquivalent returns true if both statuses are equal by
-// comparing Template and Override version, and their ClusterVersion slices;
-// false otherwise.
-func PropagatedVersionStatusEquivalent(pvs1, pvs2 *fedcorev1a1.PropagatedVersionStatus) bool {
-	return pvs1.TemplateVersion == pvs2.TemplateVersion &&
-		pvs1.OverrideVersion == pvs2.OverrideVersion &&
-		reflect.DeepEqual(pvs1.ClusterVersions, pvs2.ClusterVersions)
-}
+// // PropagatedVersionStatusEquivalent returns true if both statuses are equal by
+// // comparing Template and Override version, and their ClusterVersion slices;
+// // false otherwise.
+// func PropagatedVersionStatusEquivalent(pvs1, pvs2 *fedcorev1a1.PropagatedVersionStatus) bool {
+// 	return pvs1.TemplateVersion == pvs2.TemplateVersion &&
+// 		pvs1.OverrideVersion == pvs2.OverrideVersion &&
+// 		reflect.DeepEqual(pvs1.ClusterVersions, pvs2.ClusterVersions)
+// }
 
-func ConvertVersionMapToGenerationMap(versionMap map[string]string) map[string]int64 {
-	generationMap := make(map[string]int64, len(versionMap))
-	for key, version := range versionMap {
-		if strings.HasPrefix(version, resourceVersionPrefix) {
-			generationMap[key] = 0
-			continue
-		}
-		if !strings.HasPrefix(version, generationPrefix) {
-			continue
-		}
+// func ConvertVersionMapToGenerationMap(versionMap map[string]string) map[string]int64 {
+// 	generationMap := make(map[string]int64, len(versionMap))
+// 	for key, version := range versionMap {
+// 		if strings.HasPrefix(version, resourceVersionPrefix) {
+// 			generationMap[key] = 0
+// 			continue
+// 		}
+// 		if !strings.HasPrefix(version, generationPrefix) {
+// 			continue
+// 		}
 
-		generationString := strings.TrimPrefix(version, generationPrefix)
-		generation, err := strconv.ParseInt(generationString, 10, 64)
-		if err != nil {
-			continue
-		}
-		generationMap[key] = generation
-	}
-	return generationMap
-}
+// 		generationString := strings.TrimPrefix(version, generationPrefix)
+// 		generation, err := strconv.ParseInt(generationString, 10, 64)
+// 		if err != nil {
+// 			continue
+// 		}
+// 		generationMap[key] = generation
+// 	}
+// 	return generationMap
+// }
