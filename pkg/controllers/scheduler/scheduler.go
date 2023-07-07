@@ -127,7 +127,7 @@ func NewScheduler(
 
 	s.worker = worker.NewReconcileWorker(
 		s.reconcile,
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		workerCount,
 		metrics,
 		delayingdeliver.NewMetricTags("scheduler-worker", s.typeConfig.GetFederatedType().Kind),

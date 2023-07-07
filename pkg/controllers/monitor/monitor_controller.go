@@ -97,7 +97,7 @@ func NewMonitorController(config *util.ControllerConfig) (*MonitorController, er
 		stopChannels:     make(map[string]chan struct{}),
 	}
 
-	c.worker = worker.NewReconcileWorker(c.reconcile, worker.WorkerTiming{}, 1, config.Metrics,
+	c.worker = worker.NewReconcileWorker(c.reconcile, worker.RateLimiterOptions{}, 1, config.Metrics,
 		delayingdeliver.NewMetricTags("monitor-worker", ""))
 	c.meters = &sync.Map{}
 
