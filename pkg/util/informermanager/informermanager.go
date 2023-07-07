@@ -38,6 +38,7 @@ type informerManager struct {
 	informers                 map[string]informers.GenericInformer
 	informerStopChs           map[string]chan struct{}
 	eventHandlerRegistrations map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration
+	lastAppliedFTCsCache      map[string]map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig
 
 	queue  workqueue.Interface
 	logger klog.Logger
@@ -54,6 +55,7 @@ func NewInformerManager(client dynamic.Interface, ftcInformer fedcorev1a1informe
 		informers:                 map[string]informers.GenericInformer{},
 		informerStopChs:           map[string]chan struct{}{},
 		eventHandlerRegistrations: map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{},
+		lastAppliedFTCsCache:      map[string]map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig{},
 		queue:                     workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
 		logger:                    klog.LoggerWithName(klog.Background(), "informer-manager"),
 	}
@@ -157,29 +159,34 @@ func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) (err 
 		m.informers[ftcName] = informer
 		m.informerStopChs[ftcName] = stopCh
 		m.eventHandlerRegistrations[ftcName] = map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{}
+		m.lastAppliedFTCsCache[ftcName] = map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig{}
 	}
 
 	registrations := m.eventHandlerRegistrations[ftcName]
+	lastAppliedFTCs := m.lastAppliedFTCsCache[ftcName]
+
+	ftc = ftc.DeepCopy()
 
 	for _, generator := range m.eventHandlerGenerators {
-		shouldRegister := generator.Predicate(ftc)
-		oldRegistration, oldRegistrationExists := registrations[generator]
-
-		switch {
-		case !shouldRegister && oldRegistrationExists:
-			if err := informer.Informer().RemoveEventHandler(oldRegistration); err != nil {
-				return fmt.Errorf("failed to unregister event handler: %w", err), true
-			}
-			delete(registrations, generator)
-
-		case shouldRegister && !oldRegistrationExists:
-			handler := generator.Generator(ftc)
-			newRegistration, err := informer.Informer().AddEventHandler(handler)
-			if err != nil {
-				return fmt.Errorf("failed to register event handler: %w", err), true
-			}
-			registrations[generator] = newRegistration
+		lastApplied := lastAppliedFTCs[generator]
+		if !generator.Predicate(lastApplied, ftc) {
+			continue
 		}
+
+		oldRegistration := registrations[generator]
+		if err := informer.Informer().RemoveEventHandler(oldRegistration); err != nil {
+			return fmt.Errorf("failed to unregister event handler: %w", err), true
+		}
+		delete(registrations, generator)
+
+		handler := generator.Generator(ftc)
+		newRegistration, err := informer.Informer().AddEventHandler(handler)
+		if err != nil {
+			delete(lastAppliedFTCs, generator)
+			return fmt.Errorf("failed to register event handler: %w", err), true
+		}
+		registrations[generator] = newRegistration
+		lastAppliedFTCs[generator] = ftc
 	}
 
 	return nil, false
