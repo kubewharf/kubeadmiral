@@ -121,7 +121,7 @@ func newMonitorSubController(
 		return nil, err
 	}
 
-	m.worker = worker.NewReconcileWorker(m.reconcile, worker.WorkerTiming{}, controllerConfig.WorkerCount,
+	m.worker = worker.NewReconcileWorker(m.reconcile, worker.RateLimiterOptions{}, controllerConfig.WorkerCount,
 		controllerConfig.Metrics, delayingdeliver.NewMetricTags("monitor-subcontroller", m.kind))
 
 	m.federatedStore, m.federatedController = util.NewResourceInformer(m.federatedClient,

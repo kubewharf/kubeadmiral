@@ -154,7 +154,7 @@ func newStatusAggregator(controllerConfig *util.ControllerConfig,
 
 	a.worker = worker.NewReconcileWorker(
 		a.reconcile,
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		controllerConfig.WorkerCount,
 		controllerConfig.Metrics,
 		delayingdeliver.NewMetricTags("statusaggregator-worker", typeConfig.GetTargetType().Kind),

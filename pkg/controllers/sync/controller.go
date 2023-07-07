@@ -217,13 +217,13 @@ func newSyncController(
 
 	s.worker = worker.NewReconcileWorker(
 		s.reconcile,
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		controllerConfig.WorkerCount,
 		controllerConfig.Metrics,
 		deliverutil.NewMetricTags("sync-worker", typeConfig.GetTargetType().Kind),
 	)
 
-	s.clusterWorker = worker.NewReconcileWorker(s.reconcileCluster, worker.WorkerTiming{}, 1, controllerConfig.Metrics,
+	s.clusterWorker = worker.NewReconcileWorker(s.reconcileCluster, worker.RateLimiterOptions{}, 1, controllerConfig.Metrics,
 		deliverutil.NewMetricTags("sync-cluster-worker", typeConfig.GetTargetType().Kind))
 
 	// Build deliverer for triggering cluster reconciliations.
@@ -342,7 +342,6 @@ func (s *SyncController) reconcile(qualifiedName common.QualifiedName) (status w
 	keyedLogger := s.logger.WithValues("object", key)
 	ctx := klog.NewContext(context.TODO(), keyedLogger)
 	fedResource, possibleOrphan, err := s.fedAccessor.FederatedResource(qualifiedName)
-
 	if err != nil {
 		keyedLogger.Error(err, "Failed to create FederatedResource helper")
 		return worker.StatusError

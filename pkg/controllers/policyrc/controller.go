@@ -104,7 +104,7 @@ func newController(controllerConfig *util.ControllerConfig,
 
 	c.countWorker = worker.NewReconcileWorker(
 		c.reconcileCount,
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		1, // currently only one worker is meaningful due to the global mutex
 		controllerConfig.Metrics,
 		delayingdeliver.NewMetricTags("policyrc-controller-count-worker", c.typeConfig.GetFederatedType().Kind),
@@ -114,7 +114,7 @@ func newController(controllerConfig *util.ControllerConfig,
 		func(qualifiedName common.QualifiedName) worker.Result {
 			return c.reconcilePersist("propagation-policy", qualifiedName, c.pp.store, c.cpp.store, c.ppCounter)
 		},
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		controllerConfig.WorkerCount,
 		controllerConfig.Metrics,
 		delayingdeliver.NewMetricTags("policyrc-controller-persist-worker", c.typeConfig.GetFederatedType().Kind),
@@ -123,7 +123,7 @@ func newController(controllerConfig *util.ControllerConfig,
 		func(qualifiedName common.QualifiedName) worker.Result {
 			return c.reconcilePersist("override-policy", qualifiedName, c.op.store, c.cop.store, c.opCounter)
 		},
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		controllerConfig.WorkerCount,
 		controllerConfig.Metrics,
 		delayingdeliver.NewMetricTags("policyrc-controller-persist-worker", c.typeConfig.GetFederatedType().Kind),

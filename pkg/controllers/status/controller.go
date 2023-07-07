@@ -171,7 +171,7 @@ func newStatusController(
 
 	s.worker = worker.NewReconcileWorker(
 		s.reconcile,
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		controllerConfig.WorkerCount,
 		controllerConfig.Metrics,
 		delayingdeliver.NewMetricTags("status-worker", typeConfig.GetTargetType().Kind),

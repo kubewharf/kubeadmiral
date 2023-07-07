@@ -174,7 +174,7 @@ func NewFollowerController(
 			func(qualifiedName common.QualifiedName) worker.Result {
 				return reconcile(handles, qualifiedName)
 			},
-			worker.WorkerTiming{},
+			worker.RateLimiterOptions{},
 			workerCount,
 			c.metrics,
 			delayingdeliver.NewMetricTags("follower-controller-worker", handles.name),
