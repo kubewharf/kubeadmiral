@@ -178,14 +178,16 @@ func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) (err 
 			return fmt.Errorf("failed to unregister event handler: %w", err), true
 		}
 		delete(registrations, generator)
+		delete(lastAppliedFTCs, generator)
 
-		handler := generator.Generator(ftc)
-		newRegistration, err := informer.Informer().AddEventHandler(handler)
-		if err != nil {
-			delete(lastAppliedFTCs, generator)
-			return fmt.Errorf("failed to register event handler: %w", err), true
+		if handler := generator.Generator(ftc); handler != nil {
+			newRegistration, err := informer.Informer().AddEventHandler(handler)
+			if err != nil {
+				return fmt.Errorf("failed to register event handler: %w", err), true
+			}
+			registrations[generator] = newRegistration
 		}
-		registrations[generator] = newRegistration
+
 		lastAppliedFTCs[generator] = ftc
 	}
 
