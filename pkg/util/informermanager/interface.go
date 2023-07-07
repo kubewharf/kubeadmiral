@@ -14,16 +14,12 @@ import (
 // EventHandlerGenerator is used by InformerManger and FederatedInformerManager to generate and register
 // ResourceEventHandlers for each FTC's source type informer.
 type EventHandlerGenerator struct {
-	// Predicate is called each time a FTC is reconciled to determine if a event handler needs to be registered for this
-	// EventHandlerGenerator. If Predicate returns false, any previously registered event handler for this
-	// EventHandlerGenerator will also be unregistered.
-	//
-	// Note: updating of event handlers is intentionally unsupported as registering a new event handler would cause all
-	// existing objects in the cache to be sent to it as add events, potentially causing performance problems. In other
-	// words, if Predicate returns true and there is already a registered event handler for this EventHandlerGenerator,
-	// a new event handler will not be generated.
-	Predicate func(ftc *fedcorev1a1.FederatedTypeConfig) bool
-	// Generator is used to generate a ResourceEventHandler for the given FTC. Generator MUST not return nil.
+	// Predicate is called each time a FTC is reconciled to determine if a new event handler needs to be generated and
+	// registered for this EventHandlerGenerator. If Predicate returns true, any previously registered event handler
+	// for this EventHandlerGenerator will also be unregistered.
+	Predicate func(lastApplied, latest *fedcorev1a1.FederatedTypeConfig) bool
+	// Generator is used to generate a ResourceEventHandler for the given FTC. If nil is returned, no event handler will
+	// be registered.
 	Generator func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler
 }
 
