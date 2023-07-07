@@ -121,14 +121,49 @@ func (m *federatedInformerManager) processCluster(cluster *fedcorev1a1.Federated
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	panic("unimplemented")
+	clusterName := cluster.Name
+
+	clusterClient, ok := m.clients[clusterName]
+	if !ok {
+		var err error
+		if clusterClient, err = m.clientGetter(cluster); err != nil {
+			return fmt.Errorf("failed to get client for cluster %s: %s", clusterName, err)
+		}
+		m.clients[clusterName] = clusterClient
+	}
+
+	manager, ok := m.informerManagers[clusterName]
+	if !ok {
+		manager = NewInformerManager(clusterClient, m.ftcInformer)
+		ctx, cancel := context.WithCancel(context.Background())
+
+		for _, generator := range m.eventHandlerGenerators {
+			if err := manager.AddEventHandlerGenerator(generator); err != nil {
+				return fmt.Errorf("failed to initialized InformerManager for cluster %s: %w", clusterName, err)
+			}
+		}
+
+		manager.Start(ctx)
+		m.informerManagers[clusterName] = manager
+		m.informerManagersCancelFuncs[clusterName] = cancel
+	}
+
+	return nil
 }
 
 func (m *federatedInformerManager) processClusterUnjoin(clusterName string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	panic("unimplemented")
+	delete(m.clients, clusterName)
+
+	if cancel, ok := m.informerManagersCancelFuncs[clusterName]; ok {
+		cancel()
+		delete(m.informerManagers, clusterName)
+		delete(m.informerManagersCancelFuncs, clusterName)
+	}
+
+	return nil
 }
 
 func (m *federatedInformerManager) AddClusterEventHandler(handler *ClusterEventHandler) error {
