@@ -32,6 +32,7 @@ type federatedInformerManager struct {
 	clusterEventHandler    []*ClusterEventHandler
 
 	clients                     map[string]dynamic.Interface
+	connectionMap               map[string]string
 	informerManagers            map[string]InformerManager
 	informerManagersCancelFuncs map[string]context.CancelFunc
 
@@ -53,6 +54,7 @@ func NewFederatedInformerManager(
 		eventHandlerGenerators:      []*EventHandlerGenerator{},
 		clusterEventHandler:         []*ClusterEventHandler{},
 		clients:                     map[string]dynamic.Interface{},
+		connectionMap:               map[string]string{},
 		informerManagers:            map[string]InformerManager{},
 		informerManagersCancelFuncs: map[string]context.CancelFunc{},
 		queue:                       workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
@@ -103,7 +105,7 @@ func (m *federatedInformerManager) worker() {
 		return
 	}
 	if apierrors.IsNotFound(err) || !util.IsClusterJoined(&cluster.Status) {
-		if err := m.processClusterUnjoin(name); err != nil {
+		if err := m.processClusterDeletion(name); err != nil {
 			m.logger.Error(err, "Failed to process FederatedCluster, will retry")
 			m.queue.Add(key)
 			return
@@ -111,57 +113,77 @@ func (m *federatedInformerManager) worker() {
 		return
 	}
 
-	if err := m.processCluster(cluster); err != nil {
-		m.logger.Error(err, "Failed to process FederatedCluster, will retry")
+	err, needReenqueue := m.processCluster(cluster)
+	if err != nil {
+		if needReenqueue {
+			m.logger.Error(err, "Failed to process FederatedCluster, will retry")
+		} else {
+			m.logger.Error(err, "Failed to process FederatedCluster")
+		}
+	}
+	if needReenqueue {
 		m.queue.Add(key)
 	}
 }
 
-func (m *federatedInformerManager) processCluster(cluster *fedcorev1a1.FederatedCluster) error {
+func (m *federatedInformerManager) processCluster(cluster *fedcorev1a1.FederatedCluster) (err error, needReenqueue bool) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
 	clusterName := cluster.Name
 
-	clusterClient, ok := m.clients[clusterName]
-	if !ok {
-		var err error
-		if clusterClient, err = m.clientGetter(cluster); err != nil {
-			return fmt.Errorf("failed to get client for cluster %s: %s", clusterName, err)
+	connectionHash := m.clientGetter.ConnectionHash(cluster)
+	if oldConnectionHash, exists := m.connectionMap[clusterName]; exists {
+		if oldConnectionHash != connectionHash {
+			// This might occur if a cluster was deleted and recreated with different connection details within a short
+			// period of time and we missed processing the deletion. We simply process the cluster deletion and
+			// reenqueue.
+			// Note: updating of cluster connetion details, however, is still not a supported use case.
+			err := m.processClusterDeletionUnlocked(clusterName)
+			return err, true
 		}
-		m.clients[clusterName] = clusterClient
-	}
+	} else {
+		clusterClient, err := m.clientGetter.ClientGetter(cluster)
+		if err != nil {
+			return fmt.Errorf("failed to get client for cluster %s: %s", clusterName, err), true
+		}
 
-	manager, ok := m.informerManagers[clusterName]
-	if !ok {
-		manager = NewInformerManager(clusterClient, m.ftcInformer)
+		manager := NewInformerManager(clusterClient, m.ftcInformer)
 		ctx, cancel := context.WithCancel(context.Background())
 
 		for _, generator := range m.eventHandlerGenerators {
 			if err := manager.AddEventHandlerGenerator(generator); err != nil {
-				return fmt.Errorf("failed to initialized InformerManager for cluster %s: %w", clusterName, err)
+				cancel()
+				return fmt.Errorf("failed to initialized InformerManager for cluster %s: %w", clusterName, err), true
 			}
 		}
 
 		manager.Start(ctx)
+
+		m.connectionMap[clusterName] = connectionHash
+		m.clients[clusterName] = clusterClient
 		m.informerManagers[clusterName] = manager
 		m.informerManagersCancelFuncs[clusterName] = cancel
 	}
 
-	return nil
+	return nil, false
 }
 
-func (m *federatedInformerManager) processClusterUnjoin(clusterName string) error {
+func (m *federatedInformerManager) processClusterDeletion(clusterName string) error {
 	m.lock.Lock()
-	defer m.lock.Unlock()
+	m.lock.Unlock()
+	return m.processClusterDeletionUnlocked(clusterName)
+}
 
+func (m *federatedInformerManager) processClusterDeletionUnlocked(clusterName string) error {
+	delete(m.connectionMap, clusterName)
 	delete(m.clients, clusterName)
 
 	if cancel, ok := m.informerManagersCancelFuncs[clusterName]; ok {
 		cancel()
-		delete(m.informerManagers, clusterName)
-		delete(m.informerManagersCancelFuncs, clusterName)
 	}
+	delete(m.informerManagers, clusterName)
+	delete(m.informerManagersCancelFuncs, clusterName)
 
 	return nil
 }
@@ -281,3 +303,7 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 }
 
 var _ FederatedInformerManager = &federatedInformerManager{}
+
+func getConnectionHash(cluster *fedcorev1a1.FederatedCluster) string {
+	panic("unimplemented")
+}
