@@ -100,7 +100,7 @@ type ClusterClientGetter struct {
 	// ConnectionHash should return a string that uniquely identifies the combination of parameters used to generate the
 	// cluster client. A change in the connection hash indicates a need to create a new client for a given member
 	// cluster.
-	ConnectionHash func(cluster *fedcorev1a1.FederatedCluster) string
+	ConnectionHash func(cluster *fedcorev1a1.FederatedCluster) ([]byte, error)
 	// ClientGetter returns a dynamic client for the given member cluster.
 	ClientGetter   func(cluster *fedcorev1a1.FederatedCluster) (dynamic.Interface, error)
 }

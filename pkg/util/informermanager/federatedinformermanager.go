@@ -1,7 +1,9 @@
 package informermanager
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"fmt"
 	"sync"
 
@@ -32,7 +34,7 @@ type federatedInformerManager struct {
 	clusterEventHandler    []*ClusterEventHandler
 
 	clients                     map[string]dynamic.Interface
-	connectionMap               map[string]string
+	connectionMap               map[string][]byte
 	informerManagers            map[string]InformerManager
 	informerManagersCancelFuncs map[string]context.CancelFunc
 
@@ -54,7 +56,7 @@ func NewFederatedInformerManager(
 		eventHandlerGenerators:      []*EventHandlerGenerator{},
 		clusterEventHandler:         []*ClusterEventHandler{},
 		clients:                     map[string]dynamic.Interface{},
-		connectionMap:               map[string]string{},
+		connectionMap:               map[string][]byte{},
 		informerManagers:            map[string]InformerManager{},
 		informerManagersCancelFuncs: map[string]context.CancelFunc{},
 		queue:                       workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
@@ -132,9 +134,12 @@ func (m *federatedInformerManager) processCluster(cluster *fedcorev1a1.Federated
 
 	clusterName := cluster.Name
 
-	connectionHash := m.clientGetter.ConnectionHash(cluster)
+	connectionHash, err := m.clientGetter.ConnectionHash(cluster)
+	if err != nil {
+		return fmt.Errorf("failed to get connection hash for cluster %s: %w", clusterName, err), true
+	}
 	if oldConnectionHash, exists := m.connectionMap[clusterName]; exists {
-		if oldConnectionHash != connectionHash {
+		if !bytes.Equal(oldConnectionHash, connectionHash) {
 			// This might occur if a cluster was deleted and recreated with different connection details within a short
 			// period of time and we missed processing the deletion. We simply process the cluster deletion and
 			// reenqueue.
@@ -145,7 +150,7 @@ func (m *federatedInformerManager) processCluster(cluster *fedcorev1a1.Federated
 	} else {
 		clusterClient, err := m.clientGetter.ClientGetter(cluster)
 		if err != nil {
-			return fmt.Errorf("failed to get client for cluster %s: %s", clusterName, err), true
+			return fmt.Errorf("failed to get client for cluster %s: %w", clusterName, err), true
 		}
 
 		manager := NewInformerManager(clusterClient, m.ftcInformer)
@@ -304,6 +309,20 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 
 var _ FederatedInformerManager = &federatedInformerManager{}
 
-func getConnectionHash(cluster *fedcorev1a1.FederatedCluster) string {
-	panic("unimplemented")
+func DefaultClusterConnectionHash(cluster *fedcorev1a1.FederatedCluster) ([]byte, error) {
+	hashObj := struct {
+		ApiEndpoint            string
+		SecretName             string
+		UseServiceAccountToken bool
+	}{
+		ApiEndpoint:            cluster.Spec.APIEndpoint,
+		SecretName:             cluster.Spec.SecretRef.Name,
+		UseServiceAccountToken: cluster.Spec.UseServiceAccountToken,
+	}
+
+	var b bytes.Buffer
+	if err := gob.NewEncoder(&b).Encode(hashObj); err != nil {
+		return nil, err
+	}
+    return b.Bytes(), nil
 }
