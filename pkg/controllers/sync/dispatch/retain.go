@@ -542,7 +542,7 @@ func retainReplicas(desiredObj, clusterObj, fedObj *unstructured.Unstructured, t
 		return err
 	}
 	if retain {
-		replicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
+		replicas, _, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
 		if err != nil {
 			return err
 		}
@@ -608,7 +608,7 @@ func retainTemplate(
 	}
 
 	if keepRolloutSettings {
-		replicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
+		replicas, _, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
 		if err != nil {
 			return err
 		}

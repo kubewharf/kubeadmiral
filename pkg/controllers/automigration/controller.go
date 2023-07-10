@@ -383,7 +383,7 @@ func (c *Controller) getTotalAndReadyReplicas(
 	// These values might not have been populated by the controller, in which case we default to 0
 
 	totalReplicas := int64(0)
-	if replicasPtr, err := utilunstructured.GetInt64FromPath(
+	if replicasPtr, _, err := utilunstructured.GetInt64FromPath(
 		unsObj, c.typeConfig.Spec.PathDefinition.ReplicasStatus, nil,
 	); err != nil {
 		return 0, 0, fmt.Errorf("replicas: %w", err)
@@ -392,7 +392,7 @@ func (c *Controller) getTotalAndReadyReplicas(
 	}
 
 	readyReplicas := int64(0)
-	if readyReplicasPtr, err := utilunstructured.GetInt64FromPath(
+	if readyReplicasPtr, _, err := utilunstructured.GetInt64FromPath(
 		unsObj, c.typeConfig.Spec.PathDefinition.ReadyReplicasStatus, nil,
 	); err != nil {
 		return 0, 0, fmt.Errorf("ready replicas: %w", err)
@@ -404,7 +404,7 @@ func (c *Controller) getTotalAndReadyReplicas(
 }
 
 func (c *Controller) getDesiredReplicas(unsObj *unstructured.Unstructured) (int64, error) {
-	desiredReplicas, err := utilunstructured.GetInt64FromPath(unsObj, c.typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
+	desiredReplicas, _, err := utilunstructured.GetInt64FromPath(unsObj, c.typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
 	if err != nil {
 		return 0, fmt.Errorf("desired replicas: %w", err)
 	} else if desiredReplicas == nil {
