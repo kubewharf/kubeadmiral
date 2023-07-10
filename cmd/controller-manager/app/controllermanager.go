@@ -28,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app/options"
-	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager/healthcheck"
 	fedleaderelection "github.com/kubewharf/kubeadmiral/pkg/controllermanager/leaderelection"
@@ -37,14 +36,12 @@ import (
 
 const (
 	FederatedClusterControllerName = "cluster"
-	TypeConfigControllerName       = "typeconfig"
 	MonitorControllerName          = "monitor"
 	FollowerControllerName         = "follower"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
 	FederatedClusterControllerName: startFederatedClusterController,
-	TypeConfigControllerName:       startTypeConfigController,
 	MonitorControllerName:          startMonitorController,
 	FollowerControllerName:         startFollowerController,
 }
@@ -77,7 +74,7 @@ func Run(ctx context.Context, opts *options.Options) {
 		defer klog.Infoln("Ready to stop controllers")
 		klog.Infoln("Ready to start controllers")
 
-		err := startControllers(ctx, controllerCtx, knownControllers, knownFTCSubControllers, opts.Controllers, healthCheckHandler)
+		err := startControllers(ctx, controllerCtx, knownControllers, opts.Controllers, healthCheckHandler)
 		if err != nil {
 			klog.Fatalf("Error starting controllers %s: %v", opts.Controllers, err)
 		}
@@ -127,7 +124,6 @@ func startControllers(
 	ctx context.Context,
 	controllerCtx *controllercontext.Context,
 	startControllerFuncs map[string]controllermanager.StartControllerFunc,
-	ftcSubControllerInitFuncs map[string]controllermanager.FTCSubControllerInitFuncs,
 	enabledControllers []string,
 	healthCheckHandler *healthcheck.MutableHealthCheckHandler,
 ) error {
@@ -152,27 +148,6 @@ func startControllers(
 			return fmt.Errorf("controller not ready")
 		})
 	}
-
-	manager := NewFederatedTypeConfigManager(
-		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedTypeConfigs(),
-		controllerCtx,
-		healthCheckHandler,
-		controllerCtx.Metrics,
-	)
-	for controllerName, initFuncs := range ftcSubControllerInitFuncs {
-		controllerName := controllerName
-		initFuncs := initFuncs
-		manager.RegisterSubController(controllerName, initFuncs.StartFunc, func(typeConfig *fedcorev1a1.FederatedTypeConfig) bool {
-			if !isControllerEnabled(controllerName, controllersDisabledByDefault, enabledControllers) {
-				return false
-			}
-			if initFuncs.IsEnabledFunc != nil {
-				return initFuncs.IsEnabledFunc(typeConfig)
-			}
-			return true
-		})
-	}
-	go manager.Run(ctx)
 
 	return nil
 }
