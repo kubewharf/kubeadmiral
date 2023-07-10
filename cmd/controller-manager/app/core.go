@@ -58,27 +58,6 @@ func startFederatedClusterController(ctx context.Context, controllerCtx *control
 	return clusterController, nil
 }
 
-func startTypeConfigController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
-	controllerConfig := controllerConfigFromControllerContext(controllerCtx)
-	//nolint:contextcheck
-	typeConfigController, err := federatedtypeconfig.NewController(
-		controllerConfig,
-		controllerCtx.KubeClientset,
-		controllerCtx.DynamicClientset,
-		controllerCtx.FedClientset,
-		controllerCtx.KubeInformerFactory,
-		controllerCtx.DynamicInformerFactory,
-		controllerCtx.FedInformerFactory,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error creating type config controller: %w", err)
-	}
-
-	go typeConfigController.Run(ctx.Done())
-
-	return typeConfigController, nil
-}
-
 func startMonitorController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
 	controllerConfig := controllerConfigFromControllerContext(controllerCtx)
 	//nolint:contextcheck
