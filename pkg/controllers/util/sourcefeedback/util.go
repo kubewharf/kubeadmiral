@@ -19,13 +19,13 @@ package sourcefeedback
 import (
 	"encoding/json"
 
-	"k8s.io/apimachinery/pkg/runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
 )
 
-func setAnnotation(object runtime.Object, key string, value interface{}, hasChanged *bool) {
+func setAnnotation(object metav1.Object, key string, value interface{}, hasChanged *bool) {
 	jsonBuf, err := json.Marshal(value)
 	if err != nil {
 		klog.Errorf("Cannot marshal JSON: %v", err)
