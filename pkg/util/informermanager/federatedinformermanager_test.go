@@ -80,7 +80,7 @@ func TestFederatedInformerManagerClusterEventHandlerOnClusterDelete(t *testing.T
 func boostrapFederatedInformerManagerWithFakeClients(
 	clusters []*fedcorev1a1.FederatedCluster,
 	ftcs []*fedcorev1a1.FederatedTypeConfig,
-	objects []*unstructured.Unstructured,
+	objects map[string]*unstructured.Unstructured,
 ) (FederatedInformerManager, dynamicclient.Interface, fedclient.Interface) {
 	scheme := runtime.NewScheme()
 
@@ -102,7 +102,7 @@ func boostrapFederatedInformerManagerWithFakeClients(
 
 	factory := fedinformers.NewSharedInformerFactory(fedClient, 0)
 	informerManager := NewFederatedInformerManager(
-		nil,
+		ClusterClientGetter{},
 		factory.Core().V1alpha1().FederatedTypeConfigs(),
 		factory.Core().V1alpha1().FederatedClusters(),
 	)
