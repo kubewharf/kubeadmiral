@@ -107,6 +107,12 @@ type PropagationPolicySpec struct {
 	// Default set via a post-generation patch.
 	// See patch file for details.
 	ReplicaRescheduling *ReplicaRescheduling `json:"replicaRescheduling,omitempty"`
+
+	// ApplyPolicy determines when the policy applied for scheduling.
+	// Available values: ApplyNow (default behavior), ApplyLater.
+	// +optional
+	// +kubebuilder:default=ApplyNow
+	ApplyPolicy ApplyPolicy `json:"applyPolicy"`
 }
 
 type PropagationPolicyStatus struct {

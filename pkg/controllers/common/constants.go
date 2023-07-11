@@ -114,6 +114,10 @@ const (
 	SourceGenerationAnnotation    = DefaultPrefix + "source-generation"
 	FederatedGenerationAnnotation = DefaultPrefix + "federated-generation"
 
+	LastAppliedPropagationPolicyGenerationAnnotation = DefaultPrefix + "last-applied-propagation-policy-generation"
+	ObservedPropagationPolicyGenerationAnnotation    = DefaultPrefix + "observed-propagation-policy-generation"
+	LastAppliedTemplateHashAnnotation                = DefaultPrefix + "last-applied-template-hash"
+
 	// The following annotations control the behavior of Kubeadmiral controllers.
 
 	NoSchedulingAnnotation = DefaultPrefix + "no-scheduling"

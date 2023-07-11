@@ -36,6 +36,13 @@ spec:
                   maxLength: 63
             spec:
               properties:
+                applyPolicy:
+                  default: ApplyNow
+                  description: 'ApplyPolicy determines when the policy applied for scheduling. Available values: ApplyNow (default behavior), ApplyLater.'
+                  enum:
+                    - ApplyNow
+                    - ApplyLater
+                  type: string
                 autoMigration:
                   description: Configures behaviors related to auto migration. If absent, auto migration will be disabled.
                   properties:

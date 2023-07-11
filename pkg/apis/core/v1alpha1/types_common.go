@@ -75,3 +75,16 @@ const (
 	ClusterSelectorOpGt           ClusterSelectorOperator = "Gt"
 	ClusterSelectorOpLt           ClusterSelectorOperator = "Lt"
 )
+
+// ApplyPolicy determines the policy used by the scheduler when scheduling federated objects.
+// +kubebuilder:validation:Enum=ApplyNow;ApplyLater
+type ApplyPolicy string
+
+const (
+	// ApplyNow means the policy will take effect immediately for all matched objects.
+	ApplyNow ApplyPolicy = "ApplyNow"
+
+	// ApplyLater means the policy will take effect for all matched objects on next
+	// objects' updates or new created objects.
+	ApplyLater ApplyPolicy = "ApplyLater"
+)

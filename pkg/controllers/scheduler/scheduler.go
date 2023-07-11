@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 
@@ -391,7 +392,13 @@ func (s *Scheduler) prepareToSchedule(
 		}
 	}
 
-	triggerHash, err := s.computeSchedulingTriggerHash(fedObject, policy, clusters)
+	templateHash, err := getTemplateHash(fedObject)
+	if err != nil {
+		keyedLogger.Error(err, "Failed to compute template hash")
+		return nil, nil, nil, &worker.StatusError
+	}
+
+	triggerHash, err := s.computeSchedulingTriggerHash(fedObject, policy, clusters, templateHash)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to compute scheduling trigger hash")
 		return nil, nil, nil, &worker.StatusError
@@ -401,6 +408,48 @@ func (s *Scheduler) prepareToSchedule(
 	if err != nil {
 		keyedLogger.Error(err, "Failed to update scheduling trigger hash")
 		return nil, nil, nil, &worker.StatusError
+	}
+
+	annotationChanged := false
+	if policy != nil {
+		templateChanged, err := annotationutil.AddAnnotation(
+			fedObject,
+			common.LastAppliedTemplateHashAnnotation,
+			templateHash,
+		)
+		if err != nil {
+			keyedLogger.Error(err, "Failed to update last applied template hash")
+			return nil, nil, nil, &worker.StatusError
+		}
+
+		policyChanged, err := annotationutil.AddAnnotation(
+			fedObject,
+			common.ObservedPropagationPolicyGenerationAnnotation,
+			strconv.FormatInt(policy.GetGeneration(), 10),
+		)
+		if err != nil {
+			keyedLogger.Error(err, "Failed to update observed policy generation")
+			return nil, nil, nil, &worker.StatusError
+		}
+		annotationChanged = templateChanged || policyChanged
+	} else {
+		_, err = annotationutil.RemoveAnnotation(fedObject, common.LastAppliedTemplateHashAnnotation)
+		if err != nil {
+			keyedLogger.Error(err, "Failed to remove last applied template hash")
+			return nil, nil, nil, &worker.StatusError
+		}
+
+		_, err = annotationutil.RemoveAnnotation(fedObject, common.ObservedPropagationPolicyGenerationAnnotation)
+		if err != nil {
+			keyedLogger.Error(err, "Failed to remove observed policy generation")
+			return nil, nil, nil, &worker.StatusError
+		}
+
+		_, err = annotationutil.RemoveAnnotation(fedObject, common.LastAppliedPropagationPolicyGenerationAnnotation)
+		if err != nil {
+			keyedLogger.Error(err, "Failed to remove last applied policy hash")
+			return nil, nil, nil, &worker.StatusError
+		}
 	}
 
 	shouldSkipScheduling := false
@@ -424,11 +473,11 @@ func (s *Scheduler) prepareToSchedule(
 		if updated, err := s.updatePendingControllers(fedObject, false); err != nil {
 			keyedLogger.Error(err, "Failed to update pending controllers")
 			return nil, nil, nil, &worker.StatusError
-		} else if updated {
+		} else if updated || annotationChanged {
 			if _, err := s.federatedObjectClient.Namespace(fedObject.GetNamespace()).Update(
 				ctx, fedObject, metav1.UpdateOptions{},
 			); err != nil {
-				keyedLogger.Error(err, "Failed to update pending controllers")
+				keyedLogger.Error(err, "Failed to update scheduler annotations")
 				if apierrors.IsConflict(err) {
 					return nil, nil, nil, &worker.StatusConflict
 				}
@@ -437,6 +486,18 @@ func (s *Scheduler) prepareToSchedule(
 		}
 
 		return nil, nil, nil, &worker.StatusAllOK
+	}
+
+	if policy != nil {
+		_, err = annotationutil.AddAnnotation(
+			fedObject,
+			common.LastAppliedPropagationPolicyGenerationAnnotation,
+			strconv.FormatInt(policy.GetGeneration(), 10),
+		)
+		if err != nil {
+			keyedLogger.Error(err, "Failed to update last applied policy hash")
+			return nil, nil, nil, &worker.StatusError
+		}
 	}
 
 	return policy, clusters, schedulingProfile, nil
