@@ -36,12 +36,11 @@ type informerManager struct {
 	gvrMapping *tools.BijectionMap[string, schema.GroupVersionResource]
 
 	informers                 map[string]informers.GenericInformer
-	informerStopChs           map[string]chan struct{}
+	informerCancelFuncs       map[string]context.CancelFunc
 	eventHandlerRegistrations map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration
 	lastAppliedFTCsCache      map[string]map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig
 
-	queue  workqueue.RateLimitingInterface
-	logger klog.Logger
+	queue workqueue.RateLimitingInterface
 }
 
 func NewInformerManager(client dynamic.Interface, ftcInformer fedcorev1a1informers.FederatedTypeConfigInformer) InformerManager {
@@ -53,11 +52,10 @@ func NewInformerManager(client dynamic.Interface, ftcInformer fedcorev1a1informe
 		eventHandlerGenerators:    []*EventHandlerGenerator{},
 		gvrMapping:                tools.NewBijectionMap[string, schema.GroupVersionResource](),
 		informers:                 map[string]informers.GenericInformer{},
-		informerStopChs:           map[string]chan struct{}{},
+		informerCancelFuncs:       map[string]context.CancelFunc{},
 		eventHandlerRegistrations: map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{},
 		lastAppliedFTCsCache:      map[string]map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig{},
 		queue:                     workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
-		logger:                    klog.LoggerWithName(klog.Background(), "informer-manager"),
 	}
 
 	ftcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -72,20 +70,20 @@ func NewInformerManager(client dynamic.Interface, ftcInformer fedcorev1a1informe
 func (m *informerManager) enqueue(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		m.logger.Error(err, "Failed to enqueue FederatedTypeConfig")
+		klog.Error(err, "informer-manager: Failed to enqueue FederatedTypeConfig")
 		return
 	}
 	m.queue.Add(key)
 }
 
-func (m *informerManager) worker() {
+func (m *informerManager) worker(ctx context.Context) {
 	key, shutdown := m.queue.Get()
 	if shutdown {
 		return
 	}
 	defer m.queue.Done(key)
 
-	logger := m.logger.WithValues("key", key)
+	logger := klog.FromContext(ctx)
 
 	_, name, err := cache.SplitMetaNamespaceKey(key.(string))
 	if err != nil {
@@ -93,9 +91,12 @@ func (m *informerManager) worker() {
 		return
 	}
 
+	logger = logger.WithValues("ftc", name)
+	ctx = klog.NewContext(ctx, logger)
+
 	ftc, err := m.ftcInformer.Lister().Get(name)
 	if apierrors.IsNotFound(err) {
-		if err := m.processFTCDeletion(name); err != nil {
+		if err := m.processFTCDeletion(ctx, name); err != nil {
 			logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
 			m.queue.AddRateLimited(key)
 			return
@@ -108,7 +109,7 @@ func (m *informerManager) worker() {
 		return
 	}
 
-	err, needReenqueue := m.processFTC(ftc)
+	err, needReenqueue := m.processFTC(ctx, ftc)
 	if err != nil {
 		if needReenqueue {
 			logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
@@ -121,7 +122,7 @@ func (m *informerManager) worker() {
 	}
 }
 
-func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) (err error, needReenqueue bool) {
+func (m *informerManager) processFTC(ctx context.Context, ftc *fedcorev1a1.FederatedTypeConfig) (err error, needReenqueue bool) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -129,14 +130,20 @@ func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) (err 
 	apiResource := ftc.GetSourceType()
 	gvr := schemautil.APIResourceToGVR(&apiResource)
 
+	logger := klog.FromContext(ctx).WithValues("gvr", gvr.String())
+	ctx = klog.NewContext(ctx, logger)
+
 	var informer informers.GenericInformer
 
 	if oldGVR, exists := m.gvrMapping.Lookup(ftcName); exists {
+		logger = klog.FromContext(ctx).WithValues("old-gvr", oldGVR.String())
+		ctx = klog.NewContext(ctx, logger)
+
 		if oldGVR != gvr {
 			// This might occur if a ftc was deleted and recreated with a different source type within a short period of
 			// time and we missed processing the deletion. We simply process the ftc deletion and reenqueue. Note:
 			// updating of ftc source types, however, is still not a supported use case.
-			err := m.processFTCDeletionUnlocked(ftcName)
+			err := m.processFTCDeletionUnlocked(ctx, ftcName)
 			return err, true
 		}
 
@@ -147,6 +154,8 @@ func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) (err 
 			return fmt.Errorf("source type is already referenced by another FederatedTypeConfig: %w", err), false
 		}
 
+		logger.V(2).Info("Starting new informer for FederatedTypeConfig")
+
 		informer = dynamicinformer.NewFilteredDynamicInformer(
 			m.client,
 			gvr,
@@ -155,11 +164,11 @@ func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) (err 
 			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
 			nil,
 		)
-		stopCh := make(chan struct{})
-		go informer.Informer().Run(stopCh)
+		ctx, cancel := context.WithCancel(ctx)
+		go informer.Informer().Run(ctx.Done())
 
 		m.informers[ftcName] = informer
-		m.informerStopChs[ftcName] = stopCh
+		m.informerCancelFuncs[ftcName] = cancel
 		m.eventHandlerRegistrations[ftcName] = map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{}
 		m.lastAppliedFTCsCache[ftcName] = map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig{}
 	}
@@ -198,22 +207,28 @@ func (m *informerManager) processFTC(ftc *fedcorev1a1.FederatedTypeConfig) (err 
 	return nil, false
 }
 
-func (m *informerManager) processFTCDeletion(ftcName string) error {
+func (m *informerManager) processFTCDeletion(ctx context.Context, ftcName string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	return m.processFTCDeletionUnlocked(ftcName)
+	if gvr, exists := m.gvrMapping.Lookup(ftcName); exists {
+		logger := klog.FromContext(ctx).WithValues("gvr", gvr.String())
+		ctx = klog.NewContext(ctx, logger)
+	}
+
+	return m.processFTCDeletionUnlocked(ctx, ftcName)
 }
 
-func (m *informerManager) processFTCDeletionUnlocked(ftcName string) error {
-	if stopCh, ok := m.informerStopChs[ftcName]; ok {
-		close(stopCh)
+func (m *informerManager) processFTCDeletionUnlocked(ctx context.Context, ftcName string) error {
+	if cancel, ok := m.informerCancelFuncs[ftcName]; ok {
+		klog.FromContext(ctx).V(2).Info("Stopping informer for FederatedTypeConfig")
+		cancel()
 	}
 
 	m.gvrMapping.Delete(ftcName)
 
 	delete(m.informers, ftcName)
-	delete(m.informerStopChs, ftcName)
+	delete(m.informerCancelFuncs, ftcName)
 	delete(m.eventHandlerRegistrations, ftcName)
 
 	return nil
@@ -262,27 +277,29 @@ func (m *informerManager) Start(ctx context.Context) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
+	logger := klog.LoggerWithName(klog.FromContext(ctx), "informer-manager")
+	ctx = klog.NewContext(ctx, logger)
+
 	if m.started {
-		m.logger.Error(nil, "InformerManager cannot be started more than once")
+		logger.Error(nil, "InformerManager cannot be started more than once")
 		return
 	}
+
+	logger.V(2).Info("Starting InformerManager")
 
 	m.started = true
 
-	if !cache.WaitForNamedCacheSync("informer-manager", ctx.Done(), m.HasSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), m.HasSynced) {
+		logger.Error(nil, "Failed to wait for InformerManager cache sync")
 		return
 	}
 
-	go wait.Until(m.worker, 0, ctx.Done())
+	go wait.UntilWithContext(ctx, m.worker, 0)
 	go func() {
 		<-ctx.Done()
-		m.queue.ShutDown()
 
-		m.lock.Lock()
-		defer m.lock.Unlock()
-		for _, stopCh := range m.informerStopChs {
-			close(stopCh)
-		}
+		logger.V(2).Info("Stopping InformerManager")
+		m.queue.ShutDown()
 	}()
 }
 

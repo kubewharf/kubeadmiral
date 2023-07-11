@@ -2,6 +2,7 @@ package informermanager
 
 import (
 	"context"
+	"flag"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 
 	dynamicclient "k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -23,6 +25,12 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 )
+
+func init() {
+	flags := flag.NewFlagSet("", flag.ContinueOnError)
+	klog.InitFlags(flags)
+	flags.Set("v", "2")
+}
 
 func TestInformerManager(t *testing.T) {
 	g := gomega.NewWithT(t)
@@ -379,7 +387,9 @@ func TestInformerManager(t *testing.T) {
 
 		// 4. Verify that handler is unregistered and new events are no longer received by handler.
 
-		dp2, err := dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Create(ctx, getTestDeployment("dp-2", "default"), metav1.CreateOptions{})
+		dp2, err := dynamicClient.Resource(common.DeploymentGVR).
+			Namespace("default").
+			Create(ctx, getTestDeployment("dp-2", "default"), metav1.CreateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
 		dp2.SetAnnotations(map[string]string{"test": "test"})
@@ -414,7 +424,7 @@ func TestInformerManager(t *testing.T) {
 		_, dynamicClient, fedClient := boostrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
 
 		// 2. Verify that handler is registered initially
-		
+
 		handler.ExpectGenerateEvents(1)
 		handler.ExpectAddEvents(1)
 		handler.AssertEventually(g, time.Second*2)
@@ -437,7 +447,7 @@ func TestInformerManager(t *testing.T) {
 		handler.AssertEventually(g, time.Second*2)
 	})
 
-	t.Run("event handler should be unchanged on FTC update", func(t * testing.T) {
+	t.Run("event handler should be unchanged on FTC update", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -459,7 +469,7 @@ func TestInformerManager(t *testing.T) {
 		_, dynamicClient, fedClient := boostrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
 
 		// 2. Verify that handler is registered initially
-		
+
 		handler.ExpectGenerateEvents(1)
 		handler.ExpectAddEvents(1)
 		handler.AssertEventually(g, time.Second*2)
@@ -482,7 +492,7 @@ func TestInformerManager(t *testing.T) {
 		handler.AssertEventually(g, time.Second*2)
 	})
 
-	t.Run("event handler should be unregisterd on FTC delete", func(t *testing.T){
+	t.Run("event handler should be unregisterd on FTC delete", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -510,7 +520,7 @@ func TestInformerManager(t *testing.T) {
 		_, dynamicClient, fedClient := boostrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
 
 		// 2. Verify that handler1 and handler2 is registered initially for all FTCs
-		
+
 		handler1.ExpectGenerateEvents(3)
 		handler1.ExpectAddEvents(3)
 		handler1.AssertEventually(g, time.Second*2)
@@ -528,7 +538,9 @@ func TestInformerManager(t *testing.T) {
 
 		// 4. Verify that handler1 and handler2 is unregistered for deployments and no additional events are received
 
-		dp2, err := dynamicClient.Resource(common.DeploymentGVR). Namespace("default").Create(ctx, getTestDeployment("dp-2", "default"), metav1.CreateOptions{})
+		dp2, err := dynamicClient.Resource(common.DeploymentGVR).
+			Namespace("default").
+			Create(ctx, getTestDeployment("dp-2", "default"), metav1.CreateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
 		dp2.SetAnnotations(map[string]string{"test": "test"})
@@ -543,7 +555,9 @@ func TestInformerManager(t *testing.T) {
 
 		// 5. Verify that handler1 and handler2 is not unregistered for other FTCs.
 
-		_, err = dynamicClient.Resource(common.SecretGVR).Namespace("default").Create(ctx, getTestSecret("sc-2", "default"), metav1.CreateOptions{})
+		_, err = dynamicClient.Resource(common.SecretGVR).
+			Namespace("default").
+			Create(ctx, getTestSecret("sc-2", "default"), metav1.CreateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 		handler1.ExpectAddEvents(1)
 		handler2.ExpectAddEvents(1)
@@ -587,7 +601,7 @@ func TestInformerManager(t *testing.T) {
 		_, dynamicClient, _ := boostrapInformerManagerWithFakeClients(g, managerCtx, defaultFTCs, defaultObjs, generators)
 
 		// 2. Verify that handler1 and handler2 is registered initially for all FTCs
-		
+
 		handler1.ExpectGenerateEvents(3)
 		handler1.ExpectAddEvents(3)
 		handler1.AssertEventually(g, time.Second*2)
@@ -603,7 +617,9 @@ func TestInformerManager(t *testing.T) {
 
 		// 4. Verify that handler1 and handler2 is unregistered for all FTCs and no more events are received
 
-		_, err := dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Create(ctx, getTestDeployment("dp-2", "default"), metav1.CreateOptions{})
+		_, err := dynamicClient.Resource(common.DeploymentGVR).
+			Namespace("default").
+			Create(ctx, getTestDeployment("dp-2", "default"), metav1.CreateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
 		err = dynamicClient.Resource(common.ConfigMapGVR).Namespace("default").Delete(ctx, cm1.GetName(), metav1.DeleteOptions{})

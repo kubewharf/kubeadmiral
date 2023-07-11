@@ -38,8 +38,7 @@ type federatedInformerManager struct {
 	informerManagers            map[string]InformerManager
 	informerManagersCancelFuncs map[string]context.CancelFunc
 
-	queue  workqueue.RateLimitingInterface
-	logger klog.Logger
+	queue workqueue.RateLimitingInterface
 }
 
 func NewFederatedInformerManager(
@@ -60,7 +59,6 @@ func NewFederatedInformerManager(
 		informerManagers:            map[string]InformerManager{},
 		informerManagersCancelFuncs: map[string]context.CancelFunc{},
 		queue:                       workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
-		logger:                      klog.LoggerWithName(klog.Background(), "federated-informer-manager"),
 	}
 
 	clusterInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
@@ -81,26 +79,29 @@ func NewFederatedInformerManager(
 func (m *federatedInformerManager) enqueue(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		m.logger.Error(err, "Failed to enqueue FederatedCluster")
+		klog.Error(err, "federated-informer-manager: Failed to enqueue FederatedCluster")
 		return
 	}
 	m.queue.Add(key)
 }
 
-func (m *federatedInformerManager) worker() {
+func (m *federatedInformerManager) worker(ctx context.Context) {
 	key, shutdown := m.queue.Get()
 	if shutdown {
 		return
 	}
 	defer m.queue.Done(key)
 
-	logger := m.logger.WithValues("key", key)
+	logger := klog.FromContext(ctx)
 
 	_, name, err := cache.SplitMetaNamespaceKey(key.(string))
 	if err != nil {
 		logger.Error(err, "Failed to process FederatedCluster")
 		return
 	}
+
+	logger = logger.WithValues("cluster", name)
+	ctx = klog.NewContext(ctx, logger)
 
 	cluster, err := m.clusterInformer.Lister().Get(name)
 	if err != nil && !apierrors.IsNotFound(err) {
@@ -109,7 +110,7 @@ func (m *federatedInformerManager) worker() {
 		return
 	}
 	if apierrors.IsNotFound(err) || !util.IsClusterJoined(&cluster.Status) {
-		if err := m.processClusterDeletion(name); err != nil {
+		if err := m.processClusterDeletion(ctx, name); err != nil {
 			logger.Error(err, "Failed to process FederatedCluster, will retry")
 			m.queue.AddRateLimited(key)
 			return
@@ -117,7 +118,7 @@ func (m *federatedInformerManager) worker() {
 		return
 	}
 
-	err, needReenqueue := m.processCluster(cluster)
+	err, needReenqueue := m.processCluster(ctx, cluster)
 	if err != nil {
 		if needReenqueue {
 			logger.Error(err, "Failed to process FederatedCluster, will retry")
@@ -130,7 +131,10 @@ func (m *federatedInformerManager) worker() {
 	}
 }
 
-func (m *federatedInformerManager) processCluster(cluster *fedcorev1a1.FederatedCluster) (err error, needReenqueue bool) {
+func (m *federatedInformerManager) processCluster(
+	ctx context.Context,
+	cluster *fedcorev1a1.FederatedCluster,
+) (err error, needReenqueue bool) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -146,7 +150,7 @@ func (m *federatedInformerManager) processCluster(cluster *fedcorev1a1.Federated
 			// period of time and we missed processing the deletion. We simply process the cluster deletion and
 			// reenqueue.
 			// Note: updating of cluster connetion details, however, is still not a supported use case.
-			err := m.processClusterDeletionUnlocked(clusterName)
+			err := m.processClusterDeletionUnlocked(ctx, clusterName)
 			return err, true
 		}
 	} else {
@@ -156,14 +160,16 @@ func (m *federatedInformerManager) processCluster(cluster *fedcorev1a1.Federated
 		}
 
 		manager := NewInformerManager(clusterClient, m.ftcInformer)
-		ctx, cancel := context.WithCancel(context.Background())
 
+		ctx, cancel := context.WithCancel(ctx)
 		for _, generator := range m.eventHandlerGenerators {
 			if err := manager.AddEventHandlerGenerator(generator); err != nil {
 				cancel()
 				return fmt.Errorf("failed to initialized InformerManager for cluster %s: %w", clusterName, err), true
 			}
 		}
+
+		klog.FromContext(ctx).V(2).Info("Starting new InformerManager for FederatedCluster")
 
 		manager.Start(ctx)
 
@@ -176,17 +182,18 @@ func (m *federatedInformerManager) processCluster(cluster *fedcorev1a1.Federated
 	return nil, false
 }
 
-func (m *federatedInformerManager) processClusterDeletion(clusterName string) error {
+func (m *federatedInformerManager) processClusterDeletion(ctx context.Context, clusterName string) error {
 	m.lock.Lock()
 	m.lock.Unlock()
-	return m.processClusterDeletionUnlocked(clusterName)
+	return m.processClusterDeletionUnlocked(ctx, clusterName)
 }
 
-func (m *federatedInformerManager) processClusterDeletionUnlocked(clusterName string) error {
+func (m *federatedInformerManager) processClusterDeletionUnlocked(ctx context.Context, clusterName string) error {
 	delete(m.connectionMap, clusterName)
 	delete(m.clients, clusterName)
 
 	if cancel, ok := m.informerManagersCancelFuncs[clusterName]; ok {
+		klog.FromContext(ctx).V(2).Info("Stopping InformerManager for FederatedCluster")
 		cancel()
 	}
 	delete(m.informerManagers, clusterName)
@@ -258,14 +265,18 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
+	logger := klog.LoggerWithName(klog.FromContext(ctx), "federated-informer-manager")
+	ctx = klog.NewContext(ctx, logger)
+
 	if m.started {
-		m.logger.Error(nil, "FederatedInformerManager cannot be started more than once")
+		logger.Error(nil, "FederatedInformerManager cannot be started more than once")
 		return
 	}
 
 	m.started = true
 
-	if !cache.WaitForNamedCacheSync("federated-informer-manager", ctx.Done(), m.HasSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), m.HasSynced) {
+		logger.Error(nil, "Failed to wait for FederatedInformerManager cache sync")
 		return
 	}
 
@@ -296,16 +307,12 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 		})
 	}
 
-	go wait.Until(m.worker, 0, ctx.Done())
+	go wait.UntilWithContext(ctx, m.worker, 0)
 	go func() {
 		<-ctx.Done()
-		m.queue.ShutDown()
 
-		m.lock.Lock()
-		defer m.lock.Unlock()
-		for _, cancelFunc := range m.informerManagersCancelFuncs {
-			cancelFunc()
-		}
+		logger.V(2).Info("Stopping FederatedInformerManager")
+		m.queue.ShutDown()
 	}()
 }
 
@@ -326,5 +333,5 @@ func DefaultClusterConnectionHash(cluster *fedcorev1a1.FederatedCluster) ([]byte
 	if err := gob.NewEncoder(&b).Encode(hashObj); err != nil {
 		return nil, err
 	}
-    return b.Bytes(), nil
+	return b.Bytes(), nil
 }
