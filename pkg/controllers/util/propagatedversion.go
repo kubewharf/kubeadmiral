@@ -63,8 +63,8 @@ func ObjectNeedsUpdate(
 	}
 
 	needUpdate := true
-	if desiredReplicas, _, err := utilunstructured.GetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil); err == nil {
-		if currentReplicas, _, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil); err == nil {
+	if desiredReplicas, err := utilunstructured.GetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil); err == nil {
+		if currentReplicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil); err == nil {
 			if desiredReplicas == nil && currentReplicas == nil ||
 				desiredReplicas != nil && currentReplicas != nil && *desiredReplicas == *currentReplicas {
 				needUpdate = false

@@ -57,7 +57,7 @@ func schedulingUnitForFedObject(
 		schedulingMode = fedcorev1a1.SchedulingModeDuplicate
 	}
 	if schedulingMode == fedcorev1a1.SchedulingModeDivide {
-		value, exists, err := utilunstructured.GetInt64FromPath(
+		value, err := utilunstructured.GetInt64FromPath(
 			fedObject,
 			typeConfig.Spec.PathDefinition.ReplicasSpec,
 			common.TemplatePath,
@@ -65,7 +65,7 @@ func schedulingUnitForFedObject(
 		if err != nil {
 			return nil, err
 		}
-		if !exists {
+		if value == nil {
 			return nil, fmt.Errorf("replicas path %s does not exist for FederatedObject", typeConfig.Spec.PathDefinition.ReplicasSpec)
 		}
 

@@ -59,13 +59,13 @@ func GetLabelSelectorFromPath(obj *unstructured.Unstructured, path string, prefi
 }
 
 // GetInt64FromPath gets an int64 value at path of an unstructured object, optionally wrapped under prefixFields.
-func GetInt64FromPath(value *unstructured.Unstructured, path string, prefixFields []string) (*int64, bool, error) {
+func GetInt64FromPath(value *unstructured.Unstructured, path string, prefixFields []string) (*int64, error) {
 	if v, exists, err := unstructured.NestedInt64(value.Object, SplitDotPath(path, prefixFields)...); err != nil {
-		return nil, false, fmt.Errorf("cannot access %v: %w", prefixFields, err)
+		return nil, fmt.Errorf("cannot access %v: %w", prefixFields, err)
 	} else if exists {
-		return pointer.Int64(v), true, nil
+		return pointer.Int64(v), nil
 	} else {
-		return nil, false, nil
+		return nil, nil
 	}
 }
 

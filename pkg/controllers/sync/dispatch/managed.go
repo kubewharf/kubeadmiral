@@ -729,7 +729,7 @@ func (d *managedDispatcherImpl) emitRolloutStatus(
 			unavailable += u
 		}
 		if r, ok, err := unstructured.NestedInt64(clusterObj.Object, "status", "replicas"); err == nil && ok {
-			if r0, _, err := utilunstructured.GetInt64FromPath(
+			if r0, err := utilunstructured.GetInt64FromPath(
 				clusterObj,
 				d.fedResource.TypeConfig().Spec.PathDefinition.ReplicasSpec,
 				nil,

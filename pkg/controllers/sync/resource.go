@@ -113,12 +113,11 @@ func (r *federatedResource) TypeConfig() *fedcorev1a1.FederatedTypeConfig {
 }
 
 func (r *federatedResource) Replicas() (*int64, error) {
-	replicas, _, err := utilunstructured.GetInt64FromPath(
+	return utilunstructured.GetInt64FromPath(
 		r.federatedResource,
 		r.typeConfig.Spec.PathDefinition.ReplicasSpec,
 		common.TemplatePath,
 	)
-	return replicas, err
 }
 
 func (r *federatedResource) Object() *unstructured.Unstructured {

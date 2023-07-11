@@ -371,7 +371,7 @@ func unstructuredObjToTargetInfo(clusterName string, unstructuredObj *unstructur
 		}, nil
 	}
 
-	replicas, _, err := utilunstructured.GetInt64FromPath(unstructuredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
+	replicas, err := utilunstructured.GetInt64FromPath(unstructuredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
 	if err != nil || replicas == nil {
 		return nil, errors.Errorf("failed to retrieve replicas, err: %v", err)
 	}
@@ -401,7 +401,7 @@ func unstructuredObjToTargetInfo(clusterName string, unstructuredObj *unstructur
 		updatedReplicas, updatedAvailableReplicas = 0, 0
 	}
 
-	actualReplicasOption, _, err := utilunstructured.GetInt64FromPath(
+	actualReplicasOption, err := utilunstructured.GetInt64FromPath(
 		unstructuredObj,
 		typeConfig.Spec.PathDefinition.ReplicasSpec,
 		nil,
@@ -414,7 +414,7 @@ func unstructuredObjToTargetInfo(clusterName string, unstructuredObj *unstructur
 		actualReplicas = int32(*actualReplicasOption)
 	}
 
-	availableReplicasOption, _, err := utilunstructured.GetInt64FromPath(
+	availableReplicasOption, err := utilunstructured.GetInt64FromPath(
 		unstructuredObj,
 		typeConfig.Spec.PathDefinition.AvailableReplicasStatus,
 		nil,
