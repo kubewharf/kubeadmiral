@@ -66,7 +66,7 @@ func schedulingUnitForFedObject(
 			return nil, err
 		}
 		if value == nil {
-			return nil, fmt.Errorf("replicas path %s does not exist for FederatedObject", typeConfig.Spec.PathDefinition.ReplicasSpec)
+			return nil, fmt.Errorf("replicas path \"%s\" does not exist for FederatedObject", typeConfig.Spec.PathDefinition.ReplicasSpec)
 		}
 
 		desiredReplicasOption = value
