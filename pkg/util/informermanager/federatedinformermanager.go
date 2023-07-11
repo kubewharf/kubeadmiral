@@ -38,7 +38,7 @@ type federatedInformerManager struct {
 	informerManagers            map[string]InformerManager
 	informerManagersCancelFuncs map[string]context.CancelFunc
 
-	queue  workqueue.Interface
+	queue  workqueue.RateLimitingInterface
 	logger klog.Logger
 }
 
@@ -94,22 +94,24 @@ func (m *federatedInformerManager) worker() {
 	}
 	defer m.queue.Done(key)
 
+	logger := m.logger.WithValues("key", key)
+
 	_, name, err := cache.SplitMetaNamespaceKey(key.(string))
 	if err != nil {
-		m.logger.Error(err, "Failed to process FederatedCluster")
+		logger.Error(err, "Failed to process FederatedCluster")
 		return
 	}
 
 	cluster, err := m.clusterInformer.Lister().Get(name)
 	if err != nil && !apierrors.IsNotFound(err) {
-		m.logger.Error(err, "Failed to process FederatedCluster, will retry")
-		m.queue.Add(key)
+		logger.Error(err, "Failed to get FederatedCluster from lister, will retry")
+		m.queue.AddRateLimited(key)
 		return
 	}
 	if apierrors.IsNotFound(err) || !util.IsClusterJoined(&cluster.Status) {
 		if err := m.processClusterDeletion(name); err != nil {
-			m.logger.Error(err, "Failed to process FederatedCluster, will retry")
-			m.queue.Add(key)
+			logger.Error(err, "Failed to process FederatedCluster, will retry")
+			m.queue.AddRateLimited(key)
 			return
 		}
 		return
@@ -118,13 +120,13 @@ func (m *federatedInformerManager) worker() {
 	err, needReenqueue := m.processCluster(cluster)
 	if err != nil {
 		if needReenqueue {
-			m.logger.Error(err, "Failed to process FederatedCluster, will retry")
+			logger.Error(err, "Failed to process FederatedCluster, will retry")
 		} else {
-			m.logger.Error(err, "Failed to process FederatedCluster")
+			logger.Error(err, "Failed to process FederatedCluster")
 		}
 	}
 	if needReenqueue {
-		m.queue.Add(key)
+		m.queue.AddRateLimited(key)
 	}
 }
 
@@ -253,10 +255,6 @@ func (m *federatedInformerManager) HasSynced() bool {
 }
 
 func (m *federatedInformerManager) Start(ctx context.Context) {
-	if !cache.WaitForNamedCacheSync("federated-informer-manager", ctx.Done(), m.HasSynced) {
-		return
-	}
-
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -266,6 +264,10 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 	}
 
 	m.started = true
+
+	if !cache.WaitForNamedCacheSync("federated-informer-manager", ctx.Done(), m.HasSynced) {
+		return
+	}
 
 	for _, handler := range m.clusterEventHandler {
 		predicate := handler.Predicate

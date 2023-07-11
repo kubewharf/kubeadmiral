@@ -20,7 +20,7 @@ import (
 var (
 	daemonsetFTC = &fedcorev1a1.FederatedTypeConfig{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "daemonsets",
+			Name: "daemonsets.apps",
 		},
 		Spec: fedcorev1a1.FederatedTypeConfigSpec{
 			SourceType: fedcorev1a1.APIResource{
@@ -34,7 +34,7 @@ var (
 	}
 	deploymentFTC = &fedcorev1a1.FederatedTypeConfig{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "deployments",
+			Name: "deployments.apps",
 		},
 		Spec: fedcorev1a1.FederatedTypeConfigSpec{
 			SourceType: fedcorev1a1.APIResource{

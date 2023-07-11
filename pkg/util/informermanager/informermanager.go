@@ -40,7 +40,7 @@ type informerManager struct {
 	eventHandlerRegistrations map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration
 	lastAppliedFTCsCache      map[string]map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig
 
-	queue  workqueue.Interface
+	queue  workqueue.RateLimitingInterface
 	logger klog.Logger
 }
 
@@ -85,37 +85,39 @@ func (m *informerManager) worker() {
 	}
 	defer m.queue.Done(key)
 
+	logger := m.logger.WithValues("key", key)
+
 	_, name, err := cache.SplitMetaNamespaceKey(key.(string))
 	if err != nil {
-		m.logger.Error(err, "Failed to process FederatedTypeConfig")
+		logger.Error(err, "Failed to process FederatedTypeConfig")
 		return
 	}
 
 	ftc, err := m.ftcInformer.Lister().Get(name)
 	if apierrors.IsNotFound(err) {
 		if err := m.processFTCDeletion(name); err != nil {
-			m.logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
-			m.queue.Add(key)
+			logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
+			m.queue.AddRateLimited(key)
 			return
 		}
 		return
 	}
 	if err != nil {
-		m.logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
-		m.queue.Add(key)
+		logger.Error(err, "Failed to get FederatedTypeConfig from lister, will retry")
+		m.queue.AddRateLimited(key)
 		return
 	}
 
 	err, needReenqueue := m.processFTC(ftc)
 	if err != nil {
 		if needReenqueue {
-			m.logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
+			logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
 		} else {
-			m.logger.Error(err, "Failed to process FederatedTypeConfig")
+			logger.Error(err, "Failed to process FederatedTypeConfig")
 		}
 	}
 	if needReenqueue {
-		m.queue.Add(key)
+		m.queue.AddRateLimited(key)
 	}
 }
 
@@ -257,10 +259,6 @@ func (m *informerManager) HasSynced() bool {
 }
 
 func (m *informerManager) Start(ctx context.Context) {
-	if !cache.WaitForNamedCacheSync("informer-manager", ctx.Done(), m.HasSynced) {
-		return
-	}
-
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -270,6 +268,10 @@ func (m *informerManager) Start(ctx context.Context) {
 	}
 
 	m.started = true
+
+	if !cache.WaitForNamedCacheSync("informer-manager", ctx.Done(), m.HasSynced) {
+		return
+	}
 
 	go wait.Until(m.worker, 0, ctx.Done())
 	go func() {
