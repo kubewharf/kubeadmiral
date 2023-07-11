@@ -1,6 +1,9 @@
 package informermanager
 
 import (
+	"fmt"
+	"path"
+	goruntime "runtime"
 	"sync"
 	"time"
 
@@ -10,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/tools/cache"
 
@@ -74,6 +78,13 @@ var (
 			},
 		},
 	}
+)
+
+var (
+	deploymentGVK = appsv1.SchemeGroupVersion.WithKind("Deployment")
+	daemonsetGVK  = appsv1.SchemeGroupVersion.WithKind("DaemonSet")
+	configmapGVK  = corev1.SchemeGroupVersion.WithKind("ConfigMap")
+	secretGVK     = corev1.SchemeGroupVersion.WithKind("Secret")
 )
 
 func getTestDeployment(name, namespace string) *unstructured.Unstructured {
@@ -184,85 +195,144 @@ func getTestCluster(name string) *fedcorev1a1.FederatedCluster {
 	}
 }
 
+func newCountingResourceEventHandler() *countingResourceEventHandler {
+	return &countingResourceEventHandler{
+		lock:                     sync.RWMutex{},
+		generateCount:            map[string]int{},
+		addEventCount:            map[schema.GroupVersionKind]int{},
+		updateEventCount:         map[schema.GroupVersionKind]int{},
+		deleteEventCount:         map[schema.GroupVersionKind]int{},
+		expectedGenerateCount:    map[string]int{},
+		expectedAddEventCount:    map[schema.GroupVersionKind]int{},
+		expectedUpdateEventCount: map[schema.GroupVersionKind]int{},
+		expectedDeleteEventCount: map[schema.GroupVersionKind]int{},
+	}
+}
+
 type countingResourceEventHandler struct {
 	lock sync.RWMutex
 
-	generateCount    int
-	addEventCount    int
-	updateEventCount int
-	deleteEventCount int
+	generateCount    map[string]int
+	addEventCount    map[schema.GroupVersionKind]int
+	updateEventCount map[schema.GroupVersionKind]int
+	deleteEventCount map[schema.GroupVersionKind]int
 
-	expectedGenerateCount    int
-	expectedAddEventCount    int
-	expectedUpdateEventCount int
-	expectedDeleteEventCount int
+	expectedGenerateCount    map[string]int
+	expectedAddEventCount    map[schema.GroupVersionKind]int
+	expectedUpdateEventCount map[schema.GroupVersionKind]int
+	expectedDeleteEventCount map[schema.GroupVersionKind]int
 }
 
-func (h *countingResourceEventHandler) ExpectGenerateEvents(i int) {
+func (h *countingResourceEventHandler) ExpectGenerateEvents(ftcName string, n int) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
-	h.expectedGenerateCount += i
+	h.expectedGenerateCount[ftcName] = h.expectedGenerateCount[ftcName] + n
 }
 
-func (h *countingResourceEventHandler) ExpectAddEvents(i int) {
+func (h *countingResourceEventHandler) ExpectAddEvents(gvk schema.GroupVersionKind, n int) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
-	h.expectedAddEventCount += i
+	h.expectedAddEventCount[gvk] = h.expectedAddEventCount[gvk] + n
 }
 
-func (h *countingResourceEventHandler) ExpectUpdateEvents(i int) {
+func (h *countingResourceEventHandler) ExpectUpdateEvents(gvk schema.GroupVersionKind, n int) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
-	h.expectedUpdateEventCount += i
+	h.expectedUpdateEventCount[gvk] = h.expectedUpdateEventCount[gvk] + n
 }
 
-func (h *countingResourceEventHandler) ExpectDeleteEvents(i int) {
+func (h *countingResourceEventHandler) ExpectDeleteEvents(gvk schema.GroupVersionKind, n int) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
-	h.expectedDeleteEventCount += i
+	h.expectedDeleteEventCount[gvk] = h.expectedDeleteEventCount[gvk] + n
 }
 
 func (h *countingResourceEventHandler) AssertEventually(g gomega.Gomega, timeout time.Duration) {
+	_, file, no, _ := goruntime.Caller(1)
+	callerInfo := fmt.Sprintf("%s:%d", path.Base(file), no)
+
 	g.Eventually(func(g gomega.Gomega) {
-		g.Expect(h.generateCount).To(gomega.BeNumerically("==", h.expectedGenerateCount))
-		g.Expect(h.addEventCount).To(gomega.BeNumerically("==", h.expectedAddEventCount))
-		g.Expect(h.updateEventCount).To(gomega.BeNumerically("==", h.expectedUpdateEventCount))
-		g.Expect(h.deleteEventCount).To(gomega.BeNumerically("==", h.expectedDeleteEventCount))
+		for ftc := range h.expectedGenerateCount {
+			g.Expect(h.generateCount[ftc]).
+				To(gomega.BeNumerically("==", h.expectedGenerateCount[ftc]), "%s: incorrect number of generate events for %s", callerInfo, ftc)
+		}
+		for gvk := range h.expectedAddEventCount {
+			g.Expect(h.addEventCount[gvk]).
+				To(gomega.BeNumerically("==", h.expectedAddEventCount[gvk]), "%s: incorrect number of add events for %s", callerInfo, gvk)
+		}
+		for gvk := range h.expectedUpdateEventCount {
+			g.Expect(h.updateEventCount[gvk]).
+				To(gomega.BeNumerically("==", h.expectedUpdateEventCount[gvk]), "%s: incorrect number of update events for %s", callerInfo, gvk)
+		}
+		for gvk := range h.expectedDeleteEventCount {
+			g.Expect(h.deleteEventCount[gvk]).
+				To(gomega.BeNumerically("==", h.expectedDeleteEventCount[gvk]), "%s: incorrect number of delete events for %s", callerInfo, gvk)
+		}
 	}).WithTimeout(timeout).Should(gomega.Succeed())
 }
 
 func (h *countingResourceEventHandler) AssertConsistently(g gomega.Gomega, timeout time.Duration) {
+	_, file, no, _ := goruntime.Caller(1)
+	callerInfo := fmt.Sprintf("%s:%d", file, no)
+
 	g.Consistently(func(g gomega.Gomega) {
-		g.Expect(h.generateCount).To(gomega.BeNumerically("==", h.expectedGenerateCount))
-		g.Expect(h.addEventCount).To(gomega.BeNumerically("==", h.expectedAddEventCount))
-		g.Expect(h.updateEventCount).To(gomega.BeNumerically("==", h.expectedUpdateEventCount))
-		g.Expect(h.deleteEventCount).To(gomega.BeNumerically("==", h.expectedDeleteEventCount))
+		for ftc := range h.expectedGenerateCount {
+			g.Expect(h.generateCount[ftc]).
+				To(gomega.BeNumerically("==", h.expectedGenerateCount[ftc]), "%s: incorrect number of generate events for %s", callerInfo, ftc)
+		}
+		for gvk := range h.expectedAddEventCount {
+			g.Expect(h.addEventCount[gvk]).
+				To(gomega.BeNumerically("==", h.expectedAddEventCount[gvk]), "%s: incorrect number of add events for %s", callerInfo, gvk)
+		}
+		for gvk := range h.expectedUpdateEventCount {
+			g.Expect(h.updateEventCount[gvk]).
+				To(gomega.BeNumerically("==", h.expectedUpdateEventCount[gvk]), "%s: incorrect number of update events for %s", callerInfo, gvk)
+		}
+		for gvk := range h.expectedDeleteEventCount {
+			g.Expect(h.deleteEventCount[gvk]).
+				To(gomega.BeNumerically("==", h.expectedDeleteEventCount[gvk]), "%s: incorrect number of delete events for %s", callerInfo, gvk)
+		}
 	}).WithTimeout(timeout).Should(gomega.Succeed())
 }
 
-func (h *countingResourceEventHandler) GenerateEventHandler(_ *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler {
+func (h *countingResourceEventHandler) GenerateEventHandler(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler {
 	h.lock.Lock()
 	defer h.lock.Unlock()
-	h.generateCount++
+	h.generateCount[ftc.Name] = h.generateCount[ftc.Name] + 1
 	return h
 }
 
-func (h *countingResourceEventHandler) OnAdd(_ interface{}) {
+func (h *countingResourceEventHandler) OnAdd(obj interface{}) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
-	h.addEventCount++
+
+	gvk := h.mustParseObject(obj)
+	h.addEventCount[gvk] = h.addEventCount[gvk] + 1
 }
 
-func (h *countingResourceEventHandler) OnDelete(_ interface{}) {
+func (h *countingResourceEventHandler) OnDelete(obj interface{}) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
-	h.deleteEventCount++
+
+	gvk := h.mustParseObject(obj)
+	h.deleteEventCount[gvk] = h.deleteEventCount[gvk] + 1
 }
 
-func (h *countingResourceEventHandler) OnUpdate(_ interface{}, _ interface{}) {
+func (h *countingResourceEventHandler) OnUpdate(_ interface{}, obj interface{}) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
-	h.updateEventCount++
+
+	gvk := h.mustParseObject(obj)
+	h.updateEventCount[gvk] = h.updateEventCount[gvk] + 1
+}
+
+func (h *countingResourceEventHandler) mustParseObject(obj interface{}) schema.GroupVersionKind {
+	uns := obj.(*unstructured.Unstructured)
+	gv, err := schema.ParseGroupVersion(uns.GetAPIVersion())
+	if err != nil {
+		panic(fmt.Errorf("failed to parse GroupVersion from unstructured: %w", err))
+	}
+	return gv.WithKind(uns.GetKind())
 }
 
 var _ cache.ResourceEventHandler = &countingResourceEventHandler{}
