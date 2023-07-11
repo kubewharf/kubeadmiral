@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -147,6 +148,39 @@ type ClusterLifecycleHandlerFuncs struct {
 	ClusterUnavailable func(*fedcorev1a1.FederatedCluster, []interface{})
 }
 
+// ResourceEventHandlerFuncsForCluster is an adaptor to let you easily specify as many or
+// as few of the notification functions as you want while still implementing
+// ResourceEventHandler.  This adapter does not remove the prohibition against
+// modifying the objects.
+type ResourceEventHandlerFuncsForCluster struct {
+	cluster *fedcorev1a1.FederatedCluster
+
+	AddFunc    func(obj interface{}, cluster *fedcorev1a1.FederatedCluster)
+	UpdateFunc func(oldObj, newObj interface{}, cluster *fedcorev1a1.FederatedCluster)
+	DeleteFunc func(obj interface{}, cluster *fedcorev1a1.FederatedCluster)
+}
+
+// OnAdd calls AddFunc if it's not nil.
+func (r *ResourceEventHandlerFuncsForCluster) OnAdd(obj interface{}) {
+	if r.AddFunc != nil {
+		r.AddFunc(obj, r.cluster)
+	}
+}
+
+// OnUpdate calls UpdateFunc if it's not nil.
+func (r *ResourceEventHandlerFuncsForCluster) OnUpdate(oldObj, newObj interface{}) {
+	if r.UpdateFunc != nil {
+		r.UpdateFunc(oldObj, newObj, r.cluster)
+	}
+}
+
+// OnDelete calls DeleteFunc if it's not nil.
+func (r *ResourceEventHandlerFuncsForCluster) OnDelete(obj interface{}) {
+	if r.DeleteFunc != nil {
+		r.DeleteFunc(obj, r.cluster)
+	}
+}
+
 // Builds a FederatedInformer for the given configuration.
 func NewFederatedInformer(
 	config *ControllerConfig,
@@ -156,6 +190,48 @@ func NewFederatedInformer(
 	triggerFunc func(pkgruntime.Object),
 	clusterLifecycle *ClusterLifecycleHandlerFuncs,
 ) (FederatedInformer, error) {
+	labelSelector := labels.Set(map[string]string{managedlabel.ManagedByKubeAdmiralLabelKey: managedlabel.ManagedByKubeAdmiralLabelValue}).
+		AsSelector()
+
+	eventHandler := NewTriggerOnAllChanges(triggerFunc)
+	eventHandlerForCluster := &ResourceEventHandlerFuncsForCluster{
+		AddFunc: func(obj interface{}, _ *fedcorev1a1.FederatedCluster) {
+			eventHandler.AddFunc(obj)
+		},
+		UpdateFunc: func(oldObj, newObj interface{}, _ *fedcorev1a1.FederatedCluster) {
+			eventHandler.UpdateFunc(oldObj, newObj)
+		},
+		DeleteFunc: func(obj interface{}, _ *fedcorev1a1.FederatedCluster) {
+			eventHandler.DeleteFunc(obj)
+		},
+	}
+
+	return NewFederatedInformerWithEventHandler(
+		config,
+		fedClient,
+		restConfig,
+		apiResource,
+		eventHandlerForCluster,
+		labelSelector,
+		clusterLifecycle,
+	)
+}
+
+// Builds a FederatedInformer for the given configuration.
+func NewFederatedInformerWithEventHandler(
+	config *ControllerConfig,
+	fedClient generic.Client,
+	restConfig *restclient.Config,
+	apiResource *metav1.APIResource,
+	eventHandlerForCluster *ResourceEventHandlerFuncsForCluster,
+	labelSelector labels.Selector,
+	clusterLifecycle *ClusterLifecycleHandlerFuncs,
+) (FederatedInformer, error) {
+	var selector string
+	if labelSelector != nil {
+		selector = labelSelector.String()
+	}
+
 	targetInformerFactory := func(
 		cluster *fedcorev1a1.FederatedCluster,
 		clusterConfig *restclient.Config,
@@ -166,10 +242,12 @@ func NewFederatedInformer(
 		}
 		targetNamespace := NamespaceForCluster(cluster.Name, config.TargetNamespace)
 		extraTags := map[string]string{"member_cluster": cluster.Name}
-		store, controller := NewManagedResourceInformer(
+		eventHandlerForCluster.cluster = cluster
+		store, controller := newResourceInformer(
 			resourceClient,
 			targetNamespace,
-			triggerFunc,
+			eventHandlerForCluster,
+			selector,
 			extraTags,
 			config.Metrics,
 		)

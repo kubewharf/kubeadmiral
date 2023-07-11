@@ -36,17 +36,8 @@ func countUnschedulablePods(
 			continue
 		}
 
-		var scheduledCondition *corev1.PodCondition
-		for i := range pod.Status.Conditions {
-			condition := &pod.Status.Conditions[i]
-			if condition.Type == corev1.PodScheduled {
-				scheduledCondition = condition
-				break
-			}
-		}
-		if scheduledCondition == nil ||
-			scheduledCondition.Status != corev1.ConditionFalse ||
-			scheduledCondition.Reason != corev1.PodReasonUnschedulable {
+		scheduledCondition, isUnschedulable := getPodScheduledCondition(pod)
+		if !isUnschedulable {
 			continue
 		}
 
@@ -61,4 +52,35 @@ func countUnschedulablePods(
 	}
 
 	return unschedulableCount, nextCrossIn
+}
+
+func getPodScheduledCondition(pod *corev1.Pod) (scheduledCondition *corev1.PodCondition, isUnschedulable bool) {
+	for i := range pod.Status.Conditions {
+		condition := &pod.Status.Conditions[i]
+		if condition.Type == corev1.PodScheduled {
+			scheduledCondition = condition
+			break
+		}
+	}
+	if scheduledCondition == nil ||
+		scheduledCondition.Status != corev1.ConditionFalse ||
+		scheduledCondition.Reason != corev1.PodReasonUnschedulable {
+		return scheduledCondition, false
+	}
+	return scheduledCondition, true
+}
+
+func podScheduledConditionChanged(oldPod, newPod *corev1.Pod) bool {
+	condition, _ := getPodScheduledCondition(newPod)
+	oldCondition, _ := getPodScheduledCondition(oldPod)
+	if condition == nil || oldCondition == nil {
+		return condition != oldCondition
+	}
+
+	isEqual := condition.Status == oldCondition.Status &&
+		condition.Reason == oldCondition.Reason &&
+		condition.Message == oldCondition.Message &&
+		condition.LastProbeTime.Equal(&oldCondition.LastProbeTime) &&
+		condition.LastTransitionTime.Equal(&oldCondition.LastTransitionTime)
+	return !isEqual
 }

@@ -24,8 +24,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/lifted/kubernetes/pkg/controller"
 	deploymentutil "github.com/kubewharf/kubeadmiral/pkg/lifted/kubernetes/pkg/controller/deployment/util"
 )
 
@@ -90,6 +93,27 @@ func (*deploymentPlugin) GetPodsForClusterObject(
 	}
 
 	return ret, nil
+}
+
+func (*deploymentPlugin) GetTargetObjectFromPod(
+	ctx context.Context,
+	pod *corev1.Pod,
+	handle ClusterHandle,
+) (obj *unstructured.Unstructured, found bool, err error) {
+	rs, found, err := controller.GetSpecifiedOwnerFromSourceObj(ctx, handle.Client, pod, schema.GroupVersionKind{
+		Group:   appsv1.GroupName,
+		Version: "v1",
+		Kind:    common.ReplicaSetKind,
+	})
+	if err != nil || !found {
+		return nil, false, err
+	}
+
+	return controller.GetSpecifiedOwnerFromSourceObj(ctx, handle.Client, rs, schema.GroupVersionKind{
+		Group:   appsv1.GroupName,
+		Version: "v1",
+		Kind:    common.DeploymentKind,
+	})
 }
 
 var _ Plugin = &deploymentPlugin{}
