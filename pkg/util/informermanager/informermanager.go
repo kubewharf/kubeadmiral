@@ -20,7 +20,7 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
-	"github.com/kubewharf/kubeadmiral/pkg/util/tools"
+	"github.com/kubewharf/kubeadmiral/pkg/util/bijection"
 )
 
 type informerManager struct {
@@ -33,7 +33,7 @@ type informerManager struct {
 
 	eventHandlerGenerators []*EventHandlerGenerator
 
-	gvrMapping *tools.BijectionMap[string, schema.GroupVersionResource]
+	gvrMapping *bijection.Bijection[string, schema.GroupVersionResource]
 
 	informers                 map[string]informers.GenericInformer
 	informerCancelFuncs       map[string]context.CancelFunc
@@ -50,7 +50,7 @@ func NewInformerManager(client dynamic.Interface, ftcInformer fedcorev1a1informe
 		client:                    client,
 		ftcInformer:               ftcInformer,
 		eventHandlerGenerators:    []*EventHandlerGenerator{},
-		gvrMapping:                tools.NewBijectionMap[string, schema.GroupVersionResource](),
+		gvrMapping:                bijection.NewBijection[string, schema.GroupVersionResource](),
 		informers:                 map[string]informers.GenericInformer{},
 		informerCancelFuncs:       map[string]context.CancelFunc{},
 		eventHandlerRegistrations: map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{},
@@ -135,7 +135,7 @@ func (m *informerManager) processFTC(ctx context.Context, ftc *fedcorev1a1.Feder
 
 	var informer informers.GenericInformer
 
-	if oldGVR, exists := m.gvrMapping.Lookup(ftcName); exists {
+	if oldGVR, exists := m.gvrMapping.LookupByT1(ftcName); exists {
 		logger = klog.FromContext(ctx).WithValues("old-gvr", oldGVR.String())
 		ctx = klog.NewContext(ctx, logger)
 
@@ -211,7 +211,7 @@ func (m *informerManager) processFTCDeletion(ctx context.Context, ftcName string
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	if gvr, exists := m.gvrMapping.Lookup(ftcName); exists {
+	if gvr, exists := m.gvrMapping.LookupByT1(ftcName); exists {
 		logger := klog.FromContext(ctx).WithValues("gvr", gvr.String())
 		ctx = klog.NewContext(ctx, logger)
 	}
@@ -225,7 +225,7 @@ func (m *informerManager) processFTCDeletionUnlocked(ctx context.Context, ftcNam
 		cancel()
 	}
 
-	m.gvrMapping.Delete(ftcName)
+	m.gvrMapping.DeleteT1(ftcName)
 
 	delete(m.informers, ftcName)
 	delete(m.informerCancelFuncs, ftcName)
@@ -256,7 +256,7 @@ func (m *informerManager) GetResourceLister(
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	ftc, ok := m.gvrMapping.ReverseLookup(gvr)
+	ftc, ok := m.gvrMapping.LookupByT2(gvr)
 	if !ok {
 		return nil, nil, false
 	}
