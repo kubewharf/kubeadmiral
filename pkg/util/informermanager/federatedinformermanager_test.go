@@ -23,6 +23,70 @@ import (
 	"github.com/onsi/gomega"
 )
 
+func TestFederatedInformerManager(t *testing.T) {
+	_ = gomega.NewWithT(t)
+
+	t.Run("clients for existing clusters should be available eventually", func(t *testing.T) {
+
+	})
+
+	t.Run("clients for new clusters should be available eventually", func(t *testing.T) {
+
+	})
+
+	t.Run("listers for existing FTCs and clusters should be available eventually", func(t *testing.T) {
+
+	})
+
+	t.Run("listers for new FTCs should be available eventually", func(t *testing.T) {
+
+	})
+
+	t.Run("listers for new clusteres should be available eventually", func(t *testing.T) {
+
+	})
+
+	t.Run("event handlers for existing FTCs should be registed eventually", func(t *testing.T) {
+
+	})
+
+	t.Run("event handlers for new FTCs should be registered eventually", func(t *testing.T) {
+
+	})
+
+	t.Run("event handlers for new clusters should be registered eventually", func(t *testing.T) {
+
+	})
+
+	t.Run("event handler should receive correct lastApplied and latest FTCs", func(t *testing.T) {
+
+	})
+
+	t.Run("event handler should be registered on FTC update", func(t *testing.T) {
+
+	})
+
+	t.Run("event handler should be unregistered on FTC update", func(t *testing.T) {
+
+	})
+
+	t.Run("event handler should be re-registered on FTC update", func(t *testing.T) {
+
+	})
+
+	t.Run("event handler should remain unchanged on FTC update", func(t *testing.T) {
+
+	})
+
+	t.Run("event handler should be unregistered on FTC deletion", func(t *testing.T) {
+
+	})
+
+	t.Run("event handler should be unregistered on cluster deletion", func(t *testing.T) {
+
+	})
+}
+
 // Verifies that clients for existing clusters are eventually available after the FederatedInformerManager is started.
 func TestFederatedInformerManagerClientAvailableForExistingClusters(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)

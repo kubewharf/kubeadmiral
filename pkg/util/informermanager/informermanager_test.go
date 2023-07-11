@@ -117,8 +117,8 @@ func TestInformerManager(t *testing.T) {
 		cm1 := getTestConfigMap("cm-1", "default")
 		sc1 := getTestSecret("sc-1", "default")
 
-		alwaysRegistered := &countingResourceEventHandler{}
-		neverRegistered := &countingResourceEventHandler{}
+		alwaysRegistered := newCountingResourceEventHandler()
+		neverRegistered := newCountingResourceEventHandler()
 
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{deploymentFTC, configmapFTC, secretFTC}
 		defaultObjs := []*unstructured.Unstructured{dp1, cm1, sc1}
@@ -137,8 +137,12 @@ func TestInformerManager(t *testing.T) {
 
 		// 2. Verify alwaysRegistered is eventually registered for all existing FTCs.
 
-		alwaysRegistered.ExpectGenerateEvents(3)
-		alwaysRegistered.ExpectAddEvents(3)
+		alwaysRegistered.ExpectGenerateEvents(deploymentFTC.Name, 1)
+		alwaysRegistered.ExpectGenerateEvents(configmapFTC.Name, 1)
+		alwaysRegistered.ExpectGenerateEvents(secretFTC.Name, 1)
+		alwaysRegistered.ExpectAddEvents(deploymentGVK, 1)
+		alwaysRegistered.ExpectAddEvents(configmapGVK, 1)
+		alwaysRegistered.ExpectAddEvents(secretGVK, 1)
 		alwaysRegistered.AssertEventually(g, time.Second*2)
 
 		// 3. Verify newly generated events are received by alwaysRegistered
@@ -147,16 +151,16 @@ func TestInformerManager(t *testing.T) {
 			Namespace("default").
 			Create(ctx, getTestSecret("sc-2", "default"), metav1.CreateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
-		alwaysRegistered.ExpectAddEvents(1)
+		alwaysRegistered.ExpectAddEvents(secretGVK, 1)
 
 		dp1.SetAnnotations(map[string]string{"test": "test"})
 		_, err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Update(ctx, dp1, metav1.UpdateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
-		alwaysRegistered.ExpectUpdateEvents(1)
+		alwaysRegistered.ExpectUpdateEvents(deploymentGVK, 1)
 
 		err = dynamicClient.Resource(common.ConfigMapGVR).Namespace("default").Delete(ctx, cm1.GetName(), metav1.DeleteOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
-		alwaysRegistered.ExpectDeleteEvents(1)
+		alwaysRegistered.ExpectDeleteEvents(configmapGVK, 1)
 
 		alwaysRegistered.AssertEventually(g, time.Second*2)
 
@@ -185,8 +189,8 @@ func TestInformerManager(t *testing.T) {
 		dm3 := getTestDaemonSet("dm-3", "default")
 		dm4 := getTestDaemonSet("dm-4", "default")
 
-		alwaysRegistered := &countingResourceEventHandler{}
-		neverRegistered := &countingResourceEventHandler{}
+		alwaysRegistered := newCountingResourceEventHandler()
+		neverRegistered := newCountingResourceEventHandler()
 
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{}
 		defaultObjs := []*unstructured.Unstructured{dm1, dm2, dm3, dm4}
@@ -210,8 +214,8 @@ func TestInformerManager(t *testing.T) {
 
 		// 3. Verify that alwaysRegistered is eventually registered for the new Daemonset FTC
 
-		alwaysRegistered.ExpectGenerateEvents(1)
-		alwaysRegistered.ExpectAddEvents(4)
+		alwaysRegistered.ExpectGenerateEvents(daemonsetFTC.Name, 1)
+		alwaysRegistered.ExpectAddEvents(daemonsetGVK, 4)
 		alwaysRegistered.AssertEventually(g, time.Second*2)
 
 		// 4. Verify that newly generated events are also received by alwaysRegistered
@@ -219,11 +223,11 @@ func TestInformerManager(t *testing.T) {
 		dm1.SetAnnotations(map[string]string{"test": "test"})
 		_, err = dynamicClient.Resource(common.DaemonSetGVR).Namespace("default").Update(ctx, dm1, metav1.UpdateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
-		alwaysRegistered.ExpectUpdateEvents(1)
+		alwaysRegistered.ExpectUpdateEvents(daemonsetGVK, 1)
 
 		err = dynamicClient.Resource(common.DaemonSetGVR).Namespace("default").Delete(ctx, dm4.GetName(), metav1.DeleteOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
-		alwaysRegistered.ExpectDeleteEvents(1)
+		alwaysRegistered.ExpectDeleteEvents(daemonsetGVK, 1)
 
 		alwaysRegistered.AssertEventually(g, time.Second*2)
 
@@ -307,7 +311,7 @@ func TestInformerManager(t *testing.T) {
 		ftc := deploymentFTC.DeepCopy()
 		ftc.SetAnnotations(map[string]string{"predicate": "false", "generator": "true"})
 
-		handler := &countingResourceEventHandler{}
+		handler := newCountingResourceEventHandler()
 		generator := newAnnotationBasedGenerator(handler)
 
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{ftc}
@@ -328,8 +332,8 @@ func TestInformerManager(t *testing.T) {
 
 		// 4. Verify that handler is registered and additional events are received
 
-		handler.ExpectGenerateEvents(1)
-		handler.ExpectAddEvents(1)
+		handler.ExpectGenerateEvents(ftc.Name, 1)
+		handler.ExpectAddEvents(deploymentGVK, 1)
 
 		handler.AssertEventually(g, time.Second*2)
 
@@ -337,16 +341,16 @@ func TestInformerManager(t *testing.T) {
 			Namespace("default").
 			Create(ctx, getTestDeployment("dp-2", "default"), metav1.CreateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
-		handler.ExpectAddEvents(1)
+		handler.ExpectAddEvents(deploymentGVK, 1)
 
 		dp2.SetAnnotations(map[string]string{"test-annotation": "test-value"})
 		dp2, err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Update(ctx, dp2, metav1.UpdateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
-		handler.ExpectUpdateEvents(1)
+		handler.ExpectUpdateEvents(deploymentGVK, 1)
 
 		err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Delete(ctx, dp2.GetName(), metav1.DeleteOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
-		handler.ExpectDeleteEvents(1)
+		handler.ExpectDeleteEvents(deploymentGVK, 1)
 
 		handler.AssertEventually(g, time.Second*2)
 	})
@@ -362,7 +366,7 @@ func TestInformerManager(t *testing.T) {
 		ftc := deploymentFTC.DeepCopy()
 		ftc.SetAnnotations(map[string]string{"predicate": "true", "generator": "true"})
 
-		handler := &countingResourceEventHandler{}
+		handler := newCountingResourceEventHandler()
 		generator := newAnnotationBasedGenerator(handler)
 
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{ftc}
@@ -373,8 +377,8 @@ func TestInformerManager(t *testing.T) {
 
 		// 2. Verify that handler is registered initially.
 
-		handler.ExpectGenerateEvents(1)
-		handler.ExpectAddEvents(1)
+		handler.ExpectGenerateEvents(ftc.Name, 1)
+		handler.ExpectAddEvents(deploymentGVK, 1)
 		handler.AssertEventually(g, time.Second*2)
 
 		// 3. Update FTC to trigger unregistration
@@ -411,7 +415,7 @@ func TestInformerManager(t *testing.T) {
 		dp1 := getTestDeployment("dp-1", "default")
 		ftc := deploymentFTC.DeepCopy()
 
-		handler := &countingResourceEventHandler{}
+		handler := newCountingResourceEventHandler()
 		generator := &EventHandlerGenerator{
 			Predicate: alwaysRegisterPredicate,
 			Generator: handler.GenerateEventHandler,
@@ -425,8 +429,8 @@ func TestInformerManager(t *testing.T) {
 
 		// 2. Verify that handler is registered initially
 
-		handler.ExpectGenerateEvents(1)
-		handler.ExpectAddEvents(1)
+		handler.ExpectGenerateEvents(ftc.Name, 1)
+		handler.ExpectAddEvents(deploymentGVK, 1)
 		handler.AssertEventually(g, time.Second*2)
 
 		// 3. Trigger FTC updates and verify re-registration
@@ -435,15 +439,15 @@ func TestInformerManager(t *testing.T) {
 		_, err := fedClient.CoreV1alpha1().FederatedTypeConfigs().Update(ctx, ftc, metav1.UpdateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
-		handler.ExpectGenerateEvents(1)
-		handler.ExpectAddEvents(1)
+		handler.ExpectGenerateEvents(ftc.Name, 1)
+		handler.ExpectAddEvents(deploymentGVK, 1)
 		handler.AssertEventually(g, time.Second*2)
 
 		dp1.SetAnnotations(map[string]string{"test": "test"})
 		_, err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Update(ctx, dp1, metav1.UpdateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
-		handler.ExpectUpdateEvents(1)
+		handler.ExpectUpdateEvents(deploymentGVK, 1)
 		handler.AssertEventually(g, time.Second*2)
 	})
 
@@ -456,7 +460,7 @@ func TestInformerManager(t *testing.T) {
 		dp1 := getTestDeployment("dp-1", "default")
 		ftc := deploymentFTC.DeepCopy()
 
-		handler := &countingResourceEventHandler{}
+		handler := newCountingResourceEventHandler()
 		generator := &EventHandlerGenerator{
 			Predicate: registerOncePredicate,
 			Generator: handler.GenerateEventHandler,
@@ -470,8 +474,8 @@ func TestInformerManager(t *testing.T) {
 
 		// 2. Verify that handler is registered initially
 
-		handler.ExpectGenerateEvents(1)
-		handler.ExpectAddEvents(1)
+		handler.ExpectGenerateEvents(ftc.Name, 1)
+		handler.ExpectAddEvents(deploymentGVK, 1)
 		handler.AssertEventually(g, time.Second*2)
 
 		// 3. Trigger FTC updates and verify no re-registration
@@ -488,7 +492,7 @@ func TestInformerManager(t *testing.T) {
 		_, err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Update(ctx, dp1, metav1.UpdateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
-		handler.ExpectUpdateEvents(1)
+		handler.ExpectUpdateEvents(deploymentGVK, 1)
 		handler.AssertEventually(g, time.Second*2)
 	})
 
@@ -502,8 +506,8 @@ func TestInformerManager(t *testing.T) {
 		cm1 := getTestConfigMap("cm-1", "default")
 		sc1 := getTestSecret("sc-1", "default")
 
-		handler1 := &countingResourceEventHandler{}
-		handler2 := &countingResourceEventHandler{}
+		handler1 := newCountingResourceEventHandler()
+		handler2 := newCountingResourceEventHandler()
 		generator1 := &EventHandlerGenerator{
 			Predicate: registerOncePredicate,
 			Generator: handler1.GenerateEventHandler,
@@ -521,12 +525,20 @@ func TestInformerManager(t *testing.T) {
 
 		// 2. Verify that handler1 and handler2 is registered initially for all FTCs
 
-		handler1.ExpectGenerateEvents(3)
-		handler1.ExpectAddEvents(3)
+		handler1.ExpectGenerateEvents(deploymentFTC.Name, 1)
+		handler1.ExpectGenerateEvents(configmapFTC.Name, 1)
+		handler1.ExpectGenerateEvents(secretFTC.Name, 1)
+		handler1.ExpectAddEvents(deploymentGVK, 1)
+		handler1.ExpectAddEvents(configmapGVK, 1)
+		handler1.ExpectAddEvents(secretGVK, 1)
 		handler1.AssertEventually(g, time.Second*2)
 
-		handler2.ExpectGenerateEvents(3)
-		handler2.ExpectAddEvents(3)
+		handler2.ExpectGenerateEvents(deploymentFTC.Name, 1)
+		handler2.ExpectGenerateEvents(configmapFTC.Name, 1)
+		handler2.ExpectGenerateEvents(secretFTC.Name, 1)
+		handler2.ExpectAddEvents(deploymentGVK, 1)
+		handler2.ExpectAddEvents(configmapGVK, 1)
+		handler2.ExpectAddEvents(secretGVK, 1)
 		handler2.AssertEventually(g, time.Second*2)
 
 		// 3. Delete the deployment FTC
@@ -559,14 +571,14 @@ func TestInformerManager(t *testing.T) {
 			Namespace("default").
 			Create(ctx, getTestSecret("sc-2", "default"), metav1.CreateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
-		handler1.ExpectAddEvents(1)
-		handler2.ExpectAddEvents(1)
+		handler1.ExpectAddEvents(secretGVK, 1)
+		handler2.ExpectAddEvents(secretGVK, 1)
 
 		cm1.SetAnnotations(map[string]string{"test": "test"})
 		_, err = dynamicClient.Resource(common.ConfigMapGVR).Namespace("default").Update(ctx, cm1, metav1.UpdateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
-		handler1.ExpectUpdateEvents(1)
-		handler2.ExpectUpdateEvents(1)
+		handler1.ExpectUpdateEvents(configmapGVK, 1)
+		handler2.ExpectUpdateEvents(configmapGVK, 1)
 
 		handler1.AssertEventually(g, time.Second*2)
 		handler2.AssertEventually(g, time.Second*2)
@@ -582,8 +594,8 @@ func TestInformerManager(t *testing.T) {
 		cm1 := getTestConfigMap("cm-1", "default")
 		sc1 := getTestSecret("sc-1", "default")
 
-		handler1 := &countingResourceEventHandler{}
-		handler2 := &countingResourceEventHandler{}
+		handler1 := newCountingResourceEventHandler()
+		handler2 := newCountingResourceEventHandler()
 		generator1 := &EventHandlerGenerator{
 			Predicate: registerOncePredicate,
 			Generator: handler1.GenerateEventHandler,
@@ -602,12 +614,20 @@ func TestInformerManager(t *testing.T) {
 
 		// 2. Verify that handler1 and handler2 is registered initially for all FTCs
 
-		handler1.ExpectGenerateEvents(3)
-		handler1.ExpectAddEvents(3)
+		handler1.ExpectGenerateEvents(deploymentFTC.Name, 1)
+		handler1.ExpectGenerateEvents(configmapFTC.Name, 1)
+		handler1.ExpectGenerateEvents(secretFTC.Name, 1)
+		handler1.ExpectAddEvents(deploymentGVK, 1)
+		handler1.ExpectAddEvents(configmapGVK, 1)
+		handler1.ExpectAddEvents(secretGVK, 1)
 		handler1.AssertEventually(g, time.Second*2)
 
-		handler2.ExpectGenerateEvents(3)
-		handler2.ExpectAddEvents(3)
+		handler2.ExpectGenerateEvents(deploymentFTC.Name, 1)
+		handler2.ExpectGenerateEvents(configmapFTC.Name, 1)
+		handler2.ExpectGenerateEvents(secretFTC.Name, 1)
+		handler2.ExpectAddEvents(deploymentGVK, 1)
+		handler2.ExpectAddEvents(configmapGVK, 1)
+		handler2.ExpectAddEvents(secretGVK, 1)
 		handler2.AssertEventually(g, time.Second*2)
 
 		// 3. Shutdown the manager
