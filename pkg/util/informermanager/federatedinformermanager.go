@@ -31,7 +31,7 @@ type federatedInformerManager struct {
 	clusterInformer fedcorev1a1informers.FederatedClusterInformer
 
 	eventHandlerGenerators []*EventHandlerGenerator
-	clusterEventHandler    []*ClusterEventHandler
+	clusterEventHandlers    []*ClusterEventHandler
 
 	clients                     map[string]dynamic.Interface
 	connectionMap               map[string][]byte
@@ -53,7 +53,7 @@ func NewFederatedInformerManager(
 		ftcInformer:                 ftcInformer,
 		clusterInformer:             clusterInformer,
 		eventHandlerGenerators:      []*EventHandlerGenerator{},
-		clusterEventHandler:         []*ClusterEventHandler{},
+		clusterEventHandlers:         []*ClusterEventHandler{},
 		clients:                     map[string]dynamic.Interface{},
 		connectionMap:               map[string][]byte{},
 		informerManagers:            map[string]InformerManager{},
@@ -72,6 +72,8 @@ func NewFederatedInformerManager(
 			DeleteFunc: func(obj interface{}) { manager.enqueue(obj) },
 		},
 	})
+
+	ftcInformer.Informer()
 
 	return manager
 }
@@ -210,7 +212,7 @@ func (m *federatedInformerManager) AddClusterEventHandler(handler *ClusterEventH
 		return fmt.Errorf("FederatedInformerManager is already started.")
 	}
 
-	m.clusterEventHandler = append(m.clusterEventHandler, handler)
+	m.clusterEventHandlers = append(m.clusterEventHandlers, handler)
 	return nil
 
 }
@@ -280,7 +282,7 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 		return
 	}
 
-	for _, handler := range m.clusterEventHandler {
+	for _, handler := range m.clusterEventHandlers {
 		predicate := handler.Predicate
 		callback := handler.Callback
 

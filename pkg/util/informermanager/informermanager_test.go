@@ -33,9 +33,10 @@ func init() {
 }
 
 func TestInformerManager(t *testing.T) {
-	g := gomega.NewWithT(t)
-
 	t.Run("listers for existing FTCs should be available eventually", func(t *testing.T) {
+		t.Parallel()
+
+		g := gomega.NewWithT(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -69,6 +70,9 @@ func TestInformerManager(t *testing.T) {
 	})
 
 	t.Run("listers for new FTC should be available eventually", func(t *testing.T) {
+		t.Parallel()
+
+		g := gomega.NewWithT(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -97,7 +101,7 @@ func TestInformerManager(t *testing.T) {
 		_, err := fedClient.CoreV1alpha1().FederatedTypeConfigs().Create(ctx, ftc, metav1.CreateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
-		// 4. Verify the the lister for daemonsets is eventually available
+		// 4. Verify that the lister for daemonsets is eventually available
 
 		g.Eventually(func(g gomega.Gomega) {
 			lister, informerSynced, exists := manager.GetResourceLister(gvr)
@@ -108,6 +112,9 @@ func TestInformerManager(t *testing.T) {
 	})
 
 	t.Run("event handlers for existing FTCs should be registered eventually", func(t *testing.T) {
+		t.Parallel()
+
+		g := gomega.NewWithT(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -179,6 +186,9 @@ func TestInformerManager(t *testing.T) {
 	})
 
 	t.Run("event handlers for new FTCs should be registered eventually", func(t *testing.T) {
+		t.Parallel()
+
+		g := gomega.NewWithT(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -207,18 +217,22 @@ func TestInformerManager(t *testing.T) {
 
 		_, dynamicClient, fedClient := boostrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
 
-		// 2. Create new FTC for daemonset
+		// 2. Verify that alwaysRegistered is not registered initially for daemonset
+
+		alwaysRegistered.AssertConsistently(g, time.Second*2)
+
+		// 3. Create new FTC for daemonset
 
 		_, err := fedClient.CoreV1alpha1().FederatedTypeConfigs().Create(ctx, daemonsetFTC, metav1.CreateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
-		// 3. Verify that alwaysRegistered is eventually registered for the new Daemonset FTC
+		// 4. Verify that alwaysRegistered is eventually registered for the new Daemonset FTC
 
 		alwaysRegistered.ExpectGenerateEvents(daemonsetFTC.Name, 1)
 		alwaysRegistered.ExpectAddEvents(daemonsetGVK, 4)
 		alwaysRegistered.AssertEventually(g, time.Second*2)
 
-		// 4. Verify that newly generated events are also received by alwaysRegistered
+		// 5. Verify that newly generated events are also received by alwaysRegistered
 
 		dm1.SetAnnotations(map[string]string{"test": "test"})
 		_, err = dynamicClient.Resource(common.DaemonSetGVR).Namespace("default").Update(ctx, dm1, metav1.UpdateOptions{})
@@ -231,7 +245,7 @@ func TestInformerManager(t *testing.T) {
 
 		alwaysRegistered.AssertEventually(g, time.Second*2)
 
-		// 4. Verify that events for non-existent FTCs are not received by alwaysRegistered
+		// 6. Verify that events for non-existent FTCs are not received by alwaysRegistered
 
 		_, err = dynamicClient.Resource(common.SecretGVR).
 			Namespace("default").
@@ -239,12 +253,15 @@ func TestInformerManager(t *testing.T) {
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 		alwaysRegistered.AssertConsistently(g, time.Second*2)
 
-		// 5. Verify that unregisteredResourceEventHandler is not registered
+		// 7. Verify that unregisteredResourceEventHandler is not registered
 
 		neverRegistered.AssertConsistently(g, time.Second*2)
 	})
 
 	t.Run("EventHandlerGenerators should receive correct lastApplied and latest FTCs", func(t *testing.T) {
+		t.Parallel()
+
+		g := gomega.NewWithT(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -265,6 +282,7 @@ func TestInformerManager(t *testing.T) {
 				if generation == 1 {
 					assertionCh <- func() {
 						g.Expect(lastApplied).To(gomega.BeNil())
+						g.Expect(latest.GetGeneration()).To(gomega.BeNumerically("==", 1))
 					}
 				} else {
 					assertionCh <- func() {
@@ -287,6 +305,7 @@ func TestInformerManager(t *testing.T) {
 		fn()
 
 		// 3. Generate FTC update events
+
 		for i := 0; i < 5; i++ {
 			generation++
 			ftc.SetGeneration(generation)
@@ -301,6 +320,9 @@ func TestInformerManager(t *testing.T) {
 	})
 
 	t.Run("event handler should be registered on FTC update", func(t *testing.T) {
+		t.Parallel()
+
+		g := gomega.NewWithT(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -356,6 +378,9 @@ func TestInformerManager(t *testing.T) {
 	})
 
 	t.Run("event handler should be unregistered on FTC update", func(t *testing.T) {
+		t.Parallel()
+
+		g := gomega.NewWithT(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -407,6 +432,9 @@ func TestInformerManager(t *testing.T) {
 	})
 
 	t.Run("event handler should be re-registered on FTC update", func(t *testing.T) {
+		t.Parallel()
+
+		g := gomega.NewWithT(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -452,6 +480,9 @@ func TestInformerManager(t *testing.T) {
 	})
 
 	t.Run("event handler should be unchanged on FTC update", func(t *testing.T) {
+		t.Parallel()
+
+		g := gomega.NewWithT(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -497,6 +528,9 @@ func TestInformerManager(t *testing.T) {
 	})
 
 	t.Run("event handler should be unregisterd on FTC delete", func(t *testing.T) {
+		t.Parallel()
+
+		g := gomega.NewWithT(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -585,6 +619,9 @@ func TestInformerManager(t *testing.T) {
 	})
 
 	t.Run("event handlers should be unregistered on manager shutdown", func(t *testing.T) {
+		t.Parallel()
+
+		g := gomega.NewWithT(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -689,13 +726,10 @@ func boostrapInformerManagerWithFakeClients(
 	factory.Start(ctx.Done())
 	informerManager.Start(ctx)
 
-	stopCh := make(chan struct{})
-	go func() {
-		<-time.After(time.Second * 3)
-		close(stopCh)
-	}()
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
 
-	if !cache.WaitForCacheSync(stopCh, informerManager.HasSynced) {
+	if !cache.WaitForCacheSync(ctxWithTimeout.Done(), informerManager.HasSynced) {
 		g.Fail("Timed out waiting for InformerManager cache sync")
 	}
 
