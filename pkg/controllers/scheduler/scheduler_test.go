@@ -441,8 +441,37 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 }
 
 func TestSchedulingMode(t *testing.T) {
+	deploymentObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "deployment",
+			Namespace: "default",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: pointer.Int32(10),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deploymentUns := &unstructured.Unstructured{Object: deploymentObj}
+
+	statefulSetObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "statefulset",
+			Namespace: "default",
+		},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas: pointer.Int32(10),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	statefulSetUns := &unstructured.Unstructured{Object: statefulSetObj}
+
 	tests := map[string]struct {
 		policy           fedcorev1a1.GenericPropagationPolicy
+		obj              *unstructured.Unstructured
 		gvk              schema.GroupVersionKind
 		replicasSpecPath string
 		expectedResult   fedcorev1a1.SchedulingMode
@@ -453,6 +482,7 @@ func TestSchedulingMode(t *testing.T) {
 					SchedulingMode: fedcorev1a1.SchedulingModeDivide,
 				},
 			},
+			obj:              deploymentUns,
 			replicasSpecPath: "spec.replicas",
 			gvk:              appsv1.SchemeGroupVersion.WithKind("Deployment"),
 			expectedResult:   fedcorev1a1.SchedulingModeDivide,
@@ -463,6 +493,7 @@ func TestSchedulingMode(t *testing.T) {
 					SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
 				},
 			},
+			obj:              deploymentUns,
 			replicasSpecPath: "spec.replicas",
 			gvk:              appsv1.SchemeGroupVersion.WithKind("Deployment"),
 			expectedResult:   fedcorev1a1.SchedulingModeDuplicate,
@@ -473,6 +504,7 @@ func TestSchedulingMode(t *testing.T) {
 					SchedulingMode: fedcorev1a1.SchedulingModeDivide,
 				},
 			},
+			obj:              statefulSetUns,
 			replicasSpecPath: "",
 			gvk:              appsv1.SchemeGroupVersion.WithKind("StatefulSet"),
 			expectedResult:   fedcorev1a1.SchedulingModeDuplicate,
@@ -498,7 +530,7 @@ func TestSchedulingMode(t *testing.T) {
 				},
 			}
 			obj := &unstructured.Unstructured{Object: make(map[string]interface{})}
-			err := unstructured.SetNestedMap(obj.Object, make(map[string]interface{}), common.TemplatePath...)
+			err := unstructured.SetNestedMap(obj.Object, test.obj.Object, common.TemplatePath...)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
