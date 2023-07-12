@@ -133,6 +133,7 @@ func (m *informerManager) worker(ctx context.Context) {
 			m.queue.AddRateLimited(key)
 		} else {
 			logger.Error(err, "Failed to process FederatedTypeConfig")
+			m.queue.Forget(key)
 		}
 		return
 	}

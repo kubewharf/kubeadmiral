@@ -146,6 +146,7 @@ func (m *federatedInformerManager) worker(ctx context.Context) {
 			m.queue.AddRateLimited(key)
 		} else {
 			logger.Error(err, "Failed to process FederatedCluster")
+			m.queue.Forget(key)
 		}
 		return
 	}
