@@ -29,7 +29,6 @@ import (
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedtypeconfig"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/follower"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/monitor"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
@@ -77,9 +76,8 @@ func startMonitorController(ctx context.Context, controllerCtx *controllercontex
 func startFollowerController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
 	controller, err := follower.NewFollowerController(
 		controllerCtx.KubeClientset,
-		controllerCtx.DynamicClientset,
 		controllerCtx.FedClientset,
-		controllerCtx.DynamicInformerFactory,
+		controllerCtx.FedInformerFactory,
 		controllerCtx.Metrics,
 		controllerCtx.WorkerCount,
 	)
