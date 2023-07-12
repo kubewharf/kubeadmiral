@@ -247,51 +247,37 @@ func (h *countingResourceEventHandler) ExpectDeleteEvents(gvk schema.GroupVersio
 	h.expectedDeleteEventCount[gvk] = h.expectedDeleteEventCount[gvk] + n
 }
 
-func (h *countingResourceEventHandler) AssertEventually(g gomega.Gomega, timeout time.Duration) {
+func (h *countingResourceEventHandler) Assert(g gomega.Gomega) {
 	_, file, no, _ := goruntime.Caller(1)
 	callerInfo := fmt.Sprintf("%s:%d", path.Base(file), no)
 
+	for ftc := range h.expectedGenerateCount {
+		g.Expect(h.generateCount[ftc]).
+			To(gomega.BeNumerically("==", h.expectedGenerateCount[ftc]), "%s: incorrect number of generate events for %s", callerInfo, ftc)
+	}
+	for gvk := range h.expectedAddEventCount {
+		g.Expect(h.addEventCount[gvk]).
+			To(gomega.BeNumerically("==", h.expectedAddEventCount[gvk]), "%s: incorrect number of add events for %s", callerInfo, gvk)
+	}
+	for gvk := range h.expectedUpdateEventCount {
+		g.Expect(h.updateEventCount[gvk]).
+			To(gomega.BeNumerically("==", h.expectedUpdateEventCount[gvk]), "%s: incorrect number of update events for %s", callerInfo, gvk)
+	}
+	for gvk := range h.expectedDeleteEventCount {
+		g.Expect(h.deleteEventCount[gvk]).
+			To(gomega.BeNumerically("==", h.expectedDeleteEventCount[gvk]), "%s: incorrect number of delete events for %s", callerInfo, gvk)
+	}
+}
+
+func (h *countingResourceEventHandler) AssertEventually(g gomega.Gomega, timeout time.Duration) {
 	g.Eventually(func(g gomega.Gomega) {
-		for ftc := range h.expectedGenerateCount {
-			g.Expect(h.generateCount[ftc]).
-				To(gomega.BeNumerically("==", h.expectedGenerateCount[ftc]), "%s: incorrect number of generate events for %s", callerInfo, ftc)
-		}
-		for gvk := range h.expectedAddEventCount {
-			g.Expect(h.addEventCount[gvk]).
-				To(gomega.BeNumerically("==", h.expectedAddEventCount[gvk]), "%s: incorrect number of add events for %s", callerInfo, gvk)
-		}
-		for gvk := range h.expectedUpdateEventCount {
-			g.Expect(h.updateEventCount[gvk]).
-				To(gomega.BeNumerically("==", h.expectedUpdateEventCount[gvk]), "%s: incorrect number of update events for %s", callerInfo, gvk)
-		}
-		for gvk := range h.expectedDeleteEventCount {
-			g.Expect(h.deleteEventCount[gvk]).
-				To(gomega.BeNumerically("==", h.expectedDeleteEventCount[gvk]), "%s: incorrect number of delete events for %s", callerInfo, gvk)
-		}
+		h.Assert(g)
 	}).WithTimeout(timeout).Should(gomega.Succeed())
 }
 
 func (h *countingResourceEventHandler) AssertConsistently(g gomega.Gomega, timeout time.Duration) {
-	_, file, no, _ := goruntime.Caller(1)
-	callerInfo := fmt.Sprintf("%s:%d", file, no)
-
 	g.Consistently(func(g gomega.Gomega) {
-		for ftc := range h.expectedGenerateCount {
-			g.Expect(h.generateCount[ftc]).
-				To(gomega.BeNumerically("==", h.expectedGenerateCount[ftc]), "%s: incorrect number of generate events for %s", callerInfo, ftc)
-		}
-		for gvk := range h.expectedAddEventCount {
-			g.Expect(h.addEventCount[gvk]).
-				To(gomega.BeNumerically("==", h.expectedAddEventCount[gvk]), "%s: incorrect number of add events for %s", callerInfo, gvk)
-		}
-		for gvk := range h.expectedUpdateEventCount {
-			g.Expect(h.updateEventCount[gvk]).
-				To(gomega.BeNumerically("==", h.expectedUpdateEventCount[gvk]), "%s: incorrect number of update events for %s", callerInfo, gvk)
-		}
-		for gvk := range h.expectedDeleteEventCount {
-			g.Expect(h.deleteEventCount[gvk]).
-				To(gomega.BeNumerically("==", h.expectedDeleteEventCount[gvk]), "%s: incorrect number of delete events for %s", callerInfo, gvk)
-		}
+		h.Assert(g)
 	}).WithTimeout(timeout).Should(gomega.Succeed())
 }
 

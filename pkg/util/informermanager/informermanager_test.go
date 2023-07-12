@@ -700,9 +700,12 @@ func boostrapInformerManagerWithFakeClients(
 ) (InformerManager, dynamicclient.Interface, fedclient.Interface) {
 	scheme := runtime.NewScheme()
 
-	corev1.AddToScheme(scheme)
-	appsv1.AddToScheme(scheme)
-	fedcorev1a1.AddToScheme(scheme)
+	err := corev1.AddToScheme(scheme)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	err = appsv1.AddToScheme(scheme)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	err = fedcorev1a1.AddToScheme(scheme)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
 
 	dynamicObjects := []runtime.Object{}
 	for _, object := range objects {
