@@ -116,7 +116,8 @@ func (m *informerManager) worker(ctx context.Context) {
 		if err := m.processFTCDeletion(ctx, name); err != nil {
 			logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
 			m.queue.AddRateLimited(key)
-			return
+		} else {
+			m.queue.Forget(key)
 		}
 		return
 	}
@@ -130,12 +131,16 @@ func (m *informerManager) worker(ctx context.Context) {
 	if err != nil {
 		if needReenqueue {
 			logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
+			m.queue.AddRateLimited(key)
 		} else {
 			logger.Error(err, "Failed to process FederatedTypeConfig")
 		}
+		return
 	}
+
+	m.queue.Forget(key)
 	if needReenqueue {
-		m.queue.AddRateLimited(key)
+		m.queue.Add(key)
 	}
 }
 
