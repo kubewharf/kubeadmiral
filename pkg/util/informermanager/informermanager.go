@@ -35,7 +35,6 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	"github.com/kubewharf/kubeadmiral/pkg/util/bijection"
 )
 
@@ -149,8 +148,7 @@ func (m *informerManager) processFTC(ctx context.Context, ftc *fedcorev1a1.Feder
 	defer m.lock.Unlock()
 
 	ftcName := ftc.Name
-	apiResource := ftc.GetSourceType()
-	gvr := schemautil.APIResourceToGVR(&apiResource)
+	gvr := ftc.GetSourceTypeGVR()
 
 	logger := klog.FromContext(ctx).WithValues("gvr", gvr.String())
 	ctx = klog.NewContext(ctx, logger)

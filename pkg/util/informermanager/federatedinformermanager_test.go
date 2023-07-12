@@ -39,7 +39,6 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/fake"
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 )
 
 //nolint:gocyclo
@@ -182,8 +181,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 2. Verify that listers for existing FTCs and clusters are eventually available
 
 		for _, ftc := range defaultFTCs {
-			apiresource := ftc.GetSourceType()
-			gvr := schemautil.APIResourceToGVR(&apiresource)
+			gvr := ftc.GetSourceTypeGVR()
 
 			for _, cluster := range defaultClusters {
 				g.Eventually(func(g gomega.Gomega) {
@@ -246,8 +244,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		}()
 
 		ftc := daemonsetFTC
-		apiresource := ftc.GetSourceType()
-		gvr := schemautil.APIResourceToGVR(&apiresource)
+		gvr := ftc.GetSourceTypeGVR()
 
 		// 2. Verify that listers for daemonsets FTCs is not available at the start
 
@@ -310,8 +307,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		g.Consistently(func(g gomega.Gomega) {
 			for _, ftc := range defaultFTCs {
-				apiresource := ftc.GetSourceType()
-				gvr := schemautil.APIResourceToGVR(&apiresource)
+				gvr := ftc.GetSourceTypeGVR()
 
 				lister, informerSynced, exists := manager.GetResourceLister(gvr, cluster.Name)
 				g.Expect(exists).To(gomega.BeFalse())
@@ -329,8 +325,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		g.Eventually(func(g gomega.Gomega) {
 			for _, ftc := range defaultFTCs {
-				apiresource := ftc.GetSourceType()
-				gvr := schemautil.APIResourceToGVR(&apiresource)
+				gvr := ftc.GetSourceTypeGVR()
 
 				lister, informerSynced, exists := manager.GetResourceLister(gvr, cluster.Name)
 				g.Expect(exists).To(gomega.BeTrue())

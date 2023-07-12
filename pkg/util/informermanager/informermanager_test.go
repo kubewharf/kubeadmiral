@@ -39,7 +39,6 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/fake"
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 )
 
 func TestInformerManager(t *testing.T) {
@@ -66,8 +65,7 @@ func TestInformerManager(t *testing.T) {
 		// 2. Verify that the listers for each FTC is eventually available
 
 		for _, ftc := range defaultFTCs {
-			apiresource := ftc.GetSourceType()
-			gvr := schemautil.APIResourceToGVR(&apiresource)
+			gvr := ftc.GetSourceTypeGVR()
 
 			g.Eventually(func(g gomega.Gomega) {
 				lister, informerSynced, exists := manager.GetResourceLister(gvr)
@@ -103,8 +101,7 @@ func TestInformerManager(t *testing.T) {
 		}()
 
 		ftc := daemonsetFTC
-		apiresource := ftc.GetSourceType()
-		gvr := schemautil.APIResourceToGVR(&apiresource)
+		gvr := ftc.GetSourceTypeGVR()
 
 		// 2. Verify that the lister for daemonsets is not available at the start
 
