@@ -1,3 +1,19 @@
+/*
+Copyright 2023 The KubeAdmiral Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package informermanager
 
 import (
@@ -24,14 +40,15 @@ import (
 type federatedInformerManager struct {
 	lock sync.RWMutex
 
-	started bool
+	started  bool
+	shutdown bool
 
 	clientGetter    ClusterClientGetter
 	ftcInformer     fedcorev1a1informers.FederatedTypeConfigInformer
 	clusterInformer fedcorev1a1informers.FederatedClusterInformer
 
 	eventHandlerGenerators []*EventHandlerGenerator
-	clusterEventHandlers    []*ClusterEventHandler
+	clusterEventHandlers   []*ClusterEventHandler
 
 	clients                     map[string]dynamic.Interface
 	connectionMap               map[string][]byte
@@ -49,11 +66,12 @@ func NewFederatedInformerManager(
 	manager := &federatedInformerManager{
 		lock:                        sync.RWMutex{},
 		started:                     false,
+		shutdown:                    false,
 		clientGetter:                clientGetter,
 		ftcInformer:                 ftcInformer,
 		clusterInformer:             clusterInformer,
 		eventHandlerGenerators:      []*EventHandlerGenerator{},
-		clusterEventHandlers:         []*ClusterEventHandler{},
+		clusterEventHandlers:        []*ClusterEventHandler{},
 		clients:                     map[string]dynamic.Interface{},
 		connectionMap:               map[string][]byte{},
 		informerManagers:            map[string]InformerManager{},
@@ -186,7 +204,7 @@ func (m *federatedInformerManager) processCluster(
 
 func (m *federatedInformerManager) processClusterDeletion(ctx context.Context, clusterName string) error {
 	m.lock.Lock()
-	m.lock.Unlock()
+	defer m.lock.Unlock()
 	return m.processClusterDeletionUnlocked(ctx, clusterName)
 }
 
@@ -209,12 +227,11 @@ func (m *federatedInformerManager) AddClusterEventHandler(handler *ClusterEventH
 	defer m.lock.Unlock()
 
 	if m.started {
-		return fmt.Errorf("FederatedInformerManager is already started.")
+		return fmt.Errorf("failed to add ClusterEventHandler: FederatedInformerManager is already started")
 	}
 
 	m.clusterEventHandlers = append(m.clusterEventHandlers, handler)
 	return nil
-
 }
 
 func (m *federatedInformerManager) AddEventHandlerGenerator(generator *EventHandlerGenerator) error {
@@ -222,7 +239,7 @@ func (m *federatedInformerManager) AddEventHandlerGenerator(generator *EventHand
 	defer m.lock.Unlock()
 
 	if m.started {
-		return fmt.Errorf("FederatedInformerManager is already started.")
+		return fmt.Errorf("failed to add EventHandlerGenerator: FederatedInformerManager is already started")
 	}
 
 	m.eventHandlerGenerators = append(m.eventHandlerGenerators, generator)
@@ -313,20 +330,30 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 	go func() {
 		<-ctx.Done()
 
+		m.lock.Lock()
+		defer m.lock.Unlock()
+
 		logger.V(2).Info("Stopping FederatedInformerManager")
 		m.queue.ShutDown()
+		m.shutdown = true
 	}()
+}
+
+func (m *federatedInformerManager) IsShutdown() bool {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	return m.shutdown
 }
 
 var _ FederatedInformerManager = &federatedInformerManager{}
 
 func DefaultClusterConnectionHash(cluster *fedcorev1a1.FederatedCluster) ([]byte, error) {
 	hashObj := struct {
-		ApiEndpoint            string
+		APIEndpoint            string
 		SecretName             string
 		UseServiceAccountToken bool
 	}{
-		ApiEndpoint:            cluster.Spec.APIEndpoint,
+		APIEndpoint:            cluster.Spec.APIEndpoint,
 		SecretName:             cluster.Spec.SecretRef.Name,
 		UseServiceAccountToken: cluster.Spec.UseServiceAccountToken,
 	}

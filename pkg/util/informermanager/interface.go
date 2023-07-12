@@ -1,3 +1,19 @@
+/*
+Copyright 2023 The KubeAdmiral Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package informermanager
 
 import (
@@ -43,6 +59,9 @@ type InformerManager interface {
 
 	// Starts processing FederatedTypeConfig events.
 	Start(ctx context.Context)
+
+	// Returns true if the InformerManager is gracefully shutdown.
+	IsShutdown() bool
 }
 
 // ClusterEventHandler can be registered by controllers to hook into the cluster events received by the
@@ -93,6 +112,9 @@ type FederatedInformerManager interface {
 
 	// Starts processing FederatedTypeConfig and FederatedCluster events.
 	Start(ctx context.Context)
+
+	// Returns true if the InformerManager is gracefully shutdown.
+	IsShutdown() bool
 }
 
 // ClusterClientGetter is used by the FederatedInformerManager to create clients for joined member clusters.
@@ -102,5 +124,5 @@ type ClusterClientGetter struct {
 	// cluster.
 	ConnectionHash func(cluster *fedcorev1a1.FederatedCluster) ([]byte, error)
 	// ClientGetter returns a dynamic client for the given member cluster.
-	ClientGetter   func(cluster *fedcorev1a1.FederatedCluster) (dynamic.Interface, error)
+	ClientGetter func(cluster *fedcorev1a1.FederatedCluster) (dynamic.Interface, error)
 }
