@@ -1210,9 +1210,12 @@ func bootstrapFederatedInformerManagerWithFakeClients(
 ) (FederatedInformerManager, fedclient.Interface) {
 	scheme := runtime.NewScheme()
 
-	corev1.AddToScheme(scheme)
-	appsv1.AddToScheme(scheme)
-	fedcorev1a1.AddToScheme(scheme)
+	err := corev1.AddToScheme(scheme)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	err = appsv1.AddToScheme(scheme)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	err = fedcorev1a1.AddToScheme(scheme)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
 
 	fedObjects := []runtime.Object{}
 	for _, cluster := range clusters {
@@ -1245,10 +1248,12 @@ func bootstrapFederatedInformerManagerWithFakeClients(
 	)
 
 	for _, generator := range eventHandlerGenerators {
-		informerManager.AddEventHandlerGenerator(generator)
+		err := informerManager.AddEventHandlerGenerator(generator)
+		g.Expect(err).ToNot(gomega.HaveOccurred())
 	}
 	for _, handler := range clusterEventHandlers {
-		informerManager.AddClusterEventHandler(handler)
+		err := informerManager.AddClusterEventHandler(handler)
+		g.Expect(err).ToNot(gomega.HaveOccurred())
 	}
 
 	factory.Start(ctx.Done())
