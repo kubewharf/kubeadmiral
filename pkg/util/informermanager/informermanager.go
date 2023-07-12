@@ -36,6 +36,7 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/util/bijection"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 )
 
 type informerManager struct {
@@ -107,8 +108,7 @@ func (m *informerManager) worker(ctx context.Context) {
 		return
 	}
 
-	logger = logger.WithValues("ftc", name)
-	ctx = klog.NewContext(ctx, logger)
+	ctx, logger = logging.InjectLoggerValues(ctx, "ftc", name)
 
 	ftc, err := m.ftcInformer.Lister().Get(name)
 	if apierrors.IsNotFound(err) {
@@ -150,14 +150,12 @@ func (m *informerManager) processFTC(ctx context.Context, ftc *fedcorev1a1.Feder
 	ftcName := ftc.Name
 	gvr := ftc.GetSourceTypeGVR()
 
-	logger := klog.FromContext(ctx).WithValues("gvr", gvr.String())
-	ctx = klog.NewContext(ctx, logger)
+	ctx, logger := logging.InjectLoggerValues(ctx, "gvr", gvr.String())
 
 	var informer informers.GenericInformer
 
 	if oldGVR, exists := m.gvrMapping.LookupByT1(ftcName); exists {
-		logger = klog.FromContext(ctx).WithValues("old-gvr", oldGVR.String())
-		ctx = klog.NewContext(ctx, logger)
+		ctx, _ := logging.InjectLoggerValues(ctx, "old-gvr", oldGVR.String())
 
 		if oldGVR != gvr {
 			// This might occur if a ftc was deleted and recreated with a different source type within a short period of
@@ -232,8 +230,7 @@ func (m *informerManager) processFTCDeletion(ctx context.Context, ftcName string
 	defer m.lock.Unlock()
 
 	if gvr, exists := m.gvrMapping.LookupByT1(ftcName); exists {
-		logger := klog.FromContext(ctx).WithValues("gvr", gvr.String())
-		ctx = klog.NewContext(ctx, logger)
+		ctx, _ = logging.InjectLoggerValues(ctx, "gvr", gvr.String())
 	}
 
 	return m.processFTCDeletionUnlocked(ctx, ftcName)
@@ -297,8 +294,7 @@ func (m *informerManager) Start(ctx context.Context) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	logger := klog.LoggerWithName(klog.FromContext(ctx), "informer-manager")
-	ctx = klog.NewContext(ctx, logger)
+	ctx, logger := logging.InjectLoggerName(ctx, "informer-manager")
 
 	if m.started {
 		logger.Error(nil, "InformerManager cannot be started more than once")

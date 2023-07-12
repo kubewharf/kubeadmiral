@@ -35,6 +35,7 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 )
 
 type federatedInformerManager struct {
@@ -120,8 +121,7 @@ func (m *federatedInformerManager) worker(ctx context.Context) {
 		return
 	}
 
-	logger = logger.WithValues("cluster", name)
-	ctx = klog.NewContext(ctx, logger)
+	ctx, logger = logging.InjectLoggerValues(ctx, "cluster", name)
 
 	cluster, err := m.clusterInformer.Lister().Get(name)
 	if err != nil && !apierrors.IsNotFound(err) {
@@ -289,8 +289,7 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	logger := klog.LoggerWithName(klog.FromContext(ctx), "federated-informer-manager")
-	ctx = klog.NewContext(ctx, logger)
+	ctx, logger := logging.InjectLoggerName(ctx, "federated-informer-manager")
 
 	if m.started {
 		logger.Error(nil, "FederatedInformerManager cannot be started more than once")
