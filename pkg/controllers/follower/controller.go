@@ -19,6 +19,7 @@ package follower
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -29,26 +30,21 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/dynamic/dynamicinformer"
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
+	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
+	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/pendingcontrollers"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
@@ -93,14 +89,10 @@ var (
 
 // Handles for a leader or follower type.
 type typeHandles struct {
-	// <leader|follower>+federatedKind
-	name        string
-	typeConfig  *fedcorev1a1.FederatedTypeConfig
-	sourceGK    schema.GroupKind
-	federatedGK schema.GroupKind
-	informer    informers.GenericInformer
-	client      dynamic.NamespaceableResourceInterface
-	worker      worker.ReconcileWorker
+	// <leader|follower>+sourceKind
+	name       string
+	typeConfig *fedcorev1a1.FederatedTypeConfig
+	sourceGK   schema.GroupKind
 }
 
 type Controller struct {
@@ -113,18 +105,22 @@ type Controller struct {
 	// The following maps are written during initialization and only read afterward,
 	// therefore no locks are required.
 
-	// map from source GroupKind to federated GroupKind
-	sourceToFederatedGKMap map[schema.GroupKind]schema.GroupKind
-	// map from leader federated GroupKind to typeHandle
+	// map from leader object GroupKind to typeHandle
 	leaderTypeHandles map[schema.GroupKind]*typeHandles
-	// map from follower federated GroupKind to typeHandle
+	// map from follower object GroupKind to typeHandle
 	followerTypeHandles map[schema.GroupKind]*typeHandles
 
-	cacheObservedFromLeaders   *bidirectionalCache[fedtypesv1a1.LeaderReference, FollowerReference]
-	cacheObservedFromFollowers *bidirectionalCache[FollowerReference, fedtypesv1a1.LeaderReference]
+	cacheObservedFromLeaders   *bidirectionalCache[fedcorev1a1.LeaderReference, FollowerReference]
+	cacheObservedFromFollowers *bidirectionalCache[FollowerReference, fedcorev1a1.LeaderReference]
 
-	kubeClient kubernetes.Interface
-	fedClient  fedclient.Interface
+	worker                  worker.ReconcileWorker[SourceGroupKindKey]
+	federatedObjectInformer fedcorev1a1informers.FederatedObjectInformer
+	fedClient               fedclient.Interface
+}
+
+type SourceGroupKindKey struct {
+	sourceGK      schema.GroupKind
+	federatedName common.QualifiedName
 }
 
 func (c *Controller) IsControllerReady() bool {
@@ -133,9 +129,8 @@ func (c *Controller) IsControllerReady() bool {
 
 func NewFollowerController(
 	kubeClient kubernetes.Interface,
-	dynamicClient dynamic.Interface,
 	fedClient fedclient.Interface,
-	informerFactory dynamicinformer.DynamicSharedInformerFactory,
+	informerFactory fedinformers.SharedInformerFactory,
 	metrics stats.Metrics,
 	workerCount int,
 ) (*Controller, error) {
@@ -144,47 +139,40 @@ func NewFollowerController(
 		eventRecorder:              eventsink.NewDefederatingRecorderMux(kubeClient, ControllerName, 4),
 		metrics:                    metrics,
 		logger:                     klog.LoggerWithValues(klog.Background(), "controller", ControllerName),
-		sourceToFederatedGKMap:     make(map[schema.GroupKind]schema.GroupKind),
+		federatedObjectInformer:    informerFactory.Core().V1alpha1().FederatedObjects(),
 		leaderTypeHandles:          make(map[schema.GroupKind]*typeHandles),
 		followerTypeHandles:        make(map[schema.GroupKind]*typeHandles),
-		cacheObservedFromLeaders:   newBidirectionalCache[fedtypesv1a1.LeaderReference, FollowerReference](),
-		cacheObservedFromFollowers: newBidirectionalCache[FollowerReference, fedtypesv1a1.LeaderReference](),
-		kubeClient:                 kubeClient,
+		cacheObservedFromLeaders:   newBidirectionalCache[fedcorev1a1.LeaderReference, FollowerReference](),
+		cacheObservedFromFollowers: newBidirectionalCache[FollowerReference, fedcorev1a1.LeaderReference](),
 		fedClient:                  fedClient,
 	}
+
+	c.federatedObjectInformer.Informer().AddEventHandlerWithResyncPeriod(
+		c.NewTriggerWithSupportedTypeFilter(),
+		util.NoResyncPeriod,
+	)
+
+	c.worker = worker.NewReconcileWorker[SourceGroupKindKey](
+		"follower-controller-worker",
+		nil,
+		func(key SourceGroupKindKey) worker.Result {
+			return c.reconcile(key)
+		},
+		worker.RateLimiterOptions{},
+		workerCount,
+		c.metrics,
+	)
 
 	getHandles := func(
 		ftc *fedcorev1a1.FederatedTypeConfig,
 		handleNamePrefix string,
-		reconcile func(*typeHandles, common.QualifiedName) worker.Result,
 	) *typeHandles {
-		targetType := ftc.GetTargetType()
-		federatedType := ftc.GetFederatedType()
-		federatedGVR := schemautil.APIResourceToGVR(&federatedType)
-
-		handles := &typeHandles{
-			name:        handleNamePrefix + "-" + federatedType.Kind,
-			typeConfig:  ftc,
-			sourceGK:    schemautil.APIResourceToGVK(&targetType).GroupKind(),
-			federatedGK: schemautil.APIResourceToGVK(&federatedType).GroupKind(),
-			informer:    informerFactory.ForResource(federatedGVR),
-			client:      dynamicClient.Resource(federatedGVR),
+		targetType := ftc.Spec.SourceType
+		return &typeHandles{
+			name:       handleNamePrefix + "-" + targetType.Kind,
+			typeConfig: ftc,
+			sourceGK:   schema.GroupKind{Group: targetType.Group, Kind: targetType.Kind},
 		}
-		handles.worker = worker.NewReconcileWorker(
-			func(qualifiedName common.QualifiedName) worker.Result {
-				return reconcile(handles, qualifiedName)
-			},
-			worker.RateLimiterOptions{},
-			workerCount,
-			c.metrics,
-			delayingdeliver.NewMetricTags("follower-controller-worker", handles.name),
-		)
-		handles.informer.Informer().AddEventHandlerWithResyncPeriod(
-			util.NewTriggerOnAllChanges(handles.worker.EnqueueObject),
-			util.NoResyncPeriod,
-		)
-
-		return handles
 	}
 
 	ftcs, err := c.fedClient.CoreV1alpha1().
@@ -197,20 +185,16 @@ func NewFollowerController(
 	// Find the supported leader and follower types and create their handles
 	for i := range ftcs.Items {
 		ftc := &ftcs.Items[i]
-		targetType := ftc.Spec.TargetType
-		federatedType := ftc.Spec.FederatedType
+		targetType := ftc.Spec.SourceType
 		targetGK := schema.GroupKind{Group: targetType.Group, Kind: targetType.Kind}
-		federatedGK := schema.GroupKind{Group: federatedType.Group, Kind: federatedType.Kind}
 
 		if _, exists := leaderPodTemplatePaths[targetGK]; exists {
-			handles := getHandles(ftc, "leader", c.reconcileLeader)
-			c.sourceToFederatedGKMap[targetGK] = federatedGK
-			c.leaderTypeHandles[federatedGK] = handles
+			handles := getHandles(ftc, "leader")
+			c.leaderTypeHandles[targetGK] = handles
 			c.logger.V(2).Info(fmt.Sprintf("Found supported leader FederatedTypeConfig %s", ftc.Name))
 		} else if supportedFollowerTypes.Has(targetGK) {
-			handles := getHandles(ftc, "follower", c.reconcileFollower)
-			c.sourceToFederatedGKMap[targetGK] = federatedGK
-			c.followerTypeHandles[federatedGK] = handles
+			handles := getHandles(ftc, "follower")
+			c.followerTypeHandles[targetGK] = handles
 			c.logger.V(2).Info(fmt.Sprintf("Found supported follower FederatedTypeConfig %s", ftc.Name))
 		}
 	}
@@ -226,28 +210,75 @@ func (c *Controller) Run(stopChan <-chan struct{}) {
 		return
 	}
 
-	for _, handle := range c.leaderTypeHandles {
-		handle.worker.Run(stopChan)
-	}
-	for _, handle := range c.followerTypeHandles {
-		handle.worker.Run(stopChan)
-	}
-
+	c.worker.Run(stopChan)
 	<-stopChan
 }
 
 func (c *Controller) HasSynced() bool {
-	for _, handle := range c.leaderTypeHandles {
-		if !handle.informer.Informer().HasSynced() {
-			return false
-		}
+	return c.federatedObjectInformer.Informer().HasSynced()
+}
+
+func (c *Controller) NewTriggerWithSupportedTypeFilter() *cache.ResourceEventHandlerFuncs {
+	return &cache.ResourceEventHandlerFuncs{
+		DeleteFunc: func(old interface{}) {
+			if deleted, ok := old.(cache.DeletedFinalStateUnknown); ok {
+				// This object might be stale but ok for our current usage.
+				old = deleted.Obj
+				if old == nil {
+					return
+				}
+			}
+			c.enqueueSupportedType(old)
+		},
+		AddFunc: func(cur interface{}) {
+			c.enqueueSupportedType(cur)
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			if !reflect.DeepEqual(old, cur) {
+				c.enqueueSupportedType(cur)
+			}
+		},
 	}
-	for _, handle := range c.followerTypeHandles {
-		if !handle.informer.Informer().HasSynced() {
-			return false
-		}
+}
+
+func (c *Controller) enqueueSupportedType(object interface{}) {
+	fedObject, ok := object.(*fedcorev1a1.FederatedObject)
+	if !ok {
+		return
 	}
-	return true
+
+	templateObj := &unstructured.Unstructured{}
+	err := templateObj.UnmarshalJSON(fedObject.Spec.Template.Raw)
+	if err != nil {
+		return
+	}
+
+	sourceGK := templateObj.GroupVersionKind().GroupKind()
+	if _, exists := leaderPodTemplatePaths[sourceGK]; exists {
+		c.worker.Enqueue(SourceGroupKindKey{
+			sourceGK:      sourceGK,
+			federatedName: common.QualifiedName{Namespace: fedObject.Namespace, Name: fedObject.Name},
+		})
+	}
+
+	if supportedFollowerTypes.Has(templateObj.GroupVersionKind().GroupKind()) {
+		c.worker.Enqueue(SourceGroupKindKey{
+			sourceGK:      sourceGK,
+			federatedName: common.QualifiedName{Namespace: fedObject.Namespace, Name: fedObject.Name},
+		})
+	}
+}
+
+func (c *Controller) reconcile(key SourceGroupKindKey) (status worker.Result) {
+	if leaderHandle, exists := c.leaderTypeHandles[key.sourceGK]; exists {
+		return c.reconcileLeader(leaderHandle, key.federatedName)
+	}
+
+	if followerHandle, exists := c.followerTypeHandles[key.sourceGK]; exists {
+		return c.reconcileFollower(followerHandle, key.federatedName)
+	}
+
+	return worker.StatusAllOK
 }
 
 /*
@@ -269,17 +300,21 @@ func (c *Controller) reconcileLeader(
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcileLeader")
 	}()
 
-	leader := fedtypesv1a1.LeaderReference{
-		Group:     handles.federatedGK.Group,
-		Kind:      handles.federatedGK.Kind,
+	leader := fedcorev1a1.LeaderReference{
+		Group:     handles.sourceGK.Group,
+		Kind:      handles.sourceGK.Kind,
 		Namespace: qualifiedName.Namespace,
 		Name:      qualifiedName.Name,
 	}
 
-	fedObj, err := getObjectFromStore(handles.informer.Informer().GetStore(), key)
-	if err != nil {
-		logger.Error(err, "Failed to retrieve object from store")
+	fedObj, err := c.federatedObjectInformer.Lister().FederatedObjects(qualifiedName.Namespace).Get(qualifiedName.Name)
+	if err != nil && !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to get follower object from store")
 		return worker.StatusError
+	}
+
+	if apierrors.IsNotFound(err) {
+		fedObj = nil
 	}
 
 	var desiredFollowers sets.Set[FollowerReference]
@@ -313,13 +348,13 @@ func (c *Controller) reconcileLeader(
 
 	// enqueue all followers whose desired state may have changed
 	for follower := range desiredFollowers.Union(currentFollowers) {
-		handles, exists := c.followerTypeHandles[follower.GroupKind]
-		if !exists {
-			logger.WithValues("follower", follower).Error(nil, "Unsupported follower type")
-			return worker.StatusError
-		}
-		handles.worker.Enqueue(
-			common.QualifiedName{Namespace: follower.Namespace, Name: follower.Name},
+		c.worker.Enqueue(
+			SourceGroupKindKey{
+				sourceGK: follower.GroupKind,
+				federatedName: common.QualifiedName{
+					Namespace: follower.Namespace,
+					Name:      util.GenerateFederatedObjectName(follower.Name, c.followerTypeHandles[follower.GroupKind].typeConfig.Name)},
+			},
 		)
 	}
 
@@ -336,7 +371,7 @@ func (c *Controller) reconcileLeader(
 		}
 		if updated {
 			logger.V(1).Info("Updating leader to sync with pending controllers")
-			_, err = handles.client.Namespace(fedObj.GetNamespace()).
+			_, err = c.fedClient.CoreV1alpha1().FederatedObjects(qualifiedName.Namespace).
 				Update(context.Background(), fedObj, metav1.UpdateOptions{})
 			if err != nil {
 				if apierrors.IsConflict(err) {
@@ -353,14 +388,14 @@ func (c *Controller) reconcileLeader(
 
 func (c *Controller) inferFollowers(
 	handles *typeHandles,
-	fedObj *unstructured.Unstructured,
+	fedObj *fedcorev1a1.FederatedObject,
 ) (sets.Set[FollowerReference], error) {
 	if fedObj.GetAnnotations()[common.EnableFollowerSchedulingAnnotation] != common.AnnotationValueTrue {
 		// follower scheduling is not enabled
 		return nil, nil
 	}
 
-	followersFromAnnotation, err := getFollowersFromAnnotation(fedObj, c.sourceToFederatedGKMap)
+	followersFromAnnotation, err := getFollowersFromAnnotation(fedObj)
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +403,6 @@ func (c *Controller) inferFollowers(
 	followersFromPodTemplate, err := getFollowersFromPodTemplate(
 		fedObj,
 		leaderPodTemplatePaths[handles.sourceGK],
-		c.sourceToFederatedGKMap,
 	)
 	if err != nil {
 		return nil, err
@@ -379,18 +413,14 @@ func (c *Controller) inferFollowers(
 
 func (c *Controller) updateFollower(
 	ctx context.Context,
-	handles *typeHandles,
-	followerUns *unstructured.Unstructured,
-	followerObj *fedtypesv1a1.GenericFederatedFollower,
+	followerObj *fedcorev1a1.FederatedObject,
 	leadersChanged bool,
-	leaders []fedtypesv1a1.LeaderReference,
+	leaders []fedcorev1a1.LeaderReference,
 ) (updated bool, err error) {
 	logger := klog.FromContext(ctx)
 
 	if leadersChanged {
-		if err := fedtypesv1a1.SetFollows(followerUns, leaders); err != nil {
-			return false, fmt.Errorf("set leaders on follower: %w", err)
-		}
+		followerObj.Spec.Follows = leaders
 	}
 
 	clusters, err := c.leaderPlacementUnion(leaders)
@@ -398,19 +428,17 @@ func (c *Controller) updateFollower(
 		return false, fmt.Errorf("get leader placement union: %w", err)
 	}
 
-	placementsChanged := followerObj.Spec.SetPlacementNames(PrefixedControllerName, clusters)
-	if placementsChanged {
-		err = util.SetGenericPlacements(followerUns, followerObj.Spec.Placements)
-		if err != nil {
-			return false, fmt.Errorf("set placements: %w", err)
-		}
+	clusterNames := make([]string, 0, len(clusters))
+	for clusterName := range clusters {
+		clusterNames = append(clusterNames, clusterName)
 	}
 
+	placementsChanged := followerObj.SetControllerPlacement(PrefixedControllerName, clusterNames)
 	needsUpdate := leadersChanged || placementsChanged
 	if needsUpdate {
 		logger.V(1).Info("Updating follower to sync with leaders")
-		_, err = handles.client.Namespace(followerUns.GetNamespace()).
-			Update(context.TODO(), followerUns, metav1.UpdateOptions{})
+		_, err = c.fedClient.CoreV1alpha1().FederatedObjects(followerObj.GetNamespace()).
+			Update(context.TODO(), followerObj, metav1.UpdateOptions{})
 		if err != nil {
 			return false, fmt.Errorf("update follower: %w", err)
 		}
@@ -440,34 +468,24 @@ func (c *Controller) reconcileFollower(
 	}()
 
 	follower := FollowerReference{
-		GroupKind: handles.federatedGK,
+		GroupKind: handles.sourceGK,
 		Namespace: qualifiedName.Namespace,
 		Name:      qualifiedName.Name,
 	}
 
-	followerUns, err := getObjectFromStore(
-		handles.informer.Informer().GetStore(),
-		qualifiedName.String(),
-	)
-	if err != nil {
+	followerObject, err := c.federatedObjectInformer.Lister().FederatedObjects(qualifiedName.Namespace).Get(qualifiedName.Name)
+	if err != nil && !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to get follower object from store")
 		return worker.StatusError
 	}
 
-	if followerUns == nil {
+	if apierrors.IsNotFound(err) {
 		// The deleted follower no longer references any leaders
 		c.cacheObservedFromFollowers.update(follower, nil)
 		return worker.StatusAllOK
 	}
 
-	followerObj := &fedtypesv1a1.GenericFederatedFollower{}
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(followerUns.Object, followerObj)
-	if err != nil {
-		logger.Error(err, "Failed to unmarshall follower object from unstructured")
-		return worker.StatusAllOK // retrying won't help
-	}
-
-	currentLeaders := sets.New(followerObj.Spec.Follows...)
+	currentLeaders := sets.New(followerObject.Spec.Follows...)
 	c.cacheObservedFromFollowers.update(follower, currentLeaders)
 
 	desiredLeaders := c.cacheObservedFromLeaders.reverseLookup(follower)
@@ -475,9 +493,7 @@ func (c *Controller) reconcileFollower(
 	leadersChanged := !equality.Semantic.DeepEqual(desiredLeaders, currentLeaders)
 	updated, err := c.updateFollower(
 		ctx,
-		handles,
-		followerUns,
-		followerObj,
+		followerObject,
 		leadersChanged,
 		desiredLeaders.UnsortedList(),
 	)
@@ -487,7 +503,7 @@ func (c *Controller) reconcileFollower(
 		}
 		logger.Error(err, "Failed to update follower")
 		c.eventRecorder.Eventf(
-			followerUns,
+			followerObject,
 			corev1.EventTypeWarning,
 			EventReasonFailedUpdateFollower,
 			"Failed to update follower to sync with leader placements: %v",
@@ -502,35 +518,27 @@ func (c *Controller) reconcileFollower(
 }
 
 func (c *Controller) getLeaderObj(
-	leader fedtypesv1a1.LeaderReference,
-) (*typeHandles, *fedtypesv1a1.GenericObjectWithPlacements, error) {
+	leader fedcorev1a1.LeaderReference,
+) (*typeHandles, *fedcorev1a1.FederatedObject, error) {
 	leaderGK := leader.GroupKind()
 	handles, exists := c.leaderTypeHandles[leaderGK]
 	if !exists {
 		return nil, nil, fmt.Errorf("unsupported leader type %v", leaderGK)
 	}
-	leaderQualifiedName := common.QualifiedName{Namespace: leader.Namespace, Name: leader.Name}
-	leaderUns, err := getObjectFromStore(
-		handles.informer.Informer().GetStore(),
-		leaderQualifiedName.String(),
-	)
-	if err != nil {
+
+	leaderObj, err := c.federatedObjectInformer.Lister().FederatedObjects(leader.Namespace).Get(util.GenerateFederatedObjectName(leader.Name, handles.typeConfig.Name))
+	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, nil, fmt.Errorf("get from store: %w", err)
 	}
-	if leaderUns == nil {
+	if apierrors.IsNotFound(err) {
 		return nil, nil, nil
-	}
-
-	leaderObj, err := util.UnmarshalGenericPlacements(leaderUns)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unmarshal to generic object with placements: %w", err)
 	}
 
 	return handles, leaderObj, nil
 }
 
 func (c *Controller) leaderPlacementUnion(
-	leaders []fedtypesv1a1.LeaderReference,
+	leaders []fedcorev1a1.LeaderReference,
 ) (map[string]struct{}, error) {
 	clusters := map[string]struct{}{}
 	for _, leader := range leaders {
@@ -541,21 +549,10 @@ func (c *Controller) leaderPlacementUnion(
 		if leaderObjWithPlacement == nil {
 			continue
 		}
-		for cluster := range leaderObjWithPlacement.ClusterNameUnion() {
+		for cluster := range leaderObjWithPlacement.GetPlacementUnion() {
 			clusters[cluster] = struct{}{}
 		}
 	}
 
 	return clusters, nil
-}
-
-func getObjectFromStore(store cache.Store, key string) (*unstructured.Unstructured, error) {
-	obj, exists, err := store.GetByKey(key)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, nil
-	}
-	return obj.(*unstructured.Unstructured).DeepCopy(), nil
 }
