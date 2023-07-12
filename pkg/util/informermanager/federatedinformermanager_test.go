@@ -42,7 +42,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, _ := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, _ := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		// 2. Verify that the clients for each cluster is eventually available
 
@@ -75,7 +75,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		defaultClusters := []*fedcorev1a1.FederatedCluster{}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		// 2. Verify that client for cluster-1 does is not available initially.
 
@@ -117,9 +117,9 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, _ := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, _ := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
-		// 2. Verify that listers for existing FTCs and clusters are eventually avaiable
+		// 2. Verify that listers for existing FTCs and clusters are eventually available
 
 		for _, ftc := range defaultFTCs {
 			apiresource := ftc.GetSourceType()
@@ -172,7 +172,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		ftc := daemonsetFTC
 		apiresource := ftc.GetSourceType()
@@ -220,7 +220,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		defaultClusters := []*fedcorev1a1.FederatedCluster{}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		cluster := getTestCluster("cluster-1")
 
@@ -296,7 +296,7 @@ func TestFederatedInformerManager(t *testing.T) {
 			},
 		}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, _ := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, _ := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		// 2. Verify alwaysRegistered is eventually registered for all existing FTCs and clusters.
 
@@ -392,7 +392,7 @@ func TestFederatedInformerManager(t *testing.T) {
 			},
 		}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		// 2. Verify that alwaysRegistered is not registered initially for daemonset
 
@@ -484,7 +484,7 @@ func TestFederatedInformerManager(t *testing.T) {
 			},
 		}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		// 2. Verify that alwaysRegistered is not registered initially since there are no clusters
 
@@ -602,7 +602,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator}
 		clusterHandlers := []*ClusterEventHandler{}
-		_, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		_, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		for range defaultClusters {
 			fn := <-assertionCh
@@ -656,7 +656,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		// 2. Verify that handler is not registered initially.
 
@@ -728,7 +728,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		// 2. Verify that handler is registered initially.
 
@@ -797,7 +797,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		// 2. Verify that handler is registered initially
 
@@ -859,7 +859,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		// 2. Verify that handler is registered initially
 
@@ -927,7 +927,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator1, generator2}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		// 2. Verify that handler1 and handler2 is registered initially for all FTCs
 
@@ -1040,7 +1040,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator1, generator2}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
 		// 2. Verify that handler1 and handler2 is registered initially for all FTCs and clusters
 
@@ -1164,7 +1164,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		defaultClusters := []*fedcorev1a1.FederatedCluster{}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{clusterHandler}
-		_, fedClient := boostrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+		_, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 		
 		// 2. Create cluster
 
@@ -1199,7 +1199,7 @@ func TestFederatedInformerManager(t *testing.T) {
 	})
 }
 
-func boostrapFederatedInformerManagerWithFakeClients(
+func bootstrapFederatedInformerManagerWithFakeClients(
 	g *gomega.WithT,
 	ctx context.Context,
 	ftcs []*fedcorev1a1.FederatedTypeConfig,

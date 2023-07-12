@@ -60,7 +60,7 @@ type ClusterEventPredicate func(oldCluster, newCluster *fedcorev1a1.FederatedClu
 
 // FederatedInformerManager provides an interface for controllers that need to dynamically register event handlers and
 // access objects in member clusters based on FederatedTypeConfigs. FederatedInformerManager will listen to FTC events
-// and maintian informers for each FTC's source type and joined member cluster.
+// and maintain informers for each FTC's source type and joined member cluster.
 //
 // Having multiple FTCs with the same source type is not supported and may cause FederatedInformerManager to behave
 // incorrectly. Updating FTC source types is also not supported and may also cause FederatedInformerManager to behave
