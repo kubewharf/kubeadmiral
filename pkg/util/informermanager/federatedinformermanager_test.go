@@ -1,3 +1,19 @@
+/*
+Copyright 2023 The KubeAdmiral Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package informermanager
 
 import (
@@ -5,14 +21,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	dynamicclient "k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
+	"k8s.io/klog/v2/ktesting"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
@@ -20,16 +40,16 @@ import (
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
-	"github.com/onsi/gomega"
 )
 
+//nolint:gocyclo
 func TestFederatedInformerManager(t *testing.T) {
+	t.Parallel()
+	ctx := klog.NewContext(context.Background(), ktesting.NewLogger(t, ktesting.NewConfig(ktesting.Verbosity(2))))
+
 	t.Run("clients for existing clusters should be available eventually", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -42,7 +62,21 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, _ := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, _ := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		// 2. Verify that the clients for each cluster is eventually available
 
@@ -63,10 +97,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("clients for new clusters should be available eventually", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -75,7 +106,21 @@ func TestFederatedInformerManager(t *testing.T) {
 		defaultClusters := []*fedcorev1a1.FederatedCluster{}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		// 2. Verify that client for cluster-1 does is not available initially.
 
@@ -87,7 +132,11 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		// 3. Create a new cluster
 
-		cluster, err := fedClient.CoreV1alpha1().FederatedClusters().Create(ctx, getTestCluster("cluster-1"), metav1.CreateOptions{})
+		cluster, err := fedClient.CoreV1alpha1().FederatedClusters().Create(
+			ctx,
+			getTestCluster("cluster-1"),
+			metav1.CreateOptions{},
+		)
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
 		// 4. Verify that client for new cluster is eventually available
@@ -101,10 +150,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("listers for existing FTCs and clusters should be available eventually", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -117,7 +163,21 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, _ := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, _ := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		// 2. Verify that listers for existing FTCs and clusters are eventually available
 
@@ -132,7 +192,7 @@ func TestFederatedInformerManager(t *testing.T) {
 					g.Expect(exists).To(gomega.BeTrue())
 					g.Expect(lister).ToNot(gomega.BeNil())
 					g.Expect(informerSynced()).To(gomega.BeTrue())
-				})
+				}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
 			}
 		}
 
@@ -156,10 +216,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("listers for new FTCs should be available eventually", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -172,7 +229,21 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		ftc := daemonsetFTC
 		apiresource := ftc.GetSourceType()
@@ -208,10 +279,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("listers for new clusters should be available eventually", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -220,7 +288,21 @@ func TestFederatedInformerManager(t *testing.T) {
 		defaultClusters := []*fedcorev1a1.FederatedCluster{}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		cluster := getTestCluster("cluster-1")
 
@@ -258,12 +340,9 @@ func TestFederatedInformerManager(t *testing.T) {
 		}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
 	})
 
-	t.Run("event handlers for existing FTCs and clusters should be registed eventually", func(t *testing.T) {
+	t.Run("event handlers for existing FTCs and clusters should be registered eventually", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -296,17 +375,33 @@ func TestFederatedInformerManager(t *testing.T) {
 			},
 		}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, _ := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, _ := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		// 2. Verify alwaysRegistered is eventually registered for all existing FTCs and clusters.
 
-		for range defaultClusters {
-			alwaysRegistered.ExpectGenerateEvents(deploymentFTC.Name, 1)
-			alwaysRegistered.ExpectGenerateEvents(configmapFTC.Name, 1)
-			alwaysRegistered.ExpectGenerateEvents(secretFTC.Name, 1)
-			alwaysRegistered.ExpectAddEvents(deploymentGVK, 1)
-			alwaysRegistered.ExpectAddEvents(configmapGVK, 1)
-			alwaysRegistered.ExpectAddEvents(secretGVK, 1)
+		for _, cluster := range defaultClusters {
+			for _, ftc := range defaultFTCs {
+				alwaysRegistered.ExpectGenerateEvents(ftc.Name, 1)
+			}
+
+			for _, obj := range defaultObjs[cluster.Name] {
+				gvk := mustParseObject(obj)
+				alwaysRegistered.ExpectAddEvents(gvk, 1)
+			}
 		}
 
 		alwaysRegistered.AssertEventually(g, time.Second*2)
@@ -318,47 +413,57 @@ func TestFederatedInformerManager(t *testing.T) {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
-			_, err := dynamicClient.Resource(common.SecretGVR).
-				Namespace("default").
-				Create(ctx, getTestSecret("sc-2", "default"), metav1.CreateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			alwaysRegistered.ExpectAddEvents(secretGVK, 1)
+			generateEvents(
+				ctx,
+				g,
+				getTestSecret("sc-2", "default"),
+				dynamicClient.Resource(common.SecretGVR),
+				alwaysRegistered,
+			)
 
-			_, err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Update(ctx, dp1, metav1.UpdateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			alwaysRegistered.ExpectUpdateEvents(deploymentGVK, 1)
+			generateEvents(
+				ctx,
+				g,
+				getTestSecret("dp-2", "default"),
+				dynamicClient.Resource(common.DeploymentGVR),
+				alwaysRegistered,
+			)
 
-			err = dynamicClient.Resource(common.ConfigMapGVR).Namespace("default").Delete(ctx, cm1.GetName(), metav1.DeleteOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			alwaysRegistered.ExpectDeleteEvents(configmapGVK, 1)
+			generateEvents(
+				ctx,
+				g,
+				getTestConfigMap("cm-2", "default"),
+				dynamicClient.Resource(common.ConfigMapGVR),
+				alwaysRegistered,
+			)
 		}
 
-		alwaysRegistered.AssertEventually(g, time.Second*1)
+		alwaysRegistered.AssertEventually(g, time.Second*2)
 
 		// 5. Verify that events for non-existent FTCs are not received
 
 		for _, cluster := range defaultClusters {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
-			_, err := dynamicClient.Resource(common.DaemonSetGVR).
-				Namespace("default").
-				Create(ctx, getTestDaemonSet("dm-1", "default"), metav1.CreateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
+
+			generateEvents(
+				ctx,
+				g,
+				getTestDaemonSet("dm-1", "default"),
+				dynamicClient.Resource(common.DaemonSetGVR),
+			)
 		}
 
 		alwaysRegistered.AssertConsistently(g, time.Second*2)
 
-		// 5. Verify neverRegsitered receives no events
+		// 5. Verify neverRegistered receives no events
 
 		neverRegistered.AssertConsistently(g, time.Second*2)
 	})
 
 	t.Run("event handlers for new FTCs should be registered eventually", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -392,7 +497,22 @@ func TestFederatedInformerManager(t *testing.T) {
 			},
 		}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		// 2. Verify that alwaysRegistered is not registered initially for daemonset
 
@@ -414,20 +534,17 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		// 5. Verify that newly generated events are also received by alwaysRegistered
 
-		dm1.SetAnnotations(map[string]string{"test": "test"})
-
 		for _, cluster := range defaultClusters {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
-			_, err = dynamicClient.Resource(common.DaemonSetGVR).Namespace("default").Update(ctx, dm1, metav1.UpdateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			alwaysRegistered.ExpectUpdateEvents(daemonsetGVK, 1)
-
-			g.Expect(exists).To(gomega.BeTrue())
-			err = dynamicClient.Resource(common.DaemonSetGVR).Namespace("default").Delete(ctx, dm4.GetName(), metav1.DeleteOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			alwaysRegistered.ExpectDeleteEvents(daemonsetGVK, 1)
+			generateEvents(
+				ctx,
+				g,
+				getTestDaemonSet("dm-5", "default"),
+				dynamicClient.Resource(common.DaemonSetGVR),
+				alwaysRegistered,
+			)
 		}
 
 		alwaysRegistered.AssertEventually(g, time.Second*2)
@@ -437,11 +554,15 @@ func TestFederatedInformerManager(t *testing.T) {
 		for _, cluster := range defaultClusters {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
-			_, err = dynamicClient.Resource(common.SecretGVR).
-				Namespace("default").
-				Create(ctx, getTestSecret("sc-1", "default"), metav1.CreateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
+
+			generateEvents(
+				ctx,
+				g,
+				getTestSecret("sc-1", "default"),
+				dynamicClient.Resource(common.SecretGVR),
+			)
 		}
+
 		alwaysRegistered.AssertConsistently(g, time.Second*2)
 
 		// 7. Verify that unregisteredResourceEventHandler is not registered
@@ -451,10 +572,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("event handlers for new clusters should be registered eventually", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -484,7 +602,21 @@ func TestFederatedInformerManager(t *testing.T) {
 			},
 		}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		// 2. Verify that alwaysRegistered is not registered initially since there are no clusters
 
@@ -492,13 +624,25 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		// 3. Create new clusters
 
-		_, err := fedClient.CoreV1alpha1().FederatedClusters().Create(ctx, getTestCluster("cluster-1"), metav1.CreateOptions{})
+		_, err := fedClient.CoreV1alpha1().FederatedClusters().Create(
+			ctx,
+			getTestCluster("cluster-1"),
+			metav1.CreateOptions{},
+		)
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
-		_, err = fedClient.CoreV1alpha1().FederatedClusters().Create(ctx, getTestCluster("cluster-2"), metav1.CreateOptions{})
+		_, err = fedClient.CoreV1alpha1().FederatedClusters().Create(
+			ctx,
+			getTestCluster("cluster-2"),
+			metav1.CreateOptions{},
+		)
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
-		_, err = fedClient.CoreV1alpha1().FederatedClusters().Create(ctx, getTestCluster("cluster-3"), metav1.CreateOptions{})
+		_, err = fedClient.CoreV1alpha1().FederatedClusters().Create(
+			ctx,
+			getTestCluster("cluster-3"),
+			metav1.CreateOptions{},
+		)
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
 		// 4. Verify that alwaysRegistered is eventually registered for the new Daemonset FTC
@@ -512,27 +656,17 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		// 5. Verify that newly generated events are also received by alwaysRegistered
 
-		dm1.SetAnnotations(map[string]string{"test": "test"})
-
 		for _, cluster := range defaultClusters {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
-			_, err = dynamicClient.Resource(common.DaemonSetGVR).Namespace("default").Update(ctx, dm1, metav1.UpdateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			alwaysRegistered.ExpectUpdateEvents(daemonsetGVK, 1)
-
-			g.Expect(exists).To(gomega.BeTrue())
-			_, err = dynamicClient.Resource(common.DaemonSetGVR).
-				Namespace("default").
-				Create(ctx, getTestDaemonSet("dm-5", "default"), metav1.CreateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			alwaysRegistered.ExpectAddEvents(daemonsetGVK, 1)
-
-			g.Expect(exists).To(gomega.BeTrue())
-			err = dynamicClient.Resource(common.DaemonSetGVR).Namespace("default").Delete(ctx, dm4.GetName(), metav1.DeleteOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			alwaysRegistered.ExpectDeleteEvents(daemonsetGVK, 1)
+			generateEvents(
+				ctx,
+				g,
+				getTestDaemonSet("dm-5", "default"),
+				dynamicClient.Resource(common.DaemonSetGVR),
+				alwaysRegistered,
+			)
 		}
 
 		alwaysRegistered.AssertEventually(g, time.Second*2)
@@ -543,10 +677,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
-			_, err = dynamicClient.Resource(common.SecretGVR).
-				Namespace("default").
-				Create(ctx, getTestSecret("sc-1", "default"), metav1.CreateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
+			generateEvents(
+				ctx,
+				g,
+				getTestSecret("sc-1", "default"),
+				dynamicClient.Resource(common.SecretGVR),
+			)
 		}
 
 		alwaysRegistered.AssertConsistently(g, time.Second*2)
@@ -558,10 +694,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("event handler should receive correct lastApplied and latest FTCs", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -602,7 +735,21 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator}
 		clusterHandlers := []*ClusterEventHandler{}
-		_, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		for range defaultClusters {
 			fn := <-assertionCh
@@ -628,17 +775,14 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("event handler should be registered on FTC update", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
 		dp1 := getTestDeployment("dp-1", "default")
 
 		ftc := deploymentFTC.DeepCopy()
-		ftc.SetAnnotations(map[string]string{"predicate": "false", "generator": "true"})
+		ftc.SetAnnotations(map[string]string{"predicate": predicateFalse, "generator": predicateTrue})
 
 		handler := newCountingResourceEventHandler()
 		generator := newAnnotationBasedGenerator(handler)
@@ -656,7 +800,21 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		// 2. Verify that handler is not registered initially.
 
@@ -664,7 +822,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		// 3. Update FTC to trigger registration
 
-		ftc.SetAnnotations(map[string]string{"predicate": "true", "generator": "true"})
+		ftc.SetAnnotations(map[string]string{"predicate": predicateTrue, "generator": predicateTrue})
 		ftc, err := fedClient.CoreV1alpha1().FederatedTypeConfigs().Update(ctx, ftc, metav1.UpdateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
@@ -679,20 +837,13 @@ func TestFederatedInformerManager(t *testing.T) {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
-			dp2, err := dynamicClient.Resource(common.DeploymentGVR).
-				Namespace("default").
-				Create(ctx, getTestDeployment("dp-2", "default"), metav1.CreateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			handler.ExpectAddEvents(deploymentGVK, 1)
-
-			dp2.SetAnnotations(map[string]string{"test-annotation": "test-value"})
-			dp2, err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Update(ctx, dp2, metav1.UpdateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			handler.ExpectUpdateEvents(deploymentGVK, 1)
-
-			err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Delete(ctx, dp2.GetName(), metav1.DeleteOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			handler.ExpectDeleteEvents(deploymentGVK, 1)
+			generateEvents(
+				ctx,
+				g,
+				getTestDeployment("dp-2", "default"),
+				dynamicClient.Resource(common.DeploymentGVR),
+				handler,
+			)
 		}
 
 		handler.AssertEventually(g, time.Second*2)
@@ -700,17 +851,14 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("event handler should be unregistered on FTC update", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
 		dp1 := getTestDeployment("dp-1", "default")
 
 		ftc := deploymentFTC.DeepCopy()
-		ftc.SetAnnotations(map[string]string{"predicate": "true", "generator": "true"})
+		ftc.SetAnnotations(map[string]string{"predicate": predicateTrue, "generator": predicateTrue})
 
 		handler := newCountingResourceEventHandler()
 		generator := newAnnotationBasedGenerator(handler)
@@ -728,7 +876,21 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		// 2. Verify that handler is registered initially.
 
@@ -738,8 +900,8 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		// 3. Update FTC to trigger unregistration
 
-		ftc.SetAnnotations(map[string]string{"predicate": "true", "generator": "false"})
-		ftc, err := fedClient.CoreV1alpha1().FederatedTypeConfigs().Update(ctx, ftc, metav1.UpdateOptions{})
+		ftc.SetAnnotations(map[string]string{"predicate": predicateTrue, "generator": predicateFalse})
+		_, err := fedClient.CoreV1alpha1().FederatedTypeConfigs().Update(ctx, ftc, metav1.UpdateOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
 		<-time.After(time.Second)
@@ -750,17 +912,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
-			dp2, err := dynamicClient.Resource(common.DeploymentGVR).
-				Namespace("default").
-				Create(ctx, getTestDeployment("dp-2", "default"), metav1.CreateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-
-			dp2.SetAnnotations(map[string]string{"test": "test"})
-			_, err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Update(ctx, dp2, metav1.UpdateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-
-			err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Delete(ctx, dp2.GetName(), metav1.DeleteOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
+			generateEvents(
+				ctx,
+				g,
+				getTestDeployment("dp-2", "default"),
+				dynamicClient.Resource(common.DeploymentGVR),
+			)
 		}
 
 		handler.AssertConsistently(g, time.Second*2)
@@ -768,10 +925,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("event handler should be re-registered on FTC update", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -797,7 +951,21 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		// 2. Verify that handler is registered initially
 
@@ -820,9 +988,14 @@ func TestFederatedInformerManager(t *testing.T) {
 		for _, cluster := range defaultClusters {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
-			_, err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Update(ctx, dp1, metav1.UpdateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			handler.ExpectUpdateEvents(deploymentGVK, 1)
+
+			generateEvents(
+				ctx,
+				g,
+				getTestDeployment("dp-2", "default"),
+				dynamicClient.Resource(common.DeploymentGVR),
+				handler,
+			)
 		}
 
 		handler.AssertEventually(g, time.Second*2)
@@ -830,10 +1003,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("event handler should remain unchanged on FTC update", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -859,7 +1029,21 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		// 2. Verify that handler is registered initially
 
@@ -882,9 +1066,14 @@ func TestFederatedInformerManager(t *testing.T) {
 		for _, cluster := range defaultClusters {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
-			_, err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Update(ctx, dp1, metav1.UpdateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			handler.ExpectUpdateEvents(deploymentGVK, 1)
+
+			generateEvents(
+				ctx,
+				g,
+				getTestDeployment("dp-2", "default"),
+				dynamicClient.Resource(common.DeploymentGVR),
+				handler,
+			)
 		}
 
 		handler.AssertEventually(g, time.Second*2)
@@ -892,10 +1081,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("event handler should be unregistered on FTC delete", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -927,24 +1113,35 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator1, generator2}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
 
-		// 2. Verify that handler1 and handler2 is registered initially for all FTCs
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
-		for range defaultClusters {
-			handler1.ExpectGenerateEvents(deploymentFTC.Name, 1)
-			handler1.ExpectGenerateEvents(configmapFTC.Name, 1)
-			handler1.ExpectGenerateEvents(secretFTC.Name, 1)
-			handler1.ExpectAddEvents(deploymentGVK, 1)
-			handler1.ExpectAddEvents(configmapGVK, 1)
-			handler1.ExpectAddEvents(secretGVK, 1)
+		// 2. Verify that handler1 and handler2 is registered initially for all FTCs and clusters
 
-			handler2.ExpectGenerateEvents(deploymentFTC.Name, 1)
-			handler2.ExpectGenerateEvents(configmapFTC.Name, 1)
-			handler2.ExpectGenerateEvents(secretFTC.Name, 1)
-			handler2.ExpectAddEvents(deploymentGVK, 1)
-			handler2.ExpectAddEvents(configmapGVK, 1)
-			handler2.ExpectAddEvents(secretGVK, 1)
+		for _, cluster := range defaultClusters {
+			for _, ftc := range defaultFTCs {
+				handler1.ExpectGenerateEvents(ftc.Name, 1)
+				handler2.ExpectGenerateEvents(ftc.Name, 1)
+			}
+
+			for _, obj := range defaultObjs[cluster.Name] {
+				gvk := mustParseObject(obj)
+				handler1.ExpectAddEvents(gvk, 1)
+				handler2.ExpectAddEvents(gvk, 1)
+			}
 		}
 
 		handler1.AssertEventually(g, time.Second*2)
@@ -952,7 +1149,11 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		// 3. Delete the deployment FTC
 
-		err := fedClient.CoreV1alpha1().FederatedTypeConfigs().Delete(ctx, deploymentFTC.GetName(), metav1.DeleteOptions{})
+		err := fedClient.CoreV1alpha1().FederatedTypeConfigs().Delete(
+			ctx,
+			deploymentFTC.GetName(),
+			metav1.DeleteOptions{},
+		)
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
 		<-time.After(time.Second)
@@ -963,17 +1164,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
-			dp2, err := dynamicClient.Resource(common.DeploymentGVR).
-				Namespace("default").
-				Create(ctx, getTestDeployment("dp-2", "default"), metav1.CreateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-
-			dp2.SetAnnotations(map[string]string{"test": "test"})
-			_, err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Update(ctx, dp2, metav1.UpdateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-
-			err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Delete(ctx, dp2.GetName(), metav1.DeleteOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
+			generateEvents(
+				ctx,
+				g,
+				getTestDeployment("dp-2", "default"),
+				dynamicClient.Resource(common.DeploymentGVR),
+			)
 		}
 
 		handler1.AssertConsistently(g, time.Second*2)
@@ -985,18 +1181,23 @@ func TestFederatedInformerManager(t *testing.T) {
 			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
-			_, err = dynamicClient.Resource(common.SecretGVR).
-				Namespace("default").
-				Create(ctx, getTestSecret("sc-2", "default"), metav1.CreateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			handler1.ExpectAddEvents(secretGVK, 1)
-			handler2.ExpectAddEvents(secretGVK, 1)
+			generateEvents(
+				ctx,
+				g,
+				getTestSecret("sc-2", "default"),
+				dynamicClient.Resource(common.SecretGVR),
+				handler1,
+				handler2,
+			)
 
-			cm1.SetAnnotations(map[string]string{"test": "test"})
-			_, err = dynamicClient.Resource(common.ConfigMapGVR).Namespace("default").Update(ctx, cm1, metav1.UpdateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			handler1.ExpectUpdateEvents(configmapGVK, 1)
-			handler2.ExpectUpdateEvents(configmapGVK, 1)
+			generateEvents(
+				ctx,
+				g,
+				getTestConfigMap("cm-2", "default"),
+				dynamicClient.Resource(common.ConfigMapGVR),
+				handler1,
+				handler2,
+			)
 		}
 
 		handler1.AssertEventually(g, time.Second*2)
@@ -1005,10 +1206,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("event handler should be unregistered on cluster delete", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -1040,24 +1238,35 @@ func TestFederatedInformerManager(t *testing.T) {
 		}
 		generators := []*EventHandlerGenerator{generator1, generator2}
 		clusterHandlers := []*ClusterEventHandler{}
-		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
 
 		// 2. Verify that handler1 and handler2 is registered initially for all FTCs and clusters
 
-		for range defaultClusters {
-			handler1.ExpectGenerateEvents(deploymentFTC.Name, 1)
-			handler1.ExpectGenerateEvents(configmapFTC.Name, 1)
-			handler1.ExpectGenerateEvents(secretFTC.Name, 1)
-			handler1.ExpectAddEvents(deploymentGVK, 1)
-			handler1.ExpectAddEvents(configmapGVK, 1)
-			handler1.ExpectAddEvents(secretGVK, 1)
+		for _, cluster := range defaultClusters {
+			for _, ftc := range defaultFTCs {
+				handler1.ExpectGenerateEvents(ftc.Name, 1)
+				handler2.ExpectGenerateEvents(ftc.Name, 1)
+			}
 
-			handler2.ExpectGenerateEvents(deploymentFTC.Name, 1)
-			handler2.ExpectGenerateEvents(configmapFTC.Name, 1)
-			handler2.ExpectGenerateEvents(secretFTC.Name, 1)
-			handler2.ExpectAddEvents(deploymentGVK, 1)
-			handler2.ExpectAddEvents(configmapGVK, 1)
-			handler2.ExpectAddEvents(secretGVK, 1)
+			for _, obj := range defaultObjs[cluster.Name] {
+				gvk := mustParseObject(obj)
+				handler1.ExpectAddEvents(gvk, 1)
+				handler2.ExpectAddEvents(gvk, 1)
+			}
 		}
 
 		handler1.AssertEventually(g, time.Second*2)
@@ -1077,17 +1286,12 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		g.Expect(exists).To(gomega.BeTrue())
 
-		dp2, err := dynamicClient.Resource(common.DeploymentGVR).
-			Namespace("default").
-			Create(ctx, getTestDeployment("dp-2", "default"), metav1.CreateOptions{})
-		g.Expect(err).ToNot(gomega.HaveOccurred())
-
-		dp2.SetAnnotations(map[string]string{"test": "test"})
-		_, err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Update(ctx, dp2, metav1.UpdateOptions{})
-		g.Expect(err).ToNot(gomega.HaveOccurred())
-
-		err = dynamicClient.Resource(common.DeploymentGVR).Namespace("default").Delete(ctx, dp2.GetName(), metav1.DeleteOptions{})
-		g.Expect(err).ToNot(gomega.HaveOccurred())
+		generateEvents(
+			ctx,
+			g,
+			getTestDeployment("dp-2", "default"),
+			dynamicClient.Resource(common.DeploymentGVR),
+		)
 
 		handler1.AssertConsistently(g, time.Second*2)
 		handler2.AssertConsistently(g, time.Second*2)
@@ -1098,18 +1302,14 @@ func TestFederatedInformerManager(t *testing.T) {
 			dynamicClient, exists := manager.GetClusterClient(cluster)
 			g.Expect(exists).To(gomega.BeTrue())
 
-			_, err = dynamicClient.Resource(common.SecretGVR).
-				Namespace("default").
-				Create(ctx, getTestSecret("sc-2", "default"), metav1.CreateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			handler1.ExpectAddEvents(secretGVK, 1)
-			handler2.ExpectAddEvents(secretGVK, 1)
-
-			cm1.SetAnnotations(map[string]string{"test": "test"})
-			_, err = dynamicClient.Resource(common.ConfigMapGVR).Namespace("default").Update(ctx, cm1, metav1.UpdateOptions{})
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			handler1.ExpectUpdateEvents(configmapGVK, 1)
-			handler2.ExpectUpdateEvents(configmapGVK, 1)
+			generateEvents(
+				ctx,
+				g,
+				getTestDeployment("dp-2", "default"),
+				dynamicClient.Resource(common.DeploymentGVR),
+				handler1,
+				handler2,
+			)
 		}
 
 		handler1.AssertEventually(g, time.Second*2)
@@ -1118,10 +1318,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 	t.Run("ClusterEventHandlers should receive correct old and new clusters", func(t *testing.T) {
 		t.Parallel()
-
 		g := gomega.NewWithT(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// 1. Bootstrap environment
 
@@ -1135,7 +1332,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		assertionCh := make(chan func())
 
 		cluster := getTestCluster("cluster-1")
-		cluster.SetAnnotations(map[string]string{"predicate": "true"})
+		cluster.SetAnnotations(map[string]string{"predicate": predicateTrue})
 		cluster.SetGeneration(1)
 
 		clusterHandler := &ClusterEventHandler{
@@ -1152,7 +1349,7 @@ func TestFederatedInformerManager(t *testing.T) {
 					}
 				}
 
-				return newCluster.GetAnnotations()["predicate"] == "true"
+				return newCluster.GetAnnotations()["predicate"] == predicateTrue
 			},
 			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
 				callBackCount++
@@ -1164,8 +1361,22 @@ func TestFederatedInformerManager(t *testing.T) {
 		defaultClusters := []*fedcorev1a1.FederatedCluster{}
 		generators := []*EventHandlerGenerator{}
 		clusterHandlers := []*ClusterEventHandler{clusterHandler}
-		_, fedClient := bootstrapFederatedInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, defaultClusters, generators, clusterHandlers)
-		
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, fedClient := bootstrapFederatedInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			defaultClusters,
+			generators,
+			clusterHandlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
+
 		// 2. Create cluster
 
 		cluster, err := fedClient.CoreV1alpha1().FederatedClusters().Create(ctx, cluster, metav1.CreateOptions{})
@@ -1181,10 +1392,10 @@ func TestFederatedInformerManager(t *testing.T) {
 			generation++
 			cluster.SetGeneration(generation)
 
-			if i % 2 == 0 {
-				cluster.SetAnnotations(map[string]string{"predicate": "false"})
+			if i%2 == 0 {
+				cluster.SetAnnotations(map[string]string{"predicate": predicateFalse})
 			} else {
-				cluster.SetAnnotations(map[string]string{"predicate": "true"})
+				cluster.SetAnnotations(map[string]string{"predicate": predicateTrue})
 				expectedCallbackCount++
 			}
 
@@ -1234,10 +1445,8 @@ func bootstrapFederatedInformerManagerWithFakeClients(
 				dynamicObjects := []runtime.Object{}
 
 				clusterObjects := objects[cluster.Name]
-				if clusterObjects != nil {
-					for _, object := range clusterObjects {
-						dynamicObjects = append(dynamicObjects, runtime.Object(object))
-					}
+				for _, object := range clusterObjects {
+					dynamicObjects = append(dynamicObjects, runtime.Object(object))
 				}
 
 				return dynamicfake.NewSimpleDynamicClient(scheme, dynamicObjects...), nil

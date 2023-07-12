@@ -1,3 +1,19 @@
+/*
+Copyright 2023 The KubeAdmiral Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package informermanager
 
 import (
@@ -18,7 +34,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
+	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	"github.com/kubewharf/kubeadmiral/pkg/util/bijection"
 )
@@ -26,7 +42,8 @@ import (
 type informerManager struct {
 	lock sync.RWMutex
 
-	started bool
+	started  bool
+	shutdown bool
 
 	client      dynamic.Interface
 	ftcInformer fedcorev1a1informers.FederatedTypeConfigInformer
@@ -239,14 +256,14 @@ func (m *informerManager) AddEventHandlerGenerator(generator *EventHandlerGenera
 	defer m.lock.Unlock()
 
 	if m.started {
-		return fmt.Errorf("InformerManager is already started.")
+		return fmt.Errorf("failed to add EventHandlerGenerator: InformerManager is already started")
 	}
 
 	m.eventHandlerGenerators = append(m.eventHandlerGenerators, generator)
 	return nil
 }
 
-func (m *informerManager) GetFederatedTypeConfigLister() v1alpha1.FederatedTypeConfigLister {
+func (m *informerManager) GetFederatedTypeConfigLister() fedcorev1a1listers.FederatedTypeConfigLister {
 	return m.ftcInformer.Lister()
 }
 
@@ -298,9 +315,19 @@ func (m *informerManager) Start(ctx context.Context) {
 	go func() {
 		<-ctx.Done()
 
+		m.lock.Lock()
+		defer m.lock.Unlock()
+
 		logger.V(2).Info("Stopping InformerManager")
 		m.queue.ShutDown()
+		m.shutdown = true
 	}()
+}
+
+func (m *informerManager) IsShutdown() bool {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	return m.shutdown
 }
 
 var _ InformerManager = &informerManager{}
