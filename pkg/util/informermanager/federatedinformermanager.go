@@ -133,7 +133,8 @@ func (m *federatedInformerManager) worker(ctx context.Context) {
 		if err := m.processClusterDeletion(ctx, name); err != nil {
 			logger.Error(err, "Failed to process FederatedCluster, will retry")
 			m.queue.AddRateLimited(key)
-			return
+		} else {
+			m.queue.Forget(key)
 		}
 		return
 	}
@@ -142,12 +143,16 @@ func (m *federatedInformerManager) worker(ctx context.Context) {
 	if err != nil {
 		if needReenqueue {
 			logger.Error(err, "Failed to process FederatedCluster, will retry")
+			m.queue.AddRateLimited(key)
 		} else {
 			logger.Error(err, "Failed to process FederatedCluster")
 		}
+		return
 	}
+
+	m.queue.Forget(key)
 	if needReenqueue {
-		m.queue.AddRateLimited(key)
+		m.queue.Add(key)
 	}
 }
 
