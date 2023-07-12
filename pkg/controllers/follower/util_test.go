@@ -256,7 +256,7 @@ func TestGetFollowersFromPod(t *testing.T) {
 	}
 
 	expectedNamesByGK := map[schema.GroupKind]sets.Set[string]{
-		{Group: "kubeadmiral.io", Kind: "FederatedConfigMap"}: sets.New(
+		{Group: "", Kind: "ConfigMap"}: sets.New(
 			"Spec.Containers[*].EnvFrom[*].ConfigMapRef",
 			"Spec.Containers[*].Env[*].ValueFrom.ConfigMapKeyRef",
 			"Spec.EphemeralContainers[*].EphemeralContainerCommon.EnvFrom[*].ConfigMapRef",
@@ -266,7 +266,7 @@ func TestGetFollowersFromPod(t *testing.T) {
 			"Spec.Volumes[*].VolumeSource.Projected.Sources[*].ConfigMap",
 			"Spec.Volumes[*].VolumeSource.ConfigMap",
 		),
-		{Group: "kubeadmiral.io", Kind: "FederatedSecret"}: sets.New(
+		{Group: "", Kind: "Secret"}: sets.New(
 			"Spec.Containers[*].EnvFrom[*].SecretRef",
 			"Spec.Containers[*].Env[*].ValueFrom.SecretKeyRef",
 			"Spec.EphemeralContainers[*].EphemeralContainerCommon.EnvFrom[*].SecretRef",
@@ -287,20 +287,14 @@ func TestGetFollowersFromPod(t *testing.T) {
 			"Spec.Volumes[*].VolumeSource.StorageOS.SecretRef",
 			"Spec.Volumes[*].VolumeSource.CSI.NodePublishSecretRef",
 		),
-		{Group: "kubeadmiral.io", Kind: "FederatedPersistentVolumeClaim"}: sets.New(
+		{Group: "", Kind: "PersistentVolumeClaim"}: sets.New(
 			"Spec.Volumes[*].VolumeSource.PersistentVolumeClaim",
 		),
-		{Group: "kubeadmiral.io", Kind: "FederatedServiceAccount"}: sets.New(
+		{Group: "", Kind: "ServiceAccount"}: sets.New(
 			"Spec.ServiceAccountName",
 		),
 	}
 
-	sourceToFederatedGKMap := map[schema.GroupKind]schema.GroupKind{
-		{Kind: "ConfigMap"}:             {Group: "kubeadmiral.io", Kind: "FederatedConfigMap"},
-		{Kind: "Secret"}:                {Group: "kubeadmiral.io", Kind: "FederatedSecret"},
-		{Kind: "PersistentVolumeClaim"}: {Group: "kubeadmiral.io", Kind: "FederatedPersistentVolumeClaim"},
-		{Kind: "ServiceAccount"}:        {Group: "kubeadmiral.io", Kind: "FederatedServiceAccount"},
-	}
 	namespace := "default"
 
 	expectedFollowers := sets.New[FollowerReference]()
@@ -314,7 +308,7 @@ func TestGetFollowersFromPod(t *testing.T) {
 		}
 	}
 
-	followers := getFollowersFromPod("default", &pod, sourceToFederatedGKMap)
+	followers := getFollowersFromPod("default", &pod)
 
 	assert := assert.New(t)
 	assert.Equal(expectedFollowers, followers)

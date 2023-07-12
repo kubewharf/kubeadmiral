@@ -55,6 +55,7 @@ var knownControllers = map[string]controllermanager.StartControllerFunc{
 	FederatedClusterControllerName:         startFederatedClusterController,
 	SchedulerName:                          startScheduler,
 	SyncControllerName:                     startSyncController,
+	FollowerControllerName:                 startFollowerController,
 }
 
 var controllersDisabledByDefault = sets.New[string]()

@@ -28,6 +28,7 @@ output
 vendor
 .vscode
 *debug*
+.DS_Store
 
 # log files
 *.log
