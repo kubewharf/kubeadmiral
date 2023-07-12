@@ -760,13 +760,13 @@ func bootstrapInformerManagerWithFakeClients(
 
 	dynamicObjects := []runtime.Object{}
 	for _, object := range objects {
-		dynamicObjects = append(dynamicObjects, runtime.Object(object))
+		dynamicObjects = append(dynamicObjects, runtime.Object(object.DeepCopy()))
 	}
 	dynamicClient := dynamicfake.NewSimpleDynamicClient(scheme, dynamicObjects...)
 
 	fedObjects := []runtime.Object{}
 	for _, ftc := range ftcs {
-		fedObjects = append(fedObjects, runtime.Object(ftc))
+		fedObjects = append(fedObjects, runtime.Object(ftc.DeepCopy()))
 	}
 	fedClient := fake.NewSimpleClientset(fedObjects...)
 
