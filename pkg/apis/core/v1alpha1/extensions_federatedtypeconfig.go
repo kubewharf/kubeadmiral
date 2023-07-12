@@ -23,6 +23,7 @@ package v1alpha1
 import (
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 const (
@@ -43,6 +44,15 @@ func (f *FederatedTypeConfig) GetPropagationEnabled() bool {
 
 func (f *FederatedTypeConfig) GetSourceType() metav1.APIResource {
 	return apiResourceToMeta(f.Spec.SourceType)
+}
+
+func (f *FederatedTypeConfig) GetSourceTypeGVR() schema.GroupVersionResource {
+	apiResource := f.GetSourceType()
+	return schema.GroupVersionResource{
+		Group:    apiResource.Group,
+		Version:  apiResource.Version,
+		Resource: apiResource.Name,
+	}
 }
 
 func (f *FederatedTypeConfig) GetStatusCollectionEnabled() bool {

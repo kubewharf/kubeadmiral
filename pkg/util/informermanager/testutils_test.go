@@ -264,6 +264,9 @@ func (h *countingResourceEventHandler) ExpectDeleteEvents(gvk schema.GroupVersio
 }
 
 func (h *countingResourceEventHandler) assert(g gomega.Gomega, callerInfo string) {
+	h.lock.RLock()
+	defer h.lock.RUnlock()
+
 	for ftc := range h.expectedGenerateCount {
 		g.Expect(h.generateCount[ftc]).To(
 			gomega.BeNumerically("==", h.expectedGenerateCount[ftc]),
