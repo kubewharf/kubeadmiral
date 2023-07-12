@@ -18,6 +18,7 @@ package informermanager
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1318,8 +1319,9 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 1. Bootstrap environment
 
 		var generation int64 = 1
-		var callBackCount int64 = 0
 		var expectedCallbackCount int64 = 1
+
+		callBackCount := &atomic.Int64{}
 
 		// assertionCh is used to achieve 2 things:
 		// 1. It is used to pass assertions to the main goroutine.
@@ -1347,7 +1349,7 @@ func TestFederatedInformerManager(t *testing.T) {
 				return newCluster.GetAnnotations()["predicate"] == predicateTrue
 			},
 			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
-				callBackCount++
+				callBackCount.Add(1)
 			},
 		}
 
@@ -1379,7 +1381,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		fn := <-assertionCh
 		fn()
-		g.Expect(callBackCount).To(gomega.Equal(expectedCallbackCount))
+		g.Expect(callBackCount.Load()).To(gomega.Equal(expectedCallbackCount))
 
 		// 3. Generate cluster update events
 
@@ -1400,7 +1402,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 			fn = <-assertionCh
 			fn()
-			g.Expect(callBackCount).To(gomega.Equal(expectedCallbackCount))
+			g.Expect(callBackCount.Load()).To(gomega.Equal(expectedCallbackCount))
 		}
 	})
 }
@@ -1425,26 +1427,28 @@ func bootstrapFederatedInformerManagerWithFakeClients(
 
 	fedObjects := []runtime.Object{}
 	for _, cluster := range clusters {
-		fedObjects = append(fedObjects, runtime.Object(cluster))
+		fedObjects = append(fedObjects, runtime.Object(cluster.DeepCopy()))
 	}
 	for _, ftc := range ftcs {
-		fedObjects = append(fedObjects, runtime.Object(ftc))
+		fedObjects = append(fedObjects, runtime.Object(ftc.DeepCopy()))
 	}
 	fedClient := fake.NewSimpleClientset(fedObjects...)
 
 	factory := fedinformers.NewSharedInformerFactory(fedClient, 0)
+
+	dynamicObjects := map[string][]runtime.Object{}
+	for cluster, unsObjects := range objects {
+		dynamicObjects[cluster] = make([]runtime.Object, len(unsObjects))
+		for i, unsObject := range unsObjects {
+			dynamicObjects[cluster][i] = runtime.Object(unsObject.DeepCopy())
+		}
+	}
+
 	informerManager := NewFederatedInformerManager(
 		ClusterClientGetter{
 			ConnectionHash: DefaultClusterConnectionHash,
 			ClientGetter: func(cluster *fedcorev1a1.FederatedCluster) (dynamicclient.Interface, error) {
-				dynamicObjects := []runtime.Object{}
-
-				clusterObjects := objects[cluster.Name]
-				for _, object := range clusterObjects {
-					dynamicObjects = append(dynamicObjects, runtime.Object(object))
-				}
-
-				return dynamicfake.NewSimpleDynamicClient(scheme, dynamicObjects...), nil
+				return dynamicfake.NewSimpleDynamicClient(scheme, dynamicObjects[cluster.Name]...), nil
 			},
 		},
 		factory.Core().V1alpha1().FederatedTypeConfigs(),
