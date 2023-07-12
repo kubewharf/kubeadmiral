@@ -151,7 +151,7 @@ func (m *federatedInformerManager) processCluster(
 			// This might occur if a cluster was deleted and recreated with different connection details within a short
 			// period of time and we missed processing the deletion. We simply process the cluster deletion and
 			// reenqueue.
-			// Note: updating of cluster connetion details, however, is still not a supported use case.
+			// Note: updating of cluster connection details, however, is still not a supported use case.
 			err := m.processClusterDeletionUnlocked(ctx, clusterName)
 			return err, true
 		}
