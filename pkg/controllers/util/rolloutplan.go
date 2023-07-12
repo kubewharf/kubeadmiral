@@ -23,12 +23,12 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	intstrutil "k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
@@ -56,9 +56,9 @@ var (
 )
 
 type RolloutPlan struct {
-	Replicas          *int64
-	MaxSurge          *int64
-	MaxUnavailable    *int64
+	Replicas          *int32
+	MaxSurge          *int32
+	MaxUnavailable    *int32
 	OnlyPatchReplicas bool
 }
 
@@ -76,16 +76,16 @@ func (p RolloutPlan) String() string {
 	return fmt.Sprintf("%s,%s,%s,%t", r, s, u, p.OnlyPatchReplicas)
 }
 
-func (p RolloutPlan) toOverrides() fedcorev1a1.OverridePatches {
-	overrides := fedcorev1a1.OverridePatches{}
+func (p RolloutPlan) toOverrides() fedtypesv1a1.OverridePatches {
+	overrides := fedtypesv1a1.OverridePatches{}
 	if p.Replicas != nil {
-		overrides = append(overrides, fedcorev1a1.OverridePatch{Path: ReplicaPath, Value: v1.JSON{Raw: []byte(*p.Replicas)}})
+		overrides = append(overrides, fedtypesv1a1.OverridePatch{Path: ReplicaPath, Value: *p.Replicas})
 	}
 	if p.MaxSurge != nil {
-		overrides = append(overrides, fedcorev1a1.OverridePatch{Path: MaxSurgePath, Value: *p.MaxSurge})
+		overrides = append(overrides, fedtypesv1a1.OverridePatch{Path: MaxSurgePath, Value: *p.MaxSurge})
 	}
 	if p.MaxUnavailable != nil {
-		overrides = append(overrides, fedcorev1a1.OverridePatch{Path: MaxUnavailablePath, Value: *p.MaxUnavailable})
+		overrides = append(overrides, fedtypesv1a1.OverridePatch{Path: MaxUnavailablePath, Value: *p.MaxUnavailable})
 	}
 	return overrides
 }
@@ -121,10 +121,10 @@ func (r RolloutPlans) String() string {
 	return strings.Join(strs, "; ")
 }
 
-func (r RolloutPlans) GetRolloutOverrides(clusterName string) fedcorev1a1.OverridePatches {
+func (r RolloutPlans) GetRolloutOverrides(clusterName string) fedtypesv1a1.OverridePatches {
 	p, ok := r[clusterName]
 	if !ok {
-		return fedcorev1a1.OverridePatches{}
+		return fedtypesv1a1.OverridePatches{}
 	}
 	return p.toOverrides()
 }
