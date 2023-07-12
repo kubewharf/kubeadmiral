@@ -127,7 +127,7 @@ func NewFederatedClusterController(
 
 	c.worker = worker.NewReconcileWorker(
 		c.reconcile,
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		workerCount,
 		metrics,
 		delayingdeliver.NewMetricTags("federatedcluster-worker", "FederatedCluster"),
@@ -135,9 +135,8 @@ func NewFederatedClusterController(
 
 	c.statusCollectWorker = worker.NewReconcileWorker(
 		c.collectClusterStatus,
-		worker.WorkerTiming{
-			Interval:       50 * time.Millisecond,
-			InitialBackoff: 50 * time.Millisecond,
+		worker.RateLimiterOptions{
+			InitialDelay: 50 * time.Millisecond,
 		},
 		workerCount,
 		metrics,

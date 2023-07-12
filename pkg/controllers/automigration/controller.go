@@ -109,7 +109,7 @@ func NewAutoMigrationController(
 
 	c.worker = worker.NewReconcileWorker(
 		c.reconcile,
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		controllerConfig.WorkerCount,
 		controllerConfig.Metrics,
 		delayingdeliver.NewMetricTags("auto-migration-worker", c.typeConfig.GetFederatedType().Kind),

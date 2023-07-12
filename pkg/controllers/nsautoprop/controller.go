@@ -154,7 +154,7 @@ func newController(
 
 	c.worker = worker.NewReconcileWorker(
 		c.reconcile,
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		controllerConfig.WorkerCount,
 		controllerConfig.Metrics,
 		delayingdeliver.NewMetricTags(userAgent, federatedNamespaceApiResource.Kind),

@@ -21,154 +21,153 @@ are Copyright 2023 The KubeAdmiral Authors.
 package worker
 
 import (
+	"math"
 	"time"
 
-	pkgruntime "k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/util/flowcontrol"
+	"golang.org/x/time/rate"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/workqueue"
 
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	deliverutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
-type ReconcileFunc func(qualifiedName common.QualifiedName) Result
+type ReconcileFunc[Key any] func(Key) Result
 
-type ReconcileWorker interface {
-	Enqueue(qualifiedName common.QualifiedName)
-	EnqueueObject(obj pkgruntime.Object)
-	EnqueueForBackoff(qualifiedName common.QualifiedName)
-	EnqueueWithDelay(qualifiedName common.QualifiedName, delay time.Duration)
+type KeyFunc[Key any] func(metav1.Object) Key
+
+type ReconcileWorker[Key any] interface {
+	Enqueue(key Key)
+	EnqueueObject(obj metav1.Object)
+	EnqueueWithBackoff(key Key)
+	EnqueueWithDelay(key Key, delay time.Duration)
 	Run(stopChan <-chan struct{})
 }
 
-type WorkerTiming struct {
-	Interval       time.Duration
-	InitialBackoff time.Duration
-	MaxBackoff     time.Duration
+type RateLimiterOptions struct {
+	// The initial delay for a failed item.
+	InitialDelay time.Duration
+	// The maximum delay for a failed item.
+	MaxDelay time.Duration
+	// The overall reconcile qps.
+	OverallQPS float64
+	// The overall reconcile burst.
+	OverallBurst int
 }
 
-type asyncWorker struct {
-	reconcile ReconcileFunc
+type asyncWorker[Key any] struct {
+	// Name of this reconcile worker.
+	name string
 
-	timing WorkerTiming
+	// Function to extract queue key from a metav1.Object
+	keyFunc KeyFunc[Key]
 
-	// For triggering reconciliation of a single resource. This is
-	// used when there is an add/update/delete operation on a resource
-	// in either the API of the cluster hosting KubeFed or in the API
-	// of a member cluster.
-	deliverer *deliverutil.DelayingDeliverer
+	// Work queue holding keys to be processed.
+	queue workqueue.RateLimitingInterface
 
-	// Work queue allowing parallel processing of resources
-	queue workqueue.Interface
+	// Function called to reconcile keys popped from the queue.
+	reconcile ReconcileFunc[Key]
 
-	// Backoff manager
-	backoff *flowcontrol.Backoff
-
+	// Number of parallel workers to reconcile keys popped from the queue.
 	workerCount int
 
-	metrics    stats.Metrics
-	metricTags deliverutil.MetricTags
+	// Metrics implementation.
+	// TODO: export workqueue metrics by providing a MetricsProvider implementation.
+	metrics stats.Metrics
 }
 
-func NewReconcileWorker(
-	reconcile ReconcileFunc,
-	timing WorkerTiming,
+func NewReconcileWorker[Key any](
+	name string,
+	keyFunc KeyFunc[Key],
+	reconcile ReconcileFunc[Key],
+	timing RateLimiterOptions,
 	workerCount int,
 	metrics stats.Metrics,
-	metricTags deliverutil.MetricTags,
-) ReconcileWorker {
-	if timing.Interval == 0 {
-		timing.Interval = time.Second * 1
+) ReconcileWorker[Key] {
+	if timing.InitialDelay <= 0 {
+		timing.InitialDelay = 5 * time.Second
 	}
-	if timing.InitialBackoff == 0 {
-		timing.InitialBackoff = time.Second * 5
+	if timing.MaxDelay <= 0 {
+		timing.MaxDelay = time.Minute
 	}
-	if timing.MaxBackoff == 0 {
-		timing.MaxBackoff = time.Minute
+	if timing.OverallQPS <= 0 {
+		timing.OverallQPS = float64(rate.Inf)
+	}
+	if timing.OverallBurst <= 0 {
+		timing.OverallBurst = math.MaxInt
 	}
 
-	if workerCount == 0 {
+	rateLimiter := workqueue.NewMaxOfRateLimiter(
+		workqueue.NewItemExponentialFailureRateLimiter(timing.InitialDelay, timing.MaxDelay),
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(timing.OverallQPS), timing.OverallBurst)},
+	)
+	queue := workqueue.NewNamedRateLimitingQueue(rateLimiter, name)
+
+	if workerCount <= 0 {
 		workerCount = 1
 	}
-	return &asyncWorker{
+
+	return &asyncWorker[Key]{
+		name:        name,
+		keyFunc:     keyFunc,
 		reconcile:   reconcile,
-		timing:      timing,
-		deliverer:   deliverutil.NewDelayingDeliverer(),
-		queue:       workqueue.New(),
-		backoff:     flowcontrol.NewBackOff(timing.InitialBackoff, timing.MaxBackoff),
+		queue:       queue,
 		workerCount: workerCount,
 		metrics:     metrics,
-		metricTags:  metricTags,
 	}
 }
 
-func (w *asyncWorker) Enqueue(qualifiedName common.QualifiedName) {
-	w.deliver(qualifiedName, 0, false)
+func (w *asyncWorker[Key]) Enqueue(key Key) {
+	w.queue.Add(key)
 }
 
-func (w *asyncWorker) EnqueueObject(obj pkgruntime.Object) {
-	qualifiedName := common.NewQualifiedName(obj)
-	w.Enqueue(qualifiedName)
+func (w *asyncWorker[Key]) EnqueueObject(obj metav1.Object) {
+	w.Enqueue(w.keyFunc(obj))
 }
 
-func (w *asyncWorker) EnqueueForBackoff(qualifiedName common.QualifiedName) {
-	w.deliver(qualifiedName, 0, true)
+func (w *asyncWorker[Key]) EnqueueWithBackoff(key Key) {
+	w.queue.AddRateLimited(key)
 }
 
-func (w *asyncWorker) EnqueueWithDelay(qualifiedName common.QualifiedName, delay time.Duration) {
-	w.deliver(qualifiedName, delay, false)
+func (w *asyncWorker[Key]) EnqueueWithDelay(key Key, delay time.Duration) {
+	w.queue.AddAfter(key, delay)
 }
 
-func (w *asyncWorker) Run(stopChan <-chan struct{}) {
-	util.StartBackoffGC(w.backoff, stopChan)
-	w.deliverer.StartWithHandler(func(item *deliverutil.DelayingDelivererItem) {
-		w.queue.Add(item.Key)
-	})
-	go w.deliverer.RunMetricLoop(stopChan, 30*time.Second, w.metrics, w.metricTags)
-
+func (w *asyncWorker[Key]) Run(stopChan <-chan struct{}) {
 	for i := 0; i < w.workerCount; i++ {
-		go wait.Until(w.worker, w.timing.Interval, stopChan)
+		go w.worker()
 	}
 
 	// Ensure all goroutines are cleaned up when the stop channel closes
 	go func() {
 		<-stopChan
 		w.queue.ShutDown()
-		w.deliverer.Stop()
 	}()
 }
 
-// deliver adds backoff to delay if backoff is true.  Otherwise, it
-// resets backoff.
-func (w *asyncWorker) deliver(qualifiedName common.QualifiedName, delay time.Duration, backoff bool) {
-	key := qualifiedName.String()
-	if backoff {
-		w.backoff.Next(key, time.Now())
-		delay = delay + w.backoff.Get(key)
-	} else {
-		w.backoff.Reset(key)
+func (w *asyncWorker[Key]) processNextItem() bool {
+	keyAny, quit := w.queue.Get()
+	if quit {
+		return false
 	}
-	w.deliverer.DeliverAfter(key, &qualifiedName, delay)
+
+	key := keyAny.(Key)
+	result := w.reconcile(key)
+	w.queue.Done(keyAny)
+
+	if result.Backoff {
+		w.EnqueueWithBackoff(key)
+	} else {
+		w.queue.Forget(keyAny)
+
+		if result.RequeueAfter != nil {
+			w.EnqueueWithDelay(key, *result.RequeueAfter)
+		}
+	}
+
+	return true
 }
 
-func (w *asyncWorker) worker() {
-	for {
-		obj, quit := w.queue.Get()
-		if quit {
-			return
-		}
-
-		qualifiedName := common.NewQualifiedFromString(obj.(string))
-		result := w.reconcile(qualifiedName)
-		w.queue.Done(obj)
-
-		if result.Backoff {
-			w.EnqueueForBackoff(qualifiedName)
-		} else if result.RequeueAfter != nil {
-			w.EnqueueWithDelay(qualifiedName, *result.RequeueAfter)
-		}
+func (w *asyncWorker[Key]) worker() {
+	for w.processNextItem() {
 	}
 }

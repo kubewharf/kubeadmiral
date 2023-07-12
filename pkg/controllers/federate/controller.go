@@ -115,7 +115,7 @@ func NewFederateController(
 
 	c.worker = worker.NewReconcileWorker(
 		c.reconcile,
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		workerCount,
 		metrics,
 		delayingdeliver.NewMetricTags("federate-controller-worker", c.typeConfig.GetFederatedType().Kind),
