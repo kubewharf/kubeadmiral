@@ -182,11 +182,11 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 2. Verify that listers for existing FTCs and clusters are eventually available
 
 		for _, ftc := range defaultFTCs {
-			gvr := ftc.GetSourceTypeGVR()
+			gvk := ftc.GetSourceTypeGVK()
 
 			for _, cluster := range defaultClusters {
 				g.Eventually(func(g gomega.Gomega) {
-					lister, informerSynced, exists := manager.GetResourceLister(gvr, cluster.Name)
+					lister, informerSynced, exists := manager.GetResourceLister(gvk, cluster.Name)
 
 					g.Expect(exists).To(gomega.BeTrue())
 					g.Expect(lister).ToNot(gomega.BeNil())
@@ -197,17 +197,17 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		// 3. Verify that the lister for non-existent FTCs or clusters are not available
 
-		lister, informerSynced, exists := manager.GetResourceLister(common.DaemonSetGVR, "cluster-1")
+		lister, informerSynced, exists := manager.GetResourceLister(daemonsetGVK, "cluster-1")
 		g.Expect(exists).To(gomega.BeFalse())
 		g.Expect(lister).To(gomega.BeNil())
 		g.Expect(informerSynced).To(gomega.BeNil())
 
-		lister, informerSynced, exists = manager.GetResourceLister(common.DeploymentGVR, "cluster-4")
+		lister, informerSynced, exists = manager.GetResourceLister(deploymentGVK, "cluster-4")
 		g.Expect(exists).To(gomega.BeFalse())
 		g.Expect(lister).To(gomega.BeNil())
 		g.Expect(informerSynced).To(gomega.BeNil())
 
-		lister, informerSynced, exists = manager.GetResourceLister(common.DaemonSetGVR, "cluster-4")
+		lister, informerSynced, exists = manager.GetResourceLister(daemonsetGVK, "cluster-4")
 		g.Expect(exists).To(gomega.BeFalse())
 		g.Expect(lister).To(gomega.BeNil())
 		g.Expect(informerSynced).To(gomega.BeNil())
@@ -245,13 +245,13 @@ func TestFederatedInformerManager(t *testing.T) {
 		}()
 
 		ftc := daemonsetFTC
-		gvr := ftc.GetSourceTypeGVR()
+		gvk := ftc.GetSourceTypeGVK()
 
 		// 2. Verify that listers for daemonsets FTCs is not available at the start
 
 		g.Consistently(func(g gomega.Gomega) {
 			for _, cluster := range defaultClusters {
-				lister, informerSynced, exists := manager.GetResourceLister(common.DeploymentGVR, cluster.Name)
+				lister, informerSynced, exists := manager.GetResourceLister(deploymentGVK, cluster.Name)
 				g.Expect(exists).To(gomega.BeFalse())
 				g.Expect(lister).To(gomega.BeNil())
 				g.Expect(informerSynced).To(gomega.BeNil())
@@ -267,7 +267,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		g.Eventually(func(g gomega.Gomega) {
 			for _, cluster := range defaultClusters {
-				lister, informerSynced, exists := manager.GetResourceLister(gvr, cluster.Name)
+				lister, informerSynced, exists := manager.GetResourceLister(gvk, cluster.Name)
 				g.Expect(exists).To(gomega.BeTrue())
 				g.Expect(lister).ToNot(gomega.BeNil())
 				g.Expect(informerSynced()).To(gomega.BeTrue())
@@ -308,9 +308,9 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		g.Consistently(func(g gomega.Gomega) {
 			for _, ftc := range defaultFTCs {
-				gvr := ftc.GetSourceTypeGVR()
+				gvk := ftc.GetSourceTypeGVK()
 
-				lister, informerSynced, exists := manager.GetResourceLister(gvr, cluster.Name)
+				lister, informerSynced, exists := manager.GetResourceLister(gvk, cluster.Name)
 				g.Expect(exists).To(gomega.BeFalse())
 				g.Expect(lister).To(gomega.BeNil())
 				g.Expect(informerSynced).To(gomega.BeNil())
@@ -326,9 +326,9 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		g.Eventually(func(g gomega.Gomega) {
 			for _, ftc := range defaultFTCs {
-				gvr := ftc.GetSourceTypeGVR()
+				gvk := ftc.GetSourceTypeGVK()
 
-				lister, informerSynced, exists := manager.GetResourceLister(gvr, cluster.Name)
+				lister, informerSynced, exists := manager.GetResourceLister(gvk, cluster.Name)
 				g.Expect(exists).To(gomega.BeTrue())
 				g.Expect(lister).ToNot(gomega.BeNil())
 				g.Expect(informerSynced()).To(gomega.BeTrue())

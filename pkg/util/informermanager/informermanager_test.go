@@ -66,10 +66,10 @@ func TestInformerManager(t *testing.T) {
 		// 2. Verify that the listers for each FTC is eventually available
 
 		for _, ftc := range defaultFTCs {
-			gvr := ftc.GetSourceTypeGVR()
+			gvk := ftc.GetSourceTypeGVK()
 
 			g.Eventually(func(g gomega.Gomega) {
-				lister, informerSynced, exists := manager.GetResourceLister(gvr)
+				lister, informerSynced, exists := manager.GetResourceLister(gvk)
 				g.Expect(exists).To(gomega.BeTrue())
 				g.Expect(lister).ToNot(gomega.BeNil())
 				g.Expect(informerSynced()).To(gomega.BeTrue())
@@ -78,7 +78,7 @@ func TestInformerManager(t *testing.T) {
 
 		// 3. Verify that the lister for a non-existent FTC is not available
 
-		lister, informerSynced, exists := manager.GetResourceLister(common.DaemonSetGVR)
+		lister, informerSynced, exists := manager.GetResourceLister(daemonsetGVK)
 		g.Expect(exists).To(gomega.BeFalse())
 		g.Expect(lister).To(gomega.BeNil())
 		g.Expect(informerSynced).To(gomega.BeNil())
@@ -102,12 +102,12 @@ func TestInformerManager(t *testing.T) {
 		}()
 
 		ftc := daemonsetFTC
-		gvr := ftc.GetSourceTypeGVR()
+		gvk := ftc.GetSourceTypeGVK()
 
 		// 2. Verify that the lister for daemonsets is not available at the start
 
 		g.Consistently(func(g gomega.Gomega) {
-			lister, informerSynced, exists := manager.GetResourceLister(gvr)
+			lister, informerSynced, exists := manager.GetResourceLister(gvk)
 			g.Expect(exists).To(gomega.BeFalse())
 			g.Expect(lister).To(gomega.BeNil())
 			g.Expect(informerSynced).To(gomega.BeNil())
@@ -121,7 +121,7 @@ func TestInformerManager(t *testing.T) {
 		// 4. Verify that the lister for daemonsets is eventually available
 
 		g.Eventually(func(g gomega.Gomega) {
-			lister, informerSynced, exists := manager.GetResourceLister(gvr)
+			lister, informerSynced, exists := manager.GetResourceLister(gvk)
 			g.Expect(exists).To(gomega.BeTrue())
 			g.Expect(lister).ToNot(gomega.BeNil())
 			g.Expect(informerSynced()).To(gomega.BeTrue())
@@ -775,7 +775,7 @@ func bootstrapInformerManagerWithFakeClients(
 	fedClient := fake.NewSimpleClientset(fedObjects...)
 
 	factory := fedinformers.NewSharedInformerFactory(fedClient, 0)
-	informerManager := NewInformerManager(dynamicClient, factory.Core().V1alpha1().FederatedTypeConfigs())
+	informerManager := NewInformerManager(dynamicClient, factory.Core().V1alpha1().FederatedTypeConfigs(), nil)
 
 	for _, generator := range eventHandlerGenerators {
 		err := informerManager.AddEventHandlerGenerator(generator)

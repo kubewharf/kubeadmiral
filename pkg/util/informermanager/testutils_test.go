@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
 
 var (
@@ -112,6 +113,9 @@ func getTestDeployment(name, namespace string) *unstructured.Unstructured {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				managedlabel.ManagedByKubeAdmiralLabelKey: managedlabel.ManagedByKubeAdmiralLabelValue,
+			},
 		},
 	}
 
@@ -132,6 +136,9 @@ func getTestConfigMap(name, namespace string) *unstructured.Unstructured {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				managedlabel.ManagedByKubeAdmiralLabelKey: managedlabel.ManagedByKubeAdmiralLabelValue,
+			},
 		},
 	}
 
@@ -152,6 +159,9 @@ func getTestSecret(name, namespace string) *unstructured.Unstructured {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				managedlabel.ManagedByKubeAdmiralLabelKey: managedlabel.ManagedByKubeAdmiralLabelValue,
+			},
 		},
 	}
 
@@ -172,6 +182,9 @@ func getTestDaemonSet(name, namespace string) *unstructured.Unstructured {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				managedlabel.ManagedByKubeAdmiralLabelKey: managedlabel.ManagedByKubeAdmiralLabelValue,
+			},
 		},
 	}
 
