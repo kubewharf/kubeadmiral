@@ -108,7 +108,8 @@ func NewFederatedClusterController(
 		federatedClient:    federatedClient,
 		fedSystemNamespace: fedsystemNamespace,
 		clusterHealthCheckConfig: &ClusterHealthCheckConfig{
-			Period: time.Minute,
+			// TODO: make health check period configurable
+			Period: time.Second * 30,
 		},
 		clusterJoinTimeout: clusterJoinTimeout,
 		metrics:            metrics,

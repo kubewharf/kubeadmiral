@@ -25,6 +25,7 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
@@ -80,7 +81,7 @@ func (d *checkUnmanagedDispatcherImpl) CheckRemovedOrUnlabeled(ctx context.Conte
 		clusterObj := &unstructured.Unstructured{}
 		clusterObj.SetGroupVersionKind(d.targetGVK)
 		err := client.Get(context.Background(), clusterObj, targetName.Namespace, targetName.Name)
-		if apierrors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
 			return true
 		}
 		if err != nil {
