@@ -20,26 +20,21 @@ import (
 	"fmt"
 	"reflect"
 
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
-	SyncSuccessTimestamp       = "syncSuccessTimestamp"
-	LastGeneration             = "lastGeneration"
+	SyncSuccessTimestamp      = "syncSuccessTimestamp"
+	LastGeneration            = "lastGeneration"
 	LastSyncSuccessGeneration = "lastSyncSuccessGeneration"
 )
 
 // HasAnnotationKey returns true if the given object has the given annotation key in its ObjectMeta.
-func HasAnnotationKey(obj runtime.Object, key string) (bool, error) {
+func HasAnnotationKey(obj metav1.Object, key string) (bool, error) {
 	if IsNilPointer(obj) {
 		return false, fmt.Errorf("object(%T) is nil pointer", obj)
 	}
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-		return false, err
-	}
-	annotations := accessor.GetAnnotations()
+	annotations := obj.GetAnnotations()
 	if annotations == nil {
 		return false, nil
 	}
@@ -48,15 +43,11 @@ func HasAnnotationKey(obj runtime.Object, key string) (bool, error) {
 }
 
 // HasAnnotationKeyValue returns true if the given object has the given annotation key and value in its ObjectMeta.
-func HasAnnotationKeyValue(obj runtime.Object, key, value string) (bool, error) {
+func HasAnnotationKeyValue(obj metav1.Object, key, value string) (bool, error) {
 	if IsNilPointer(obj) {
 		return false, fmt.Errorf("object(%T) is nil pointer", obj)
 	}
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-		return false, err
-	}
-	annotations := accessor.GetAnnotations()
+	annotations := obj.GetAnnotations()
 	if annotations == nil {
 		return false, nil
 	}
@@ -67,7 +58,7 @@ func HasAnnotationKeyValue(obj runtime.Object, key, value string) (bool, error) 
 // AddAnnotation adds the given annotation key and value to the given objects ObjectMeta,
 // and overwrites the annotation value if it already exists.
 // Returns true if the object was updated.
-func AddAnnotation(obj runtime.Object, key, value string) (bool, error) {
+func AddAnnotation(obj metav1.Object, key, value string) (bool, error) {
 	if IsNilPointer(obj) {
 		return false, fmt.Errorf("object(%T) is nil pointer", obj)
 	}
@@ -76,10 +67,6 @@ func AddAnnotation(obj runtime.Object, key, value string) (bool, error) {
 		return false, fmt.Errorf("key is a empty string.")
 	}
 
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-		return false, err
-	}
 	has, err := HasAnnotationKeyValue(obj, key, value)
 	if has && err == nil {
 		return false, nil
@@ -87,24 +74,20 @@ func AddAnnotation(obj runtime.Object, key, value string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	annotations := accessor.GetAnnotations()
+	annotations := obj.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
 	annotations[key] = value
-	accessor.SetAnnotations(annotations)
+	obj.SetAnnotations(annotations)
 	return true, nil
 }
 
 // RemoveAnnotation removes the given annotation key from the given objects ObjectMeta.
 // Returns true if the object was updated.
-func RemoveAnnotation(obj runtime.Object, key string) (bool, error) {
+func RemoveAnnotation(obj metav1.Object, key string) (bool, error) {
 	if IsNilPointer(obj) {
 		return false, fmt.Errorf("object(%T) is nil pointer", obj)
-	}
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-		return false, err
 	}
 	has, err := HasAnnotationKey(obj, key)
 	if !has && err == nil {
@@ -114,13 +97,13 @@ func RemoveAnnotation(obj runtime.Object, key string) (bool, error) {
 		return false, err
 	}
 
-	annotations := accessor.GetAnnotations()
+	annotations := obj.GetAnnotations()
 	if annotations == nil {
 		return false, nil
 	}
 
 	delete(annotations, key)
-	accessor.SetAnnotations(annotations)
+	obj.SetAnnotations(annotations)
 	return true, nil
 }
 
