@@ -21,6 +21,7 @@ are Copyright 2023 The KubeAdmiral Authors.
 package worker
 
 import (
+	"context"
 	"math"
 	"time"
 
@@ -31,7 +32,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
-type ReconcileFunc[Key any] func(Key) Result
+type ReconcileFunc[Key any] func(context.Context, Key) Result
 
 type KeyFunc[Key any] func(metav1.Object) Key
 
@@ -40,7 +41,7 @@ type ReconcileWorker[Key any] interface {
 	EnqueueObject(obj metav1.Object)
 	EnqueueWithBackoff(key Key)
 	EnqueueWithDelay(key Key, delay time.Duration)
-	Run(stopChan <-chan struct{})
+	Run(ctx context.Context)
 }
 
 type RateLimiterOptions struct {
@@ -132,26 +133,26 @@ func (w *asyncWorker[Key]) EnqueueWithDelay(key Key, delay time.Duration) {
 	w.queue.AddAfter(key, delay)
 }
 
-func (w *asyncWorker[Key]) Run(stopChan <-chan struct{}) {
+func (w *asyncWorker[Key]) Run(ctx context.Context) {
 	for i := 0; i < w.workerCount; i++ {
-		go w.worker()
+		go w.worker(ctx)
 	}
 
 	// Ensure all goroutines are cleaned up when the stop channel closes
 	go func() {
-		<-stopChan
+		<-ctx.Done()
 		w.queue.ShutDown()
 	}()
 }
 
-func (w *asyncWorker[Key]) processNextItem() bool {
+func (w *asyncWorker[Key]) processNextItem(ctx context.Context) bool {
 	keyAny, quit := w.queue.Get()
 	if quit {
 		return false
 	}
 
 	key := keyAny.(Key)
-	result := w.reconcile(key)
+	result := w.reconcile(ctx, key)
 	w.queue.Done(keyAny)
 
 	if result.Backoff {
@@ -167,7 +168,7 @@ func (w *asyncWorker[Key]) processNextItem() bool {
 	return true
 }
 
-func (w *asyncWorker[Key]) worker() {
-	for w.processNextItem() {
+func (w *asyncWorker[Key]) worker(ctx context.Context) {
+	for w.processNextItem(ctx) {
 	}
 }
