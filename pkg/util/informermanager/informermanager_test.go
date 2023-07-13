@@ -46,6 +46,84 @@ func TestInformerManager(t *testing.T) {
 	t.Parallel()
 	ctx := klog.NewContext(context.Background(), ktesting.NewLogger(t, ktesting.NewConfig(ktesting.Verbosity(2))))
 
+	t.Run("GVK mappings for existing FTCs should be available eventually", func(t *testing.T) {
+		t.Parallel()
+		g := gomega.NewWithT(t)
+
+		// 1. Bootstrap environment
+
+		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{deploymentFTC, configmapFTC, secretFTC}
+		defaultObjs := []*unstructured.Unstructured{}
+		generators := []*EventHandlerGenerator{}
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, _, _ := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
+
+		// 2. Verify that the GVK mapping for each FTC is eventually available
+
+		for _, ftc := range defaultFTCs {
+			gvk := ftc.GetSourceTypeGVK()
+
+			g.Eventually(func(g gomega.Gomega) {
+				resourceFTC, exists := manager.GetResourceFTC(gvk)
+				g.Expect(exists).To(gomega.BeTrue())
+				g.Expect(resourceFTC).To(gomega.Equal(ftc))
+			}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
+		}
+
+		// 3. Verify that the GVK mapping for a non-existent FTC is not available
+
+		ftc, exists := manager.GetResourceFTC(daemonsetGVK)
+		g.Expect(exists).To(gomega.BeFalse())
+		g.Expect(ftc).To(gomega.BeNil())
+	})
+
+	t.Run("GVK mapping for new FTC should be available eventually", func(t *testing.T) {
+		t.Parallel()
+		g := gomega.NewWithT(t)
+
+		// 1. Bootstrap environment
+
+		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{}
+		defaultObjs := []*unstructured.Unstructured{}
+		generators := []*EventHandlerGenerator{}
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, _, fedClient := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
+
+		ftc := daemonsetFTC
+		gvk := ftc.GetSourceTypeGVK()
+
+		// 2. Verify that the GVK mapping for daemonsets is not available at the start
+
+		g.Consistently(func(g gomega.Gomega) {
+			resourceFTC, exists := manager.GetResourceFTC(gvk)
+			g.Expect(exists).To(gomega.BeFalse())
+			g.Expect(resourceFTC).To(gomega.BeNil())
+		}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
+
+		// 3. Create the daemonset FTC.
+
+		_, err := fedClient.CoreV1alpha1().FederatedTypeConfigs().Create(ctx, ftc, metav1.CreateOptions{})
+		g.Expect(err).ToNot(gomega.HaveOccurred())
+
+		// 4. Verify that the GVK mapping for daemonsets is eventually available
+
+		g.Eventually(func(g gomega.Gomega) {
+			resourceFTC, exists := manager.GetResourceFTC(gvk)
+			g.Expect(exists).To(gomega.BeTrue())
+			g.Expect(resourceFTC).To(gomega.Equal(ftc))
+		}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
+	})
+
 	t.Run("listers for existing FTCs should be available eventually", func(t *testing.T) {
 		t.Parallel()
 		g := gomega.NewWithT(t)
@@ -66,10 +144,10 @@ func TestInformerManager(t *testing.T) {
 		// 2. Verify that the listers for each FTC is eventually available
 
 		for _, ftc := range defaultFTCs {
-			gvr := ftc.GetSourceTypeGVR()
+			gvk := ftc.GetSourceTypeGVK()
 
 			g.Eventually(func(g gomega.Gomega) {
-				lister, informerSynced, exists := manager.GetResourceLister(gvr)
+				lister, informerSynced, exists := manager.GetResourceLister(gvk)
 				g.Expect(exists).To(gomega.BeTrue())
 				g.Expect(lister).ToNot(gomega.BeNil())
 				g.Expect(informerSynced()).To(gomega.BeTrue())
@@ -78,7 +156,7 @@ func TestInformerManager(t *testing.T) {
 
 		// 3. Verify that the lister for a non-existent FTC is not available
 
-		lister, informerSynced, exists := manager.GetResourceLister(common.DaemonSetGVR)
+		lister, informerSynced, exists := manager.GetResourceLister(daemonsetGVK)
 		g.Expect(exists).To(gomega.BeFalse())
 		g.Expect(lister).To(gomega.BeNil())
 		g.Expect(informerSynced).To(gomega.BeNil())
@@ -102,12 +180,12 @@ func TestInformerManager(t *testing.T) {
 		}()
 
 		ftc := daemonsetFTC
-		gvr := ftc.GetSourceTypeGVR()
+		gvk := ftc.GetSourceTypeGVK()
 
 		// 2. Verify that the lister for daemonsets is not available at the start
 
 		g.Consistently(func(g gomega.Gomega) {
-			lister, informerSynced, exists := manager.GetResourceLister(gvr)
+			lister, informerSynced, exists := manager.GetResourceLister(gvk)
 			g.Expect(exists).To(gomega.BeFalse())
 			g.Expect(lister).To(gomega.BeNil())
 			g.Expect(informerSynced).To(gomega.BeNil())
@@ -121,7 +199,7 @@ func TestInformerManager(t *testing.T) {
 		// 4. Verify that the lister for daemonsets is eventually available
 
 		g.Eventually(func(g gomega.Gomega) {
-			lister, informerSynced, exists := manager.GetResourceLister(gvr)
+			lister, informerSynced, exists := manager.GetResourceLister(gvk)
 			g.Expect(exists).To(gomega.BeTrue())
 			g.Expect(lister).ToNot(gomega.BeNil())
 			g.Expect(informerSynced()).To(gomega.BeTrue())
@@ -155,7 +233,13 @@ func TestInformerManager(t *testing.T) {
 		}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, dynamicClient, _ := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, dynamicClient, _ := bootstrapInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
@@ -246,7 +330,13 @@ func TestInformerManager(t *testing.T) {
 		}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
@@ -381,7 +471,13 @@ func TestInformerManager(t *testing.T) {
 		generators := []*EventHandlerGenerator{generator}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
@@ -434,7 +530,13 @@ func TestInformerManager(t *testing.T) {
 		generators := []*EventHandlerGenerator{generator}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
@@ -486,7 +588,13 @@ func TestInformerManager(t *testing.T) {
 		generators := []*EventHandlerGenerator{generator}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
@@ -539,7 +647,13 @@ func TestInformerManager(t *testing.T) {
 		generators := []*EventHandlerGenerator{generator}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
@@ -598,7 +712,13 @@ func TestInformerManager(t *testing.T) {
 		generators := []*EventHandlerGenerator{generator1, generator2}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
@@ -622,7 +742,9 @@ func TestInformerManager(t *testing.T) {
 
 		// 3. Delete the deployment FTC
 
-		err := fedClient.CoreV1alpha1().FederatedTypeConfigs().Delete(ctx, deploymentFTC.GetName(), metav1.DeleteOptions{})
+		err := fedClient.CoreV1alpha1().
+			FederatedTypeConfigs().
+			Delete(ctx, deploymentFTC.GetName(), metav1.DeleteOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 
 		<-time.After(time.Second)
@@ -691,7 +813,13 @@ func TestInformerManager(t *testing.T) {
 		managerCtx, managerCancel := context.WithCancel(ctx)
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, dynamicClient, _ := bootstrapInformerManagerWithFakeClients(g, managerCtx, defaultFTCs, defaultObjs, generators)
+		manager, dynamicClient, _ := bootstrapInformerManagerWithFakeClients(
+			g,
+			managerCtx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
@@ -775,7 +903,7 @@ func bootstrapInformerManagerWithFakeClients(
 	fedClient := fake.NewSimpleClientset(fedObjects...)
 
 	factory := fedinformers.NewSharedInformerFactory(fedClient, 0)
-	informerManager := NewInformerManager(dynamicClient, factory.Core().V1alpha1().FederatedTypeConfigs())
+	informerManager := NewInformerManager(dynamicClient, factory.Core().V1alpha1().FederatedTypeConfigs(), nil)
 
 	for _, generator := range eventHandlerGenerators {
 		err := informerManager.AddEventHandlerGenerator(generator)

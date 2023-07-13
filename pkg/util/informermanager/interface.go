@@ -50,7 +50,9 @@ type InformerManager interface {
 	AddEventHandlerGenerator(generator *EventHandlerGenerator) error
 	// Returns a lister for the given GroupResourceVersion if it exists. The lister for each FTC's source type will
 	// eventually exist.
-	GetResourceLister(gvr schema.GroupVersionResource) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool)
+	GetResourceLister(gvk schema.GroupVersionKind) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool)
+	// Returns the known FTC mapping for the given GVK if it exists.
+	GetResourceFTC(gvk schema.GroupVersionKind) (ftc *fedcorev1a1.FederatedTypeConfig, exists bool)
 
 	// Returns the FederatedTypeConfig lister used by the InformerManager.
 	GetFederatedTypeConfigLister() fedcorev1a1listers.FederatedTypeConfigLister
@@ -93,7 +95,7 @@ type FederatedInformerManager interface {
 	// Returns a lister for the given GroupResourceVersion and cluster if it exists. The lister for each FTC's source
 	// type and cluster will eventually exist.
 	GetResourceLister(
-		gvr schema.GroupVersionResource,
+		gvk schema.GroupVersionKind,
 		cluster string,
 	) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool)
 	// Returns a client for the given cluster if it exists. The client for each cluster will eventually exist.

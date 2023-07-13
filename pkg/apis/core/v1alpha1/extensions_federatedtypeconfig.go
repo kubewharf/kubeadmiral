@@ -55,6 +55,15 @@ func (f *FederatedTypeConfig) GetSourceTypeGVR() schema.GroupVersionResource {
 	}
 }
 
+func (f *FederatedTypeConfig) GetSourceTypeGVK() schema.GroupVersionKind {
+	apiResource := f.GetSourceType()
+	return schema.GroupVersionKind{
+		Group:   apiResource.Group,
+		Version: apiResource.Version,
+		Kind:    apiResource.Kind,
+	}
+}
+
 func (f *FederatedTypeConfig) GetStatusCollectionEnabled() bool {
 	return f.Spec.StatusCollection != nil
 }
