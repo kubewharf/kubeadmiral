@@ -1318,14 +1318,18 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		// 1. Bootstrap environment
 
-		var generation int64 = 1
-		var expectedCallbackCount int64 = 1
+		generation := &atomic.Int64{}
+		generation.Store(1)
+
+		expectedCallbackCount := &atomic.Int64{}
+		expectedCallbackCount.Store(1)
 
 		callBackCount := &atomic.Int64{}
 
-		// assertionCh is used to achieve 2 things:
+		// assertionCh is used to achieve 3 things:
 		// 1. It is used to pass assertions to the main goroutine.
 		// 2. It is used as an implicit lock to ensure FTC events are not squashed by the InformerManager.
+		// 3. It is used to ensure that the last event has been processed before the main goroutine sends an update.
 		assertionCh := make(chan func())
 
 		cluster := getTestCluster("cluster-1")
@@ -1334,15 +1338,16 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		clusterHandler := &ClusterEventHandler{
 			Predicate: func(oldCluster *fedcorev1a1.FederatedCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
-				if generation == 1 {
+				curGeneration := generation.Load()
+				if curGeneration == 1 {
 					assertionCh <- func() {
 						g.Expect(oldCluster).To(gomega.BeNil())
 						g.Expect(newCluster.GetGeneration()).To(gomega.BeNumerically("==", 1))
 					}
 				} else {
 					assertionCh <- func() {
-						g.Expect(oldCluster.GetGeneration()).To(gomega.BeNumerically("==", generation-1))
-						g.Expect(newCluster.GetGeneration()).To(gomega.BeNumerically("==", generation))
+						g.Expect(oldCluster.GetGeneration()).To(gomega.BeNumerically("==", curGeneration-1))
+						g.Expect(newCluster.GetGeneration()).To(gomega.BeNumerically("==", curGeneration))
 					}
 				}
 
@@ -1381,19 +1386,19 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		fn := <-assertionCh
 		fn()
-		g.Expect(callBackCount.Load()).To(gomega.Equal(expectedCallbackCount))
+		g.Expect(callBackCount.Load()).To(gomega.Equal(expectedCallbackCount.Load()))
 
 		// 3. Generate cluster update events
 
 		for i := 0; i < 5; i++ {
-			generation++
-			cluster.SetGeneration(generation)
+			generation.Add(1)
+			cluster.SetGeneration(generation.Load())
 
 			if i%2 == 0 {
 				cluster.SetAnnotations(map[string]string{"predicate": predicateFalse})
 			} else {
 				cluster.SetAnnotations(map[string]string{"predicate": predicateTrue})
-				expectedCallbackCount++
+				expectedCallbackCount.Add(1)
 			}
 
 			var err error
@@ -1402,7 +1407,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 			fn = <-assertionCh
 			fn()
-			g.Expect(callBackCount.Load()).To(gomega.Equal(expectedCallbackCount))
+			g.Expect(callBackCount.Load()).To(gomega.Equal(expectedCallbackCount.Load()))
 		}
 	})
 }

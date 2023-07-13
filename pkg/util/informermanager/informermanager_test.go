@@ -18,6 +18,7 @@ package informermanager
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -300,27 +301,30 @@ func TestInformerManager(t *testing.T) {
 
 		// 1. Bootstrap environment
 
-		var generation int64 = 1
+		generation := &atomic.Int64{}
+		generation.Store(1)
 
-		// assertionCh is used to achieve 2 things:
+		// assertionCh is used to achieve 3 things:
 		// 1. It is used to pass assertions to the main goroutine.
 		// 2. It is used as an implicit lock to ensure FTC events are not squashed by the InformerManager.
+		// 3. It is used to ensure that the last event has been processed before the main goroutine sends an update.
 		assertionCh := make(chan func())
 
 		ftc := deploymentFTC.DeepCopy()
-		ftc.SetGeneration(generation)
+		ftc.SetGeneration(generation.Load())
 
 		generator := &EventHandlerGenerator{
 			Predicate: func(lastApplied, latest *fedcorev1a1.FederatedTypeConfig) bool {
-				if generation == 1 {
+				curGeneration := generation.Load()
+				if curGeneration == 1 {
 					assertionCh <- func() {
 						g.Expect(lastApplied).To(gomega.BeNil())
 						g.Expect(latest.GetGeneration()).To(gomega.BeNumerically("==", 1))
 					}
 				} else {
 					assertionCh <- func() {
-						g.Expect(lastApplied.GetGeneration()).To(gomega.BeNumerically("==", generation-1))
-						g.Expect(latest.GetGeneration()).To(gomega.BeNumerically("==", generation))
+						g.Expect(lastApplied.GetGeneration()).To(gomega.BeNumerically("==", curGeneration-1))
+						g.Expect(latest.GetGeneration()).To(gomega.BeNumerically("==", curGeneration))
 					}
 				}
 
@@ -346,8 +350,8 @@ func TestInformerManager(t *testing.T) {
 		// 3. Generate FTC update events
 
 		for i := 0; i < 5; i++ {
-			generation++
-			ftc.SetGeneration(generation)
+			generation.Add(1)
+			ftc.SetGeneration(generation.Load())
 
 			var err error
 			ftc, err = fedClient.CoreV1alpha1().FederatedTypeConfigs().Update(ctx, ftc, metav1.UpdateOptions{})
