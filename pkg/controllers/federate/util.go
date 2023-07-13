@@ -230,6 +230,7 @@ var (
 		common.NoSchedulingAnnotation,
 		scheduler.FollowsObjectAnnotation,
 		common.FollowersAnnotation,
+		common.DisableFollowingAnnotation,
 	)
 
 	// TODO: Do we need to specify the internal annotations here?

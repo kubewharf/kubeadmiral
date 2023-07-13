@@ -470,7 +470,14 @@ func (c *Controller) reconcileFollower(
 	currentLeaders := sets.New(followerObj.Spec.Follows...)
 	c.cacheObservedFromFollowers.update(follower, currentLeaders)
 
-	desiredLeaders := c.cacheObservedFromLeaders.reverseLookup(follower)
+	// If the follower resource is annotated with `kubeadmiral.io/disable-following="true"`,
+	// the resource will not follow any leader resources for scheduling
+	var desiredLeaders sets.Set[fedtypesv1a1.LeaderReference]
+	if followerUns.GetAnnotations()[common.DisableFollowingAnnotation] == common.AnnotationValueTrue {
+		desiredLeaders = sets.New[fedtypesv1a1.LeaderReference]()
+	} else {
+		desiredLeaders = c.cacheObservedFromLeaders.reverseLookup(follower)
+	}
 
 	leadersChanged := !equality.Semantic.DeepEqual(desiredLeaders, currentLeaders)
 	updated, err := c.updateFollower(
