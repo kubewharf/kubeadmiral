@@ -25,6 +25,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/policyrc"
 )
 
 func startFederateController(
@@ -50,4 +51,21 @@ func startFederateController(
 	go federateController.Run(ctx)
 
 	return federateController, nil
+}
+
+func startPolicyRCController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
+	policyRCController, err := policyrc.NewPolicyRCController(
+		controllerCtx.RestConfig,
+		controllerCtx.FedInformerFactory,
+		controllerCtx.Metrics,
+		klog.Background(),
+		controllerCtx.WorkerCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating policyRC controller: %w", err)
+	}
+
+	go policyRCController.Run(ctx)
+
+	return policyRCController, nil
 }
