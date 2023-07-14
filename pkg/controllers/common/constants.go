@@ -140,6 +140,8 @@ const (
 	DaemonSetResource  = "daemonsets"
 	ConfigMapResource  = "configmaps"
 	SecretResource     = "secrets"
+	PodResource        = "pods"
+	ReplicaSetResource = "replicasets"
 
 	NamespaceKind             = "Namespace"
 	DeploymentKind            = "Deployment"
@@ -155,6 +157,7 @@ const (
 	PersistentVolumeKind      = "PersistentVolume"
 	PersistentVolumeClaimKind = "PersistentVolumeClaim"
 	PodKind                   = "Pod"
+	ReplicaSetKind            = "ReplicaSet"
 )
 
 var (
@@ -171,9 +174,11 @@ var (
 	NamespaceGVR = corev1.SchemeGroupVersion.WithResource(NamespaceResource)
 	ConfigMapGVR = corev1.SchemeGroupVersion.WithResource(ConfigMapResource)
 	SecretGVR    = corev1.SchemeGroupVersion.WithResource(SecretResource)
+	PodGVR       = corev1.SchemeGroupVersion.WithResource(PodResource)
 
 	DeploymentGVR = appsv1.SchemeGroupVersion.WithResource(DeploymentResource)
 	DaemonSetGVR  = appsv1.SchemeGroupVersion.WithResource(DaemonSetResource)
+	ReplicaSetGVR = appsv1.SchemeGroupVersion.WithResource(ReplicaSetResource)
 )
 
 // MaxFederatedObjectNameLength defines the max length of a federated object name.
