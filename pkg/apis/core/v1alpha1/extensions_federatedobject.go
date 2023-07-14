@@ -17,17 +17,19 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"encoding/json"
 	"reflect"
 	"sort"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // Placement extensions
 
-// GetPlacementUnion returns the union of all clusters listed under the Placement field of the FederatedObject.
-func (o *FederatedObject) GetPlacementUnion() sets.Set[string] {
+// GetPlacementUnion returns the union of all clusters listed under the Placement field of the GenericFederatedObject.
+func (o *GenericFederatedObject) GetPlacementUnion() sets.Set[string] {
 	set := sets.New[string]()
 	for _, placement := range o.Spec.Placements {
 		for _, cluster := range placement.Placement {
@@ -39,7 +41,7 @@ func (o *FederatedObject) GetPlacementUnion() sets.Set[string] {
 
 // GetControllerPlacement returns the slice containing all the ClusterPlacements from a given controller. Returns nil if
 // the controller is not present.
-func (o *FederatedObject) GetControllerPlacement(controller string) []ClusterReference {
+func (o *GenericFederatedObject) GetControllerPlacement(controller string) []ClusterReference {
 	for _, placement := range o.Spec.Placements {
 		if placement.Controller == controller {
 			return placement.Placement
@@ -49,8 +51,8 @@ func (o *FederatedObject) GetControllerPlacement(controller string) []ClusterRef
 }
 
 // SetControllerPlacement sets the ClusterPlacements for a given controller. If clusterNames is nil or empty, the previous
-// placement for the given controller will be deleted. Returns a bool indicating if the FederatedObject has changed.
-func (o *FederatedObject) SetControllerPlacement(controller string, clusterNames []string) bool {
+// placement for the given controller will be deleted. Returns a bool indicating if the GenericFederatedObject has changed.
+func (o *GenericFederatedObject) SetControllerPlacement(controller string, clusterNames []string) bool {
 	if len(clusterNames) == 0 {
 		return o.DeleteControllerPlacement(controller)
 	}
@@ -88,9 +90,9 @@ func (o *FederatedObject) SetControllerPlacement(controller string, clusterNames
 	return false
 }
 
-// DeleteClusterPlacement deletes a controller's placement, returning a bool to indicate if the FederatedObject has
+// DeleteClusterPlacement deletes a controller's placement, returning a bool to indicate if the GenericFederatedObject has
 // changed.
-func (o *FederatedObject) DeleteControllerPlacement(controller string) bool {
+func (o *GenericFederatedObject) DeleteControllerPlacement(controller string) bool {
 	oldPlacementIdx := -1
 	for i := range o.Spec.Placements {
 		if o.Spec.Placements[i].Controller == controller {
@@ -105,6 +107,17 @@ func (o *FederatedObject) DeleteControllerPlacement(controller string) bool {
 
 	o.Spec.Placements = append(o.Spec.Placements[:oldPlacementIdx], o.Spec.Placements[(oldPlacementIdx+1):]...)
 	return true
+}
+
+func (o *GenericFederatedObject) GetTemplateGVK() (schema.GroupVersionKind, error) {
+	type partialTypeMetadata struct {
+		metav1.TypeMeta `json:",inline"`
+	}
+	metadata := &partialTypeMetadata{}
+	if err := json.Unmarshal(o.Spec.Template.Raw, metadata); err != nil {
+		return schema.GroupVersionKind{}, nil
+	}
+	return metadata.GroupVersionKind(), nil
 }
 
 // Follower extensions
