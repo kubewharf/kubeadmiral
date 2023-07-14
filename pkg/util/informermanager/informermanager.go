@@ -45,13 +45,15 @@ type informerManager struct {
 	started  bool
 	shutdown bool
 
-	client      dynamic.Interface
-	ftcInformer fedcorev1a1informers.FederatedTypeConfigInformer
+	client                   dynamic.Interface
+	informerTweakListOptions dynamicinformer.TweakListOptionsFunc
+	ftcInformer              fedcorev1a1informers.FederatedTypeConfigInformer
 
 	eventHandlerGenerators []*EventHandlerGenerator
 
-	gvrMapping *bijection.Bijection[string, schema.GroupVersionResource]
+	gvkMapping *bijection.Bijection[string, schema.GroupVersionKind]
 
+	lastObservedFTCs          map[string]*fedcorev1a1.FederatedTypeConfig
 	informers                 map[string]informers.GenericInformer
 	informerCancelFuncs       map[string]context.CancelFunc
 	eventHandlerRegistrations map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration
@@ -60,14 +62,20 @@ type informerManager struct {
 	queue workqueue.RateLimitingInterface
 }
 
-func NewInformerManager(client dynamic.Interface, ftcInformer fedcorev1a1informers.FederatedTypeConfigInformer) InformerManager {
+func NewInformerManager(
+	client dynamic.Interface,
+	ftcInformer fedcorev1a1informers.FederatedTypeConfigInformer,
+	informerTweakListOptions dynamicinformer.TweakListOptionsFunc,
+) InformerManager {
 	manager := &informerManager{
 		lock:                      sync.RWMutex{},
 		started:                   false,
 		client:                    client,
+		informerTweakListOptions:  informerTweakListOptions,
 		ftcInformer:               ftcInformer,
 		eventHandlerGenerators:    []*EventHandlerGenerator{},
-		gvrMapping:                bijection.NewBijection[string, schema.GroupVersionResource](),
+		gvkMapping:                bijection.NewBijection[string, schema.GroupVersionKind](),
+		lastObservedFTCs:          map[string]*fedcorev1a1.FederatedTypeConfig{},
 		informers:                 map[string]informers.GenericInformer{},
 		informerCancelFuncs:       map[string]context.CancelFunc{},
 		eventHandlerRegistrations: map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{},
@@ -144,21 +152,26 @@ func (m *informerManager) worker(ctx context.Context) {
 	}
 }
 
-func (m *informerManager) processFTC(ctx context.Context, ftc *fedcorev1a1.FederatedTypeConfig) (err error, needReenqueue bool) {
+func (m *informerManager) processFTC(
+	ctx context.Context,
+	ftc *fedcorev1a1.FederatedTypeConfig,
+) (err error, needReenqueue bool) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
+	ftc = ftc.DeepCopy()
 	ftcName := ftc.Name
+	gvk := ftc.GetSourceTypeGVK()
 	gvr := ftc.GetSourceTypeGVR()
 
-	ctx, logger := logging.InjectLoggerValues(ctx, "gvr", gvr.String())
+	ctx, logger := logging.InjectLoggerValues(ctx, "gvk", gvk.String())
 
 	var informer informers.GenericInformer
 
-	if oldGVR, exists := m.gvrMapping.LookupByT1(ftcName); exists {
-		ctx, _ := logging.InjectLoggerValues(ctx, "old-gvr", oldGVR.String())
+	if oldGVK, exists := m.gvkMapping.LookupByT1(ftcName); exists {
+		ctx, _ := logging.InjectLoggerValues(ctx, "old-gvk", oldGVK.String())
 
-		if oldGVR != gvr {
+		if oldGVK != gvk {
 			// This might occur if a ftc was deleted and recreated with a different source type within a short period of
 			// time and we missed processing the deletion. We simply process the ftc deletion and reenqueue. Note:
 			// updating of ftc source types, however, is still not a supported use case.
@@ -168,8 +181,8 @@ func (m *informerManager) processFTC(ctx context.Context, ftc *fedcorev1a1.Feder
 
 		informer = m.informers[ftcName]
 	} else {
-		if err := m.gvrMapping.Add(ftcName, gvr); err != nil {
-			// There must be another ftc with the same source type GVR.
+		if err := m.gvkMapping.Add(ftcName, gvk); err != nil {
+			// There must be another ftc with the same source type GVK.
 			return fmt.Errorf("source type is already referenced by another FederatedTypeConfig: %w", err), false
 		}
 
@@ -181,11 +194,12 @@ func (m *informerManager) processFTC(ctx context.Context, ftc *fedcorev1a1.Feder
 			metav1.NamespaceAll,
 			0,
 			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
-			nil,
+			m.informerTweakListOptions,
 		)
 		ctx, cancel := context.WithCancel(ctx)
 		go informer.Informer().Run(ctx.Done())
 
+		m.lastObservedFTCs[ftcName] = ftc
 		m.informers[ftcName] = informer
 		m.informerCancelFuncs[ftcName] = cancel
 		m.eventHandlerRegistrations[ftcName] = map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{}
@@ -194,8 +208,6 @@ func (m *informerManager) processFTC(ctx context.Context, ftc *fedcorev1a1.Feder
 
 	registrations := m.eventHandlerRegistrations[ftcName]
 	lastAppliedFTCs := m.lastAppliedFTCsCache[ftcName]
-
-	ftc = ftc.DeepCopy()
 
 	for _, generator := range m.eventHandlerGenerators {
 		lastApplied := lastAppliedFTCs[generator]
@@ -230,8 +242,8 @@ func (m *informerManager) processFTCDeletion(ctx context.Context, ftcName string
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	if gvr, exists := m.gvrMapping.LookupByT1(ftcName); exists {
-		ctx, _ = logging.InjectLoggerValues(ctx, "gvr", gvr.String())
+	if gvk, exists := m.gvkMapping.LookupByT1(ftcName); exists {
+		ctx, _ = logging.InjectLoggerValues(ctx, "gvk", gvk.String())
 	}
 
 	return m.processFTCDeletionUnlocked(ctx, ftcName)
@@ -243,8 +255,9 @@ func (m *informerManager) processFTCDeletionUnlocked(ctx context.Context, ftcNam
 		cancel()
 	}
 
-	m.gvrMapping.DeleteT1(ftcName)
+	m.gvkMapping.DeleteT1(ftcName)
 
+	delete(m.lastObservedFTCs, ftcName)
 	delete(m.informers, ftcName)
 	delete(m.informerCancelFuncs, ftcName)
 	delete(m.eventHandlerRegistrations, ftcName)
@@ -269,12 +282,12 @@ func (m *informerManager) GetFederatedTypeConfigLister() fedcorev1a1listers.Fede
 }
 
 func (m *informerManager) GetResourceLister(
-	gvr schema.GroupVersionResource,
+	gvk schema.GroupVersionKind,
 ) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	ftc, ok := m.gvrMapping.LookupByT2(gvr)
+	ftc, ok := m.gvkMapping.LookupByT2(gvk)
 	if !ok {
 		return nil, nil, false
 	}
@@ -285,6 +298,23 @@ func (m *informerManager) GetResourceLister(
 	}
 
 	return informer.Lister(), informer.Informer().HasSynced, true
+}
+
+func (m *informerManager) GetResourceFTC(gvk schema.GroupVersionKind) (*fedcorev1a1.FederatedTypeConfig, bool) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	ftcName, ok := m.gvkMapping.LookupByT2(gvk)
+	if !ok {
+		return nil, false
+	}
+
+	ftc := m.lastObservedFTCs[ftcName]
+	if ftc == nil {
+		return nil, false
+	}
+
+	return ftc, true
 }
 
 func (m *informerManager) HasSynced() bool {

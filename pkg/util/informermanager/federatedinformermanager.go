@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
@@ -34,8 +35,9 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
 
 type federatedInformerManager struct {
@@ -83,7 +85,7 @@ func NewFederatedInformerManager(
 	clusterInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
 			cluster := obj.(*fedcorev1a1.FederatedCluster)
-			return util.IsClusterJoined(&cluster.Status)
+			return clusterutil.IsClusterJoined(&cluster.Status)
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc:    func(obj interface{}) { manager.enqueue(obj) },
@@ -129,7 +131,7 @@ func (m *federatedInformerManager) worker(ctx context.Context) {
 		m.queue.AddRateLimited(key)
 		return
 	}
-	if apierrors.IsNotFound(err) || !util.IsClusterJoined(&cluster.Status) {
+	if apierrors.IsNotFound(err) || !clusterutil.IsClusterJoined(&cluster.Status) {
 		if err := m.processClusterDeletion(ctx, name); err != nil {
 			logger.Error(err, "Failed to process FederatedCluster, will retry")
 			m.queue.AddRateLimited(key)
@@ -185,7 +187,19 @@ func (m *federatedInformerManager) processCluster(
 			return fmt.Errorf("failed to get client for cluster %s: %w", clusterName, err), true
 		}
 
-		manager := NewInformerManager(clusterClient, m.ftcInformer)
+		manager := NewInformerManager(
+			clusterClient,
+			m.ftcInformer,
+			func(opts *metav1.ListOptions) {
+				selector := &metav1.LabelSelector{}
+				metav1.AddLabelToSelector(
+					selector,
+					managedlabel.ManagedByKubeAdmiralLabelKey,
+					managedlabel.ManagedByKubeAdmiralLabelValue,
+				)
+				opts.LabelSelector = metav1.FormatLabelSelector(selector)
+			},
+		)
 
 		ctx, cancel := context.WithCancel(ctx)
 		for _, generator := range m.eventHandlerGenerators {
@@ -268,7 +282,7 @@ func (m *federatedInformerManager) GetFederatedTypeConfigLister() fedcorev1a1lis
 }
 
 func (m *federatedInformerManager) GetResourceLister(
-	gvr schema.GroupVersionResource,
+	gvk schema.GroupVersionKind,
 	cluster string,
 ) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool) {
 	m.lock.RLock()
@@ -279,7 +293,7 @@ func (m *federatedInformerManager) GetResourceLister(
 		return nil, nil, false
 	}
 
-	return manager.GetResourceLister(gvr)
+	return manager.GetResourceLister(gvk)
 }
 
 func (m *federatedInformerManager) HasSynced() bool {
