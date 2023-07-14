@@ -22,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // Schema shared by both FederatedObject and ClusterFederatedObject.
 type GenericFederatedObject struct {
 	metav1.TypeMeta `json:",inline"`
