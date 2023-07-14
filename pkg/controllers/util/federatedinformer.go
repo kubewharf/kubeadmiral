@@ -289,28 +289,6 @@ func NewFederatedInformer(
 	return federatedInformer, err
 }
 
-func IsClusterReady(clusterStatus *fedcorev1a1.FederatedClusterStatus) bool {
-	for _, condition := range clusterStatus.Conditions {
-		if condition.Type == fedcorev1a1.ClusterReady {
-			if condition.Status == corev1.ConditionTrue {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func IsClusterJoined(clusterStatus *fedcorev1a1.FederatedClusterStatus) bool {
-	for _, condition := range clusterStatus.Conditions {
-		if condition.Type == fedcorev1a1.ClusterJoined {
-			if condition.Status == corev1.ConditionTrue {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 type informer struct {
 	controller cache.Controller
 	store      cache.Store
