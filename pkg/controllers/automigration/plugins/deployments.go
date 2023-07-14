@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -25,8 +24,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	deploymentutil "github.com/kubewharf/kubeadmiral/pkg/lifted/kubernetes/pkg/controller/deployment/util"
 )
 
@@ -44,11 +43,16 @@ func (*deploymentPlugin) GetPodsForClusterObject(
 
 	rsList, err := deploymentutil.ListReplicaSets(deployment, func(ns string, opts metav1.ListOptions) ([]*appsv1.ReplicaSet, error) {
 		rsList := &appsv1.ReplicaSetList{}
-		listOpts, err := convertListOptions(ns, &opts)
+		opts = *opts.DeepCopy()
+		opts.ResourceVersion = "0" // list from watch cache
+		unsRsList, err := handle.Client.
+			Resource(common.ReplicaSetGVR).
+			Namespace(ns).
+			List(ctx, opts)
 		if err != nil {
 			return nil, err
 		}
-		if err := handle.Client.ListWithOptions(ctx, rsList, listOpts); err != nil {
+		if err = runtime.DefaultUnstructuredConverter.FromUnstructured(unsRsList.Object, rsList); err != nil {
 			return nil, err
 		}
 		ret := []*appsv1.ReplicaSet{}
@@ -71,11 +75,19 @@ func (*deploymentPlugin) GetPodsForClusterObject(
 		[]*appsv1.ReplicaSet{newRS},
 		func(ns string, opts metav1.ListOptions) (*corev1.PodList, error) {
 			podList := &corev1.PodList{}
-			listOpts, err := convertListOptions(ns, &opts)
+			opts = *opts.DeepCopy()
+			opts.ResourceVersion = "0" // list from watch cache
 			if err != nil {
 				return nil, err
 			}
-			if err := handle.Client.ListWithOptions(ctx, podList, listOpts); err != nil {
+			unsPodList, err := handle.Client.
+				Resource(common.PodGVR).
+				Namespace(ns).
+				List(ctx, opts)
+			if err != nil {
+				return nil, err
+			}
+			if err = runtime.DefaultUnstructuredConverter.FromUnstructured(unsPodList.Object, podList); err != nil {
 				return nil, err
 			}
 			return podList, nil
@@ -93,15 +105,27 @@ func (*deploymentPlugin) GetPodsForClusterObject(
 	return ret, nil
 }
 
-var _ Plugin = &deploymentPlugin{}
+func (*deploymentPlugin) GetTargetObjectFromPod(
+	ctx context.Context,
+	pod *corev1.Pod,
+	handle ClusterHandle,
+) (obj *unstructured.Unstructured, found bool, err error) {
+	rs, found, err := GetSpecifiedOwnerFromObj(ctx, handle.Client, pod, metav1.APIResource{
+		Name:    "replicasets",
+		Group:   appsv1.GroupName,
+		Version: "v1",
+		Kind:    common.ReplicaSetKind,
+	})
+	if err != nil || !found {
+		return nil, false, err
+	}
 
-func convertListOptions(ns string, opts *metav1.ListOptions) (*client.ListOptions, error) {
-	opts = opts.DeepCopy()
-	// list from watch cache
-	opts.ResourceVersion = "0"
-
-	return &client.ListOptions{
-		Namespace: ns,
-		Raw:       opts,
-	}, nil
+	return GetSpecifiedOwnerFromObj(ctx, handle.Client, rs, metav1.APIResource{
+		Name:    "deployments",
+		Group:   appsv1.GroupName,
+		Version: "v1",
+		Kind:    common.DeploymentKind,
+	})
 }
+
+var _ Plugin = &deploymentPlugin{}

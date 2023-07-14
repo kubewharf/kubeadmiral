@@ -77,6 +77,9 @@ type federatedInformerManager struct {
 	queue              workqueue.RateLimitingInterface
 	podListerSemaphore *semaphore.Weighted
 	initialClusters    sets.Set[string]
+
+	podEventHandlers      []*ResourceEventHandlerWithClusterFuncs
+	podEventRegistrations map[string]map[*ResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration
 }
 
 func NewFederatedInformerManager(
@@ -102,6 +105,8 @@ func NewFederatedInformerManager(
 		queue:                  workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
 		podListerSemaphore:     semaphore.NewWeighted(3), // TODO: make this configurable
 		initialClusters:        sets.New[string](),
+		podEventHandlers:       []*ResourceEventHandlerWithClusterFuncs{},
+		podEventRegistrations:  map[string]map[*ResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{},
 	}
 
 	clusterInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
@@ -264,6 +269,7 @@ func (m *federatedInformerManager) processCluster(
 		m.clusterCancelFuncs[clusterName] = cancel
 		m.informerManagers[clusterName] = manager
 		m.informerFactories[clusterName] = factory
+		m.podEventRegistrations[clusterName] = map[*ResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{}
 	}
 
 	if m.initialClusters.Has(cluster.Name) {
@@ -273,6 +279,17 @@ func (m *federatedInformerManager) processCluster(
 		} else {
 			klog.FromContext(ctx).V(3).Info("Waiting for InformerManager sync")
 			return true, 100 * time.Millisecond, nil
+		}
+	}
+
+	registrations := m.podEventRegistrations[clusterName]
+	factory := m.informerFactories[clusterName]
+	for _, handler := range m.podEventHandlers {
+		if registrations[handler] == nil {
+			copied := handler.copyWithClusterName(clusterName)
+			if r, err := factory.Core().V1().Pods().Informer().AddEventHandler(copied); err == nil {
+				registrations[handler] = r
+			}
 		}
 	}
 
@@ -297,6 +314,7 @@ func (m *federatedInformerManager) processClusterDeletionUnlocked(ctx context.Co
 	delete(m.informerManagers, clusterName)
 	delete(m.informerFactories, clusterName)
 	delete(m.clusterCancelFuncs, clusterName)
+	delete(m.podEventRegistrations, clusterName)
 
 	m.initialClusters.Delete(clusterName)
 
@@ -393,6 +411,13 @@ func (m *federatedInformerManager) GetNodeLister(
 	}
 
 	return factory.Core().V1().Nodes().Lister(), factory.Core().V1().Nodes().Informer().HasSynced, true
+}
+
+func (m *federatedInformerManager) AddPodEventHandler(handler *ResourceEventHandlerWithClusterFuncs) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	m.podEventHandlers = append(m.podEventHandlers, handler)
 }
 
 func (m *federatedInformerManager) GetPodLister(

@@ -42,6 +42,52 @@ type EventHandlerGenerator struct {
 	Generator func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler
 }
 
+// ResourceEventHandlerWithClusterFuncs is an adaptor to let you easily specify as many or
+// as few of the notification functions as you want while still implementing
+// ResourceEventHandler.  This adapter does not remove the prohibition against
+// modifying the objects.
+type ResourceEventHandlerWithClusterFuncs struct {
+	clusterName string
+
+	AddFunc    func(obj interface{}, cluster string)
+	UpdateFunc func(oldObj, newObj interface{}, cluster string)
+	DeleteFunc func(obj interface{}, cluster string)
+}
+
+// OnAdd calls AddFunc if it's not nil.
+func (p *ResourceEventHandlerWithClusterFuncs) OnAdd(obj interface{}) {
+	if p.AddFunc != nil {
+		p.AddFunc(obj, p.clusterName)
+	}
+}
+
+// OnUpdate calls UpdateFunc if it's not nil.
+func (p *ResourceEventHandlerWithClusterFuncs) OnUpdate(oldObj, newObj interface{}) {
+	if p.UpdateFunc != nil {
+		p.UpdateFunc(oldObj, newObj, p.clusterName)
+	}
+}
+
+// OnDelete calls DeleteFunc if it's not nil.
+func (p *ResourceEventHandlerWithClusterFuncs) OnDelete(obj interface{}) {
+	if p.DeleteFunc != nil {
+		p.DeleteFunc(obj, p.clusterName)
+	}
+}
+
+// copyWithClusterName returns a copy of ResourceEventHandlerWithClusterFuncs with given cluster name
+func (p *ResourceEventHandlerWithClusterFuncs) copyWithClusterName(
+	clusterName string,
+) *ResourceEventHandlerWithClusterFuncs {
+	return &ResourceEventHandlerWithClusterFuncs{
+		clusterName: clusterName,
+
+		AddFunc:    p.AddFunc,
+		UpdateFunc: p.UpdateFunc,
+		DeleteFunc: p.DeleteFunc,
+	}
+}
+
 // FTCUpdateHandler is called by InformerManager each time it finishes processing an FTC. This allows controllers to
 // hook into the InformerManager's view of an FTC's lifecycle. When a new FTC is observed, lastObserved will be nil.
 // When a FTC deletion is observed, latest will be nil.
@@ -121,6 +167,8 @@ type FederatedInformerManager interface {
 	// Returns a kubernetes client for the given cluster if it exists. The client for each cluster will eventually exist.
 	GetClusterKubeClient(cluster string) (client kubernetes.Interface, exists bool)
 
+	// Register EventHandlers for each pod informer of cluster.
+	AddPodEventHandler(handler *ResourceEventHandlerWithClusterFuncs)
 	GetPodLister(cluster string) (lister corev1listers.PodLister, informerSynced cache.InformerSynced, exists bool)
 	GetNodeLister(cluster string) (lister corev1listers.NodeLister, informerSynced cache.InformerSynced, exists bool)
 

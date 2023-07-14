@@ -125,17 +125,22 @@ func prunePod(pod *corev1.Pod) {
 	}
 	*pod = corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            pod.Name,
-			Namespace:       pod.Namespace,
-			Generation:      pod.Generation,
-			ResourceVersion: pod.ResourceVersion,
-			UID:             pod.UID,
+			Name:              pod.Name,
+			Namespace:         pod.Namespace,
+			Generation:        pod.Generation,
+			ResourceVersion:   pod.ResourceVersion,
+			UID:               pod.UID,
+			DeletionTimestamp: pod.DeletionTimestamp,
 		},
 		Spec: corev1.PodSpec{
 			NodeName:       pod.Spec.NodeName,
 			Overhead:       pod.Spec.Overhead,
 			Containers:     containers,
 			InitContainers: initContainers,
+		},
+		Status: corev1.PodStatus{
+			Phase:      pod.Status.Phase,
+			Conditions: pod.Status.Conditions,
 		},
 	}
 }
