@@ -25,6 +25,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/policyrc"
 )
 
@@ -68,4 +69,23 @@ func startPolicyRCController(ctx context.Context, controllerCtx *controllerconte
 	go policyRCController.Run(ctx)
 
 	return policyRCController, nil
+}
+
+func startOverridePolicyController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
+	overrideController, err := override.NewOverridePolicyController(
+		controllerCtx.KubeClientset,
+		controllerCtx.FedClientset,
+		controllerCtx.FedInformerFactory,
+		controllerCtx.InformerManager,
+		controllerCtx.Metrics,
+		klog.Background(),
+		controllerCtx.WorkerCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating override controller: %w", err)
+	}
+
+	go overrideController.Run(ctx)
+
+	return overrideController, nil
 }

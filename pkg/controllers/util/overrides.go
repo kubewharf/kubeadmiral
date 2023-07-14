@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2018 The Kubernetes Authors.
 
@@ -30,8 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
 // Namespace and name may not be overridden since these fields are the
@@ -53,41 +51,23 @@ var invalidPaths = sets.NewString(
 )
 
 // Mapping of clusterName to overrides for the cluster
-type OverridesMap map[string]fedtypesv1a1.OverridePatches
-
-func UnmarshalGenericOverrides(uns *unstructured.Unstructured) (*fedtypesv1a1.GenericObjectWithOverrides, error) {
-	obj := &fedtypesv1a1.GenericObjectWithOverrides{}
-	err := UnstructuredToInterface(uns, obj)
-	if err != nil {
-		return nil, err
-	}
-	return obj, nil
-}
+type OverridesMap map[string]fedcorev1a1.OverridePatches
 
 // GetOverrides returns a map of overrides populated from the given
 // unstructured object.
-func GetOverrides(rawObj *unstructured.Unstructured, controller string) (OverridesMap, error) {
+func GetOverrides(federatedObj fedcorev1a1.GenericFederatedObject, controller string) (OverridesMap, error) {
 	overridesMap := make(OverridesMap)
 
-	if rawObj == nil {
-		return overridesMap, nil
-	}
-
-	overrideObj, err := UnmarshalGenericOverrides(rawObj)
-	if err != nil {
-		return nil, err
-	}
-
-	if overrideObj.Spec == nil || overrideObj.Spec.Overrides == nil {
+	if federatedObj == nil || federatedObj.GetSpec().Overrides == nil {
 		// No overrides defined for the federated type
 		return overridesMap, nil
 	}
 
-	overrides := overrideObj.Spec.Overrides
-	var clusterOverrides []fedtypesv1a1.ClusterOverride
+	overrides := federatedObj.GetSpec().Overrides
+	var clusterOverrides []fedcorev1a1.ClusterReferenceWithPatches
 	for i := range overrides {
 		if overrides[i].Controller == controller {
-			clusterOverrides = overrides[i].Clusters
+			clusterOverrides = overrides[i].Override
 			break
 		}
 	}
@@ -97,7 +77,7 @@ func GetOverrides(rawObj *unstructured.Unstructured, controller string) (Overrid
 	}
 
 	for _, overrideItem := range clusterOverrides {
-		clusterName := overrideItem.ClusterName
+		clusterName := overrideItem.Cluster
 		if _, ok := overridesMap[clusterName]; ok {
 			return nil, errors.Errorf("cluster %q appears more than once", clusterName)
 		}
@@ -118,20 +98,15 @@ func GetOverrides(rawObj *unstructured.Unstructured, controller string) (Overrid
 // object from the provided overrides map.
 //
 // This function takes ownership of the `overridesMap` and may mutate it arbitrarily.
-func SetOverrides(uns *unstructured.Unstructured, controller string, overridesMap OverridesMap) error {
+func SetOverrides(federatedObj fedcorev1a1.GenericFederatedObject, controller string, overridesMap OverridesMap) error {
 	for clusterName, clusterOverrides := range overridesMap {
 		if len(clusterOverrides) == 0 {
 			delete(overridesMap, clusterName)
 		}
 	}
 
-	overrideObj, err := UnmarshalGenericOverrides(uns)
-	if err != nil {
-		return err
-	}
-
 	index := -1
-	for i, overrides := range overrideObj.Spec.Overrides {
+	for i, overrides := range federatedObj.GetSpec().Overrides {
 		if overrides.Controller == controller {
 			index = i
 			break
@@ -141,18 +116,18 @@ func SetOverrides(uns *unstructured.Unstructured, controller string, overridesMa
 	if len(overridesMap) == 0 {
 		// delete index
 		if index != -1 {
-			overrideObj.Spec.Overrides = append(overrideObj.Spec.Overrides[:index], overrideObj.Spec.Overrides[(index+1):]...)
+			federatedObj.GetSpec().Overrides = append(federatedObj.GetSpec().Overrides[:index], federatedObj.GetSpec().Overrides[(index+1):]...)
 		}
 	} else {
 		if index == -1 {
-			index = len(overrideObj.Spec.Overrides)
-			overrideObj.Spec.Overrides = append(overrideObj.Spec.Overrides, fedtypesv1a1.ControllerOverride{
+			index = len(federatedObj.GetSpec().Overrides)
+			federatedObj.GetSpec().Overrides = append(federatedObj.GetSpec().Overrides, fedcorev1a1.OverrideWithController{
 				Controller: controller,
 			})
 		}
 
-		overrides := &overrideObj.Spec.Overrides[index]
-		overrides.Clusters = nil
+		overrides := &federatedObj.GetSpec().Overrides[index]
+		overrides.Override = nil
 
 		// Write in ascending order of cluster names for better readability
 		clusterNames := make([]string, 0, len(overridesMap))
@@ -162,19 +137,14 @@ func SetOverrides(uns *unstructured.Unstructured, controller string, overridesMa
 		sort.Strings(clusterNames)
 		for _, clusterName := range clusterNames {
 			clusterOverrides := overridesMap[clusterName]
-			overrides.Clusters = append(overrides.Clusters, fedtypesv1a1.ClusterOverride{
-				ClusterName: clusterName,
-				Patches:     clusterOverrides,
+			overrides.Override = append(overrides.Override, fedcorev1a1.ClusterReferenceWithPatches{
+				Cluster: clusterName,
+				Patches: clusterOverrides,
 			})
 		}
 	}
 
-	overridesUns, err := InterfaceToUnstructured(overrideObj.Spec.Overrides)
-	if err != nil {
-		return err
-	}
-
-	return unstructured.SetNestedField(uns.Object, overridesUns, common.OverridesPath...)
+	return nil
 }
 
 // UnstructuredToInterface converts an unstructured object to the
@@ -201,7 +171,7 @@ func InterfaceToUnstructured(obj interface{}) (ret interface{}, err error) {
 }
 
 // ApplyJsonPatch applies the override on to the given unstructured object.
-func ApplyJsonPatch(obj *unstructured.Unstructured, overrides fedtypesv1a1.OverridePatches) error {
+func ApplyJsonPatch(obj *unstructured.Unstructured, overrides fedcorev1a1.OverridePatches) error {
 	// TODO: Do the defaulting of "op" field to "replace" in API defaulting
 	for i, overrideItem := range overrides {
 		if overrideItem.Op == "" {
