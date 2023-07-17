@@ -20,9 +20,12 @@ import (
 	"sort"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/utils/pointer"
 
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/util/meta"
 )
 
 var SchedulingAnnotation = common.DefaultPrefix + "scheduling"
@@ -42,37 +45,22 @@ type Scheduling struct {
 	Placement []string `json:"placement,omitempty"`
 }
 
-func PopulateSchedulingAnnotation(sourceObject, fedObject *unstructured.Unstructured, hasChanged *bool) (err error) {
+func PopulateSchedulingAnnotation(sourceObject *unstructured.Unstructured, fedObject *fedcorev1a1.GenericFederatedObject, hasChanged *bool) (err error) {
 	scheduling := Scheduling{}
 
-	generation, exists, err := unstructured.NestedInt64(
-		fedObject.Object,
-		common.SpecField,
-		common.TemplateField,
-		common.MetadataField,
-		common.GenerationField,
-	)
+	srcMeta, err := meta.GetSourceObjectMeta(fedObject)
 	if err != nil {
 		return err
 	}
-	if exists {
-		generation := generation
-		scheduling.Generation = &generation
-	}
 
+	scheduling.Generation = pointer.Int64(srcMeta.GetGeneration())
 	scheduling.FederatedGeneration = fedObject.GetGeneration()
 
-	placement, err := util.UnmarshalGenericPlacements(fedObject)
-	if err != nil {
-		return err
-	}
-
-	clusterNames := placement.ClusterNameUnion()
+	clusterNames := fedObject.GetPlacementUnion()
 	if len(clusterNames) > 0 {
 		for clusterName := range clusterNames {
 			scheduling.Placement = append(scheduling.Placement, clusterName)
 		}
-
 		sort.Strings(scheduling.Placement)
 	}
 

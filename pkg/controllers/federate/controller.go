@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,11 +39,8 @@ import (
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
 	finalizersutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/pendingcontrollers"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/sourcefeedback"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
@@ -52,6 +48,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 	"github.com/kubewharf/kubeadmiral/pkg/util/meta"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
@@ -141,10 +138,10 @@ func NewFederateController(
 
 	if _, err := fedObjectInformer.Informer().AddEventHandler(
 		eventhandlers.NewTriggerOnAllChanges(func(o runtime.Object) {
-			fedObj := o.(*fedcorev1a1.FederatedObject)
+			fedObj := o.(*fedcorev1a1.GenericFederatedObject)
 			logger := c.logger.WithValues("federated-object", common.NewQualifiedName(fedObj))
 
-			srcMeta, err := meta.GetSourceObjectMeta(&fedObj.Spec)
+			srcMeta, err := meta.GetSourceObjectMeta(fedObj)
 			if err != nil {
 				logger.Error(err, "Failed to get source object's metadata from FederatedObject")
 				return
@@ -170,10 +167,10 @@ func NewFederateController(
 
 	if _, err := clusterFedObjecInformer.Informer().AddEventHandler(
 		eventhandlers.NewTriggerOnAllChanges(func(o runtime.Object) {
-			fedObj := o.(*fedcorev1a1.ClusterFederatedObject)
+			fedObj := o.(*fedcorev1a1.GenericFederatedObject)
 			logger := c.logger.WithValues("cluster-federated-object", common.NewQualifiedName(fedObj))
 
-			srcMeta, err := meta.GetSourceObjectMeta(&fedObj.Spec)
+			srcMeta, err := meta.GetSourceObjectMeta(fedObj)
 			if err != nil {
 				logger.Error(err, "Failed to get source object's metadata from ClusterFederatedObject")
 				return
@@ -282,7 +279,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 
 	if fedObject == nil {
 		logger.V(3).Info("No federated object found")
-		if err := c.handleCreateFederatedObject(ctx, sourceObject); err != nil {
+		if err := c.handleCreateFederatedObject(ctx, key.ftc, sourceObject); err != nil {
 			logger.Error(err, "Failed to create federated object")
 			c.eventRecorder.Eventf(
 				sourceObject,
@@ -309,7 +306,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 	}
 
 	logger.V(3).Info("Federated object already exists")
-	updated, err := c.handleExistingFederatedObject(ctx, sourceObject, fedObject)
+	updated, err := c.handleExistingFederatedObject(ctx, key.ftc, sourceObject, fedObject)
 	if err != nil {
 		logger.Error(err, "Failed to reconcile existing federated object")
 		if apierrors.IsConflict(err) {
@@ -335,14 +332,6 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		)
 	} else {
 		logger.V(3).Info("No updates required to the federated object")
-	}
-
-	if err := c.updateFeedbackAnnotations(ctx, sourceObject, fedObject); err != nil {
-		logger.Error(err, "Failed to sync feedback annotations to source object")
-		if apierrors.IsConflict(err) {
-			return worker.StatusConflict
-		}
-		return worker.StatusError
 	}
 
 	return worker.StatusAllOK
@@ -442,10 +431,9 @@ func (c *FederateController) removeFinalizer(
 
 func (c *FederateController) handleTerminatingSourceObject(
 	ctx context.Context,
+	sourceGVR schema.GroupVersionResource,
 	sourceObject *unstructured.Unstructured,
 	fedObject *fedcorev1a1.GenericFederatedObject,
-	sourceGVR schema.GroupVersionResource,
-	isNamespaced bool,
 ) error {
 	logger := klog.FromContext(ctx)
 
@@ -509,12 +497,14 @@ func (c *FederateController) handleCreateFederatedObject(
 
 func (c *FederateController) handleExistingFederatedObject(
 	ctx context.Context,
-	sourceObject, fedObject *unstructured.Unstructured,
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	sourceObject *unstructured.Unstructured,
+	fedObject *fedcorev1a1.GenericFederatedObject,
 ) (bool, error) {
 	logger := klog.FromContext(ctx)
 
 	logger.V(3).Info("Checking if federated object needs update")
-	needsUpdate, err := updateFederatedObjectForSourceObject(fedObject, c.typeConfig, sourceObject)
+	needsUpdate, err := updateFederatedObjectForSourceObject(ftc,sourceObject, fedObject)
 	if err != nil {
 		return false, fmt.Errorf("failed to check if federated object needs update: %w", err)
 	}
@@ -524,53 +514,15 @@ func (c *FederateController) handleExistingFederatedObject(
 	}
 
 	logger.V(1).Info("Updating federated object")
-	if _, err = c.federatedObjectClient.Namespace(fedObject.GetNamespace()).Update(ctx, fedObject, metav1.UpdateOptions{}); err != nil {
+	if _, err = fedobjectadapters.Update(
+		ctx,
+		c.fedClient.CoreV1alpha1(),
+		c.fedClient.CoreV1alpha1(),
+		fedObject,
+		metav1.UpdateOptions{},
+	); err != nil {
 		return false, fmt.Errorf("failed to update federated object: %w", err)
 	}
 
 	return true, nil
-}
-
-func (c *FederateController) updateFeedbackAnnotations(
-	ctx context.Context,
-	sourceObject, fedObject *unstructured.Unstructured,
-) error {
-	// because this is not an officially supported feature (and this function is called quite often), we intentionally
-	// inflate the log level to prevent it from obstructing other logs.
-	logger := klog.FromContext(ctx).V(4)
-	hasChanged := false
-
-	logger.V(2).Info("Sync scheduling annotation to source object")
-	if err := sourcefeedback.PopulateSchedulingAnnotation(sourceObject, fedObject, &hasChanged); err != nil {
-		return fmt.Errorf("failed to sync scheduling annotation to source object: %w", err)
-	}
-
-	logger.V(2).Info("Sync syncing annotation to source object")
-	if value, exists := fedObject.GetAnnotations()[sourcefeedback.SyncingAnnotation]; exists {
-		hasAnnotationChanged, err := annotation.AddAnnotation(sourceObject, sourcefeedback.SyncingAnnotation, value)
-		if err != nil {
-			return fmt.Errorf("failed to sync syncing annotation to source object: %w", err)
-		}
-		hasChanged = hasChanged || hasAnnotationChanged
-	}
-
-	if hasChanged {
-		var err error
-
-		logger.V(1).Info("Updating source object with feedback annotations")
-		if c.typeConfig.GetSourceType().Group == appsv1.GroupName &&
-			c.typeConfig.GetSourceType().Name == "deployments" {
-			// deployment bumps generation if annotations are updated
-			_, err = c.sourceObjectClient.Namespace(sourceObject.GetNamespace()).
-				UpdateStatus(ctx, sourceObject, metav1.UpdateOptions{})
-		} else {
-			_, err = c.sourceObjectClient.Namespace(sourceObject.GetNamespace()).Update(ctx, sourceObject, metav1.UpdateOptions{})
-		}
-
-		if err != nil {
-			return fmt.Errorf("failed to update source object with feedback annotations: %w", err)
-		}
-	}
-
-	return nil
 }
