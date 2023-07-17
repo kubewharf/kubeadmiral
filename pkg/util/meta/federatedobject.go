@@ -29,9 +29,9 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
-func GetSourceObjectMeta(spec *fedcorev1a1.GenericFederatedObjectSpec) (*metav1.PartialObjectMetadata, error) {
+func GetSourceObjectMeta(fedObject *fedcorev1a1.GenericFederatedObject) (*metav1.PartialObjectMetadata, error) {
 	partialObjectMeta := &metav1.PartialObjectMetadata{}
-	if err := json.Unmarshal(spec.Template.Raw, partialObjectMeta); err != nil {
+	if err := json.Unmarshal(fedObject.Spec.Template.Raw, partialObjectMeta); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal FederatedObject's template: %w", err)
 	}
 	return partialObjectMeta, nil

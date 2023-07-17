@@ -24,7 +24,6 @@ import (
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
-	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -36,8 +35,8 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/pendingcontrollers"
+	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
+	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/sourcefeedback"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 )
@@ -129,13 +128,14 @@ func newFederatedObjectForSourceObject(ftc *fedcorev1a1.FederatedTypeConfig, sou
 }
 
 func updateFederatedObjectForSourceObject(
-	fedObject *unstructured.Unstructured,
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	sourceObject *unstructured.Unstructured,
+	fedObject *fedcorev1a1.GenericFederatedObject,
 ) (bool, error) {
 	isUpdated := false
 
-	// set federated object's owner references to source object
+	// Set federated object's owner references to source object
+
 	currentOwner := fedObject.GetOwnerReferences()
 	desiredOwner := []metav1.OwnerReference{*metav1.NewControllerRef(sourceObject, sourceObject.GroupVersionKind())}
 	if !reflect.DeepEqual(currentOwner, desiredOwner) {
@@ -143,9 +143,8 @@ func updateFederatedObjectForSourceObject(
 		isUpdated = true
 	}
 
-	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObject.GetAnnotations())
-
-	observedAnnotationKeys := generateObservedKeys(sourceObject.GetAnnotations(), federatedAnnotations)
+	// Classify labels into labels that should be copied onto the FederatedObject and labels that should be copied onto
+	// the FederatedObject's template and update the FederatedObject's template.
 
 	federatedLabels, templateLabels := classifyLabels(sourceObject.GetLabels())
 	if !equality.Semantic.DeepEqual(federatedLabels, fedObject.GetLabels()) {
@@ -153,32 +152,31 @@ func updateFederatedObjectForSourceObject(
 		isUpdated = true
 	}
 
-	observedLabelKeys := generateObservedKeys(sourceObject.GetLabels(), federatedLabels)
+	// Classify annotations into annotations that should be copied onto the FederatedObject and labels that should be
+	// copied onto the FederatedObject's template.
 
-	// sync template
-	fedObjectTemplate, foundTemplate, err := unstructured.NestedMap(
-		fedObject.Object,
-		common.SpecField,
-		common.TemplateField,
-	)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse template from federated object: %w", err)
+	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObject.GetAnnotations())
+
+	// Generate the FederatedObject's template and compare it to the template in the FederatedObject, updating the
+	// FederatedObject if necessary.
+
+	targetTemplate := templateForSourceObject(sourceObject, templateAnnotations, templateLabels)
+	foundTemplate := &unstructured.Unstructured{}
+	if err := json.Unmarshal(fedObject.Spec.Template.Raw, foundTemplate); err != nil {
+		return false, fmt.Errorf("failed to unmarshal template from federated object: %w", err)
 	}
-
-	targetTemplate := templateForSourceObject(sourceObject, templateAnnotations, templateLabels).Object
-	if !foundTemplate || !reflect.DeepEqual(fedObjectTemplate, targetTemplate) {
-		if err := unstructured.SetNestedMap(fedObject.Object, targetTemplate, common.SpecField, common.TemplateField); err != nil {
-			return false, fmt.Errorf("failed to set federated object template: %w", err)
+	if !reflect.DeepEqual(foundTemplate.Object, targetTemplate.Object) {
+		rawTargetTemplate, err := json.Marshal(targetTemplate)
+		if err != nil {
+			return false, fmt.Errorf("failed to marshal template: %w", err)
 		}
+
+		fedObject.Spec.Template.Raw = rawTargetTemplate
 		isUpdated = true
 	}
 
-	templateGeneratorMergePatch, err := CreateMergePatch(sourceObject, targetTemplate)
-	if err != nil {
-		return false, fmt.Errorf("failed to create merge patch for source object: %w", err)
-	}
-
 	// Merge annotations because other controllers may have added annotations to the federated object.
+
 	newAnnotations, annotationChanges := annotationutil.CopySubmap(
 		federatedAnnotations,
 		fedObject.GetAnnotations(),
@@ -187,6 +185,20 @@ func updateFederatedObjectForSourceObject(
 			return federated
 		},
 	)
+
+	// Record the observed label and annotation keys in an annotation on the FederatedObject.
+
+	observedAnnotationKeys := generateObservedKeys(sourceObject.GetAnnotations(), federatedAnnotations)
+	observedLabelKeys := generateObservedKeys(sourceObject.GetLabels(), federatedLabels)
+
+
+	// Generate the JSON patch required to convert the source object to the FederatedObject's template and store it as
+	// an annotation in the FederatedObject.
+
+	templateGeneratorMergePatch, err := CreateMergePatch(sourceObject, targetTemplate)
+	if err != nil {
+		return false, fmt.Errorf("failed to create merge patch for source object: %w", err)
+	}
 
 	for key, desiredValue := range map[string]string{
 		common.ObservedAnnotationKeysAnnotation:      observedAnnotationKeys,
@@ -203,15 +215,6 @@ func updateFederatedObjectForSourceObject(
 	if annotationChanges > 0 {
 		fedObject.SetAnnotations(newAnnotations)
 		isUpdated = true
-	}
-
-	// handle special deployment fields
-	if sourceObject.GroupVersionKind() == appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind) {
-		deploymentFieldsUpdated, err := ensureDeploymentFields(sourceObject, fedObject)
-		if err != nil {
-			return false, fmt.Errorf("failed to ensure deployment fields: %w", err)
-		}
-		isUpdated = isUpdated || deploymentFieldsUpdated
 	}
 
 	if isUpdated {
