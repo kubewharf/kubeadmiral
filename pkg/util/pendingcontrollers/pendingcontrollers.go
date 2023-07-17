@@ -22,7 +22,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
+	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
 )
 
 type PendingControllers [][]string
