@@ -20,8 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
 )
@@ -32,7 +31,7 @@ const (
 	PendingControllersAnnotation = common.DefaultPrefix + "pending-controllers"
 )
 
-func GetPendingControllers(fedObject *unstructured.Unstructured) (PendingControllers, error) {
+func GetPendingControllers(fedObject *fedcorev1a1.GenericFederatedObject) (PendingControllers, error) {
 	value, exists := fedObject.GetAnnotations()[PendingControllersAnnotation]
 	if !exists {
 		return nil, fmt.Errorf("annotation %v does not exist", PendingControllersAnnotation)
@@ -64,7 +63,7 @@ func NormalizeControllers(controllers PendingControllers) PendingControllers {
 }
 
 func SetPendingControllers(
-	fedObject *unstructured.Unstructured,
+	fedObject *fedcorev1a1.GenericFederatedObject,
 	controllers PendingControllers,
 ) (updated bool, err error) {
 	controllers = NormalizeControllers(controllers)
@@ -91,7 +90,7 @@ func getDownstreamControllers(allControllers PendingControllers, current string)
 }
 
 func UpdatePendingControllers(
-	fedObject *unstructured.Unstructured,
+	fedObject *fedcorev1a1.GenericFederatedObject,
 	toRemove string,
 	shouldSetDownstream bool,
 	allControllers PendingControllers,
@@ -125,7 +124,7 @@ func UpdatePendingControllers(
 	return SetPendingControllers(fedObject, newPendingControllers)
 }
 
-func ControllerDependenciesFulfilled(fedObject *unstructured.Unstructured, controllerName string) (bool, error) {
+func ControllerDependenciesFulfilled(fedObject *fedcorev1a1.GenericFederatedObject, controllerName string) (bool, error) {
 	pendingControllers, err := GetPendingControllers(fedObject)
 	if err != nil {
 		return false, err
