@@ -23,10 +23,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func newObj(annotation map[string]string) runtime.Object {
+func newObj(annotation map[string]string) metav1.Object {
 	pod := corev1.Pod{}
 	pod.ObjectMeta.Annotations = annotation
 	return &pod
@@ -34,7 +34,7 @@ func newObj(annotation map[string]string) runtime.Object {
 
 func TestHasAnnotationKey(t *testing.T) {
 	testCases := []struct {
-		obj        runtime.Object
+		obj        metav1.Object
 		annotation string
 		result     bool
 	}{
@@ -82,7 +82,7 @@ func TestHasAnnotationKey(t *testing.T) {
 
 func TestHasAnnotationKeyValue(t *testing.T) {
 	testCases := []struct {
-		obj    runtime.Object
+		obj    metav1.Object
 		key    string
 		value  string
 		result bool
@@ -149,7 +149,7 @@ func TestHasAnnotationKeyValue(t *testing.T) {
 
 func TestAddAnnotation(t *testing.T) {
 	testCases := []struct {
-		obj            runtime.Object
+		obj            metav1.Object
 		key            string
 		value          string
 		isUpdated      bool
@@ -231,7 +231,7 @@ func TestAddAnnotation(t *testing.T) {
 
 func TestRemoveAnnotation(t *testing.T) {
 	testCases := []struct {
-		obj            runtime.Object
+		obj            metav1.Object
 		key            string
 		isUpdated      bool
 		newAnnotations map[string]string
