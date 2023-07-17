@@ -22,7 +22,6 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
-
 func IsClusterReady(clusterStatus *fedcorev1a1.FederatedClusterStatus) bool {
 	for _, condition := range clusterStatus.Conditions {
 		if condition.Type == fedcorev1a1.ClusterReady {

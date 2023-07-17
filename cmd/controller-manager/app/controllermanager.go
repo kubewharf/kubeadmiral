@@ -36,14 +36,16 @@ import (
 
 const (
 	FederatedClusterControllerName = "cluster"
+	FederateControllerName         = "federate"
 	MonitorControllerName          = "monitor"
 	FollowerControllerName         = "follower"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
-	FederatedClusterControllerName: startFederatedClusterController,
-	MonitorControllerName:          startMonitorController,
-	FollowerControllerName:         startFollowerController,
+	// FederatedClusterControllerName: startFederatedClusterController,
+	FederateControllerName: startFederateController,
+	// MonitorControllerName:          startMonitorController,
+	// FollowerControllerName:         startFollowerController,
 }
 
 var controllersDisabledByDefault = sets.New(MonitorControllerName)

@@ -29,8 +29,8 @@ import (
 
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
 type Context struct {
@@ -53,7 +53,8 @@ type Context struct {
 	DynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory
 	FedInformerFactory     fedinformers.SharedInformerFactory
 
-	FederatedClientFactory federatedclient.FederatedClientFactory
+	InformerManager          informermanager.InformerManager
+	FederatedInformerManager informermanager.FederatedInformerManager
 }
 
 func (c *Context) StartFactories(ctx context.Context) {
@@ -67,8 +68,11 @@ func (c *Context) StartFactories(ctx context.Context) {
 		c.FedInformerFactory.Start(ctx.Done())
 	}
 
-	if c.FederatedClientFactory != nil {
-		c.FederatedClientFactory.Start(ctx)
+	if c.InformerManager != nil {
+		c.InformerManager.Start(ctx)
+	}
+	if c.FederatedInformerManager != nil {
+		c.FederatedInformerManager.Start(ctx)
 	}
 }
 

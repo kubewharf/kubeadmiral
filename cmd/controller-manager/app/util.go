@@ -29,14 +29,16 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app/options"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
+	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
 // KnownControllers returns all well known controller names
@@ -110,14 +112,29 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 	dynamicInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(dynamicClientset, informerResyncPeriod)
 	fedInformerFactory := fedinformers.NewSharedInformerFactory(fedClientset, informerResyncPeriod)
 
-	federatedClientFactory := federatedclient.NewFederatedClientsetFactory(
-		fedClientset,
-		kubeClientset,
+	informerManager := informermanager.NewInformerManager(
+		dynamicClientset,
+		fedInformerFactory.Core().V1alpha1().FederatedTypeConfigs(),
+		nil,
+	)
+	federatedInformerManager := informermanager.NewFederatedInformerManager(
+		informermanager.ClusterClientGetter{
+			ConnectionHash: informermanager.DefaultClusterConnectionHash,
+			ClientGetter: func(cluster *fedcorev1a1.FederatedCluster) (dynamic.Interface, error) {
+				restConfig, err := clusterutil.BuildClusterConfig(
+					cluster,
+					kubeClientset,
+					restConfig,
+					common.DefaultFedSystemNamespace,
+				)
+				if err != nil {
+					return nil, err
+				}
+				return dynamic.NewForConfig(restConfig)
+			},
+		},
+		fedInformerFactory.Core().V1alpha1().FederatedTypeConfigs(),
 		fedInformerFactory.Core().V1alpha1().FederatedClusters(),
-		common.DefaultFedSystemNamespace,
-		restConfig,
-		opts.MaxPodListers,
-		opts.EnablePodPruning,
 	)
 
 	return &controllercontext.Context{
@@ -140,7 +157,8 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 		DynamicInformerFactory: dynamicInformerFactory,
 		FedInformerFactory:     fedInformerFactory,
 
-		FederatedClientFactory: federatedClientFactory,
+		InformerManager: informerManager,
+		FederatedInformerManager: federatedInformerManager,
 	}, nil
 }
 
