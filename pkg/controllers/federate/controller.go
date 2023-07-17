@@ -93,7 +93,6 @@ func NewFederateController(
 	dynamicClient dynamicclient.Interface,
 	fedClient fedclient.Interface,
 	fedObjectInformer fedcorev1a1informers.FederatedObjectInformer,
-	clusterFedObjecInformer fedcorev1a1informers.ClusterFederatedObjectInformer,
 	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer,
 	informerManager informermanager.InformerManager,
 	metrics stats.Metrics,
@@ -165,7 +164,7 @@ func NewFederateController(
 		return nil, err
 	}
 
-	if _, err := clusterFedObjecInformer.Informer().AddEventHandler(
+	if _, err := clusterFedObjectInformer.Informer().AddEventHandler(
 		eventhandlers.NewTriggerOnAllChanges(func(o runtime.Object) {
 			fedObj := o.(*fedcorev1a1.GenericFederatedObject)
 			logger := c.logger.WithValues("cluster-federated-object", common.NewQualifiedName(fedObj))
