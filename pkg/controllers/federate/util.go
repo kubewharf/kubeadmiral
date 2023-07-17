@@ -247,6 +247,7 @@ func updateFederatedObjectForSourceObject(
 var (
 	// List of annotations that should be copied to the federated object instead of the template from the source
 	federatedAnnotationSet = sets.New(
+		common.RetainReplicasAnnotation,
 		scheduler.SchedulingModeAnnotation,
 		scheduler.StickyClusterAnnotation,
 		nsautoprop.NoAutoPropagationAnnotation,
@@ -260,7 +261,6 @@ var (
 		common.NoSchedulingAnnotation,
 		scheduler.FollowsObjectAnnotation,
 		common.FollowersAnnotation,
-		RetainReplicasAnnotation,
 	)
 
 	// TODO: Do we need to specify the internal annotations here?

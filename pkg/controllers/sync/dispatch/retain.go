@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -525,23 +526,16 @@ func findServiceAccountVolumeMount(container map[string]interface{}) (volumeMoun
 	return nil, 0, false
 }
 
-func checkRetainReplicas(fedObj *unstructured.Unstructured) (bool, error) {
-	retainReplicas, ok, err := unstructured.NestedBool(fedObj.Object, common.SpecField, common.RetainReplicasField)
-	if err != nil {
-		return false, err
-	}
-	return ok && retainReplicas, nil
+func checkRetainReplicas(fedObj metav1.Object) bool {
+	return fedObj.GetAnnotations()[common.RetainReplicasAnnotation] == common.AnnotationValueTrue
 }
 
-func retainReplicas(desiredObj, clusterObj, fedObj *unstructured.Unstructured, typeConfig *fedcorev1a1.FederatedTypeConfig) error {
+func retainReplicas(desiredObj, clusterObj *unstructured.Unstructured, fedObj metav1.Object, typeConfig *fedcorev1a1.FederatedTypeConfig) error {
 	// Retain the replicas field if the federated object has been
 	// configured to do so.  If the replicas field is intended to be
 	// set by the in-cluster HPA controller, not retaining it will
 	// thrash the scheduler.
-	retain, err := checkRetainReplicas(fedObj)
-	if err != nil {
-		return err
-	}
+	retain := checkRetainReplicas(fedObj)
 	if retain {
 		replicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
 		if err != nil {

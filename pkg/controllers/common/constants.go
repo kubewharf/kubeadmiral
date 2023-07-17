@@ -121,6 +121,9 @@ const (
 	// FederatedObjectAnnotation indicates that the object was created by the federate controller.
 	FederatedObjectAnnotation = DefaultPrefix + "federated-object"
 
+	// RetainReplicasAnnotation indicates that the replicas field of the cluster objects should be retained during propagation.
+	RetainReplicasAnnotation = DefaultPrefix + "retain-replicas"
+
 	// FollowersAnnotation indicates the additional followers of a leader.
 	FollowersAnnotation = DefaultPrefix + "followers"
 	// EnableFollowerSchedulingAnnotation indicates whether follower scheduling should be enabled for the leader object.
