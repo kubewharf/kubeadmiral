@@ -20,58 +20,79 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/klog/v2"
+	// "k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	// "github.com/kubewharf/kubeadmiral/pkg/client/generic"
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/automigration"
+	// "github.com/kubewharf/kubeadmiral/pkg/controllers/automigration"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedtypeconfig"
+	// "github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
+	// "github.com/kubewharf/kubeadmiral/pkg/controllers/federatedtypeconfig"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/follower"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/monitor"
+	// "github.com/kubewharf/kubeadmiral/pkg/controllers/monitor"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
+	// schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 )
 
-func startFederatedClusterController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
-	clusterController, err := federatedcluster.NewFederatedClusterController(
-		controllerCtx.FedClientset,
+// func startFederatedClusterController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
+// 	clusterController, err := federatedcluster.NewFederatedClusterController(
+// 		controllerCtx.FedClientset,
+// 		controllerCtx.KubeClientset,
+// 		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedClusters(),
+// 		controllerCtx.FederatedClientFactory,
+// 		controllerCtx.Metrics,
+// 		controllerCtx.FedSystemNamespace,
+// 		controllerCtx.RestConfig,
+// 		controllerCtx.WorkerCount,
+// 		controllerCtx.ComponentConfig.ClusterJoinTimeout,
+// 	)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("error creating federated cluster controller: %w", err)
+// 	}
+
+// 	go clusterController.Run(ctx)
+
+// 	return clusterController, nil
+// }
+
+func startFederateController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
+	federateController, err := federate.NewFederateController(
 		controllerCtx.KubeClientset,
-		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedClusters(),
-		controllerCtx.FederatedClientFactory,
+		controllerCtx.DynamicClientset,
+		controllerCtx.FedClientset,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
+		controllerCtx.InformerManager,
 		controllerCtx.Metrics,
-		controllerCtx.FedSystemNamespace,
-		controllerCtx.RestConfig,
 		controllerCtx.WorkerCount,
-		controllerCtx.ComponentConfig.ClusterJoinTimeout,
+		controllerCtx.FedSystemNamespace,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error creating federated cluster controller: %w", err)
+		return nil, fmt.Errorf("error creating federate controller: %w", err)
 	}
 
-	go clusterController.Run(ctx)
+	go federateController.Run(ctx)
 
-	return clusterController, nil
+	return federateController, nil
 }
 
-func startMonitorController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
-	controllerConfig := controllerConfigFromControllerContext(controllerCtx)
-	//nolint:contextcheck
-	monitorController, err := monitor.NewMonitorController(controllerConfig)
-	if err != nil {
-		return nil, fmt.Errorf("error creating monitor controller: %w", err)
-	}
+//func startMonitorController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
+//	controllerConfig := controllerConfigFromControllerContext(controllerCtx)
+//	//nolint:contextcheck
+//	monitorController, err := monitor.NewMonitorController(controllerConfig)
+//	if err != nil {
+//		return nil, fmt.Errorf("error creating monitor controller: %w", err)
+//	}
 
-	if err = monitorController.Run(ctx.Done()); err != nil {
-		return nil, err
-	}
+//	if err = monitorController.Run(ctx.Done()); err != nil {
+//		return nil, err
+//	}
 
-	return monitorController, nil
-}
+//	return monitorController, nil
+//}
 
 //nolint:contextcheck
 func startFollowerController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
@@ -110,37 +131,37 @@ func controllerConfigFromControllerContext(controllerCtx *controllercontext.Cont
 	}
 }
 
-func startGlobalScheduler(
-	ctx context.Context,
-	controllerCtx *controllercontext.Context,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) (controllermanager.Controller, error) {
-	federatedAPIResource := typeConfig.GetFederatedType()
-	federatedGVR := schemautil.APIResourceToGVR(&federatedAPIResource)
+// func startGlobalScheduler(
+// 	ctx context.Context,
+// 	controllerCtx *controllercontext.Context,
+// 	typeConfig *fedcorev1a1.FederatedTypeConfig,
+// ) (controllermanager.Controller, error) {
+// 	federatedAPIResource := typeConfig.GetFederatedType()
+// 	federatedGVR := schemautil.APIResourceToGVR(&federatedAPIResource)
 
-	scheduler, err := scheduler.NewScheduler(
-		klog.FromContext(ctx),
-		typeConfig,
-		controllerCtx.KubeClientset,
-		controllerCtx.FedClientset,
-		controllerCtx.DynamicClientset,
-		controllerCtx.DynamicInformerFactory.ForResource(federatedGVR),
-		controllerCtx.FedInformerFactory.Core().V1alpha1().PropagationPolicies(),
-		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterPropagationPolicies(),
-		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedClusters(),
-		controllerCtx.FedInformerFactory.Core().V1alpha1().SchedulingProfiles(),
-		controllerCtx.FedInformerFactory.Core().V1alpha1().SchedulerPluginWebhookConfigurations(),
-		controllerCtx.Metrics,
-		controllerCtx.WorkerCount,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error creating global scheduler: %w", err)
-	}
+// 	scheduler, err := scheduler.NewScheduler(
+// 		klog.FromContext(ctx),
+// 		typeConfig,
+// 		controllerCtx.KubeClientset,
+// 		controllerCtx.FedClientset,
+// 		controllerCtx.DynamicClientset,
+// 		controllerCtx.DynamicInformerFactory.ForResource(federatedGVR),
+// 		controllerCtx.FedInformerFactory.Core().V1alpha1().PropagationPolicies(),
+// 		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterPropagationPolicies(),
+// 		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedClusters(),
+// 		controllerCtx.FedInformerFactory.Core().V1alpha1().SchedulingProfiles(),
+// 		controllerCtx.FedInformerFactory.Core().V1alpha1().SchedulerPluginWebhookConfigurations(),
+// 		controllerCtx.Metrics,
+// 		controllerCtx.WorkerCount,
+// 	)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("error creating global scheduler: %w", err)
+// 	}
 
-	go scheduler.Run(ctx)
+// 	go scheduler.Run(ctx)
 
-	return scheduler, nil
-}
+// 	return scheduler, nil
+// }
 
 func isGlobalSchedulerEnabled(typeConfig *fedcorev1a1.FederatedTypeConfig) bool {
 	for _, controllerGroup := range typeConfig.GetControllers() {
@@ -153,70 +174,36 @@ func isGlobalSchedulerEnabled(typeConfig *fedcorev1a1.FederatedTypeConfig) bool 
 	return false
 }
 
-func startFederateController(
-	ctx context.Context,
-	controllerCtx *controllercontext.Context,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) (controllermanager.Controller, error) {
-	federatedAPIResource := typeConfig.GetFederatedType()
-	federatedGVR := schemautil.APIResourceToGVR(&federatedAPIResource)
+//func startAutoMigrationController(
+//	ctx context.Context,
+//	controllerCtx *controllercontext.Context,
+//	typeConfig *fedcorev1a1.FederatedTypeConfig,
+//) (controllermanager.Controller, error) {
+//	genericClient, err := generic.New(controllerCtx.RestConfig)
+//	if err != nil {
+//		return nil, fmt.Errorf("error creating generic client: %w", err)
+//	}
 
-	sourceAPIResource := typeConfig.GetSourceType()
-	sourceGVR := schemautil.APIResourceToGVR(sourceAPIResource)
+//	federatedAPIResource := typeConfig.GetFederatedType()
+//	federatedGVR := schemautil.APIResourceToGVR(&federatedAPIResource)
 
-	federateController, err := federate.NewFederateController(
-		typeConfig,
-		controllerCtx.KubeClientset,
-		controllerCtx.DynamicClientset,
-		controllerCtx.DynamicInformerFactory.ForResource(federatedGVR),
-		controllerCtx.DynamicInformerFactory.ForResource(sourceGVR),
-		controllerCtx.Metrics,
-		controllerCtx.WorkerCount,
-		controllerCtx.FedSystemNamespace,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error creating federate controller: %w", err)
-	}
+//	//nolint:contextcheck
+//	controller, err := automigration.NewAutoMigrationController(
+//		controllerConfigFromControllerContext(controllerCtx),
+//		typeConfig,
+//		genericClient,
+//		controllerCtx.KubeClientset,
+//		controllerCtx.DynamicClientset.Resource(federatedGVR),
+//		controllerCtx.DynamicInformerFactory.ForResource(federatedGVR),
+//	)
+//	if err != nil {
+//		return nil, fmt.Errorf("error creating auto-migration controller: %w", err)
+//	}
 
-	go federateController.Run(ctx)
+//	go controller.Run(ctx)
 
-	return federateController, nil
-}
-
-func isFederateControllerEnabled(typeConfig *fedcorev1a1.FederatedTypeConfig) bool {
-	return typeConfig.GetSourceType() != nil
-}
-
-func startAutoMigrationController(
-	ctx context.Context,
-	controllerCtx *controllercontext.Context,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) (controllermanager.Controller, error) {
-	genericClient, err := generic.New(controllerCtx.RestConfig)
-	if err != nil {
-		return nil, fmt.Errorf("error creating generic client: %w", err)
-	}
-
-	federatedAPIResource := typeConfig.GetFederatedType()
-	federatedGVR := schemautil.APIResourceToGVR(&federatedAPIResource)
-
-	//nolint:contextcheck
-	controller, err := automigration.NewAutoMigrationController(
-		controllerConfigFromControllerContext(controllerCtx),
-		typeConfig,
-		genericClient,
-		controllerCtx.KubeClientset,
-		controllerCtx.DynamicClientset.Resource(federatedGVR),
-		controllerCtx.DynamicInformerFactory.ForResource(federatedGVR),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error creating auto-migration controller: %w", err)
-	}
-
-	go controller.Run(ctx)
-
-	return controller, nil
-}
+//	return controller, nil
+//}
 
 func isAutoMigrationControllerEnabled(typeConfig *fedcorev1a1.FederatedTypeConfig) bool {
 	return typeConfig.Spec.AutoMigration != nil && typeConfig.Spec.AutoMigration.Enabled
