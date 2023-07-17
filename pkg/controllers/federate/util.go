@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -40,9 +39,23 @@ import (
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/pendingcontrollers"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/sourcefeedback"
+	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 )
 
-func templateForSourceObject(sourceObj *unstructured.Unstructured, annotations, labels map[string]string) *unstructured.Unstructured {
+type workerKey struct {
+	name      string
+	namespace string
+	ftc       *fedcorev1a1.FederatedTypeConfig
+}
+
+func (k workerKey) String() string {
+	return fmt.Sprintf("%s/%s", k.namespace, k.name)
+}
+
+func templateForSourceObject(
+	sourceObj *unstructured.Unstructured,
+	annotations, labels map[string]string,
+) *unstructured.Unstructured {
 	template := sourceObj.DeepCopy()
 	template.SetSelfLink("")
 	template.SetUID("")
@@ -59,62 +72,59 @@ func templateForSourceObject(sourceObj *unstructured.Unstructured, annotations, 
 	return template
 }
 
-func newFederatedObjectForSourceObject(
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	sourceObj *unstructured.Unstructured,
-) (*unstructured.Unstructured, error) {
-	fedType := typeConfig.GetFederatedType()
-	fedObj := &unstructured.Unstructured{
-		Object: make(map[string]interface{}),
-	}
-	fedObj.SetAPIVersion(schema.GroupVersion{Group: fedType.Group, Version: fedType.Version}.String())
-	fedObj.SetKind(fedType.Kind)
-	fedObj.SetName(sourceObj.GetName())
+func newFederatedObjectForSourceObject(ftc *fedcorev1a1.FederatedTypeConfig, sourceObj *unstructured.Unstructured) (*fedcorev1a1.GenericFederatedObject, error) {
+	fedObj := &fedcorev1a1.GenericFederatedObject{}
+	fedName := naming.GenerateFederatedObjectName(sourceObj.GetName(), ftc.Name)
+
+	fedObj.SetName(fedName)
 	fedObj.SetNamespace(sourceObj.GetNamespace())
 	fedObj.SetOwnerReferences(
 		[]metav1.OwnerReference{*metav1.NewControllerRef(sourceObj, sourceObj.GroupVersionKind())},
 	)
 
-	federatedLabels, templateLabels := classifyLabels(sourceObj.GetLabels())
-	fedObj.SetLabels(federatedLabels)
+	// Classify labels into labels that should be copied onto the FederatedObject and labels that should be copied onto
+	// the FederatedObject's template.
 
-	observedLabelKeys := generateObservedKeys(sourceObj.GetLabels(), federatedLabels)
+	federatedLabels, templateLabels := classifyLabels(sourceObj.GetLabels())
+
+	// Classify annotations into annotations that should be copied onto the FederatedObject and labels that should be
+	// copied onto the FederatedObject's template.
 
 	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObj.GetAnnotations())
 	if federatedAnnotations == nil {
 		federatedAnnotations = make(map[string]string)
 	}
 
+	// Record the observed label and annotation keys in an annotation on the FederatedObject.
+
+	observedLabelKeys := generateObservedKeys(sourceObj.GetLabels(), federatedLabels)
 	observedAnnotationKeys := generateObservedKeys(sourceObj.GetAnnotations(), federatedAnnotations)
 	federatedAnnotations[common.ObservedAnnotationKeysAnnotation] = observedAnnotationKeys
 	federatedAnnotations[common.ObservedLabelKeysAnnotation] = observedLabelKeys
 
-	templateObject := templateForSourceObject(sourceObj, templateAnnotations, templateLabels).Object
+	// Generate the FederatedObject's template and update the FederatedObject.
 
-	if err := unstructured.SetNestedMap(
-		fedObj.Object,
-		templateObject,
-		common.SpecField,
-		common.TemplateField,
-	); err != nil {
-		return nil, err
+	templateObject := templateForSourceObject(sourceObj, templateAnnotations, templateLabels).Object
+	rawTemplate, err := json.Marshal(templateObject)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal template: %w", err)
 	}
+	fedObj.Spec.Template.Raw = rawTemplate
+
+	// Generate the JSON patch required to convert the source object to the FederatedObject's template and store it as
+	// an annotation in the FederatedObject.
 
 	templateGeneratorMergePatch, err := CreateMergePatch(sourceObj, &unstructured.Unstructured{Object: templateObject})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create merge patch for source object: %w", err)
 	}
-
 	federatedAnnotations[common.TemplateGeneratorMergePatchAnnotation] = string(templateGeneratorMergePatch)
+
+	// Update the FederatedObject with the final annotation and label sets.
+
+	fedObj.SetLabels(federatedLabels)
 	fedObj.SetAnnotations(federatedAnnotations)
 
-	// For deployment fields
-	if sourceObj.GroupVersionKind() == appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind) {
-		_, err := ensureDeploymentFields(sourceObj, fedObj)
-		if err != nil {
-			return nil, err
-		}
-	}
 	return fedObj, nil
 }
 
@@ -230,12 +240,12 @@ var (
 		common.NoSchedulingAnnotation,
 		scheduler.FollowsObjectAnnotation,
 		common.FollowersAnnotation,
+		RetainReplicasAnnotation,
 	)
 
 	// TODO: Do we need to specify the internal annotations here?
 	// List of annotations that should be ignored on the source object
 	ignoredAnnotationSet = sets.New(
-		RetainReplicasAnnotation,
 		util.LatestReplicasetDigestsAnnotation,
 		sourcefeedback.SchedulingAnnotation,
 		sourcefeedback.SyncingAnnotation,
@@ -326,7 +336,10 @@ func generateObservedKeys(sourceMap map[string]string, federatedMap map[string]s
 
 	sort.Strings(observedFederatedKeys)
 	sort.Strings(observedNonFederatedKeys)
-	return strings.Join([]string{strings.Join(observedFederatedKeys, ","), strings.Join(observedNonFederatedKeys, ",")}, "|")
+	return strings.Join(
+		[]string{strings.Join(observedFederatedKeys, ","), strings.Join(observedNonFederatedKeys, ",")},
+		"|",
+	)
 }
 
 // CreateMergePatch will return a merge patch document capable of converting
