@@ -31,7 +31,7 @@ const (
 	PendingControllersAnnotation = common.DefaultPrefix + "pending-controllers"
 )
 
-func GetPendingControllers(fedObject *fedcorev1a1.GenericFederatedObject) (PendingControllers, error) {
+func GetPendingControllers(fedObject fedcorev1a1.GenericFederatedObject) (PendingControllers, error) {
 	value, exists := fedObject.GetAnnotations()[PendingControllersAnnotation]
 	if !exists {
 		return nil, fmt.Errorf("annotation %v does not exist", PendingControllersAnnotation)
@@ -63,7 +63,7 @@ func NormalizeControllers(controllers PendingControllers) PendingControllers {
 }
 
 func SetPendingControllers(
-	fedObject *fedcorev1a1.GenericFederatedObject,
+	fedObject fedcorev1a1.GenericFederatedObject,
 	controllers PendingControllers,
 ) (updated bool, err error) {
 	controllers = NormalizeControllers(controllers)
@@ -90,7 +90,7 @@ func getDownstreamControllers(allControllers PendingControllers, current string)
 }
 
 func UpdatePendingControllers(
-	fedObject *fedcorev1a1.GenericFederatedObject,
+	fedObject fedcorev1a1.GenericFederatedObject,
 	toRemove string,
 	shouldSetDownstream bool,
 	allControllers PendingControllers,
@@ -124,7 +124,7 @@ func UpdatePendingControllers(
 	return SetPendingControllers(fedObject, newPendingControllers)
 }
 
-func ControllerDependenciesFulfilled(fedObject *fedcorev1a1.GenericFederatedObject, controllerName string) (bool, error) {
+func ControllerDependenciesFulfilled(fedObject fedcorev1a1.GenericFederatedObject, controllerName string) (bool, error) {
 	pendingControllers, err := GetPendingControllers(fedObject)
 	if err != nil {
 		return false, err
