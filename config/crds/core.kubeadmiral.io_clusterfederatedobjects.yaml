@@ -12,15 +12,15 @@ spec:
     kind: ClusterFederatedObject
     listKind: ClusterFederatedObjectList
     plural: clusterfederatedobjects
+    singular: clusterfederatedobject
     shortNames:
       - cfo
-    singular: clusterfederatedobject
   scope: Cluster
   versions:
     - name: v1alpha1
       schema:
         openAPIV3Schema:
-          description: ClusterFederatedObject describes a cluster-scoped Kubernetes object and how it should be propagated to different member clusters.
+          description: FederatedObject or ClusterFederatedObject describes a Kubernetes object and how it should be propagated to different member clusters.
           properties:
             apiVersion:
               description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
@@ -31,7 +31,7 @@ spec:
             metadata:
               type: object
             spec:
-              description: Spec defines the desired behavior of the ClusterFederatedObject.
+              description: Spec defines the desired behavior of the FederatedObject.
               properties:
                 follows:
                   description: Follows defines other objects, or "leaders", that the Kubernetes object should follow during propagation, i.e. the Kubernetes object should be propagated to all member clusters that its "leaders" are placed in.
@@ -126,7 +126,7 @@ spec:
                 - template
               type: object
             status:
-              description: Status describes the most recently observed status of the ClusterFederatedObject.
+              description: Status describes the most recently observed status of the FederatedObject.
               properties:
                 clusters:
                   description: Clusters contains the propagation status of the Kubernetes object for individual member clusters.

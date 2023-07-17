@@ -23,7 +23,10 @@ import (
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// Schema shared by both FederatedObject and ClusterFederatedObject.
+// +kubebuilder:subresource:status
+
+// FederatedObject or ClusterFederatedObject describes a Kubernetes object and how it should be propagated to different member
+// clusters.
 type GenericFederatedObject struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
@@ -43,11 +46,7 @@ type GenericFederatedObject struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:validation:Required
 // +kubebuilder:resource:path=federatedobjects,shortName=fo,singular=federatedobject
-// +kubebuilder:subresource:status
 // +kubebuilder:object:root=true
-
-// FederatedObject describes a namespace-scoped Kubernetes object and how it should be propagated to different member
-// clusters.
 type FederatedObject GenericFederatedObject
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -66,10 +65,6 @@ type FederatedObjectList struct {
 // +kubebuilder:validation:Required
 // +kubebuilder:resource:path=clusterfederatedobjects,shortName=cfo,singular=clusterfederatedobject,scope=Cluster
 // +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-
-// ClusterFederatedObject describes a cluster-scoped Kubernetes object and how it should be propagated to different
-// member clusters.
 type ClusterFederatedObject GenericFederatedObject
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
