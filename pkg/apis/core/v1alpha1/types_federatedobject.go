@@ -22,9 +22,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// Schema shared by both FederatedObject and ClusterFederatedObject.
-type GenericFederatedObject struct {
+// +kubebuilder:validation:Required
+// +kubebuilder:resource:path=federatedobjects,shortName=fo,singular=federatedobject
+// +kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+
+// FederatedObject describes a namespace-scoped Kubernetes object and how it should be propagated to different member
+// clusters.
+type FederatedObject struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
@@ -38,17 +45,6 @@ type GenericFederatedObject struct {
 	// +optional
 	Status GenericFederatedObjectStatus `json:"status,omitempty"`
 }
-
-// +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +kubebuilder:validation:Required
-// +kubebuilder:resource:path=federatedobjects,shortName=fo,singular=federatedobject
-// +kubebuilder:subresource:status
-// +kubebuilder:object:root=true
-
-// FederatedObject describes a namespace-scoped Kubernetes object and how it should be propagated to different member
-// clusters.
-type FederatedObject GenericFederatedObject
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:object:root=true
@@ -70,7 +66,20 @@ type FederatedObjectList struct {
 
 // ClusterFederatedObject describes a cluster-scoped Kubernetes object and how it should be propagated to different
 // member clusters.
-type ClusterFederatedObject GenericFederatedObject
+type ClusterFederatedObject struct {
+	metav1.TypeMeta `json:",inline"`
+	// Standard object's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Spec defines the desired behavior of the FederatedObject.
+	Spec GenericFederatedObjectSpec `json:"spec"`
+
+	// Status describes the most recently observed status of the FederatedObject.
+	// +optional
+	Status GenericFederatedObjectStatus `json:"status,omitempty"`
+}
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
