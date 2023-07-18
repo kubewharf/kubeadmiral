@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -59,7 +60,8 @@ type informerManager struct {
 	eventHandlerRegistrations map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration
 	lastAppliedFTCsCache      map[string]map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig
 
-	queue workqueue.RateLimitingInterface
+	queue       workqueue.RateLimitingInterface
+	workerCount int64
 }
 
 func NewInformerManager(
@@ -81,6 +83,7 @@ func NewInformerManager(
 		eventHandlerRegistrations: map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{},
 		lastAppliedFTCsCache:      map[string]map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig{},
 		queue:                     workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
+		workerCount:               3,
 	}
 
 	ftcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -157,7 +160,6 @@ func (m *informerManager) processFTC(
 	ftc *fedcorev1a1.FederatedTypeConfig,
 ) (err error, needReenqueue bool) {
 	m.lock.Lock()
-	defer m.lock.Unlock()
 
 	ftc = ftc.DeepCopy()
 	ftcName := ftc.Name
@@ -205,6 +207,18 @@ func (m *informerManager) processFTC(
 		m.eventHandlerRegistrations[ftcName] = map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{}
 		m.lastAppliedFTCsCache[ftcName] = map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig{}
 	}
+
+	m.lock.Unlock()
+
+	// Wait for cache sync before registering the event handlers
+	cacheSyncTimeout, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	if !cache.WaitForCacheSync(cacheSyncTimeout.Done(), informer.Informer().HasSynced) {
+		return fmt.Errorf("timed out waiting for informer to sync, event handlers not yet registered"), true
+	}
+
+	m.lock.Lock()
+	defer m.lock.Unlock()
 
 	registrations := m.eventHandlerRegistrations[ftcName]
 	lastAppliedFTCs := m.lastAppliedFTCsCache[ftcName]
@@ -341,7 +355,10 @@ func (m *informerManager) Start(ctx context.Context) {
 		return
 	}
 
-	go wait.UntilWithContext(ctx, m.worker, 0)
+	for i := 0; i < int(m.workerCount); i++ {
+		go wait.UntilWithContext(ctx, m.worker, 0)
+	}
+
 	go func() {
 		<-ctx.Done()
 
