@@ -35,7 +35,6 @@ import (
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
@@ -44,9 +43,7 @@ import (
 // KnownControllers returns all well known controller names
 func KnownControllers() []string {
 	controllers := sets.StringKeySet(knownControllers)
-	ftcSubControllers := sets.StringKeySet(knownFTCSubControllers)
-	ret := controllers.Union(ftcSubControllers)
-	return ret.List()
+	return controllers.List()
 }
 
 // ControllersDisabledByDefault returns all controllers that are disabled by default
@@ -107,7 +104,7 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 		return nil, fmt.Errorf("failed to create fed clientset: %w", err)
 	}
 
-	informerResyncPeriod := util.NoResyncPeriod
+	informerResyncPeriod := time.Duration(0)
 	kubeInformerFactory := informers.NewSharedInformerFactory(kubeClientset, informerResyncPeriod)
 	dynamicInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(dynamicClientset, informerResyncPeriod)
 	fedInformerFactory := fedinformers.NewSharedInformerFactory(fedClientset, informerResyncPeriod)

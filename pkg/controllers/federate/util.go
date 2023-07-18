@@ -33,9 +33,9 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 
-	// "github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
-	// "github.com/kubewharf/kubeadmiral/pkg/controllers/override"
-	// "github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
@@ -242,18 +242,18 @@ func updateFederatedObjectForSourceObject(
 var (
 	// List of annotations that should be copied to the federated object instead of the template from the source
 	federatedAnnotationSet = sets.New(
-		// scheduler.SchedulingModeAnnotation,
-		// scheduler.StickyClusterAnnotation,
+		scheduler.SchedulingModeAnnotation,
+		scheduler.StickyClusterAnnotation,
 		util.ConflictResolutionAnnotation,
-		// nsautoprop.NoAutoPropagationAnnotation,
+		nsautoprop.NoAutoPropagationAnnotation,
 		util.OrphanManagedResourcesAnnotation,
-		// scheduler.TolerationsAnnotations,
-		// scheduler.PlacementsAnnotations,
-		// scheduler.ClusterSelectorAnnotations,
-		// scheduler.AffinityAnnotations,
-		// scheduler.MaxClustersAnnotations,
+		scheduler.TolerationsAnnotations,
+		scheduler.PlacementsAnnotations,
+		scheduler.ClusterSelectorAnnotations,
+		scheduler.AffinityAnnotations,
+		scheduler.MaxClustersAnnotations,
 		common.NoSchedulingAnnotation,
-		// scheduler.FollowsObjectAnnotation,
+		scheduler.FollowsObjectAnnotation,
 		common.FollowersAnnotation,
 		RetainReplicasAnnotation,
 	)
@@ -268,10 +268,10 @@ var (
 	)
 
 	federatedLabelSet = sets.New[string](
-	// scheduler.PropagationPolicyNameLabel,
-	// scheduler.ClusterPropagationPolicyNameLabel,
-	// override.OverridePolicyNameLabel,
-	// override.ClusterOverridePolicyNameLabel,
+		scheduler.PropagationPolicyNameLabel,
+		scheduler.ClusterPropagationPolicyNameLabel,
+		override.OverridePolicyNameLabel,
+		override.ClusterOverridePolicyNameLabel,
 	)
 )
 
