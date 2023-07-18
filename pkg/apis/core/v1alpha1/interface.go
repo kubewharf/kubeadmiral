@@ -47,4 +47,5 @@ type GenericFederatedObject interface {
 	pkgruntime.Object
 	GetSpec() *GenericFederatedObjectSpec
 	GetStatus() *GenericFederatedObjectStatus
+	DeepCopyGenericFederatedObject() GenericFederatedObject
 }
