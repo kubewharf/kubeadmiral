@@ -33,8 +33,6 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
 	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
@@ -50,7 +48,7 @@ const (
 // from the cluster object.
 func RetainOrMergeClusterFields(
 	targetGvk schema.GroupVersionKind,
-	desiredObj, clusterObj, fedObj *unstructured.Unstructured,
+	desiredObj, clusterObj *unstructured.Unstructured,
 ) error {
 	// Pass the same ResourceVersion as in the cluster object for update operation, otherwise operation will fail.
 	desiredObj.SetResourceVersion(clusterObj.GetResourceVersion())
@@ -548,71 +546,6 @@ func retainReplicas(desiredObj, clusterObj *unstructured.Unstructured, fedObj me
 			}
 		}
 	}
-	return nil
-}
-
-func setLastReplicasetName(desiredObj, clusterObj *unstructured.Unstructured) error {
-	if clusterObj == nil {
-		return nil
-	}
-	revision, ok := desiredObj.GetAnnotations()[common.CurrentRevisionAnnotation]
-	if !ok {
-		return nil
-	}
-	lastDispatchedRevision, ok := clusterObj.GetAnnotations()[common.CurrentRevisionAnnotation]
-	if ok && revision != lastDispatchedRevision {
-		// update LastReplicasetName only when the revision must have been changed
-		rsName, ok := clusterObj.GetAnnotations()[util.LatestReplicasetNameAnnotation]
-		if !ok {
-			// don't block the dispatch if the annotation is missing, validate the existence during plan initiation
-			return nil
-		}
-		if _, err := annotationutil.AddAnnotation(desiredObj, common.LastReplicasetName, rsName); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func retainTemplate(
-	desiredObj, clusterObj *unstructured.Unstructured,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	keepRolloutSettings bool,
-) error {
-	tpl, ok, err := unstructured.NestedMap(clusterObj.Object, common.SpecField, common.TemplateField)
-	if err != nil {
-		return err
-	}
-	if ok {
-		if err := unstructured.SetNestedMap(desiredObj.Object, tpl, common.SpecField, common.TemplateField); err != nil {
-			return err
-		}
-	} else {
-		unstructured.RemoveNestedField(desiredObj.Object, common.SpecField, common.TemplateField)
-	}
-
-	revision, ok := clusterObj.GetAnnotations()[common.CurrentRevisionAnnotation]
-	if ok {
-		if _, err := annotationutil.AddAnnotation(desiredObj, common.CurrentRevisionAnnotation, revision); err != nil {
-			return err
-		}
-	} else {
-		if _, err := annotationutil.RemoveAnnotation(desiredObj, common.CurrentRevisionAnnotation); err != nil {
-			return err
-		}
-	}
-
-	if keepRolloutSettings {
-		replicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
-		if err != nil {
-			return err
-		}
-
-		if err := utilunstructured.SetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, replicas, nil); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 

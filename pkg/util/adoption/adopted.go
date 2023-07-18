@@ -14,17 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package adoption
 
 import (
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
 var AdoptedAnnotation = common.DefaultPrefix + "adopted"
 
-func HasAdoptedAnnotation(obj *unstructured.Unstructured) bool {
+func HasAdoptedAnnotation(obj metav1.Object) bool {
 	annotations := obj.GetAnnotations()
 	if annotations == nil {
 		return false
@@ -32,7 +32,18 @@ func HasAdoptedAnnotation(obj *unstructured.Unstructured) bool {
 	return annotations[AdoptedAnnotation] == common.AnnotationValueTrue
 }
 
-func RemoveAdoptedAnnotation(obj *unstructured.Unstructured) {
+func AddAdoptedAnnotation(obj metav1.Object) bool {
+	annotations := obj.GetAnnotations()
+	if annotations[AdoptedAnnotation] == common.AnnotationValueTrue {
+		return false
+	}
+
+	annotations[AdoptedAnnotation] = common.AnnotationValueTrue
+	obj.SetAnnotations(annotations)
+	return true
+}
+
+func RemoveAdoptedAnnotation(obj metav1.Object) {
 	annotations := obj.GetAnnotations()
 	if annotations == nil || annotations[AdoptedAnnotation] != common.AnnotationValueTrue {
 		return

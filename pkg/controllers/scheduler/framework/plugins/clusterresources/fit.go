@@ -54,8 +54,6 @@ func (pl *ClusterResourcesFit) Filter(
 		return framework.NewResult(framework.Error, err.Error())
 	}
 
-	// TODO(all), fixed me, if the scheduling unit is a type of RSP scheduling, skip here.
-
 	insufficientResources := fitsRequest(su, cluster)
 
 	if len(insufficientResources) != 0 {

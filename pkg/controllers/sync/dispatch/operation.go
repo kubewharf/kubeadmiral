@@ -28,20 +28,20 @@ import (
 
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/klog/v2"
 
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
 type (
-	clientAccessorFunc func(clusterName string) (generic.Client, error)
+	clientAccessorFunc func(clusterName string) (dynamic.Interface, error)
 	targetAccessorFunc func(clusterName string) (*unstructured.Unstructured, error)
 )
 
 type dispatchRecorder interface {
 	recordEvent(clusterName, operation, operationContinuous string)
-	recordOperationError(ctx context.Context, status fedtypesv1a1.PropagationStatus, clusterName, operation string, err error) bool
+	recordOperationError(ctx context.Context, status fedcorev1a1.PropagationStatusType, clusterName, operation string, err error) bool
 }
 
 // OperationDispatcher provides an interface to wait for operations
@@ -100,7 +100,7 @@ func (d *operationDispatcherImpl) Wait() (bool, error) {
 	return ok, nil
 }
 
-func (d *operationDispatcherImpl) clusterOperation(ctx context.Context, clusterName, op string, opFunc func(generic.Client) bool) {
+func (d *operationDispatcherImpl) clusterOperation(ctx context.Context, clusterName, op string, opFunc func(dynamic.Interface) bool) {
 	// TODO Support cancellation of client calls on timeout.
 	client, err := d.clientAccessor(clusterName)
 	logger := klog.FromContext(ctx)
@@ -109,7 +109,7 @@ func (d *operationDispatcherImpl) clusterOperation(ctx context.Context, clusterN
 		if d.recorder == nil {
 			logger.Error(wrappedErr, "Failed to retrieve client for cluster")
 		} else {
-			d.recorder.recordOperationError(ctx, fedtypesv1a1.ClientRetrievalFailed, clusterName, op, wrappedErr)
+			d.recorder.recordOperationError(ctx, fedcorev1a1.ClientRetrievalFailed, clusterName, op, wrappedErr)
 		}
 		d.resultChan <- false
 		return

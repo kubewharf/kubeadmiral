@@ -20,7 +20,10 @@ are Copyright 2023 The KubeAdmiral Authors.
 
 package common
 
-import "k8s.io/apimachinery/pkg/runtime/schema"
+import (
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+)
 
 const (
 	DefaultFedSystemNamespace = "kube-admiral-system"
@@ -30,7 +33,11 @@ const (
 )
 
 const (
-	NamespaceResource = "namespaces"
+	NamespaceResource  = "namespaces"
+	DeploymentResource = "deployments"
+	DaemonSetResource  = "daemonsets"
+	ConfigMapResource  = "configmaps"
+	SecretResource     = "secrets"
 
 	NamespaceKind             = "Namespace"
 	DeploymentKind            = "Deployment"
@@ -81,13 +88,6 @@ const (
 	OverridesField  = "overrides"
 	FollowsField    = "follows"
 
-	// Rolling Update
-
-	StrategyField       = "strategy"
-	RollingUpdateField  = "rollingUpdate"
-	MaxSurgeField       = "maxSurge"
-	MaxUnavailableField = "maxUnavailable"
-
 	// Status
 
 	AvailableReplicasField = "availableReplicas"
@@ -105,14 +105,6 @@ var (
 const (
 	AnnotationValueTrue  = "true"
 	AnnotationValueFalse = "false"
-
-	// The following annotations contain metadata.
-
-	LastRevisionAnnotation        = DefaultPrefix + "last-revision"
-	CurrentRevisionAnnotation     = DefaultPrefix + "current-revision"
-	LastReplicasetName            = DefaultPrefix + "last-replicaset-name"
-	SourceGenerationAnnotation    = DefaultPrefix + "source-generation"
-	FederatedGenerationAnnotation = DefaultPrefix + "federated-generation"
 
 	// The following annotations control the behavior of Kubeadmiral controllers.
 
@@ -163,29 +155,13 @@ const (
 	ClusterServiceAccountCAKey     = "service-account-ca-data"
 )
 
-var DeploymentGVR = schema.GroupVersionResource{
-	Group:    "apps",
-	Version:  "v1",
-	Resource: "deployments",
-}
-
-var ConfigMapGVR = schema.GroupVersionResource{
-	Group:    "",
-	Version:  "v1",
-	Resource: "configmaps",
-}
-
-var SecretGVR = schema.GroupVersionResource{
-	Group:    "",
-	Version:  "v1",
-	Resource: "secrets",
-}
-
-var DaemonSetGVR = schema.GroupVersionResource{
-	Group:    "apps",
-	Version:  "v1",
-	Resource: "daemonsets",
-}
+var (
+	DeploymentGVR = appsv1.SchemeGroupVersion.WithResource(DeploymentResource)
+	DaemonSetGVR  = appsv1.SchemeGroupVersion.WithResource(DaemonSetResource)
+	NamespaceGVR  = corev1.SchemeGroupVersion.WithResource(NamespaceResource)
+	ConfigMapGVR  = corev1.SchemeGroupVersion.WithResource(ConfigMapResource)
+	SecretGVR     = corev1.SchemeGroupVersion.WithResource(SecretResource)
+)
 
 // MaxFederatedObjectNameLength defines the max length of a federated object name.
 // A custom resource name must be a DNS subdomain as defined in RFC1123 with a maximum length of 253.

@@ -23,8 +23,6 @@ package version
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -32,7 +30,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -49,17 +46,13 @@ import (
 // implement to allow versions to be tracked by the VersionManager.
 type VersionedResource interface {
 	FederatedName() common.QualifiedName
-	Object() *unstructured.Unstructured
+	Object() fedcorev1a1.GenericFederatedObject
 	TemplateVersion() (string, error)
 	OverrideVersion() (string, error)
 }
 
 type VersionManager struct {
 	sync.RWMutex
-
-	targetKind string
-
-	federatedKind string
 
 	// Namespace to source propagated versions from
 	namespace string
@@ -70,6 +63,7 @@ type VersionManager struct {
 
 	versions map[string]runtimeclient.Object
 
+	// TODO: consider switching to a fedcorev1a1client.Interface or fedcorev1a1client.Interface or dynamic.Interface
 	client generic.Client
 
 	logger klog.Logger
@@ -79,16 +73,15 @@ func NewVersionManager(
 	logger klog.Logger,
 	client generic.Client,
 	namespaced bool,
-	federatedKind, targetKind, namespace string,
+	namespace string,
 ) *VersionManager {
+	adapter := NewVersionAdapter(namespaced)
 	v := &VersionManager{
-		logger:        logger.WithValues("origin", "version-manager"),
-		targetKind:    targetKind,
-		federatedKind: federatedKind,
-		namespace:     namespace,
-		adapter:       NewVersionAdapter(namespaced),
-		versions:      make(map[string]runtimeclient.Object),
-		client:        client,
+		logger:    logger.WithValues("origin", "version-manager", "type-name", adapter.TypeName()),
+		namespace: namespace,
+		adapter:   adapter,
+		versions:  make(map[string]runtimeclient.Object),
+		client:    client,
 	}
 
 	return v
@@ -150,8 +143,10 @@ func (m *VersionManager) Get(resource VersionedResource) (map[string]string, err
 
 // Update ensures that the propagated version for the given versioned
 // resource is recorded.
-func (m *VersionManager) Update(resource VersionedResource,
-	selectedClusters []string, versionMap map[string]string,
+func (m *VersionManager) Update(
+	resource VersionedResource,
+	selectedClusters []string,
+	versionMap map[string]string,
 ) error {
 	templateVersion, err := resource.TemplateVersion()
 	if err != nil {
@@ -189,13 +184,13 @@ func (m *VersionManager) Update(resource VersionedResource,
 
 	if oldStatus != nil && util.PropagatedVersionStatusEquivalent(oldStatus, status) {
 		m.Unlock()
-		m.logger.WithValues("type-name", m.adapter.TypeName(), "version-qualified-name", qualifiedName).
+		m.logger.WithValues("version-qualified-name", qualifiedName).
 			V(4).Info("No update necessary")
 		return nil
 	}
 
 	if obj == nil {
-		ownerReference := ownerReferenceForUnstructured(resource.Object())
+		ownerReference := ownerReferenceForFederatedObject(resource.Object())
 		obj = m.adapter.NewVersion(qualifiedName, ownerReference, status)
 		m.versions[key] = obj
 	} else {
@@ -234,8 +229,7 @@ func (m *VersionManager) list(stopChan <-chan struct{}) (runtimeclient.ObjectLis
 		versionList = m.adapter.NewListObject()
 		err := m.client.List(context.TODO(), versionList, m.namespace)
 		if err != nil {
-			m.logger.WithValues("federated-kind", m.federatedKind).
-				Error(err, "Failed to list propagated versions for federatedKind")
+			m.logger.Error(err, "Failed to list propagated versions")
 			// Do not return the error to allow the operation to be retried.
 			return false, nil
 		}
@@ -251,7 +245,6 @@ func (m *VersionManager) list(stopChan <-chan struct{}) (runtimeclient.ObjectLis
 // version manager should not be used in advance of HasSynced
 // returning true, locking is assumed to be unnecessary.
 func (m *VersionManager) load(versionList runtimeclient.ObjectList, stopChan <-chan struct{}) bool {
-	typePrefix := PropagatedVersionPrefix(m.targetKind)
 	objs, err := meta.ExtractList(versionList)
 	if err != nil {
 		return false
@@ -265,24 +258,19 @@ func (m *VersionManager) load(versionList runtimeclient.ObjectList, stopChan <-c
 		}
 
 		qualifiedName := common.NewQualifiedName(obj)
-		// Ignore propagated version for other types
-		if strings.HasPrefix(qualifiedName.Name, typePrefix) {
-			m.versions[qualifiedName.String()] = obj.(runtimeclient.Object)
-		}
+		m.versions[qualifiedName.String()] = obj.(runtimeclient.Object)
 	}
 	m.Lock()
 	m.hasSynced = true
 	m.Unlock()
-	m.logger.WithValues("federated-kind", m.federatedKind).
-		V(4).Info("Version manager for federatedKind synced")
+	m.logger.V(4).Info("Version manager synced")
 	return true
 }
 
 // versionQualifiedName derives the qualified name of a version
-// resource from the qualified name of a template or target resource.
+// resource from the qualified name of a federated object.
 func (m *VersionManager) versionQualifiedName(qualifiedName common.QualifiedName) common.QualifiedName {
-	versionName := PropagatedVersionName(m.targetKind, qualifiedName.Name)
-	return common.QualifiedName{Name: versionName, Namespace: qualifiedName.Namespace}
+	return qualifiedName
 }
 
 // writeVersion serializes the current state of the named propagated
@@ -296,7 +284,7 @@ func (m *VersionManager) versionQualifiedName(qualifiedName common.QualifiedName
 func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName common.QualifiedName) error {
 	key := qualifiedName.String()
 	adapterType := m.adapter.TypeName()
-	keyedLogger := m.logger.WithValues("type-name", adapterType, "version-qualified-name", key)
+	keyedLogger := m.logger.WithValues("version-qualified-name", key)
 
 	resourceVersion, err := getResourceVersion(obj)
 	if err != nil {
@@ -409,7 +397,7 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 }
 
 func (m *VersionManager) getResourceVersionFromAPI(qualifiedName common.QualifiedName) (string, error) {
-	m.logger.WithValues("federated-kind", m.federatedKind, "version-qualified-name", qualifiedName).
+	m.logger.WithValues("version-qualified-name", qualifiedName).
 		V(2).Info("Retrieving resourceVersion from the API")
 	obj := m.adapter.NewObject()
 	err := m.client.Get(context.TODO(), obj, qualifiedName.Namespace, qualifiedName.Name)
@@ -436,7 +424,7 @@ func setResourceVersion(obj pkgruntime.Object, resourceVersion string) error {
 	return nil
 }
 
-func ownerReferenceForUnstructured(obj *unstructured.Unstructured) metav1.OwnerReference {
+func ownerReferenceForFederatedObject(obj fedcorev1a1.GenericFederatedObject) metav1.OwnerReference {
 	gvk := obj.GetObjectKind().GroupVersionKind()
 	return metav1.OwnerReference{
 		APIVersion: gvk.GroupVersion().String(),
@@ -446,8 +434,10 @@ func ownerReferenceForUnstructured(obj *unstructured.Unstructured) metav1.OwnerR
 	}
 }
 
-func updateClusterVersions(oldVersions []fedcorev1a1.ClusterObjectVersion,
-	newVersions map[string]string, selectedClusters []string,
+func updateClusterVersions(
+	oldVersions []fedcorev1a1.ClusterObjectVersion,
+	newVersions map[string]string,
+	selectedClusters []string,
 ) []fedcorev1a1.ClusterObjectVersion {
 	// Retain versions for selected clusters that were not changed
 	selectedClusterSet := sets.NewString(selectedClusters...)
@@ -477,12 +467,4 @@ func VersionMapToClusterVersions(versionMap map[string]string) []fedcorev1a1.Clu
 	}
 	util.SortClusterVersions(clusterVersions)
 	return clusterVersions
-}
-
-func PropagatedVersionName(kind, resourceName string) string {
-	return fmt.Sprintf("%s%s", PropagatedVersionPrefix(kind), resourceName)
-}
-
-func PropagatedVersionPrefix(kind string) string {
-	return fmt.Sprintf("%s-", strings.ToLower(kind))
 }

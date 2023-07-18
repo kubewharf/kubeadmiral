@@ -26,14 +26,15 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/klog/v2"
 
-	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
+	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
 
 type CheckUnmanagedDispatcher interface {
@@ -45,19 +46,19 @@ type CheckUnmanagedDispatcher interface {
 type checkUnmanagedDispatcherImpl struct {
 	dispatcher *operationDispatcherImpl
 
-	targetGVK  schema.GroupVersionKind
+	targetGVR  schema.GroupVersionResource
 	targetName common.QualifiedName
 }
 
 func NewCheckUnmanagedDispatcher(
 	clientAccessor clientAccessorFunc,
-	targetGVK schema.GroupVersionKind,
+	targetGVR schema.GroupVersionResource,
 	targetName common.QualifiedName,
 ) CheckUnmanagedDispatcher {
 	dispatcher := newOperationDispatcher(clientAccessor, nil)
 	return &checkUnmanagedDispatcherImpl{
 		dispatcher: dispatcher,
-		targetGVK:  targetGVK,
+		targetGVR:  targetGVR,
 		targetName: targetName,
 	}
 }
@@ -73,15 +74,17 @@ func (d *checkUnmanagedDispatcherImpl) CheckRemovedOrUnlabeled(ctx context.Conte
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "check for deletion of resource or removal of managed label from"
 	errLogMessage := fmt.Sprintf("Failed to %s target obj", op)
-	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
+	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client dynamic.Interface) bool {
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		targetName := d.targetNameForCluster(clusterName)
 
 		keyedLogger.V(2).Info("Checking for deletion of resource or removal of managed label from target obj")
-		clusterObj := &unstructured.Unstructured{}
-		clusterObj.SetGroupVersionKind(d.targetGVK)
-		err := client.Get(context.Background(), clusterObj, targetName.Namespace, targetName.Name)
-		if apierrors.IsNotFound(err) {
+		clusterObj, err := client.Resource(d.targetGVR).Namespace(targetName.Namespace).Get(
+			ctx,
+			targetName.Name,
+			metav1.GetOptions{ResourceVersion: "0"},
+		)
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
 			return true
 		}
 		if err != nil {
@@ -104,7 +107,7 @@ func (d *checkUnmanagedDispatcherImpl) wrapOperationError(err error, clusterName
 	return wrapOperationError(
 		err,
 		operation,
-		d.targetGVK.Kind,
+		d.targetGVR.String(),
 		d.targetNameForCluster(clusterName).String(),
 		clusterName,
 	)
