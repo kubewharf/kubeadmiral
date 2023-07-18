@@ -36,7 +36,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: Spec defines the desired behavior of the ClusterFederatedObject.
+            description: Spec defines the desired behavior of the FederatedObject.
             properties:
               follows:
                 description: Follows defines other objects, or "leaders", that the
@@ -150,7 +150,7 @@ spec:
             type: object
           status:
             description: Status describes the most recently observed status of the
-              ClusterFederatedObject.
+              FederatedObject.
             properties:
               clusters:
                 description: Clusters contains the propagation status of the Kubernetes

@@ -52,7 +52,11 @@ for group in "${groups[@]}"; do
 done
 
 # generate code
-function codegen::join() { local IFS="$1"; shift; echo "$*"; }
+function codegen::join() {
+  local IFS="$1"
+  shift
+  echo "$*"
+}
 
 # generate manifests
 echo "Generating manifests"
@@ -71,9 +75,6 @@ for patch_file in config/crds/patches/*.sh; do
 
   PATH="$GOBIN:$PATH" bash $patch_file $crd_file
 done
-# remove the CRD for GenericFederatedObject.
-# It's not needed and there's no way to suppress its generation.
-rm -v config/crds/core.kubeadmiral.io_genericfederatedobjects.yaml || true
 
 # generate deepcopy
 echo "Generating deepcopy funcs"
