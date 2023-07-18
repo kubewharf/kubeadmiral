@@ -207,9 +207,7 @@ type FederatedObjectConditionReason string
 
 const (
 	AggregateSuccess       FederatedObjectConditionReason = ""
-	SyncRevisionsFailed    FederatedObjectConditionReason = "SyncRevisionsFailed"
 	ClusterRetrievalFailed FederatedObjectConditionReason = "ClusterRetrievalFailed"
-	PlanRolloutFailed      FederatedObjectConditionReason = "PlanRolloutFailed"
 	CheckClusters          FederatedObjectConditionReason = "CheckClusters"
 	EnsureDeletionFailed   FederatedObjectConditionReason = "EnsureDeletionFailed"
 )
