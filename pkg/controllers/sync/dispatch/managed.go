@@ -175,7 +175,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 
 		keyedLogger.V(1).Info("Creating target object in cluster")
 		obj, err = client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Create(
-			ctx, obj, metav1.CreateOptions{},
+			ctxWithTimeout, obj, metav1.CreateOptions{},
 		)
 		if err == nil {
 			version := util.ObjectVersion(obj)
@@ -188,22 +188,22 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		alreadyExists := apierrors.IsAlreadyExists(err) ||
 			d.fedResource.TargetGVK() == corev1.SchemeGroupVersion.WithKind(common.NamespaceKind) && apierrors.IsServerTimeout(err)
 		if !alreadyExists {
-			return d.recordOperationError(ctx, fedcorev1a1.CreationFailed, clusterName, op, err)
+			return d.recordOperationError(ctxWithTimeout, fedcorev1a1.CreationFailed, clusterName, op, err)
 		}
 
 		// Attempt to update the existing resource to ensure that it
 		// is labeled as a managed resource.
 		obj, err = client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Get(
-			ctx, obj.GetName(), metav1.GetOptions{},
+			ctxWithTimeout, obj.GetName(), metav1.GetOptions{},
 		)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retrieve object potentially requiring adoption")
-			return d.recordOperationError(ctx, fedcorev1a1.RetrievalFailed, clusterName, op, wrappedErr)
+			return d.recordOperationError(ctxWithTimeout, fedcorev1a1.RetrievalFailed, clusterName, op, wrappedErr)
 		}
 
 		if d.skipAdoptingResources {
 			return d.recordOperationError(
-				ctx,
+				ctxWithTimeout,
 				fedcorev1a1.AlreadyExists,
 				clusterName,
 				op,

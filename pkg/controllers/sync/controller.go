@@ -129,21 +129,8 @@ type SyncController struct {
 
 /*
 TODOs
-- two cluster queues
-- cluster event handlers
-- federated accessor
-- version manager
-- fo and cfo
-- managed label for federatedinformermanager
-- already partially deleted revision history
-- already partially deleted fed namespace placement constraint
-- use jsonutil for unmarshalling
-- check deepcopy, especially when previously used UnmarshalGeneric
-- federated name and target name are not the same
-- check if namespace are used for all clients
 - generic client:
   - version manager (have to experiment with generics, reconsider after refactoring everything else)
-  - dispatcher
 */
 
 // NewSyncController returns a new sync controller for the configuration
@@ -311,6 +298,7 @@ func (s *SyncController) getClusterClient(clusterName string) (dynamic.Interface
 
 // The function triggers reconciliation of all target federated resources.
 func (s *SyncController) enqueueAllObjects() {
+	s.logger.V(2).Info("Enqueuing all federated resources")
 	s.fedAccessor.VisitFederatedResources(func(obj fedcorev1a1.GenericFederatedObject) {
 		qualifiedName := common.NewQualifiedName(obj)
 		s.worker.EnqueueWithDelay(qualifiedName, s.reconcileOnClusterChangeDelay)
@@ -341,7 +329,7 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 	ctx, keyedLogger = logging.InjectLoggerValues(
 		ctx,
 		"target-name", fedResource.TargetName().String(),
-		"target-gvk", fedResource.TargetGVK().String(),
+		"gvk", fedResource.TargetGVK().String(),
 	)
 
 	if fedResource.Object().GetDeletionTimestamp() != nil {
@@ -872,6 +860,7 @@ func (s *SyncController) removeClusterFinalizer(ctx context.Context, cluster *fe
 func (s *SyncController) reconcileClusterForCascadingDeletion(ctx context.Context, qualifiedName common.QualifiedName) worker.Result {
 	logger := s.logger.WithValues("cluster-name", qualifiedName.String(), "process", "cluster-cascading-deletion")
 	ctx = klog.NewContext(ctx, logger)
+	logger.V(3).Info("Starting to reconcile cluster for cascading deletion")
 
 	clusterLister := s.fedInformerManager.GetFederatedClusterLister()
 	cluster, err := clusterLister.Get(qualifiedName.Name)
@@ -951,7 +940,7 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(ctx context.Contex
 			)
 			if err == nil && len(objects.Items) > 0 {
 				remainingByGVK[gvk] = strconv.Itoa(len(objects.Items))
-			} else if err != nil && !meta.IsNoMatchError(err) {
+			} else if err != nil && !meta.IsNoMatchError(err) && !apierrors.IsNotFound(err) {
 				remainingByGVK[gvk] = fmt.Sprintf("Unknown (failed to list from cluster: %v)", err)
 			}
 		}

@@ -155,7 +155,7 @@ func (a *resourceAccessor) FederatedResource(
 	}
 
 	targetGVK := template.GroupVersionKind()
-	if targetGVK == corev1.SchemeGroupVersion.WithKind(common.NamespaceKind) && a.isSystemNamespace(qualifiedName.Name) {
+	if targetGVK == corev1.SchemeGroupVersion.WithKind(common.NamespaceKind) && a.isSystemNamespace(template.GetName()) {
 		return nil, nil
 	}
 

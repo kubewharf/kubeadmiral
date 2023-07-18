@@ -31,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 )
 
 const (
@@ -63,56 +62,6 @@ func ObjectNeedsUpdate(
 		return true
 	}
 
-	needUpdate := true
-	if desiredReplicas, err := utilunstructured.GetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil); err == nil {
-		if currentReplicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil); err == nil {
-			if desiredReplicas == nil && currentReplicas == nil ||
-				desiredReplicas != nil && currentReplicas != nil && *desiredReplicas == *currentReplicas {
-				needUpdate = false
-			}
-		}
-	}
-	if needUpdate {
-		return true
-	}
-
-	needUpdate = true
-	if desiredMaxSurge, ok, err := unstructured.NestedString(desiredObj.Object, MaxSurgePathSlice...); err == nil {
-		if currentMaxSurge, ok2, err := unstructured.NestedString(clusterObj.Object, MaxSurgePathSlice...); err == nil &&
-			ok == ok2 {
-			if desiredMaxSurge == currentMaxSurge {
-				needUpdate = false
-			}
-		}
-	} else if desiredMaxSurge, ok, err := unstructured.NestedInt64(desiredObj.Object, MaxSurgePathSlice...); err == nil {
-		if currentMaxSurge, ok2, err := unstructured.NestedInt64(clusterObj.Object, MaxSurgePathSlice...); err == nil && ok == ok2 {
-			if desiredMaxSurge == currentMaxSurge {
-				needUpdate = false
-			}
-		}
-	}
-	if needUpdate {
-		return true
-	}
-
-	needUpdate = true
-	if desiredMaxUnavailable, ok, err := unstructured.NestedString(desiredObj.Object, MaxUnavailablePathSlice...); err == nil {
-		if currentMaxUnavailable, ok2, err := unstructured.NestedString(clusterObj.Object, MaxUnavailablePathSlice...); err == nil &&
-			ok == ok2 {
-			if desiredMaxUnavailable == currentMaxUnavailable {
-				needUpdate = false
-			}
-		}
-	} else if desiredMaxUnavailable, ok, err := unstructured.NestedInt64(desiredObj.Object, MaxUnavailablePathSlice...); err == nil {
-		if currentMaxUnavailable, ok2, err := unstructured.NestedInt64(clusterObj.Object, MaxUnavailablePathSlice...); err == nil && ok == ok2 {
-			if desiredMaxUnavailable == currentMaxUnavailable {
-				needUpdate = false
-			}
-		}
-	}
-	if needUpdate {
-		return true
-	}
 	// If versions match and the version is sourced from the
 	// generation field, a further check of metadata equivalency is
 	// required.

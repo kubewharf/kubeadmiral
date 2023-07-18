@@ -29,7 +29,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -152,27 +151,8 @@ func (r *federatedResource) ComputePlacement(clusters []*fedcorev1a1.FederatedCl
 	return computePlacement(r.federatedObject, clusters)
 }
 
-// TODO Marshall the template once per reconcile, not per-cluster
 func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.Unstructured, error) {
 	obj := r.template.DeepCopy()
-
-	// TODO: do we still need this? The template created by federate controller should never contain finalizers.
-	notSupportedTemplate := "metadata.%s cannot be set via template to avoid conflicting with controllers " +
-		"in member clusters. Consider using an override to add or remove elements from this collection."
-	if len(obj.GetFinalizers()) > 0 {
-		r.RecordError("FinalizersNotSupported", errors.Errorf(notSupportedTemplate, "finalizers"))
-		obj.SetFinalizers(nil)
-	}
-
-	// Avoid having to duplicate these details in the template or have
-	// the name/namespace vary between host and member clusters.
-	// TODO: consider omitting these fields in the template created by federate controller
-	obj.SetName(r.federatedObject.GetName())
-	obj.SetNamespace(r.federatedObject.GetNamespace())
-
-	targetAPIResource := r.typeConfig.GetSourceType()
-	obj.SetAPIVersion(schema.GroupVersion{Group: targetAPIResource.Group, Version: targetAPIResource.Version}.String())
-	obj.SetKind(targetAPIResource.Kind)
 
 	if schemautil.IsJobGvk(r.TargetGVK()) {
 		if err := dropJobFields(obj); err != nil {
