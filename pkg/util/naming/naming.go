@@ -90,6 +90,7 @@ func transformObjectName(objectName string) (string, bool) {
 		}
 
 		transformed = true
+
 		if ch >= 'A' && ch <= 'Z' {
 			// transform uppercase letters into lowercase
 			transformedName[i] = caseDiff + ch
@@ -99,7 +100,17 @@ func transformObjectName(objectName string) (string, bool) {
 		}
 	}
 
-	return string(transformedName), transformed
+	// squash any sequence of more than one '.'
+	sanitizedName := []byte{}
+	for i, ch := range transformedName {
+		if i != 0 && transformedName[i-1] == '.' && transformedName[i] == '.' {
+			transformed = true
+			continue
+		}
+		sanitizedName = append(sanitizedName, ch)
+	}
+
+	return string(sanitizedName), transformed
 }
 
 func fnvHashFunc(key string) uint32 {

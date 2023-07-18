@@ -1,3 +1,4 @@
+//go:build exclude
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -49,9 +50,6 @@ const (
 	EventReasonMatchOverridePolicyFailed = "MatchOverridePolicyFailed"
 	EventReasonParseOverridePolicyFailed = "ParseOverridePolicyFailed"
 	EventReasonOverridePolicyApplied     = "OverridePolicyApplied"
-
-	OverridePolicyNameLabel        = common.DefaultPrefix + "override-policy-name"
-	ClusterOverridePolicyNameLabel = common.DefaultPrefix + "cluster-override-policy-name"
 )
 
 var PrefixedControllerName = common.DefaultPrefix + ControllerName

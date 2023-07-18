@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -36,18 +37,17 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
-	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/sourcefeedback"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 )
 
 type workerKey struct {
 	name      string
 	namespace string
-	ftc       *fedcorev1a1.FederatedTypeConfig
+	gvk       schema.GroupVersionKind
 }
 
-func (k workerKey) String() string {
+func (k workerKey) ObjectKey() string {
 	return fmt.Sprintf("%s/%s", k.namespace, k.name)
 }
 
@@ -71,8 +71,18 @@ func templateForSourceObject(
 	return template
 }
 
-func newFederatedObjectForSourceObject(ftc *fedcorev1a1.FederatedTypeConfig, sourceObj *unstructured.Unstructured) (*fedcorev1a1.GenericFederatedObject, error) {
-	fedObj := &fedcorev1a1.GenericFederatedObject{}
+func newFederatedObjectForSourceObject(
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	sourceObj *unstructured.Unstructured,
+) (fedcorev1a1.GenericFederatedObject, error) {
+	var fedObj fedcorev1a1.GenericFederatedObject
+
+	if sourceObj.GetNamespace() == "" {
+		fedObj = &fedcorev1a1.ClusterFederatedObject{}
+	} else {
+		fedObj = &fedcorev1a1.FederatedObject{}
+	}
+
 	fedName := naming.GenerateFederatedObjectName(sourceObj.GetName(), ftc.Name)
 
 	fedObj.SetName(fedName)
@@ -103,17 +113,20 @@ func newFederatedObjectForSourceObject(ftc *fedcorev1a1.FederatedTypeConfig, sou
 
 	// Generate the FederatedObject's template and update the FederatedObject.
 
-	templateObject := templateForSourceObject(sourceObj, templateAnnotations, templateLabels).Object
-	rawTemplate, err := json.Marshal(templateObject)
+	templateObject := templateForSourceObject(sourceObj, templateAnnotations, templateLabels)
+	rawTemplate, err := templateObject.MarshalJSON()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal template: %w", err)
 	}
-	fedObj.Spec.Template.Raw = rawTemplate
+	fedObj.GetSpec().Template.Raw = rawTemplate
 
 	// Generate the JSON patch required to convert the source object to the FederatedObject's template and store it as
 	// an annotation in the FederatedObject.
 
-	templateGeneratorMergePatch, err := CreateMergePatch(sourceObj, &unstructured.Unstructured{Object: templateObject})
+	templateGeneratorMergePatch, err := CreateMergePatch(
+		sourceObj,
+		&unstructured.Unstructured{Object: templateObject.Object},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create merge patch for source object: %w", err)
 	}
@@ -130,7 +143,7 @@ func newFederatedObjectForSourceObject(ftc *fedcorev1a1.FederatedTypeConfig, sou
 func updateFederatedObjectForSourceObject(
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	sourceObject *unstructured.Unstructured,
-	fedObject *fedcorev1a1.GenericFederatedObject,
+	fedObject fedcorev1a1.GenericFederatedObject,
 ) (bool, error) {
 	isUpdated := false
 
@@ -157,21 +170,26 @@ func updateFederatedObjectForSourceObject(
 
 	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObject.GetAnnotations())
 
+	// Record the observed label and annotation keys in an annotation on the FederatedObject.
+
+	observedAnnotationKeys := generateObservedKeys(sourceObject.GetAnnotations(), federatedAnnotations)
+	observedLabelKeys := generateObservedKeys(sourceObject.GetLabels(), federatedLabels)
+
 	// Generate the FederatedObject's template and compare it to the template in the FederatedObject, updating the
 	// FederatedObject if necessary.
 
 	targetTemplate := templateForSourceObject(sourceObject, templateAnnotations, templateLabels)
 	foundTemplate := &unstructured.Unstructured{}
-	if err := json.Unmarshal(fedObject.Spec.Template.Raw, foundTemplate); err != nil {
+	if err := foundTemplate.UnmarshalJSON(fedObject.GetSpec().Template.Raw); err != nil {
 		return false, fmt.Errorf("failed to unmarshal template from federated object: %w", err)
 	}
 	if !reflect.DeepEqual(foundTemplate.Object, targetTemplate.Object) {
-		rawTargetTemplate, err := json.Marshal(targetTemplate)
+		rawTargetTemplate, err := targetTemplate.MarshalJSON()
 		if err != nil {
 			return false, fmt.Errorf("failed to marshal template: %w", err)
 		}
 
-		fedObject.Spec.Template.Raw = rawTargetTemplate
+		fedObject.GetSpec().Template.Raw = rawTargetTemplate
 		isUpdated = true
 	}
 
@@ -185,12 +203,6 @@ func updateFederatedObjectForSourceObject(
 			return federated
 		},
 	)
-
-	// Record the observed label and annotation keys in an annotation on the FederatedObject.
-
-	observedAnnotationKeys := generateObservedKeys(sourceObject.GetAnnotations(), federatedAnnotations)
-	observedLabelKeys := generateObservedKeys(sourceObject.GetLabels(), federatedLabels)
-
 
 	// Generate the JSON patch required to convert the source object to the FederatedObject's template and store it as
 	// an annotation in the FederatedObject.
@@ -232,9 +244,9 @@ var (
 	federatedAnnotationSet = sets.New(
 		scheduler.SchedulingModeAnnotation,
 		scheduler.StickyClusterAnnotation,
-		util.ConflictResolutionAnnotation,
 		nsautoprop.NoAutoPropagationAnnotation,
 		util.OrphanManagedResourcesAnnotation,
+		util.ConflictResolutionAnnotation,
 		scheduler.TolerationsAnnotations,
 		scheduler.PlacementsAnnotations,
 		scheduler.ClusterSelectorAnnotations,
@@ -250,16 +262,12 @@ var (
 	// TODO: Do we need to specify the internal annotations here?
 	// List of annotations that should be ignored on the source object
 	ignoredAnnotationSet = sets.New(
-		util.LatestReplicasetDigestsAnnotation,
-		sourcefeedback.SchedulingAnnotation,
-		sourcefeedback.SyncingAnnotation,
-		sourcefeedback.StatusAnnotation,
 		util.ConflictResolutionInternalAnnotation,
 		util.OrphanManagedResourcesInternalAnnotation,
 		common.EnableFollowerSchedulingAnnotation,
 	)
 
-	federatedLabelSet = sets.New(
+	federatedLabelSet = sets.New[string](
 		scheduler.PropagationPolicyNameLabel,
 		scheduler.ClusterPropagationPolicyNameLabel,
 		override.OverridePolicyNameLabel,

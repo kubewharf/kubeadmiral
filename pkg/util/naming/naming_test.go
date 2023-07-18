@@ -42,6 +42,14 @@ func TestGenerateFederatedObjectName(t *testing.T) {
 			want: "foo-roles.rbac.authorization.k8s.io",
 		},
 		{
+			name: "generate federated object name with consecutive .",
+			args: args{
+				objectName: "system...foo",
+				ftcName:    "roles.rbac.authorization.k8s.io",
+			},
+			want: "system.foo-roles.rbac.authorization.k8s.io-1857674172",
+		},
+		{
 			name: "generate federated object name with :",
 			args: args{
 				objectName: "system:foo",
@@ -50,7 +58,23 @@ func TestGenerateFederatedObjectName(t *testing.T) {
 			want: "system.foo-roles.rbac.authorization.k8s.io-2728495308",
 		},
 		{
+			name: "generate federated object name with consecutive :",
+			args: args{
+				objectName: "system::foo",
+				ftcName:    "roles.rbac.authorization.k8s.io",
+			},
+			want: "system.foo-roles.rbac.authorization.k8s.io-2999937238",
+		},
+		{
 			name: "generate federated object name with $",
+			args: args{
+				objectName: "system$foo",
+				ftcName:    "roles.rbac.authorization.k8s.io",
+			},
+			want: "system.foo-roles.rbac.authorization.k8s.io-4258037882",
+		},
+		{
+			name: "generate federated object name with consecutive $",
 			args: args{
 				objectName: "system$foo",
 				ftcName:    "roles.rbac.authorization.k8s.io",
@@ -66,12 +90,28 @@ func TestGenerateFederatedObjectName(t *testing.T) {
 			want: "system.foo-roles.rbac.authorization.k8s.io-1244789457",
 		},
 		{
+			name: "generate federated object name with consecutive %",
+			args: args{
+				objectName: "system%%%foo",
+				ftcName:    "roles.rbac.authorization.k8s.io",
+			},
+			want: "system.foo-roles.rbac.authorization.k8s.io-4069727015",
+		},
+		{
 			name: "generate federated object name with #",
 			args: args{
 				objectName: "system#foo",
 				ftcName:    "roles.rbac.authorization.k8s.io",
 			},
 			want: "system.foo-roles.rbac.authorization.k8s.io-1128546011",
+		},
+		{
+			name: "generate federated object name with consecutive #",
+			args: args{
+				objectName: "system####foo",
+				ftcName:    "roles.rbac.authorization.k8s.io",
+			},
+			want: "system.foo-roles.rbac.authorization.k8s.io-3227827662",
 		},
 		{
 			name: "generate federated object name with upper case letter",
