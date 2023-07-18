@@ -32,11 +32,10 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"

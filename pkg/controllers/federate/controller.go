@@ -39,11 +39,11 @@ import (
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
-	finalizersutil "github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
+	finalizersutil "github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 	"github.com/kubewharf/kubeadmiral/pkg/util/meta"
@@ -496,7 +496,7 @@ func (c *FederateController) handleExistingFederatedObject(
 	logger := klog.FromContext(ctx)
 
 	logger.V(3).Info("Checking if federated object needs update")
-	needsUpdate, err := updateFederatedObjectForSourceObject(ftc,sourceObject, fedObject)
+	needsUpdate, err := updateFederatedObjectForSourceObject(ftc, sourceObject, fedObject)
 	if err != nil {
 		return false, fmt.Errorf("failed to check if federated object needs update: %w", err)
 	}
