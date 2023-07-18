@@ -984,11 +984,6 @@ func (in *GenericFederatedObjectStatus) DeepCopyInto(out *GenericFederatedObject
 		*out = make([]PropagationStatus, len(*in))
 		copy(*out, *in)
 	}
-	if in.CollisionCount != nil {
-		in, out := &in.CollisionCount, &out.CollisionCount
-		*out = new(int32)
-		**out = **in
-	}
 	return
 }
 

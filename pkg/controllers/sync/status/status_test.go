@@ -25,26 +25,25 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
 func TestGenericPropagationStatusUpdateChanged(t *testing.T) {
 	testCases := map[string]struct {
 		generation       int64
-		collisionCount   *int32
-		reason           fedtypesv1a1.AggregateReason
+		reason           fedcorev1a1.FederatedObjectConditionReason
 		statusMap        PropagationStatusMap
 		resourcesUpdated bool
 		expectedChanged  bool
 	}{
 		"No change in clusters indicates unchanged": {
 			statusMap: PropagationStatusMap{
-				"cluster1": fedtypesv1a1.ClusterPropagationOK,
+				"cluster1": fedcorev1a1.ClusterPropagationOK,
 			},
 		},
 		"No change in clusters with update indicates changed": {
 			statusMap: PropagationStatusMap{
-				"cluster1": fedtypesv1a1.ClusterPropagationOK,
+				"cluster1": fedcorev1a1.ClusterPropagationOK,
 			},
 			resourcesUpdated: true,
 			expectedChanged:  true,
@@ -53,7 +52,7 @@ func TestGenericPropagationStatusUpdateChanged(t *testing.T) {
 			expectedChanged: true,
 		},
 		"Transition indicates changed": {
-			reason:          fedtypesv1a1.NamespaceNotFederated,
+			reason:          fedcorev1a1.ClusterRetrievalFailed,
 			expectedChanged: true,
 		},
 		"Changed generation indicates changed": {
@@ -63,16 +62,16 @@ func TestGenericPropagationStatusUpdateChanged(t *testing.T) {
 	}
 	for testName, tc := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			propStatus := &fedtypesv1a1.GenericFederatedStatus{
-				Clusters: []fedtypesv1a1.GenericClusterStatus{
+			propStatus := &fedcorev1a1.GenericFederatedObjectStatus{
+				Clusters: []fedcorev1a1.PropagationStatus{
 					{
-						Name:   "cluster1",
-						Status: fedtypesv1a1.ClusterPropagationOK,
+						Cluster: "cluster1",
+						Status:  fedcorev1a1.ClusterPropagationOK,
 					},
 				},
-				Conditions: []*fedtypesv1a1.GenericCondition{
+				Conditions: []fedcorev1a1.GenericFederatedObjectCondition{
 					{
-						Type:   fedtypesv1a1.PropagationConditionType,
+						Type:   fedcorev1a1.PropagationConditionType,
 						Status: corev1.ConditionTrue,
 					},
 				},
@@ -82,7 +81,7 @@ func TestGenericPropagationStatusUpdateChanged(t *testing.T) {
 				ResourcesUpdated: tc.resourcesUpdated,
 				GenerationMap:    map[string]int64{"cluster1": tc.generation},
 			}
-			changed := update(propStatus, tc.generation, tc.collisionCount, tc.reason, collectedStatus)
+			changed := update(propStatus, tc.generation, tc.reason, collectedStatus)
 			if tc.expectedChanged != changed {
 				t.Fatalf("Expected changed to be %v, got %v", tc.expectedChanged, changed)
 			}

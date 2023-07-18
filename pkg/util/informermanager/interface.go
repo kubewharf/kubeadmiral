@@ -54,6 +54,9 @@ type FederatedTypeConfigManager interface {
 	// Returns the FederatedTypeConfig lister used by the manager.
 	GetFederatedTypeConfigLister() fedcorev1a1listers.FederatedTypeConfigLister
 
+	// Adds a FTCUpdateHandler that is called each time the InformerManager finishes processing an FTC.
+	AddFTCUpdateHandler(handler FTCUpdateHandler) error
+
 	// Returns true if the manager's view of FederatedTypeConfigs is synced.
 	HasSynced() bool
 }
@@ -65,21 +68,14 @@ type FederatedTypeConfigManager interface {
 // Having multiple FTCs with the same source type is not supported and may cause InformerManager to behave incorrectly.
 // Updating FTC source types is also not supported and may also cause InformerManager to behave incorrectly.
 type InformerManager interface {
+	FederatedTypeConfigManager
+
 	// Adds an EventHandler used to generate and register ResourceEventHandlers for each FTC's source type informer.
 	AddEventHandlerGenerator(generator *EventHandlerGenerator) error
-	// Adds a FTCUpdateHandler that is called each time the InformerManager finishes processing an FTC.
-	AddFTCUpdateHandler(handler FTCUpdateHandler) error
 
 	// Returns a lister for the given GroupResourceVersion if it exists. The lister for each FTC's source type will
 	// eventually exist.
 	GetResourceLister(gvk schema.GroupVersionKind) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool)
-	// Returns the known FTC mapping for the given GVK if it exists.
-	GetResourceFTC(gvk schema.GroupVersionKind) (ftc *fedcorev1a1.FederatedTypeConfig, exists bool)
-
-	// Returns the FederatedTypeConfig lister used by the InformerManager.
-	GetFederatedTypeConfigLister() fedcorev1a1listers.FederatedTypeConfigLister
-	// Returns true if the InformerManager's view of FederatedTypeConfigs is synced.
-	HasSynced() bool
 
 	// Starts processing FederatedTypeConfig events.
 	Start(ctx context.Context)
@@ -134,6 +130,8 @@ type FederatedInformerManager interface {
 	GetFederatedClusterLister() fedcorev1a1listers.FederatedClusterLister
 	// Returns the joined clusters in ready status listed from the FederatedInformerManager.
 	GetReadyClusters() ([]*fedcorev1a1.FederatedCluster, error)
+	// Returns the joined clusters listed from the FederatedInformerManager.
+	GetJoinedClusters() ([]*fedcorev1a1.FederatedCluster, error)
 	// Returns true if the FederatedInformerManager's view of FederatedTypeConfigs and FederatedClusters is synced.
 	HasSynced() bool
 

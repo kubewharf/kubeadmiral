@@ -34,6 +34,23 @@ func GetFromLister(
 	}
 }
 
+func Get(
+	ctx context.Context,
+	fedv1a1Client fedcorev1a1client.CoreV1alpha1Interface,
+	namespace, name string,
+	opts metav1.GetOptions,
+) (fedcorev1a1.GenericFederatedObject, error) {
+	if namespace == "" {
+		return ensureNilInterface(
+			fedv1a1Client.ClusterFederatedObjects().Get(ctx, name, opts),
+		)
+	} else {
+		return ensureNilInterface(
+			fedv1a1Client.FederatedObjects(namespace).Get(ctx, name, opts),
+		)
+	}
+}
+
 func Create(
 	ctx context.Context,
 	fedv1a1Client fedcorev1a1client.CoreV1alpha1Interface,

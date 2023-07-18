@@ -18,10 +18,10 @@ This file may have been modified by The KubeAdmiral Authors
 are Copyright 2023 The KubeAdmiral Authors.
 */
 
-package util
+package orphaning
 
 import (
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
@@ -45,7 +45,7 @@ const (
 	OrphanManagedResourcesNone OrphanManagedResourcesBehavior = ""
 )
 
-func GetOrphaningBehavior(obj *unstructured.Unstructured) OrphanManagedResourcesBehavior {
+func GetOrphaningBehavior(obj metav1.Object) OrphanManagedResourcesBehavior {
 	annotations := obj.GetAnnotations()
 
 	value, exists := annotations[OrphanManagedResourcesInternalAnnotation]
