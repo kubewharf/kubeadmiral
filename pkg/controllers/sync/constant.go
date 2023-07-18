@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2019 The Kubernetes Authors.
 
@@ -19,7 +18,7 @@ This file may have been modified by The KubeAdmiral Authors
 are Copyright 2023 The KubeAdmiral Authors.
 */
 
-package util
+package sync
 
 import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -27,9 +26,14 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
+type ConflictResolution string
+
 type OrphanManagedResourcesBehavior string
 
 const (
+	ConflictResolutionAnnotation         = common.DefaultPrefix + "conflict-resolution"
+	ConflictResolutionInternalAnnotation = common.InternalPrefix + "conflict-resolution"
+	AdoptedAnnotation                    = common.DefaultPrefix + "adopted"
 	// If this annotation is present on a federated resource, it controls the
 	// manner in which resources in the member clusters are orphaned when the
 	// federated resource is deleted.
@@ -38,6 +42,9 @@ const (
 	OrphanManagedResourcesAnnotation         = common.DefaultPrefix + "orphan"
 	OrphanManagedResourcesInternalAnnotation = common.InternalPrefix + "orphan"
 
+	// Conflict resolution for preexisting resources
+	ConflictResolutionAdopt ConflictResolution = "adopt"
+
 	// Orphan all managed resources
 	OrphanManagedResourcesAll OrphanManagedResourcesBehavior = "all"
 	// Orphan only the adopted resources
@@ -45,6 +52,34 @@ const (
 	// Orphaning disabled, delete managed resources
 	OrphanManagedResourcesNone OrphanManagedResourcesBehavior = ""
 )
+
+func ShouldAdoptPreexistingResources(obj *unstructured.Unstructured) bool {
+	annotations := obj.GetAnnotations()
+
+	value, exists := annotations[ConflictResolutionInternalAnnotation]
+	if !exists {
+		value = annotations[ConflictResolutionAnnotation]
+	}
+
+	return value == string(ConflictResolutionAdopt)
+}
+
+func HasAdoptedAnnotation(obj *unstructured.Unstructured) bool {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		return false
+	}
+	return annotations[AdoptedAnnotation] == common.AnnotationValueTrue
+}
+
+func RemoveAdoptedAnnotation(obj *unstructured.Unstructured) {
+	annotations := obj.GetAnnotations()
+	if annotations == nil || annotations[AdoptedAnnotation] != common.AnnotationValueTrue {
+		return
+	}
+	delete(annotations, AdoptedAnnotation)
+	obj.SetAnnotations(annotations)
+}
 
 func GetOrphaningBehavior(obj *unstructured.Unstructured) OrphanManagedResourcesBehavior {
 	annotations := obj.GetAnnotations()

@@ -42,10 +42,7 @@ const (
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
-	FederatedClusterControllerName: startFederatedClusterController,
 	FederateControllerName: startFederateController,
-	MonitorControllerName:          startMonitorController,
-	FollowerControllerName:         startFollowerController,
 }
 
 var controllersDisabledByDefault = sets.New(MonitorControllerName)

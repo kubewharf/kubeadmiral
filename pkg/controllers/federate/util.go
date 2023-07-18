@@ -32,11 +32,11 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
@@ -244,9 +244,9 @@ var (
 	federatedAnnotationSet = sets.New(
 		scheduler.SchedulingModeAnnotation,
 		scheduler.StickyClusterAnnotation,
-		util.ConflictResolutionAnnotation,
 		nsautoprop.NoAutoPropagationAnnotation,
-		util.OrphanManagedResourcesAnnotation,
+		sync.OrphanManagedResourcesAnnotation,
+		sync.ConflictResolutionAnnotation,
 		scheduler.TolerationsAnnotations,
 		scheduler.PlacementsAnnotations,
 		scheduler.ClusterSelectorAnnotations,
@@ -261,9 +261,8 @@ var (
 	// TODO: Do we need to specify the internal annotations here?
 	// List of annotations that should be ignored on the source object
 	ignoredAnnotationSet = sets.New(
-		util.LatestReplicasetDigestsAnnotation,
-		util.ConflictResolutionInternalAnnotation,
-		util.OrphanManagedResourcesInternalAnnotation,
+		sync.ConflictResolutionInternalAnnotation,
+		sync.OrphanManagedResourcesInternalAnnotation,
 		common.EnableFollowerSchedulingAnnotation,
 	)
 

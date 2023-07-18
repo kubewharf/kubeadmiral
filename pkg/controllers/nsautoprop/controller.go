@@ -1,3 +1,4 @@
+//go:build exclude
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -57,7 +58,6 @@ const (
 	NamespaceAutoPropagationControllerName         = "nsautoprop-controller"
 	PrefixedNamespaceAutoPropagationControllerName = common.DefaultPrefix + NamespaceAutoPropagationControllerName
 	EventReasonNamespaceAutoPropagation            = "NamespaceAutoPropagation"
-	NoAutoPropagationAnnotation                    = common.DefaultPrefix + "no-auto-propagation"
 )
 
 /*
