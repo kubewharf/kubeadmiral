@@ -36,7 +36,7 @@ func GetFromLister(
 
 func Create(
 	ctx context.Context,
-	fedv1a1Client fedcorev1a1client.CoreV1alpha1Client,
+	fedv1a1Client fedcorev1a1client.CoreV1alpha1Interface,
 	obj fedcorev1a1.GenericFederatedObject,
 	opts metav1.CreateOptions,
 ) (fedcorev1a1.GenericFederatedObject, error) {
@@ -61,7 +61,7 @@ func Create(
 
 func Update(
 	ctx context.Context,
-	fedv1a1Client fedcorev1a1client.CoreV1alpha1Client,
+	fedv1a1Client fedcorev1a1client.CoreV1alpha1Interface,
 	obj fedcorev1a1.GenericFederatedObject,
 	opts metav1.UpdateOptions,
 ) (fedcorev1a1.GenericFederatedObject, error) {
@@ -86,7 +86,7 @@ func Update(
 
 func UpdateStatus(
 	ctx context.Context,
-	fedv1a1Client fedcorev1a1client.CoreV1alpha1Client,
+	fedv1a1Client fedcorev1a1client.CoreV1alpha1Interface,
 	obj fedcorev1a1.GenericFederatedObject,
 	opts metav1.UpdateOptions,
 ) (fedcorev1a1.GenericFederatedObject, error) {
@@ -111,7 +111,7 @@ func UpdateStatus(
 
 func Delete(
 	ctx context.Context,
-	fedv1a1Client fedcorev1a1client.CoreV1alpha1Client,
+	fedv1a1Client fedcorev1a1client.CoreV1alpha1Interface,
 	namespace, name string,
 	opts metav1.DeleteOptions,
 ) error {
