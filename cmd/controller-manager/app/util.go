@@ -29,14 +29,14 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app/options"
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
-	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
@@ -154,7 +154,7 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 		DynamicInformerFactory: dynamicInformerFactory,
 		FedInformerFactory:     fedInformerFactory,
 
-		InformerManager: informerManager,
+		InformerManager:          informerManager,
 		FederatedInformerManager: federatedInformerManager,
 	}, nil
 }
