@@ -127,7 +127,7 @@ func NewFederateController(
 				c.worker.Enqueue(workerKey{
 					name:      uns.GetName(),
 					namespace: uns.GetNamespace(),
-					ftc:       ftc,
+					gvk:       ftc.GetSourceTypeGVK(),
 				})
 			})
 		},
@@ -137,7 +137,7 @@ func NewFederateController(
 
 	if _, err := fedObjectInformer.Informer().AddEventHandler(
 		eventhandlers.NewTriggerOnAllChanges(func(o runtime.Object) {
-			fedObj := o.(*fedcorev1a1.GenericFederatedObject)
+			fedObj := o.(*fedcorev1a1.FederatedObject)
 			logger := c.logger.WithValues("federated-object", common.NewQualifiedName(fedObj))
 
 			srcMeta, err := meta.GetSourceObjectMeta(fedObj)
@@ -146,18 +146,12 @@ func NewFederateController(
 				return
 			}
 
-			gvk := srcMeta.GroupVersionKind
-			logger = logger.WithValues("gvk", gvk)
-
-			ftc, exists := c.informerManager.GetResourceFTC(srcMeta.GroupVersionKind())
-			if !exists {
-				logger.Error(nil, "Received event for FederatedObject without FederatedTypeConfig")
-			}
+			gvk := srcMeta.GroupVersionKind()
 
 			c.worker.Enqueue(workerKey{
 				name:      srcMeta.GetName(),
 				namespace: srcMeta.GetNamespace(),
-				ftc:       ftc,
+				gvk:       gvk,
 			})
 		}),
 	); err != nil {
@@ -166,7 +160,7 @@ func NewFederateController(
 
 	if _, err := clusterFedObjectInformer.Informer().AddEventHandler(
 		eventhandlers.NewTriggerOnAllChanges(func(o runtime.Object) {
-			fedObj := o.(*fedcorev1a1.GenericFederatedObject)
+			fedObj := o.(*fedcorev1a1.ClusterFederatedObject)
 			logger := c.logger.WithValues("cluster-federated-object", common.NewQualifiedName(fedObj))
 
 			srcMeta, err := meta.GetSourceObjectMeta(fedObj)
@@ -175,18 +169,12 @@ func NewFederateController(
 				return
 			}
 
-			gvk := srcMeta.GroupVersionKind
-			logger = logger.WithValues("gvk", gvk)
-
-			ftc, exists := c.informerManager.GetResourceFTC(srcMeta.GroupVersionKind())
-			if !exists {
-				logger.Error(nil, "Received event for ClusterFederatedObject without FederatedTypeConfig")
-			}
+			gvk := srcMeta.GroupVersionKind()
 
 			c.worker.Enqueue(workerKey{
 				name:      srcMeta.GetName(),
 				namespace: srcMeta.GetNamespace(),
-				ftc:       ftc,
+				gvk:       gvk,
 			})
 		}),
 	); err != nil {
@@ -226,7 +214,19 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()
 
-	sourceGVR := key.ftc.GetSourceTypeGVR()
+	sourceGVK := key.gvk
+	ctx, logger = logging.InjectLoggerValues(ctx, "gvk", sourceGVK)
+
+	ftc, exists := c.informerManager.GetResourceFTC(key.gvk)
+	if !exists {
+		logger.Error(nil, "FTC does not exist for GVK")
+		return worker.StatusError
+	}
+	ctx, logger = logging.InjectLoggerValues(ctx, "ftc", ftc.Name)
+
+	sourceGVR := ftc.GetSourceTypeGVR()
+	ctx, logger = logging.InjectLoggerValues(ctx, "gvr", sourceGVR)
+
 	sourceObject, err := c.sourceObjectFromStore(key)
 	if err != nil && apierrors.IsNotFound(err) {
 		logger.V(3).Info(fmt.Sprintf("No source object for found, skip federating"))
@@ -238,7 +238,15 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 	}
 	sourceObject = sourceObject.DeepCopy()
 
-	fedObject, err := c.federatedObjectFromStore(key)
+	fedObjectName := naming.GenerateFederatedObjectName(sourceObject.GetName(), ftc.Name)
+	ctx, logger = logging.InjectLoggerValues(ctx, "federated-object", fedObjectName)
+
+	fedObject, err := fedobjectadapters.GetFromLister(
+		c.fedObjectInformer.Lister(),
+		c.clusterFedObjectInformer.Lister(),
+		sourceObject.GetNamespace(),
+		fedObjectName,
+	)
 	if err != nil && !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to get federated object from store")
 		return worker.StatusError
@@ -246,7 +254,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 	if apierrors.IsNotFound(err) {
 		fedObject = nil
 	} else {
-		fedObject = fedObject.DeepCopy()
+		fedObject = fedObject.DeepCopyGenericFederatedObject()
 	}
 
 	if sourceObject.GetDeletionTimestamp() != nil {
@@ -278,7 +286,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 
 	if fedObject == nil {
 		logger.V(3).Info("No federated object found")
-		if err := c.handleCreateFederatedObject(ctx, key.ftc, sourceObject); err != nil {
+		if err := c.handleCreateFederatedObject(ctx, ftc, sourceObject); err != nil {
 			logger.Error(err, "Failed to create federated object")
 			c.eventRecorder.Eventf(
 				sourceObject,
@@ -305,7 +313,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 	}
 
 	logger.V(3).Info("Federated object already exists")
-	updated, err := c.handleExistingFederatedObject(ctx, key.ftc, sourceObject, fedObject)
+	updated, err := c.handleExistingFederatedObject(ctx, ftc, sourceObject, fedObject)
 	if err != nil {
 		logger.Error(err, "Failed to reconcile existing federated object")
 		if apierrors.IsConflict(err) {
@@ -316,7 +324,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 			corev1.EventTypeWarning,
 			EventReasonUpdateFederatedObject,
 			"Failed to reconcile existing federated object %s: %v",
-			fedObject.Name,
+			fedObject.GetName(),
 			err,
 		)
 		return worker.StatusError
@@ -327,7 +335,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 			corev1.EventTypeNormal,
 			EventReasonUpdateFederatedObject,
 			"Federated object updated: %s",
-			fedObject.Name,
+			fedObject.GetName(),
 		)
 	} else {
 		logger.V(3).Info("No updates required to the federated object")
@@ -337,37 +345,24 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 }
 
 func (c *FederateController) sourceObjectFromStore(key workerKey) (*unstructured.Unstructured, error) {
-	gvk := key.ftc.GetSourceTypeGVK()
-
-	lister, hasSynced, exists := c.informerManager.GetResourceLister(gvk)
+	lister, hasSynced, exists := c.informerManager.GetResourceLister(key.gvk)
 	if !exists {
-		return nil, fmt.Errorf("lister for %s does not exist", gvk)
+		return nil, fmt.Errorf("lister for %s does not exist", key.gvk)
 	}
 	if !hasSynced() {
-		return nil, fmt.Errorf("lister for %s not synced", gvk)
+		return nil, fmt.Errorf("lister for %s not synced", key.gvk)
 	}
 
 	var obj runtime.Object
 	var err error
 
-	if key.ftc.GetNamespaced() {
-		obj, err = lister.ByNamespace(key.namespace).Get(key.name)
-	} else {
+	if key.namespace == "" {
 		obj, err = lister.Get(key.name)
+	} else {
+		obj, err = lister.ByNamespace(key.namespace).Get(key.name)
 	}
 
 	return obj.(*unstructured.Unstructured), err
-}
-
-func (c *FederateController) federatedObjectFromStore(key workerKey) (*fedcorev1a1.GenericFederatedObject, error) {
-	fedName := naming.GenerateFederatedObjectName(key.name, key.ftc.Name)
-
-	return fedobjectadapters.GetFromLister(
-		c.fedObjectInformer.Lister(),
-		c.clusterFedObjectInformer.Lister(),
-		key.namespace,
-		fedName,
-	)
 }
 
 func (c *FederateController) ensureFinalizer(
@@ -432,7 +427,7 @@ func (c *FederateController) handleTerminatingSourceObject(
 	ctx context.Context,
 	sourceGVR schema.GroupVersionResource,
 	sourceObject *unstructured.Unstructured,
-	fedObject *fedcorev1a1.GenericFederatedObject,
+	fedObject fedcorev1a1.GenericFederatedObject,
 ) error {
 	logger := klog.FromContext(ctx)
 
@@ -450,9 +445,8 @@ func (c *FederateController) handleTerminatingSourceObject(
 		if err := fedobjectadapters.Delete(
 			ctx,
 			c.fedClient.CoreV1alpha1(),
-			c.fedClient.CoreV1alpha1(),
-			fedObject.Namespace,
-			fedObject.Name,
+			fedObject.GetNamespace(),
+			fedObject.GetName(),
 			metav1.DeleteOptions{},
 		); err != nil {
 			return fmt.Errorf("failed to delete federated object: %w", err)
@@ -484,7 +478,6 @@ func (c *FederateController) handleCreateFederatedObject(
 	if _, err := fedobjectadapters.Create(
 		ctx,
 		c.fedClient.CoreV1alpha1(),
-		c.fedClient.CoreV1alpha1(),
 		fedObject,
 		metav1.CreateOptions{},
 	); err != nil {
@@ -498,7 +491,7 @@ func (c *FederateController) handleExistingFederatedObject(
 	ctx context.Context,
 	ftc *fedcorev1a1.FederatedTypeConfig,
 	sourceObject *unstructured.Unstructured,
-	fedObject *fedcorev1a1.GenericFederatedObject,
+	fedObject fedcorev1a1.GenericFederatedObject,
 ) (bool, error) {
 	logger := klog.FromContext(ctx)
 
@@ -515,7 +508,6 @@ func (c *FederateController) handleExistingFederatedObject(
 	logger.V(1).Info("Updating federated object")
 	if _, err = fedobjectadapters.Update(
 		ctx,
-		c.fedClient.CoreV1alpha1(),
 		c.fedClient.CoreV1alpha1(),
 		fedObject,
 		metav1.UpdateOptions{},

@@ -27,24 +27,25 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
+
+	// "github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
+	// "github.com/kubewharf/kubeadmiral/pkg/controllers/override"
+	// "github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
-	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/sourcefeedback"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 )
 
 type workerKey struct {
 	name      string
 	namespace string
-	ftc       *fedcorev1a1.FederatedTypeConfig
+	gvk       schema.GroupVersionKind
 }
 
 func (k workerKey) String() string {
@@ -71,8 +72,18 @@ func templateForSourceObject(
 	return template
 }
 
-func newFederatedObjectForSourceObject(ftc *fedcorev1a1.FederatedTypeConfig, sourceObj *unstructured.Unstructured) (*fedcorev1a1.GenericFederatedObject, error) {
-	fedObj := &fedcorev1a1.GenericFederatedObject{}
+func newFederatedObjectForSourceObject(
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	sourceObj *unstructured.Unstructured,
+) (fedcorev1a1.GenericFederatedObject, error) {
+	var fedObj fedcorev1a1.GenericFederatedObject
+
+	if sourceObj.GetNamespace() == "" {
+		fedObj = &fedcorev1a1.ClusterFederatedObject{}
+	} else {
+		fedObj = &fedcorev1a1.FederatedObject{}
+	}
+
 	fedName := naming.GenerateFederatedObjectName(sourceObj.GetName(), ftc.Name)
 
 	fedObj.SetName(fedName)
@@ -108,7 +119,9 @@ func newFederatedObjectForSourceObject(ftc *fedcorev1a1.FederatedTypeConfig, sou
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal template: %w", err)
 	}
-	fedObj.Spec.Template.Raw = rawTemplate
+	fedObjSpec := &fedcorev1a1.GenericFederatedObjectSpec{}
+	fedObjSpec.Template.Raw = rawTemplate
+	fedObjSpec.DeepCopyInto(fedObj.GetSpec())
 
 	// Generate the JSON patch required to convert the source object to the FederatedObject's template and store it as
 	// an annotation in the FederatedObject.
@@ -130,7 +143,7 @@ func newFederatedObjectForSourceObject(ftc *fedcorev1a1.FederatedTypeConfig, sou
 func updateFederatedObjectForSourceObject(
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	sourceObject *unstructured.Unstructured,
-	fedObject *fedcorev1a1.GenericFederatedObject,
+	fedObject fedcorev1a1.GenericFederatedObject,
 ) (bool, error) {
 	isUpdated := false
 
@@ -162,7 +175,7 @@ func updateFederatedObjectForSourceObject(
 
 	targetTemplate := templateForSourceObject(sourceObject, templateAnnotations, templateLabels)
 	foundTemplate := &unstructured.Unstructured{}
-	if err := json.Unmarshal(fedObject.Spec.Template.Raw, foundTemplate); err != nil {
+	if err := json.Unmarshal(fedObject.GetSpec().Template.Raw, foundTemplate); err != nil {
 		return false, fmt.Errorf("failed to unmarshal template from federated object: %w", err)
 	}
 	if !reflect.DeepEqual(foundTemplate.Object, targetTemplate.Object) {
@@ -171,7 +184,7 @@ func updateFederatedObjectForSourceObject(
 			return false, fmt.Errorf("failed to marshal template: %w", err)
 		}
 
-		fedObject.Spec.Template.Raw = rawTargetTemplate
+		fedObject.GetSpec().Template.Raw = rawTargetTemplate
 		isUpdated = true
 	}
 
@@ -190,7 +203,6 @@ func updateFederatedObjectForSourceObject(
 
 	observedAnnotationKeys := generateObservedKeys(sourceObject.GetAnnotations(), federatedAnnotations)
 	observedLabelKeys := generateObservedKeys(sourceObject.GetLabels(), federatedLabels)
-
 
 	// Generate the JSON patch required to convert the source object to the FederatedObject's template and store it as
 	// an annotation in the FederatedObject.
@@ -230,18 +242,18 @@ func updateFederatedObjectForSourceObject(
 var (
 	// List of annotations that should be copied to the federated object instead of the template from the source
 	federatedAnnotationSet = sets.New(
-		scheduler.SchedulingModeAnnotation,
-		scheduler.StickyClusterAnnotation,
+		// scheduler.SchedulingModeAnnotation,
+		// scheduler.StickyClusterAnnotation,
 		util.ConflictResolutionAnnotation,
-		nsautoprop.NoAutoPropagationAnnotation,
+		// nsautoprop.NoAutoPropagationAnnotation,
 		util.OrphanManagedResourcesAnnotation,
-		scheduler.TolerationsAnnotations,
-		scheduler.PlacementsAnnotations,
-		scheduler.ClusterSelectorAnnotations,
-		scheduler.AffinityAnnotations,
-		scheduler.MaxClustersAnnotations,
+		// scheduler.TolerationsAnnotations,
+		// scheduler.PlacementsAnnotations,
+		// scheduler.ClusterSelectorAnnotations,
+		// scheduler.AffinityAnnotations,
+		// scheduler.MaxClustersAnnotations,
 		common.NoSchedulingAnnotation,
-		scheduler.FollowsObjectAnnotation,
+		// scheduler.FollowsObjectAnnotation,
 		common.FollowersAnnotation,
 		RetainReplicasAnnotation,
 	)
@@ -250,19 +262,16 @@ var (
 	// List of annotations that should be ignored on the source object
 	ignoredAnnotationSet = sets.New(
 		util.LatestReplicasetDigestsAnnotation,
-		sourcefeedback.SchedulingAnnotation,
-		sourcefeedback.SyncingAnnotation,
-		sourcefeedback.StatusAnnotation,
 		util.ConflictResolutionInternalAnnotation,
 		util.OrphanManagedResourcesInternalAnnotation,
 		common.EnableFollowerSchedulingAnnotation,
 	)
 
-	federatedLabelSet = sets.New(
-		scheduler.PropagationPolicyNameLabel,
-		scheduler.ClusterPropagationPolicyNameLabel,
-		override.OverridePolicyNameLabel,
-		override.ClusterOverridePolicyNameLabel,
+	federatedLabelSet = sets.New[string](
+	// scheduler.PropagationPolicyNameLabel,
+	// scheduler.ClusterPropagationPolicyNameLabel,
+	// override.OverridePolicyNameLabel,
+	// override.ClusterOverridePolicyNameLabel,
 	)
 )
 
