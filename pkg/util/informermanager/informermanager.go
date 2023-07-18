@@ -139,11 +139,7 @@ func (m *informerManager) worker(ctx context.Context) {
 	if err != nil {
 		if needReenqueue {
 			logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
-			if delay > 0 {
-				m.queue.AddAfter(key, delay)
-			} else {
-				m.queue.AddRateLimited(key)
-			}
+			m.queue.AddRateLimited(key)
 		} else {
 			logger.Error(err, "Failed to process FederatedTypeConfig")
 			m.queue.Forget(key)
@@ -153,18 +149,14 @@ func (m *informerManager) worker(ctx context.Context) {
 
 	m.queue.Forget(key)
 	if needReenqueue {
-		if delay > 0 {
-			m.queue.AddAfter(key, delay)
-		} else {
-			m.queue.AddRateLimited(key)
-		}
+		m.queue.AddAfter(key, delay)
 	}
 }
 
 func (m *informerManager) processFTC(
 	ctx context.Context,
 	ftc *fedcorev1a1.FederatedTypeConfig,
-) (err error, needReenqueue bool, delay time.Duration) {
+) (err error, needReenqueue bool, reenqueueDelay time.Duration) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
