@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -134,7 +135,7 @@ func (m *informerManager) worker(ctx context.Context) {
 		return
 	}
 
-	err, needReenqueue := m.processFTC(ctx, ftc)
+	err, needReenqueue, delay := m.processFTC(ctx, ftc)
 	if err != nil {
 		if needReenqueue {
 			logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
@@ -148,14 +149,14 @@ func (m *informerManager) worker(ctx context.Context) {
 
 	m.queue.Forget(key)
 	if needReenqueue {
-		m.queue.Add(key)
+		m.queue.AddAfter(key, delay)
 	}
 }
 
 func (m *informerManager) processFTC(
 	ctx context.Context,
 	ftc *fedcorev1a1.FederatedTypeConfig,
-) (err error, needReenqueue bool) {
+) (err error, needReenqueue bool, reenqueueDelay time.Duration) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -176,14 +177,14 @@ func (m *informerManager) processFTC(
 			// time and we missed processing the deletion. We simply process the ftc deletion and reenqueue. Note:
 			// updating of ftc source types, however, is still not a supported use case.
 			err := m.processFTCDeletionUnlocked(ctx, ftcName)
-			return err, true
+			return err, true, 0
 		}
 
 		informer = m.informers[ftcName]
 	} else {
 		if err := m.gvkMapping.Add(ftcName, gvk); err != nil {
 			// There must be another ftc with the same source type GVK.
-			return fmt.Errorf("source type is already referenced by another FederatedTypeConfig: %w", err), false
+			return fmt.Errorf("source type is already referenced by another FederatedTypeConfig: %w", err), false, 0
 		}
 
 		logger.V(2).Info("Starting new informer for FederatedTypeConfig")
@@ -206,6 +207,11 @@ func (m *informerManager) processFTC(
 		m.lastAppliedFTCsCache[ftcName] = map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig{}
 	}
 
+	if !informer.Informer().HasSynced() {
+		logger.V(3).Info("Informer for FederatedTypeConfig not synced, will not register event handlers yet")
+		return nil, true, 100 * time.Millisecond
+	}
+
 	registrations := m.eventHandlerRegistrations[ftcName]
 	lastAppliedFTCs := m.lastAppliedFTCsCache[ftcName]
 
@@ -218,7 +224,7 @@ func (m *informerManager) processFTC(
 
 		if oldRegistration := registrations[generator]; oldRegistration != nil {
 			if err := informer.Informer().RemoveEventHandler(oldRegistration); err != nil {
-				return fmt.Errorf("failed to unregister event handler: %w", err), true
+				return fmt.Errorf("failed to unregister event handler: %w", err), true, 0
 			}
 			delete(registrations, generator)
 		}
@@ -227,7 +233,7 @@ func (m *informerManager) processFTC(
 		if handler := generator.Generator(ftc); handler != nil {
 			newRegistration, err := informer.Informer().AddEventHandler(handler)
 			if err != nil {
-				return fmt.Errorf("failed to register event handler: %w", err), true
+				return fmt.Errorf("failed to register event handler: %w", err), true, 0
 			}
 			registrations[generator] = newRegistration
 		}
@@ -235,7 +241,7 @@ func (m *informerManager) processFTC(
 		lastAppliedFTCs[generator] = ftc
 	}
 
-	return nil, false
+	return nil, false, 0
 }
 
 func (m *informerManager) processFTCDeletion(ctx context.Context, ftcName string) error {
@@ -342,6 +348,7 @@ func (m *informerManager) Start(ctx context.Context) {
 	}
 
 	go wait.UntilWithContext(ctx, m.worker, 0)
+
 	go func() {
 		<-ctx.Done()
 
