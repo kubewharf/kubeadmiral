@@ -32,7 +32,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
@@ -245,8 +245,8 @@ var (
 		scheduler.SchedulingModeAnnotation,
 		scheduler.StickyClusterAnnotation,
 		nsautoprop.NoAutoPropagationAnnotation,
-		sync.OrphanManagedResourcesAnnotation,
-		sync.ConflictResolutionAnnotation,
+		util.OrphanManagedResourcesAnnotation,
+		util.ConflictResolutionAnnotation,
 		scheduler.TolerationsAnnotations,
 		scheduler.PlacementsAnnotations,
 		scheduler.ClusterSelectorAnnotations,
@@ -261,8 +261,8 @@ var (
 	// TODO: Do we need to specify the internal annotations here?
 	// List of annotations that should be ignored on the source object
 	ignoredAnnotationSet = sets.New(
-		sync.ConflictResolutionInternalAnnotation,
-		sync.OrphanManagedResourcesInternalAnnotation,
+		util.ConflictResolutionInternalAnnotation,
+		util.OrphanManagedResourcesInternalAnnotation,
 		common.EnableFollowerSchedulingAnnotation,
 	)
 
