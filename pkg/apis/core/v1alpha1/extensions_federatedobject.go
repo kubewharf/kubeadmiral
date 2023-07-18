@@ -37,6 +37,10 @@ func (o *FederatedObject) GetStatus() *GenericFederatedObjectStatus {
 	return &o.Status
 }
 
+func (o *FederatedObject) DeepCopyGenericFederatedObject() GenericFederatedObject {
+	return o.DeepCopy()
+}
+
 var _ GenericFederatedObject = &FederatedObject{}
 
 func (o *ClusterFederatedObject) GetSpec() *GenericFederatedObjectSpec {
@@ -45,6 +49,10 @@ func (o *ClusterFederatedObject) GetSpec() *GenericFederatedObjectSpec {
 
 func (o *ClusterFederatedObject) GetStatus() *GenericFederatedObjectStatus {
 	return &o.Status
+}
+
+func (o *ClusterFederatedObject) DeepCopyGenericFederatedObject() GenericFederatedObject {
+	return o.DeepCopy()
 }
 
 var _ GenericFederatedObject = &ClusterFederatedObject{}
