@@ -143,9 +143,6 @@ spec:
                   to be propagated.
                 x-kubernetes-preserve-unknown-fields: true
             required:
-            - follows
-            - overrides
-            - placements
             - template
             type: object
           status:

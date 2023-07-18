@@ -96,13 +96,16 @@ type GenericFederatedObjectSpec struct {
 	Template apiextensionsv1.JSON `json:"template"`
 	// Overrides describe the overrides that should be applied to the base template of the Kubernetes object before it
 	// is propagated to individual member clusters.
-	Overrides []OverrideWithController `json:"overrides"`
+	// +optional
+	Overrides []OverrideWithController `json:"overrides,omitempty"`
 	// Placements describe the member clusters that the Kubernetes object will be propagated to, which is a union of all
 	// the listed clusters.
-	Placements []PlacementWithController `json:"placements"`
+	// +optional
+	Placements []PlacementWithController `json:"placements,omitempty"`
 	// Follows defines other objects, or "leaders", that the Kubernetes object should follow during propagation, i.e.
 	// the Kubernetes object should be propagated to all member clusters that its "leaders" are placed in.
-	Follows []LeaderReference `json:"follows"`
+	// +optional
+	Follows []LeaderReference `json:"follows,omitempty"`
 }
 
 // GenericFederatedObjectStatus describes the most recently observed status of a FederatedObject or ClusterFederatedObject.
