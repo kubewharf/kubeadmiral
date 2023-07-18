@@ -36,8 +36,7 @@ func GetFromLister(
 
 func Create(
 	ctx context.Context,
-	fedObjectClient fedcorev1a1client.FederatedObjectsGetter,
-	clusterFedObjectClient fedcorev1a1client.ClusterFederatedObjectsGetter,
+	fedv1a1Client fedcorev1a1client.CoreV1alpha1Client,
 	obj fedcorev1a1.GenericFederatedObject,
 	opts metav1.CreateOptions,
 ) (fedcorev1a1.GenericFederatedObject, error) {
@@ -47,7 +46,7 @@ func Create(
 			return nil, fmt.Errorf("expected ClusterFederatedObject but got %T", obj)
 		}
 		return ensureNilInterface(
-			clusterFedObjectClient.ClusterFederatedObjects().Create(ctx, clusterFedObject, opts),
+			fedv1a1Client.ClusterFederatedObjects().Create(ctx, clusterFedObject, opts),
 		)
 	} else {
 		fedObject, ok := obj.(*fedcorev1a1.FederatedObject)
@@ -55,15 +54,14 @@ func Create(
 			return nil, fmt.Errorf("expected FederatedObject but got %T", obj)
 		}
 		return ensureNilInterface(
-			fedObjectClient.FederatedObjects(obj.GetNamespace()).Create(ctx, fedObject, opts),
+			fedv1a1Client.FederatedObjects(obj.GetNamespace()).Create(ctx, fedObject, opts),
 		)
 	}
 }
 
 func Update(
 	ctx context.Context,
-	fedObjectClient fedcorev1a1client.FederatedObjectsGetter,
-	clusterFedObjectClient fedcorev1a1client.ClusterFederatedObjectsGetter,
+	fedv1a1Client fedcorev1a1client.CoreV1alpha1Client,
 	obj fedcorev1a1.GenericFederatedObject,
 	opts metav1.UpdateOptions,
 ) (fedcorev1a1.GenericFederatedObject, error) {
@@ -73,7 +71,7 @@ func Update(
 			return nil, fmt.Errorf("expected ClusterFederatedObject but got %T", obj)
 		}
 		return ensureNilInterface(
-			clusterFedObjectClient.ClusterFederatedObjects().Update(ctx, clusterFedObject, opts),
+			fedv1a1Client.ClusterFederatedObjects().Update(ctx, clusterFedObject, opts),
 		)
 	} else {
 		fedObject, ok := obj.(*fedcorev1a1.FederatedObject)
@@ -81,15 +79,14 @@ func Update(
 			return nil, fmt.Errorf("expected FederatedObject but got %T", obj)
 		}
 		return ensureNilInterface(
-			fedObjectClient.FederatedObjects(obj.GetNamespace()).Update(ctx, fedObject, opts),
+			fedv1a1Client.FederatedObjects(obj.GetNamespace()).Update(ctx, fedObject, opts),
 		)
 	}
 }
 
 func UpdateStatus(
 	ctx context.Context,
-	fedObjectClient fedcorev1a1client.FederatedObjectsGetter,
-	clusterFedObjectClient fedcorev1a1client.ClusterFederatedObjectsGetter,
+	fedv1a1Client fedcorev1a1client.CoreV1alpha1Client,
 	obj fedcorev1a1.GenericFederatedObject,
 	opts metav1.UpdateOptions,
 ) (fedcorev1a1.GenericFederatedObject, error) {
@@ -99,7 +96,7 @@ func UpdateStatus(
 			return nil, fmt.Errorf("expected ClusterFederatedObject but got %T", obj)
 		}
 		return ensureNilInterface(
-			clusterFedObjectClient.ClusterFederatedObjects().UpdateStatus(ctx, clusterFedObject, opts),
+			fedv1a1Client.ClusterFederatedObjects().UpdateStatus(ctx, clusterFedObject, opts),
 		)
 	} else {
 		fedObject, ok := obj.(*fedcorev1a1.FederatedObject)
@@ -107,21 +104,20 @@ func UpdateStatus(
 			return nil, fmt.Errorf("expected FederatedObject but got %T", obj)
 		}
 		return ensureNilInterface(
-			fedObjectClient.FederatedObjects(obj.GetNamespace()).UpdateStatus(ctx, fedObject, opts),
+			fedv1a1Client.FederatedObjects(obj.GetNamespace()).UpdateStatus(ctx, fedObject, opts),
 		)
 	}
 }
 
 func Delete(
 	ctx context.Context,
-	fedObjectClient fedcorev1a1client.FederatedObjectsGetter,
-	clusterFedObjectClient fedcorev1a1client.ClusterFederatedObjectsGetter,
+	fedv1a1Client fedcorev1a1client.CoreV1alpha1Client,
 	namespace, name string,
 	opts metav1.DeleteOptions,
 ) error {
 	if namespace == "" {
-		return clusterFedObjectClient.ClusterFederatedObjects().Delete(ctx, name, opts)
+		return fedv1a1Client.ClusterFederatedObjects().Delete(ctx, name, opts)
 	} else {
-		return fedObjectClient.FederatedObjects(namespace).Delete(ctx, name, opts)
+		return fedv1a1Client.FederatedObjects(namespace).Delete(ctx, name, opts)
 	}
 }
