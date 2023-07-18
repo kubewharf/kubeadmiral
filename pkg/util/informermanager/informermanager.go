@@ -215,6 +215,8 @@ func (m *informerManager) processFTC(
 	registrations := m.eventHandlerRegistrations[ftcName]
 	lastAppliedFTCs := m.lastAppliedFTCsCache[ftcName]
 
+	logger.V(2).Info("Registering event handlers for FederatedTypeConfig")
+
 	for _, generator := range m.eventHandlerGenerators {
 		lastApplied := lastAppliedFTCs[generator]
 		if !generator.Predicate(lastApplied, ftc) {
