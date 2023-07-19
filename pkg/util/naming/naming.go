@@ -90,6 +90,7 @@ func transformObjectName(objectName string) (string, bool) {
 		}
 
 		transformed = true
+
 		if ch >= 'A' && ch <= 'Z' {
 			// transform uppercase letters into lowercase
 			transformedName[i] = caseDiff + ch
@@ -103,6 +104,7 @@ func transformObjectName(objectName string) (string, bool) {
 	santizedName := []byte{}
 	for i, ch := range transformedName {
 		if i != 0 && transformedName[i-1] == '.' && transformedName[i] == '.' {
+			transformed = true
 			continue
 		}
 		santizedName = append(santizedName, ch)
