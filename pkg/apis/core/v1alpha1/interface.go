@@ -49,3 +49,10 @@ type GenericFederatedObject interface {
 	GetStatus() *GenericFederatedObjectStatus
 	DeepCopyGenericFederatedObject() GenericFederatedObject
 }
+
+type GenericCollectedStatusObject interface {
+	metav1.Object
+	pkgruntime.Object
+	GetGenericCollectedStatus() *GenericCollectedStatus
+	GetLastUpdateTime() *metav1.Time
+}
