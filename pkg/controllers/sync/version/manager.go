@@ -67,16 +67,31 @@ type VersionManager struct {
 	logger klog.Logger
 }
 
-func NewVersionManager(
+func NewNamespacedVersionManager(
 	logger klog.Logger,
 	client fedcorev1a1client.CoreV1alpha1Interface,
-	namespaced bool,
 	namespace string,
 ) *VersionManager {
-	adapter := NewVersionAdapter(namespaced)
+	adapter := NewVersionAdapter(true)
 	v := &VersionManager{
 		logger:    logger.WithValues("origin", "version-manager", "type-name", adapter.TypeName()),
 		namespace: namespace,
+		adapter:   adapter,
+		versions:  make(map[string]runtimeclient.Object),
+		client:    client,
+	}
+
+	return v
+}
+
+func NewClusterVersionManager(
+	logger klog.Logger,
+	client fedcorev1a1client.CoreV1alpha1Interface,
+) *VersionManager {
+	adapter := NewVersionAdapter(false)
+	v := &VersionManager{
+		logger:    logger.WithValues("origin", "version-manager", "type-name", adapter.TypeName()),
+		namespace: "",
 		adapter:   adapter,
 		versions:  make(map[string]runtimeclient.Object),
 		client:    client,
