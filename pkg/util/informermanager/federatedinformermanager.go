@@ -242,7 +242,7 @@ func (m *federatedInformerManager) processClusterDeletionUnlocked(ctx context.Co
 	return nil
 }
 
-func (m *federatedInformerManager) AddClusterEventHandler(handler *ClusterEventHandler) error {
+func (m *federatedInformerManager) AddClusterEventHandlers(handlers ...*ClusterEventHandler) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -250,7 +250,7 @@ func (m *federatedInformerManager) AddClusterEventHandler(handler *ClusterEventH
 		return fmt.Errorf("failed to add ClusterEventHandler: FederatedInformerManager is already started")
 	}
 
-	m.clusterEventHandlers = append(m.clusterEventHandlers, handler)
+	m.clusterEventHandlers = append(m.clusterEventHandlers, handlers...)
 	return nil
 }
 
