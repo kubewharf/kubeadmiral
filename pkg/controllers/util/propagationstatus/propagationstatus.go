@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -27,12 +26,11 @@ import (
 	utiljson "k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 )
 
-func IsResourcePropagated(sourceObject, fedObject *unstructured.Unstructured) (bool, error) {
+func IsResourcePropagated(sourceObject *unstructured.Unstructured, fedObject fedcorev1a1.GenericFederatedObject) (bool, error) {
 	if sourceObject == nil {
 		return false, fmt.Errorf("source object can't be nil")
 	}
@@ -51,19 +49,9 @@ func IsResourcePropagated(sourceObject, fedObject *unstructured.Unstructured) (b
 		return synced, err
 	}
 
-	resource := &fedtypesv1a1.GenericObjectWithStatus{}
-	err = util.UnstructuredToInterface(fedObject, resource)
-	if err != nil {
-		return false, fmt.Errorf("failed to unmarshall to generic resource: %w", err)
-	}
-
-	if resource.Status == nil {
-		return false, nil
-	}
-
 	syncAllOk := true
-	for _, cluster := range resource.Status.Clusters {
-		if cluster.Status != fedtypesv1a1.ClusterPropagationOK {
+	for _, cluster := range fedObject.GetStatus().Clusters {
+		if cluster.Status != fedcorev1a1.ClusterPropagationOK {
 			syncAllOk = false
 			break
 		}
@@ -72,23 +60,18 @@ func IsResourcePropagated(sourceObject, fedObject *unstructured.Unstructured) (b
 	return syncAllOk, nil
 }
 
-func IsResourceTemplateSyncedToMemberClusters(fedObject *unstructured.Unstructured) (bool, error) {
+func IsResourceTemplateSyncedToMemberClusters(fedObject fedcorev1a1.GenericFederatedObject) (bool, error) {
 	if fedObject == nil {
 		return false, nil
 	}
 
-	observedGeneration, found, err := unstructured.NestedInt64(fedObject.Object, "status", "syncedGeneration")
-	if err != nil || !found {
-		return false, err
-	}
-
 	// check if the latest resource template has been synced to member clusters
-	return observedGeneration == fedObject.GetGeneration(), nil
+	return fedObject.GetStatus().SyncedGeneration == fedObject.GetGeneration(), nil
 }
 
-func IsFederatedTemplateUpToDate(sourceObject, fedObject *unstructured.Unstructured) (bool, error) {
-	templateMap, exists, err := unstructured.NestedMap(fedObject.Object, "spec", "template")
-	if err != nil || !exists {
+func IsFederatedTemplateUpToDate(sourceObject *unstructured.Unstructured, fedObject fedcorev1a1.GenericFederatedObject) (bool, error) {
+	templateMap, err := fedObject.GetSpec().GetTemplateAsUnstructured()
+	if err != nil {
 		return false, err
 	}
 
@@ -121,7 +104,7 @@ func IsFederatedTemplateUpToDate(sourceObject, fedObject *unstructured.Unstructu
 		return false, err
 	}
 
-	if reflect.DeepEqual(prunedSourceObj, templateMap) {
+	if reflect.DeepEqual(prunedSourceObj, templateMap.Object) {
 		return true, nil
 	}
 

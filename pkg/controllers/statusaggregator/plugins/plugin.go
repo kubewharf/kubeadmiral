@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -23,10 +22,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
@@ -34,7 +33,8 @@ type Plugin interface {
 	// AggregateStatuses aggregates member cluster object statues to source object status and returns the latter
 	AggregateStatuses(
 		ctx context.Context,
-		sourceObject, fedObject *unstructured.Unstructured,
+		sourceObject *unstructured.Unstructured,
+		fedObject fedcorev1a1.GenericFederatedObject,
 		clusterObjs map[string]interface{},
 		clusterObjsUpToDate bool,
 	) (*unstructured.Unstructured, bool, error)
@@ -47,10 +47,6 @@ var pluginsMap = map[schema.GroupVersionKind]Plugin{
 	corev1.SchemeGroupVersion.WithKind(common.PodKind):         NewPodPlugin(),
 }
 
-func GetPlugin(apiResource *metav1.APIResource) Plugin {
-	return pluginsMap[schema.GroupVersionKind{
-		Group:   apiResource.Group,
-		Version: apiResource.Version,
-		Kind:    apiResource.Kind,
-	}]
+func GetPlugin(gvk schema.GroupVersionKind) Plugin {
+	return pluginsMap[gvk]
 }
