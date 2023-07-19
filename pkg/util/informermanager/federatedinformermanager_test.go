@@ -1465,7 +1465,7 @@ func bootstrapFederatedInformerManagerWithFakeClients(
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 	}
 	for _, handler := range clusterEventHandlers {
-		err := informerManager.AddClusterEventHandler(handler)
+		err := informerManager.AddClusterEventHandlers(handler)
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 	}
 
