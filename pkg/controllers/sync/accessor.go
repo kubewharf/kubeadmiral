@@ -99,17 +99,14 @@ func NewFederatedResourceAccessor(
 	fedObjectInformer.Informer().AddEventHandler(handler)
 	clusterFedObjectInformer.Informer().AddEventHandler(handler)
 
-	a.versionManager = version.NewVersionManager(
+	a.versionManager = version.NewNamespacedVersionManager(
 		logger,
 		client,
-		true,
 		controllerConfig.TargetNamespace,
 	)
-	a.clusterVersionManager = version.NewVersionManager(
+	a.clusterVersionManager = version.NewClusterVersionManager(
 		logger,
 		client,
-		false,
-		controllerConfig.TargetNamespace,
 	)
 
 	return a
