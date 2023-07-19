@@ -17,7 +17,6 @@ limitations under the License.
 package federate
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -114,8 +113,8 @@ func newFederatedObjectForSourceObject(
 
 	// Generate the FederatedObject's template and update the FederatedObject.
 
-	templateObject := templateForSourceObject(sourceObj, templateAnnotations, templateLabels).Object
-	rawTemplate, err := json.Marshal(templateObject)
+	templateObject := templateForSourceObject(sourceObj, templateAnnotations, templateLabels)
+	rawTemplate, err := templateObject.MarshalJSON()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal template: %w", err)
 	}
@@ -124,7 +123,10 @@ func newFederatedObjectForSourceObject(
 	// Generate the JSON patch required to convert the source object to the FederatedObject's template and store it as
 	// an annotation in the FederatedObject.
 
-	templateGeneratorMergePatch, err := CreateMergePatch(sourceObj, &unstructured.Unstructured{Object: templateObject})
+	templateGeneratorMergePatch, err := CreateMergePatch(
+		sourceObj,
+		&unstructured.Unstructured{Object: templateObject.Object},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create merge patch for source object: %w", err)
 	}
@@ -177,12 +179,16 @@ func updateFederatedObjectForSourceObject(
 	// FederatedObject if necessary.
 
 	targetTemplate := templateForSourceObject(sourceObject, templateAnnotations, templateLabels)
-	rawTargetTemplate, err := targetTemplate.MarshalJSON()
-	if err != nil {
-		return false, fmt.Errorf("failed to marshal template: %w", err)
+	foundTemplate := &unstructured.Unstructured{}
+	if err := foundTemplate.UnmarshalJSON(fedObject.GetSpec().Template.Raw); err != nil {
+		return false, fmt.Errorf("failed to unmarshal template from federated object: %w", err)
 	}
-	
-	if !bytes.Equal(rawTargetTemplate, fedObject.GetSpec().Template.Raw) {
+	if !reflect.DeepEqual(foundTemplate.Object, targetTemplate.Object) {
+		rawTargetTemplate, err := targetTemplate.MarshalJSON()
+		if err != nil {
+			return false, fmt.Errorf("failed to marshal template: %w", err)
+		}
+
 		fedObject.GetSpec().Template.Raw = rawTargetTemplate
 		isUpdated = true
 	}
