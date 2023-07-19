@@ -24,7 +24,10 @@ import (
 	"sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
@@ -35,6 +38,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
@@ -273,6 +277,22 @@ func (m *federatedInformerManager) GetClusterClient(cluster string) (client dyna
 	return client, ok
 }
 
+func (m *federatedInformerManager) GetReadyClusters() ([]*fedcorev1a1.FederatedCluster, error) {
+	var clusters []*fedcorev1a1.FederatedCluster
+
+	allClusters, err := m.GetFederatedClusterLister().List(labels.Everything())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list clusters: %w", err)
+	}
+	for _, cluster := range allClusters {
+		if clusterutil.IsClusterReady(&cluster.Status) {
+			clusters = append(clusters, cluster)
+		}
+	}
+
+	return clusters, nil
+}
+
 func (m *federatedInformerManager) GetFederatedClusterLister() fedcorev1a1listers.FederatedClusterLister {
 	return m.clusterInformer.Lister()
 }
@@ -382,4 +402,54 @@ func DefaultClusterConnectionHash(cluster *fedcorev1a1.FederatedCluster) ([]byte
 		return nil, err
 	}
 	return b.Bytes(), nil
+}
+
+// GetClusterObject is a helper function to get a cluster object. GetClusterObject first attempts to get the object from
+// the federated informer manager with the given key. However, if the cache for the cluster is not synced, it will send a GET
+// request to the cluster's apiserver to retrieve the object directly.
+func GetClusterObject(
+	ctx context.Context,
+	ftcManager FederatedTypeConfigManager,
+	fedInformerManager FederatedInformerManager,
+	clusterName string,
+	qualifiedName common.QualifiedName,
+	gvk schema.GroupVersionKind,
+) (*unstructured.Unstructured, bool, error) {
+	lister, hasSynced, exists := fedInformerManager.GetResourceLister(gvk, clusterName)
+	if exists && hasSynced() {
+		clusterObj, err := lister.Get(qualifiedName.String())
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, false, nil
+			} else {
+				return nil, false, err
+			}
+		}
+		return clusterObj.(*unstructured.Unstructured), true, nil
+	}
+
+	client, exists := fedInformerManager.GetClusterClient(clusterName)
+	if !exists {
+		return nil, false, fmt.Errorf("cluster client does not exist for cluster %q", clusterName)
+	}
+
+	ftc, exists := ftcManager.GetResourceFTC(gvk)
+	if !exists {
+		return nil, false, fmt.Errorf("FTC does not exist for GVK %q", gvk)
+	}
+
+	clusterObj, err := client.Resource(ftc.GetSourceTypeGVR()).Namespace(qualifiedName.Namespace).Get(
+		ctx, qualifiedName.Name, metav1.GetOptions{ResourceVersion: "0"},
+	)
+	if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get object %q with client: %w", qualifiedName.String(), err)
+	}
+	if !managedlabel.HasManagedLabel(clusterObj) {
+		return nil, false, nil
+	}
+
+	return clusterObj, true, nil
 }

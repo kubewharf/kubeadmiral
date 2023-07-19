@@ -92,6 +92,10 @@ func (f *FederatedTypeConfig) IsNamespace() bool {
 	return f.Name == NamespaceName
 }
 
+func (f *FederatedTypeConfig) IsStatusCollectionEnabled() bool {
+	return f.Spec.StatusCollection != nil && f.Spec.StatusCollection.Enabled
+}
+
 func (a *APIResource) Namespaced() bool {
 	return a.Scope == apiextv1beta1.NamespaceScoped
 }

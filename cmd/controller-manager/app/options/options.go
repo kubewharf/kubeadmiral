@@ -50,9 +50,9 @@ type Options struct {
 	LogVerbosity    int
 	KlogVerbosity   int
 
-	NSAutoPropExcludeRegexp string
-	CreateCRDsForFTCs       bool
-	ClusterJoinTimeout      time.Duration
+	NSAutoPropExcludeRegexp  string
+	ClusterJoinTimeout       time.Duration
+	MemberObjectEnqueueDelay time.Duration
 
 	MaxPodListers    int64
 	EnablePodPruning bool
@@ -104,12 +104,18 @@ func (o *Options) AddFlags(flags *pflag.FlagSet, allControllers []string, disabl
 		"",
 		"If non-empty, namespaces that match this go regular expression will be excluded from auto propagation.",
 	)
-	flags.BoolVar(&o.CreateCRDsForFTCs, "create-crds-for-ftcs", false, "Generate CRDs for federated types automatically.")
 	flags.DurationVar(
 		&o.ClusterJoinTimeout,
 		"cluster-join-timeout",
 		time.Minute*10,
 		"The maximum amount of time to wait for a new cluster to join the federation before timing out.",
+	)
+
+	flags.DurationVar(
+		&o.MemberObjectEnqueueDelay,
+		"member-object-enqueue-delay",
+		time.Second*5,
+		"The time to wait before enqueuing the object from member cluster.",
 	)
 
 	flags.Int64Var(&o.MaxPodListers, "max-pod-listers", 0, "The maximum number of concurrent pod listing requests to member clusters. "+
