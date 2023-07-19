@@ -214,12 +214,22 @@ func NewSyncController(
 		},
 		&informermanager.ClusterEventHandler{
 			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
-				// Reconcile all federated objects when cluster readiness changes
+				// Reconcile all federated objects when cluster becomes available
 				return oldCluster != nil && newCluster != nil &&
-					clusterutil.IsClusterReady(&oldCluster.Status) != clusterutil.IsClusterReady(&newCluster.Status)
+					!clusterutil.IsClusterReady(&oldCluster.Status) && clusterutil.IsClusterReady(&newCluster.Status)
 			},
 			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
-				s.clusterReadinessTransitionQueue.Add(struct{}{})
+				s.clusterReadinessTransitionQueue.AddAfter(struct{}{}, s.clusterAvailableDelay)
+			},
+		},
+		&informermanager.ClusterEventHandler{
+			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
+				// Reconcile all federated objects when cluster becomes unavailable
+				return oldCluster != nil && newCluster != nil &&
+					clusterutil.IsClusterReady(&oldCluster.Status) && !clusterutil.IsClusterReady(&newCluster.Status)
+			},
+			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
+				s.clusterReadinessTransitionQueue.AddAfter(struct{}{}, s.clusterUnavailableDelay)
 			},
 		},
 	); err != nil {
