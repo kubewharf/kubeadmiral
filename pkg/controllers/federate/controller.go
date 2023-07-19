@@ -74,6 +74,8 @@ type FederateController struct {
 	fedObjectInformer        fedcorev1a1informers.FederatedObjectInformer
 	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer
 
+	fedSystemNamespace string
+
 	fedClient     fedclient.Interface
 	dynamicClient dynamic.Interface
 
@@ -103,8 +105,11 @@ func NewFederateController(
 		informerManager:          informerManager,
 		fedObjectInformer:        fedObjectInformer,
 		clusterFedObjectInformer: clusterFedObjectInformer,
+		fedSystemNamespace:       fedSystemNamespace,
 		fedClient:                fedClient,
 		dynamicClient:            dynamicClient,
+		worker:                   nil,
+		eventRecorder:            nil,
 		metrics:                  metrics,
 		logger:                   klog.Background().WithValues("controller", FederateControllerName),
 	}
@@ -122,21 +127,31 @@ func NewFederateController(
 	if err := informerManager.AddEventHandlerGenerator(&informermanager.EventHandlerGenerator{
 		Predicate: informermanager.RegisterOncePredicate,
 		Generator: func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler {
-			return eventhandlers.NewTriggerOnAllChanges(func(obj runtime.Object) {
-				uns := obj.(*unstructured.Unstructured)
-				c.worker.Enqueue(workerKey{
-					name:      uns.GetName(),
-					namespace: uns.GetNamespace(),
-					gvk:       ftc.GetSourceTypeGVK(),
-				})
-			})
+			return cache.FilteringResourceEventHandler{
+				FilterFunc: func(obj interface{}) bool {
+					uns := obj.(*unstructured.Unstructured)
+					return uns.GetNamespace() != fedSystemNamespace
+				},
+				Handler: eventhandlers.NewTriggerOnAllChanges(func(obj runtime.Object) {
+					uns := obj.(*unstructured.Unstructured)
+					c.worker.Enqueue(workerKey{
+						name:      uns.GetName(),
+						namespace: uns.GetNamespace(),
+						gvk:       ftc.GetSourceTypeGVK(),
+					})
+				}),
+			}
 		},
 	}); err != nil {
 		return nil, err
 	}
 
-	if _, err := fedObjectInformer.Informer().AddEventHandler(
-		eventhandlers.NewTriggerOnAllChanges(func(o runtime.Object) {
+	if _, err := fedObjectInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
+		FilterFunc: func(obj interface{}) bool {
+			fedObj := obj.(*fedcorev1a1.FederatedObject)
+			return fedObj.Namespace != fedSystemNamespace
+		},
+		Handler: eventhandlers.NewTriggerOnAllChanges(func(o runtime.Object) {
 			fedObj := o.(*fedcorev1a1.FederatedObject)
 			logger := c.logger.WithValues("federated-object", common.NewQualifiedName(fedObj))
 
@@ -154,7 +169,7 @@ func NewFederateController(
 				gvk:       gvk,
 			})
 		}),
-	); err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
@@ -185,7 +200,7 @@ func NewFederateController(
 }
 
 func (c *FederateController) Run(ctx context.Context) {
-	ctx, logger := logging.InjectLoggerValues(ctx, "controller", FederateControllerName)
+	ctx, logger := logging.InjectLogger(ctx, c.logger)
 
 	logger.Info("Starting controller")
 	defer logger.Info("Stopping controller")
