@@ -29,6 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
+
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
 func TestJobPlugin(t *testing.T) {
@@ -97,7 +99,7 @@ func TestJobPlugin(t *testing.T) {
 		name string
 
 		sourceObject *unstructured.Unstructured
-		fedObject    *unstructured.Unstructured
+		fedObject    fedcorev1a1.GenericFederatedObject
 		clusterObjs  map[string]interface{}
 
 		expectedErr        error
@@ -107,7 +109,7 @@ func TestJobPlugin(t *testing.T) {
 		{
 			name:               "2 completed jobs, need update",
 			sourceObject:       uCompletedJob.DeepCopy(),
-			fedObject:          &unstructured.Unstructured{},
+			fedObject:          nil,
 			clusterObjs:        map[string]interface{}{"c1": uCompletedJob.DeepCopy(), "c2": uCompletedJob.DeepCopy()},
 			expectedErr:        nil,
 			expectedNeedUpdate: true,
@@ -128,7 +130,7 @@ func TestJobPlugin(t *testing.T) {
 		{
 			name:               "1 completed job, 1 failed job, need update",
 			sourceObject:       uCompletedJob.DeepCopy(),
-			fedObject:          &unstructured.Unstructured{},
+			fedObject:          nil,
 			clusterObjs:        map[string]interface{}{"c1": uCompletedJob.DeepCopy(), "c2": uFailedJob.DeepCopy()},
 			expectedErr:        nil,
 			expectedNeedUpdate: true,
@@ -148,7 +150,7 @@ func TestJobPlugin(t *testing.T) {
 		{
 			name:               "2 failed jobs, need update",
 			sourceObject:       uCompletedJob.DeepCopy(),
-			fedObject:          &unstructured.Unstructured{},
+			fedObject:          nil,
 			clusterObjs:        map[string]interface{}{"c1": uFailedJob.DeepCopy(), "c2": uFailedJob.DeepCopy()},
 			expectedErr:        nil,
 			expectedNeedUpdate: true,
@@ -168,7 +170,7 @@ func TestJobPlugin(t *testing.T) {
 		{
 			name:               "1 completed job, 1 suspended job, need update",
 			sourceObject:       uCompletedJob.DeepCopy(),
-			fedObject:          &unstructured.Unstructured{},
+			fedObject:          nil,
 			clusterObjs:        map[string]interface{}{"c1": uCompletedJob.DeepCopy(), "c2": uSuspendedJob.DeepCopy()},
 			expectedErr:        nil,
 			expectedNeedUpdate: true,

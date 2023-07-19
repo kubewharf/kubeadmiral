@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -20,64 +19,48 @@ package statusaggregator
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/pkg/errors"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicclient "k8s.io/client-go/dynamic"
 	kubeclient "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	genericclient "github.com/kubewharf/kubeadmiral/pkg/client/generic"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
+	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/statusaggregator/plugins"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/propagationstatus"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/sourcefeedback"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
+	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
+	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
 const (
-	ControllerName = "status-aggregator-controller"
+	StatusAggregatorControllerName = "status-aggregator-controller"
 
-	EventReasonUpdateSourceObjectStatus     = "UpdateSourceObjectStatus"
-	EventReasonUpdateSourceObjectAnnotation = "UpdateSourceObjectAnnotation"
+	EventReasonUpdateSourceObjectStatus = "UpdateSourceObjectStatus"
 )
 
 // StatusAggregator aggregates statuses of target objects in member clusters to status of source object
 type StatusAggregator struct {
-	// name of the controller: <sourceKind>-status-aggregator
 	name string
 
-	// Store for the federated type
-	federatedStore cache.Store
-	// Controller for the federated type
-	federatedController cache.Controller
-	// Client for federated type
-	federatedClient util.ResourceClient
-
-	// Store for the source type
-	sourceStore cache.Store
-	// Controller for the source type
-	sourceController cache.Controller
-	// Client for source type
-	sourceClient util.ResourceClient
-
-	// Informer for resources in member clusters
-	informer util.FederatedInformer
 	// For triggering reconciliation of all target resources. This is
 	// used when a new cluster becomes available.
 	clusterQueue            workqueue.DelayingInterface
@@ -85,127 +68,180 @@ type StatusAggregator struct {
 	clusterUnavailableDelay time.Duration
 	objectEnqueueDelay      time.Duration
 
-	worker        worker.ReconcileWorker
-	typeConfig    *fedcorev1a1.FederatedTypeConfig
+	worker        worker.ReconcileWorker[reconcileKey]
 	eventRecorder record.EventRecorder
 
-	// plugin for source type to aggregate statuses
-	plugin  plugins.Plugin
 	metrics stats.Metrics
 	logger  klog.Logger
+
+	dynamicClient dynamicclient.Interface
+	fedClient     fedclient.Interface
+
+	federatedInformer        informermanager.FederatedInformerManager
+	fedObjectInformer        fedcorev1a1informers.FederatedObjectInformer
+	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer
+	informerManager          informermanager.InformerManager
 }
 
-func StartStatusAggregator(controllerConfig *util.ControllerConfig,
-	stopChan <-chan struct{}, typeConfig *fedcorev1a1.FederatedTypeConfig,
-) error {
-	aggregator, err := newStatusAggregator(controllerConfig, typeConfig)
-	if err != nil {
-		return err
+type reconcileKey struct {
+	gvk       schema.GroupVersionKind
+	namespace string
+	name      string
+}
+
+func (r reconcileKey) NamespacedName() string {
+	if r.namespace == "" {
+		return r.name
 	}
-	klog.V(4).Infof("Starting status aggregator for %q", typeConfig.GetSourceType().Kind)
-	aggregator.Run(stopChan)
-	return nil
+	return fmt.Sprintf("%s/%s", r.namespace, r.name)
 }
 
-func newStatusAggregator(controllerConfig *util.ControllerConfig,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
+func (r reconcileKey) String() string {
+	return fmt.Sprintf(`{"gvk": %q, "namespace": %q, "name": %q}`, r.gvk.String(), r.namespace, r.name)
+}
+
+func NewStatusAggregatorController(
+	kubeClient kubeclient.Interface,
+	dynamicClient dynamicclient.Interface,
+	fedClient fedclient.Interface,
+	fedObjectInformer fedcorev1a1informers.FederatedObjectInformer,
+	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer,
+	federatedInformer informermanager.FederatedInformerManager,
+	informerManager informermanager.InformerManager,
+	metrics stats.Metrics,
+	logger klog.Logger,
+	workerCount int,
+	clusterAvailableDelay, clusterUnavailableDelay time.Duration,
 ) (*StatusAggregator, error) {
-	federatedAPIResource := typeConfig.GetFederatedType()
-	targetAPIResource := typeConfig.GetTargetType()
-	sourceAPIResource := typeConfig.GetSourceType()
-	if sourceAPIResource == nil {
-		return nil, errors.Errorf("Object federation is not supported for %q", federatedAPIResource.Kind)
-	}
-	plugin := plugins.GetPlugin(sourceAPIResource)
-	if plugin == nil {
-		return nil, errors.Errorf("statuses aggregation plugin is not found for %q", sourceAPIResource.Kind)
-	}
-
-	userAgent := fmt.Sprintf("%s-status-aggregator", strings.ToLower(sourceAPIResource.Kind))
-	configWithUserAgent := rest.CopyConfig(controllerConfig.KubeConfig)
-	rest.AddUserAgent(configWithUserAgent, userAgent)
-
-	kubeClient := kubeclient.NewForConfigOrDie(configWithUserAgent)
-	recorder := eventsink.NewDefederatingRecorderMux(kubeClient, userAgent, 4)
-
 	a := &StatusAggregator{
-		name:          userAgent,
-		eventRecorder: recorder,
-		typeConfig:    typeConfig,
-		plugin:        plugin,
-		metrics:       controllerConfig.Metrics,
-		logger:        klog.LoggerWithValues(klog.Background(), "controller", ControllerName, "ftc", typeConfig.Name),
-	}
-	var err error
-	a.federatedClient, err = util.NewResourceClient(configWithUserAgent, &federatedAPIResource)
-	if err != nil {
-		return nil, err
-	}
-	a.sourceClient, err = util.NewResourceClient(configWithUserAgent, sourceAPIResource)
-	if err != nil {
-		return nil, err
+		name: StatusAggregatorControllerName,
+
+		// Build queue for triggering cluster reconciliations.
+		clusterQueue:            workqueue.NewNamedDelayingQueue(StatusAggregatorControllerName),
+		clusterAvailableDelay:   clusterAvailableDelay,
+		clusterUnavailableDelay: clusterUnavailableDelay,
+		objectEnqueueDelay:      10 * time.Second,
+
+		eventRecorder: eventsink.NewDefederatingRecorderMux(kubeClient, StatusAggregatorControllerName, 4),
+		metrics:       metrics,
+		logger:        logger.WithValues("controller", StatusAggregatorControllerName),
+
+		dynamicClient: dynamicClient,
+		fedClient:     fedClient,
+
+		fedObjectInformer:        fedObjectInformer,
+		clusterFedObjectInformer: clusterFedObjectInformer,
+		federatedInformer:        federatedInformer,
+		informerManager:          informerManager,
 	}
 
-	// Build queue for triggering cluster reconciliations.
-	a.clusterQueue = workqueue.NewNamedDelayingQueue("status-aggregator-cluster-queue")
-	a.clusterAvailableDelay = controllerConfig.ClusterAvailableDelay
-	a.clusterUnavailableDelay = controllerConfig.ClusterUnavailableDelay
-	a.objectEnqueueDelay = 10 * time.Second
-
-	a.worker = worker.NewReconcileWorker(
+	a.worker = worker.NewReconcileWorker[reconcileKey](
+		StatusAggregatorControllerName,
 		a.reconcile,
 		worker.RateLimiterOptions{},
-		controllerConfig.WorkerCount,
-		controllerConfig.Metrics,
-		delayingdeliver.NewMetricTags("statusaggregator-worker", typeConfig.GetTargetType().Kind),
+		workerCount,
+		metrics,
 	)
-	enqueueObj := a.worker.EnqueueObject
-	targetNamespace := controllerConfig.TargetNamespace
-	a.federatedStore, a.federatedController = util.NewResourceInformer(
-		a.federatedClient,
-		targetNamespace,
-		enqueueObj,
-		controllerConfig.Metrics,
-	)
-	a.sourceStore, a.sourceController = util.NewResourceInformer(
-		a.sourceClient,
-		targetNamespace,
-		enqueueObj,
-		controllerConfig.Metrics,
-	)
-	a.informer, err = util.NewFederatedInformer(
-		controllerConfig,
-		genericclient.NewForConfigOrDie(configWithUserAgent),
-		configWithUserAgent,
-		&targetAPIResource,
-		func(obj pkgruntime.Object) {
-			qualifiedName := common.NewQualifiedName(obj)
-			a.worker.EnqueueWithDelay(qualifiedName, a.objectEnqueueDelay)
-		},
-		&util.ClusterLifecycleHandlerFuncs{
-			ClusterAvailable: func(cluster *fedcorev1a1.FederatedCluster) {
+
+	genericFederatedObjectHandler := eventhandlers.NewTriggerOnAllChanges(func(fedObj fedcorev1a1.GenericFederatedObject) {
+		if !fedObj.GetDeletionTimestamp().IsZero() {
+			return
+		}
+		unsObj, err := fedObj.GetSpec().GetTemplateAsUnstructured()
+		if err != nil {
+			a.logger.Error(err, "Failed to get object metadata")
+			return
+		}
+		gvk := unsObj.GroupVersionKind()
+		if a.getFTCIfStatusAggregationIsEnabled(gvk) == nil {
+			a.logger.V(3).Info("Status aggregation is disabled", "gvk", gvk)
+			return
+		}
+
+		a.worker.Enqueue(reconcileKey{
+			gvk:       gvk,
+			namespace: unsObj.GetNamespace(),
+			name:      unsObj.GetName(),
+		})
+	})
+	if _, err := a.fedObjectInformer.Informer().AddEventHandler(genericFederatedObjectHandler); err != nil {
+		return nil, fmt.Errorf("failed to create federated informer: %w", err)
+	}
+	if _, err := a.clusterFedObjectInformer.Informer().AddEventHandler(genericFederatedObjectHandler); err != nil {
+		return nil, fmt.Errorf("failed to create cluster federated informer: %w", err)
+	}
+
+	if err := a.federatedInformer.AddClusterEventHandlers(&informermanager.ClusterEventHandler{
+		Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
+			if newCluster != nil && clusterutil.IsClusterReady(&newCluster.Status) &&
+				(oldCluster == nil || !clusterutil.IsClusterReady(&oldCluster.Status)) {
 				// When new cluster becomes available process all the target resources again.
 				a.clusterQueue.AddAfter(struct{}{}, a.clusterAvailableDelay)
-			},
-			// When a cluster becomes unavailable process all the target resources again.
-			ClusterUnavailable: func(cluster *fedcorev1a1.FederatedCluster, _ []interface{}) {
+			}
+			if oldCluster != nil && !oldCluster.DeletionTimestamp.IsZero() {
+				// When a cluster becomes unavailable process all the target resources again.
 				a.clusterQueue.AddAfter(struct{}{}, a.clusterUnavailableDelay)
-			},
+			}
+			return false
 		},
-	)
-	if err != nil {
-		return nil, err
+		Callback: func(_ *fedcorev1a1.FederatedCluster) {},
+	}); err != nil {
+		return nil, fmt.Errorf("failed to add event handler generator for cluster: %w", err)
+	}
+
+	if err := a.federatedInformer.AddEventHandlerGenerator(&informermanager.EventHandlerGenerator{
+		Predicate: informermanager.RegisterOncePredicate,
+		Generator: func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler {
+			return eventhandlers.NewTriggerOnAllChanges(func(obj *unstructured.Unstructured) {
+				if !obj.GetDeletionTimestamp().IsZero() {
+					return
+				}
+				gvk := obj.GroupVersionKind()
+				if a.getFTCIfStatusAggregationIsEnabled(gvk) == nil {
+					a.logger.V(3).Info("Status aggregation is disabled", "gvk", gvk)
+					return
+				}
+				a.worker.EnqueueWithDelay(reconcileKey{
+					gvk:       gvk,
+					namespace: obj.GetNamespace(),
+					name:      obj.GetName(),
+				}, a.objectEnqueueDelay)
+			})
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("failed to add event handler generator for cluster obj: %w", err)
+	}
+
+	if err := a.informerManager.AddEventHandlerGenerator(&informermanager.EventHandlerGenerator{
+		Predicate: informermanager.RegisterOncePredicate,
+		Generator: func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler {
+			return eventhandlers.NewTriggerOnAllChanges(func(obj *unstructured.Unstructured) {
+				if !obj.GetDeletionTimestamp().IsZero() || !ftc.GetStatusAggregationEnabled() {
+					return
+				}
+				a.worker.Enqueue(reconcileKey{
+					gvk:       ftc.GetSourceTypeGVK(),
+					namespace: obj.GetNamespace(),
+					name:      obj.GetName(),
+				})
+			})
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("failed to add event handler generator for obj: %w", err)
 	}
 	return a, nil
 }
 
-func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
-	a.logger.Info("Starting controller")
-	defer a.logger.Info("Stopping controller")
+func (a *StatusAggregator) IsControllerReady() bool {
+	return a.HasSynced()
+}
 
-	go a.sourceController.Run(stopChan)
-	go a.federatedController.Run(stopChan)
-	a.informer.Start()
+func (a *StatusAggregator) Run(ctx context.Context) {
+	ctx, logger := logging.InjectLogger(ctx, a.logger)
+
+	logger.Info("Starting controller")
+	defer logger.Info("Stopping controller")
+
 	go func() {
 		for {
 			item, shutdown := a.clusterQueue.Get()
@@ -216,46 +252,38 @@ func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
 			a.clusterQueue.Done(item)
 		}
 	}()
-	if !cache.WaitForNamedCacheSync(a.name, stopChan, a.HasSynced) {
+	if !cache.WaitForNamedCacheSync(StatusAggregatorControllerName, ctx.Done(), a.HasSynced) {
+		logger.Error(nil, "Timed out waiting for cache sync")
 		return
 	}
-	a.worker.Run(stopChan)
+	logger.Info("Caches are synced")
 
-	// Ensure all goroutines are cleaned up when the stop channel closes
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				a.logger.Error(fmt.Errorf("%v", r), "recovered from panic")
-			}
-		}()
-		<-stopChan
-		a.informer.Stop()
-		a.clusterQueue.ShutDown()
-	}()
+	a.worker.Run(ctx)
+	<-ctx.Done()
+	a.clusterQueue.ShutDown()
 }
 
 func (a *StatusAggregator) HasSynced() bool {
-	if !a.informer.ClustersSynced() {
-		a.logger.V(3).Info("Cluster list not synced")
-		return false
-	}
-	if !a.federatedController.HasSynced() {
-		a.logger.V(3).Info("Federated type not synced")
-		return false
-	}
-	if !a.sourceController.HasSynced() {
-		a.logger.V(3).Info("Status not synced")
-		return false
-	}
-
-	return true
+	return a.fedObjectInformer.Informer().HasSynced() &&
+		a.clusterFedObjectInformer.Informer().HasSynced() &&
+		a.federatedInformer.HasSynced() &&
+		a.informerManager.HasSynced()
 }
 
-func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
-	sourceKind := a.typeConfig.GetSourceType().Kind
-	key := qualifiedName.String()
-	logger := a.logger.WithValues("object", key)
-	ctx := klog.NewContext(context.TODO(), logger)
+func (a *StatusAggregator) reconcile(ctx context.Context, key reconcileKey) (status worker.Result) {
+	logger := a.logger.WithValues("object", key.NamespacedName(), "gvk", key.gvk)
+	ctx = klog.NewContext(ctx, logger)
+
+	ftc := a.getFTCIfStatusAggregationIsEnabled(key.gvk)
+	if ftc == nil {
+		logger.V(3).Info("StatusAggregation not enabled")
+		return worker.StatusAllOK
+	}
+	plugin := plugins.GetPlugin(key.gvk)
+	if plugin == nil {
+		logger.V(3).Info("Plugin not found")
+		return worker.StatusAllOK
+	}
 
 	a.metrics.Rate("status-aggregator.throughput", 1)
 	logger.V(3).Info("Starting to reconcile")
@@ -266,9 +294,9 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) (status
 			Info("Finished reconciling")
 	}()
 
-	sourceObject, err := objectFromCache(a.sourceStore, key)
+	sourceObject, err := a.getObjectFromStore(key, "")
 	if err != nil {
-		logger.Error(err, "Failed to get object from cache")
+		logger.Error(err, "Failed to get source object from cache")
 		return worker.StatusError
 	}
 
@@ -277,9 +305,18 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) (status
 		return worker.StatusAllOK
 	}
 
-	fedObject, err := objectFromCache(a.federatedStore, key)
+	federatedName := naming.GenerateFederatedObjectName(key.name, ftc.Name)
+	logger = logger.WithValues("federated-object", federatedName)
+	ctx = klog.NewContext(ctx, logger)
+
+	fedObject, err := fedobjectadapters.GetFromLister(
+		a.fedObjectInformer.Lister(),
+		a.clusterFedObjectInformer.Lister(),
+		key.namespace,
+		federatedName,
+	)
 	if err != nil {
-		logger.Error(err, "Failed to get object from cache")
+		logger.Error(err, "Failed to get object from store")
 		return worker.StatusError
 	}
 
@@ -288,7 +325,7 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) (status
 		return worker.StatusAllOK
 	}
 
-	clusterObjs, err := a.clusterObjs(ctx, qualifiedName)
+	clusterObjs, err := a.clusterObjs(ctx, key)
 	if err != nil {
 		logger.Error(err, "Failed to get cluster objs")
 		return worker.StatusError
@@ -300,85 +337,48 @@ func (a *StatusAggregator) reconcile(qualifiedName common.QualifiedName) (status
 		return worker.StatusError
 	}
 
-	newObj, needUpdate, err := a.plugin.AggregateStatuses(ctx, sourceObject, fedObject, clusterObjs, clusterObjsUpToDate)
+	newObj, needUpdate, err := plugin.AggregateStatuses(ctx, sourceObject, fedObject, clusterObjs, clusterObjsUpToDate)
 	if err != nil {
 		return worker.StatusError
 	}
 
-	canReuseUpdateStatus := sourceObject.GroupVersionKind() == appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind)
-
-	if canReuseUpdateStatus {
-		sourcefeedback.PopulateStatusAnnotation(newObj, clusterObjs, &needUpdate)
-	}
-
 	if needUpdate {
 		logger.V(1).Info("Updating status of source object")
-		_, err = a.sourceClient.Resources(qualifiedName.Namespace).
-			UpdateStatus(context.TODO(), newObj, metav1.UpdateOptions{})
+		_, err = a.dynamicClient.Resource(ftc.GetSourceTypeGVR()).Namespace(key.namespace).
+			UpdateStatus(ctx, newObj, metav1.UpdateOptions{})
 		if err != nil {
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
 			}
 			a.eventRecorder.Eventf(sourceObject, corev1.EventTypeWarning, EventReasonUpdateSourceObjectStatus,
-				"failed to update source object status %v %v, err: %v, retry later", sourceKind, key, err)
+				"failed to update source object status %v, err: %v, retry later", key, err)
 			return worker.StatusError
 		}
 		a.eventRecorder.Eventf(sourceObject, corev1.EventTypeNormal, EventReasonUpdateSourceObjectStatus,
-			"updated source object status %v %v", sourceKind, key)
-	}
-
-	if !canReuseUpdateStatus {
-		needUpdate = false
-		sourcefeedback.PopulateStatusAnnotation(newObj, clusterObjs, &needUpdate)
-
-		if needUpdate {
-			logger.V(1).Info("Updating annotation of source object")
-			_, err = a.sourceClient.Resources(qualifiedName.Namespace).
-				Update(context.TODO(), newObj, metav1.UpdateOptions{})
-			if err != nil {
-				if apierrors.IsConflict(err) {
-					return worker.StatusConflict
-				}
-				a.eventRecorder.Eventf(sourceObject, corev1.EventTypeWarning, EventReasonUpdateSourceObjectAnnotation,
-					"failed to update source object annotation %v %v, err: %v, retry later", sourceKind, key, err)
-				return worker.StatusError
-			}
-			a.eventRecorder.Eventf(sourceObject, corev1.EventTypeNormal, EventReasonUpdateSourceObjectAnnotation,
-				"updated source object annotation %v %v", sourceKind, key)
-		}
+			"updated source object status %v", key)
 	}
 
 	return worker.StatusAllOK
 }
 
 // clusterStatuses returns the resource status in member cluster.
-func (a *StatusAggregator) clusterObjs(ctx context.Context, qualifiedName common.QualifiedName) (map[string]interface{}, error) {
+func (a *StatusAggregator) clusterObjs(ctx context.Context, key reconcileKey) (map[string]interface{}, error) {
 	logger := klog.FromContext(ctx)
 
-	key := qualifiedName.String()
-	clusters, err := a.informer.GetReadyClusters()
+	clusters, err := a.federatedInformer.GetReadyClusters()
 	if err != nil {
+		logger.Error(err, "Failed to list clusters")
 		return nil, err
 	}
 
 	objs := make(map[string]interface{})
-	targetKind := a.typeConfig.GetTargetType().Kind
 	for _, cluster := range clusters {
-		clusterObj, exist, err := util.GetClusterObject(
-			context.TODO(),
-			a.informer,
-			cluster.Name,
-			qualifiedName,
-			a.typeConfig.GetTargetType(),
-		)
+		clusterObj, err := a.getObjectFromStore(key, cluster.Name)
 		if err != nil {
-			wrappedErr := errors.Wrapf(err, "Failed to get %s %q from cluster %q", targetKind, key, cluster.Name)
-			logger.WithValues("cluster-name", cluster.Name).Error(err, "Failed to get object from cluster")
-			return nil, wrappedErr
+			logger.Error(err, "Failed to get object from cluster", "cluster", cluster.Name)
+			return nil, fmt.Errorf("failed to get object from cluster: %w", err)
 		}
-		if exist {
-			objs[cluster.Name] = clusterObj
-		}
+		objs[cluster.Name] = clusterObj
 	}
 
 	return objs, nil
@@ -386,19 +386,96 @@ func (a *StatusAggregator) clusterObjs(ctx context.Context, qualifiedName common
 
 // The function triggers reconciliation of all target federated resources.
 func (a *StatusAggregator) reconcileOnClusterChange() {
-	for _, obj := range a.sourceStore.List() {
-		qualifiedName := common.NewQualifiedName(obj.(pkgruntime.Object))
-		a.worker.EnqueueWithDelay(qualifiedName, time.Second*3)
+	ftcs := a.listFTCWithStatusAggregationEnabled()
+	for _, ftc := range ftcs {
+		gvk := ftc.GetSourceTypeGVK()
+		logger := a.logger.WithValues("gvk", gvk)
+		lister, hasSynced, exists := a.informerManager.GetResourceLister(gvk)
+		if !exists {
+			logger.Error(nil, "Lister does not exist")
+			return
+		}
+		if !hasSynced() {
+			logger.V(3).Info("Lister not synced, retry it later")
+			a.clusterQueue.AddAfter(struct{}{}, a.clusterAvailableDelay)
+			return
+		}
+		sources, err := lister.List(labels.Everything())
+		if err != nil {
+			logger.Error(err, "Failed to list source objects, retry it later")
+			a.clusterQueue.AddAfter(struct{}{}, a.clusterAvailableDelay)
+			return
+		}
+		for _, item := range sources {
+			unsObj, ok := item.(*unstructured.Unstructured)
+			if !ok {
+				logger.V(3).Info("Expected unstructured, but got non-type", "obj", item)
+				return
+			}
+			a.worker.EnqueueWithDelay(reconcileKey{
+				gvk:       gvk,
+				namespace: unsObj.GetNamespace(),
+				name:      unsObj.GetName(),
+			}, a.objectEnqueueDelay)
+		}
 	}
 }
 
-func objectFromCache(store cache.Store, key string) (*unstructured.Unstructured, error) {
-	cachedObj, exist, err := store.GetByKey(key)
+// getObjectFromStore returns the specified obj from cluster.
+// If cluster is "", get the obj from informerManager.
+func (a *StatusAggregator) getObjectFromStore(qualifedName reconcileKey, cluster string) (*unstructured.Unstructured, error) {
+	var (
+		lister    cache.GenericLister
+		hasSynced cache.InformerSynced
+		exists    bool
+	)
+	if cluster != "" {
+		lister, hasSynced, exists = a.federatedInformer.GetResourceLister(qualifedName.gvk, cluster)
+	} else {
+		lister, hasSynced, exists = a.informerManager.GetResourceLister(qualifedName.gvk)
+	}
+	if !exists {
+		return nil, fmt.Errorf("lister for %s does not exist", qualifedName.gvk)
+	}
+	if !hasSynced() {
+		return nil, fmt.Errorf("lister for %s not synced", qualifedName.gvk)
+	}
+
+	var obj pkgruntime.Object
+	var err error
+	if qualifedName.namespace == "" {
+		obj, err = lister.Get(qualifedName.name)
+	} else {
+		obj, err = lister.ByNamespace(qualifedName.namespace).Get(qualifedName.name)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if !exist {
-		return nil, nil
+
+	return obj.(*unstructured.Unstructured), nil
+}
+
+func (a *StatusAggregator) getFTCIfStatusAggregationIsEnabled(gvk schema.GroupVersionKind) *fedcorev1a1.FederatedTypeConfig {
+	typeConfig, exists := a.informerManager.GetResourceFTC(gvk)
+	if !exists || typeConfig == nil || !typeConfig.GetStatusAggregationEnabled() {
+		return nil
 	}
-	return cachedObj.(*unstructured.Unstructured).DeepCopy(), nil
+
+	return typeConfig.DeepCopy()
+}
+
+func (a *StatusAggregator) listFTCWithStatusAggregationEnabled() []*fedcorev1a1.FederatedTypeConfig {
+	ftcLister := a.federatedInformer.GetFederatedTypeConfigLister()
+	ftcList, err := ftcLister.List(labels.Everything())
+	if err != nil {
+		return nil
+	}
+
+	res := make([]*fedcorev1a1.FederatedTypeConfig, 0, len(ftcList))
+	for _, ftc := range ftcList {
+		if ftc.GetStatusAggregationEnabled() {
+			res = append(res, ftc.DeepCopy())
+		}
+	}
+	return res
 }
