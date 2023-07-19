@@ -48,7 +48,6 @@ import (
 	"k8s.io/klog/v2"
 
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
-	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
 	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
@@ -127,19 +126,12 @@ type SyncController struct {
 	logger klog.Logger
 }
 
-/*
-TODOs
-- generic client:
-  - version manager (have to experiment with generics, reconsider after refactoring everything else)
-*/
-
 // NewSyncController returns a new sync controller for the configuration
 func NewSyncController(
 	logger klog.Logger,
 	controllerConfig *util.ControllerConfig,
 
 	kubeClient kubernetes.Interface,
-	genericClient generic.Client,
 	fedClient fedclient.Interface,
 
 	fedObjectInformer fedcorev1a1informers.FederatedObjectInformer,
@@ -235,7 +227,7 @@ func NewSyncController(
 	}
 
 	s.fedAccessor = NewFederatedResourceAccessor(
-		logger, controllerConfig, genericClient,
+		logger, controllerConfig, fedClient.CoreV1alpha1(),
 		fedObjectInformer, clusterFedObjectInformer,
 		ftcManager,
 		func(qualifiedName common.QualifiedName) {
@@ -248,7 +240,7 @@ func NewSyncController(
 }
 
 func (s *SyncController) Run(ctx context.Context) {
-	s.fedAccessor.Run(ctx.Done())
+	s.fedAccessor.Run(ctx)
 	go func() {
 		for {
 			_, shutdown := s.clusterReadinessTransitionQueue.Get()

@@ -30,14 +30,13 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	fedcorev1a1client "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 )
@@ -63,15 +62,14 @@ type VersionManager struct {
 
 	versions map[string]runtimeclient.Object
 
-	// TODO: consider switching to a fedcorev1a1client.Interface or fedcorev1a1client.Interface or dynamic.Interface
-	client generic.Client
+	client fedcorev1a1client.CoreV1alpha1Interface
 
 	logger klog.Logger
 }
 
 func NewVersionManager(
 	logger klog.Logger,
-	client generic.Client,
+	client fedcorev1a1client.CoreV1alpha1Interface,
 	namespaced bool,
 	namespace string,
 ) *VersionManager {
@@ -89,12 +87,12 @@ func NewVersionManager(
 
 // Sync retrieves propagated versions from the api and loads it into
 // memory.
-func (m *VersionManager) Sync(stopChan <-chan struct{}) {
-	versionList, ok := m.list(stopChan)
+func (m *VersionManager) Sync(ctx context.Context) {
+	versionList, ok := m.list(ctx)
 	if !ok {
 		return
 	}
-	ok = m.load(versionList, stopChan)
+	ok = m.load(ctx, versionList)
 	if !ok {
 		return
 	}
@@ -216,18 +214,12 @@ func (m *VersionManager) Delete(qualifiedName common.QualifiedName) {
 	m.Unlock()
 }
 
-func (m *VersionManager) list(stopChan <-chan struct{}) (runtimeclient.ObjectList, bool) {
+func (m *VersionManager) list(ctx context.Context) (runtimeclient.ObjectList, bool) {
 	// Attempt retrieval of list of versions until success or the channel is closed.
 	var versionList runtimeclient.ObjectList
-	err := wait.PollImmediateInfinite(1*time.Second, func() (bool, error) {
-		select {
-		case <-stopChan:
-			m.logger.V(4).Info("Halting version manager list due to closed stop channel")
-			return false, errors.New("")
-		default:
-		}
-		versionList = m.adapter.NewListObject()
-		err := m.client.List(context.TODO(), versionList, m.namespace)
+	err := wait.PollImmediateInfiniteWithContext(ctx, 1*time.Second, func(ctx context.Context) (bool, error) {
+		var err error
+		versionList, err = m.adapter.List(ctx, m.client, m.namespace, metav1.ListOptions{})
 		if err != nil {
 			m.logger.Error(err, "Failed to list propagated versions")
 			// Do not return the error to allow the operation to be retried.
@@ -244,14 +236,14 @@ func (m *VersionManager) list(stopChan <-chan struct{}) (runtimeclient.ObjectLis
 // load processes a list of versions into in-memory cache.  Since the
 // version manager should not be used in advance of HasSynced
 // returning true, locking is assumed to be unnecessary.
-func (m *VersionManager) load(versionList runtimeclient.ObjectList, stopChan <-chan struct{}) bool {
+func (m *VersionManager) load(ctx context.Context, versionList runtimeclient.ObjectList) bool {
 	objs, err := meta.ExtractList(versionList)
 	if err != nil {
 		return false
 	}
 	for _, obj := range objs {
 		select {
-		case <-stopChan:
+		case <-ctx.Done():
 			m.logger.V(4).Info("Halting version manager load due to closed stop channel")
 			return false
 		default:
@@ -281,22 +273,20 @@ func (m *VersionManager) versionQualifiedName(qualifiedName common.QualifiedName
 // resource is updated by at most one thread at a time.  This should
 // guarantee safe manipulation of an object retrieved from the
 // version map.
-func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName common.QualifiedName) error {
+func (m *VersionManager) writeVersion(obj runtimeclient.Object, qualifiedName common.QualifiedName) error {
 	key := qualifiedName.String()
 	adapterType := m.adapter.TypeName()
 	keyedLogger := m.logger.WithValues("version-qualified-name", key)
 
-	resourceVersion, err := getResourceVersion(obj)
-	if err != nil {
-		return errors.Wrapf(err, "Failed to retrieve the resourceVersion from %s %q", adapterType, key)
-	}
+	resourceVersion := getResourceVersion(obj)
 	refreshVersion := false
 	// TODO Centralize polling interval and duration
 	waitDuration := 30 * time.Second
-	err = wait.PollImmediate(100*time.Millisecond, waitDuration, func() (bool, error) {
+	err := wait.PollImmediate(100*time.Millisecond, waitDuration, func() (bool, error) {
+		var err error
+
 		if refreshVersion {
 			// Version was written to the API by another process after the last manager write.
-			var err error
 			resourceVersion, err = m.getResourceVersionFromAPI(qualifiedName)
 			if err != nil {
 				keyedLogger.Error(err, "Failed to refresh the resourceVersion from the API")
@@ -308,15 +298,10 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 		if resourceVersion == "" {
 			// Version resource needs to be created
 
-			createdObj := obj.DeepCopyObject()
-			err := setResourceVersion(createdObj, "")
-			if err != nil {
-				keyedLogger.Error(err, "Failed to clear the resourceVersion")
-				return false, nil
-			}
-
+			createdObj := obj.DeepCopyObject().(runtimeclient.Object)
+			setResourceVersion(createdObj, "")
 			keyedLogger.V(2).Info("Creating resourceVersion")
-			err = m.client.Create(context.TODO(), createdObj.(runtimeclient.Object))
+			createdObj, err = m.adapter.Create(context.TODO(), m.client, createdObj, metav1.CreateOptions{})
 			if apierrors.IsAlreadyExists(err) {
 				keyedLogger.V(3).Info("ResourceVersion was created by another process. Will refresh the resourceVersion and attempt to update")
 				refreshVersion = true
@@ -334,24 +319,16 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 			}
 
 			// Update the resource version that will be used for update.
-			resourceVersion, err = getResourceVersion(createdObj)
-			if err != nil {
-				keyedLogger.Error(err, "Failed to retrieve the resourceVersion")
-				return false, nil
-			}
+			resourceVersion = getResourceVersion(createdObj)
 		}
 
 		// Update the status of an existing object
 
-		updatedObj := obj.DeepCopyObject()
-		err := setResourceVersion(updatedObj, resourceVersion)
-		if err != nil {
-			keyedLogger.Error(err, "Failed to set the resourceVersion")
-			return false, nil
-		}
+		updatedObj := obj.DeepCopyObject().(runtimeclient.Object)
+		setResourceVersion(updatedObj, resourceVersion)
 
 		keyedLogger.V(2).Info("Updating the status")
-		err = m.client.UpdateStatus(context.TODO(), updatedObj.(runtimeclient.Object))
+		updatedObj, err = m.adapter.UpdateStatus(context.TODO(), m.client, updatedObj, metav1.UpdateOptions{})
 		if apierrors.IsConflict(err) {
 			keyedLogger.V(3).Info("ResourceVersion was updated by another process. Will refresh the resourceVersion and retry the update")
 			refreshVersion = true
@@ -378,15 +355,8 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 		// refresh the resource version if necessary.
 
 		// Update the version resource
-		resourceVersion, err = getResourceVersion(updatedObj)
-		if err != nil {
-			keyedLogger.Error(err, "Failed to retrieve the resourceVersion")
-			return true, nil
-		}
-		err = setResourceVersion(obj, resourceVersion)
-		if err != nil {
-			keyedLogger.Error(err, "Failed to set the resourceVersion")
-		}
+		resourceVersion = getResourceVersion(updatedObj)
+		setResourceVersion(obj, resourceVersion)
 
 		return true, nil
 	})
@@ -397,31 +367,20 @@ func (m *VersionManager) writeVersion(obj pkgruntime.Object, qualifiedName commo
 }
 
 func (m *VersionManager) getResourceVersionFromAPI(qualifiedName common.QualifiedName) (string, error) {
-	m.logger.WithValues("version-qualified-name", qualifiedName).
-		V(2).Info("Retrieving resourceVersion from the API")
-	obj := m.adapter.NewObject()
-	err := m.client.Get(context.TODO(), obj, qualifiedName.Namespace, qualifiedName.Name)
+	m.logger.V(2).Info("Retrieving resourceVersion from the API", "version-qualified-name", qualifiedName)
+	obj, err := m.adapter.Get(context.TODO(), m.client, qualifiedName.Namespace, qualifiedName.Name, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
-	return getResourceVersion(obj)
+	return getResourceVersion(obj), nil
 }
 
-func getResourceVersion(obj pkgruntime.Object) (string, error) {
-	metaAccessor, err := meta.Accessor(obj)
-	if err != nil {
-		return "", err
-	}
-	return metaAccessor.GetResourceVersion(), nil
+func getResourceVersion(obj runtimeclient.Object) string {
+	return obj.GetResourceVersion()
 }
 
-func setResourceVersion(obj pkgruntime.Object, resourceVersion string) error {
-	metaAccessor, err := meta.Accessor(obj)
-	if err != nil {
-		return err
-	}
-	metaAccessor.SetResourceVersion(resourceVersion)
-	return nil
+func setResourceVersion(obj runtimeclient.Object, resourceVersion string) {
+	obj.SetResourceVersion(resourceVersion)
 }
 
 func ownerReferenceForFederatedObject(obj fedcorev1a1.GenericFederatedObject) metav1.OwnerReference {

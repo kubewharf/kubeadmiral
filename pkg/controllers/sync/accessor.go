@@ -22,6 +22,7 @@ are Copyright 2023 The KubeAdmiral Authors.
 package sync
 
 import (
+	"context"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -33,7 +34,7 @@ import (
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	genericclient "github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	fedcorev1a1client "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/version"
@@ -45,7 +46,7 @@ import (
 // FederatedResourceAccessor provides a way to retrieve and visit
 // logical federated resources (e.g. FederatedConfigMap)
 type FederatedResourceAccessor interface {
-	Run(stopChan <-chan struct{})
+	Run(context.Context)
 	HasSynced() bool
 	FederatedResource(
 		qualifiedName common.QualifiedName,
@@ -76,7 +77,7 @@ type resourceAccessor struct {
 func NewFederatedResourceAccessor(
 	logger klog.Logger,
 	controllerConfig *util.ControllerConfig,
-	client genericclient.Client,
+	client fedcorev1a1client.CoreV1alpha1Interface,
 	fedObjectInformer fedcorev1a1informers.FederatedObjectInformer,
 	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer,
 	ftcManager informermanager.FederatedTypeConfigManager,
@@ -114,9 +115,9 @@ func NewFederatedResourceAccessor(
 	return a
 }
 
-func (a *resourceAccessor) Run(stopChan <-chan struct{}) {
-	go a.versionManager.Sync(stopChan)
-	go a.clusterVersionManager.Sync(stopChan)
+func (a *resourceAccessor) Run(ctx context.Context) {
+	go a.versionManager.Sync(ctx)
+	go a.clusterVersionManager.Sync(ctx)
 }
 
 func (a *resourceAccessor) HasSynced() bool {
