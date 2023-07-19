@@ -101,16 +101,16 @@ func transformObjectName(objectName string) (string, bool) {
 	}
 
 	// squash any sequence of more than one '.'
-	santizedName := []byte{}
+	sanitizedName := []byte{}
 	for i, ch := range transformedName {
 		if i != 0 && transformedName[i-1] == '.' && transformedName[i] == '.' {
 			transformed = true
 			continue
 		}
-		santizedName = append(santizedName, ch)
+		sanitizedName = append(sanitizedName, ch)
 	}
 
-	return string(santizedName), transformed
+	return string(sanitizedName), transformed
 }
 
 func fnvHashFunc(key string) uint32 {
