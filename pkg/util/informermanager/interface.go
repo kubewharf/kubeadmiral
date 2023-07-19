@@ -108,9 +108,9 @@ type FederatedInformerManager interface {
 	// Returns true if the FederatedInformerManager's view of FederatedTypeConfigs and FederatedClusters is synced.
 	HasSynced() bool
 
-	// Adds a ClusterEventHandler that can be used by controllers to hook into the cluster events received by the
+	// Adds ClusterEventHandlers that can be used by controllers to hook into the cluster events received by the
 	// FederatedInformerManager.
-	AddClusterEventHandler(handler *ClusterEventHandler) error
+	AddClusterEventHandlers(handlers ...*ClusterEventHandler) error
 
 	// Starts processing FederatedTypeConfig and FederatedCluster events.
 	Start(ctx context.Context)
