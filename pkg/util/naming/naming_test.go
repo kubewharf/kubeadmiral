@@ -42,6 +42,14 @@ func TestGenerateFederatedObjectName(t *testing.T) {
 			want: "foo-roles.rbac.authorization.k8s.io",
 		},
 		{
+			name: "generate federated object name with consecutive .",
+			args: args{
+				objectName: "system...foo",
+				ftcName:    "roles.rbac.authorization.k8s.io",
+			},
+			want: "system.foo-roles.rbac.authorization.k8s.io-1857674172",
+		},
+		{
 			name: "generate federated object name with :",
 			args: args{
 				objectName: "system:foo",

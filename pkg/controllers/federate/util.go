@@ -17,6 +17,7 @@ limitations under the License.
 package federate
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -47,7 +48,7 @@ type workerKey struct {
 	gvk       schema.GroupVersionKind
 }
 
-func (k workerKey) String() string {
+func (k workerKey) ObjectKey() string {
 	return fmt.Sprintf("%s/%s", k.namespace, k.name)
 }
 
@@ -118,9 +119,7 @@ func newFederatedObjectForSourceObject(
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal template: %w", err)
 	}
-	fedObjSpec := &fedcorev1a1.GenericFederatedObjectSpec{}
-	fedObjSpec.Template.Raw = rawTemplate
-	fedObjSpec.DeepCopyInto(fedObj.GetSpec())
+	fedObj.GetSpec().Template.Raw = rawTemplate
 
 	// Generate the JSON patch required to convert the source object to the FederatedObject's template and store it as
 	// an annotation in the FederatedObject.
@@ -169,20 +168,21 @@ func updateFederatedObjectForSourceObject(
 
 	federatedAnnotations, templateAnnotations := classifyAnnotations(sourceObject.GetAnnotations())
 
+	// Record the observed label and annotation keys in an annotation on the FederatedObject.
+
+	observedAnnotationKeys := generateObservedKeys(sourceObject.GetAnnotations(), federatedAnnotations)
+	observedLabelKeys := generateObservedKeys(sourceObject.GetLabels(), federatedLabels)
+
 	// Generate the FederatedObject's template and compare it to the template in the FederatedObject, updating the
 	// FederatedObject if necessary.
 
 	targetTemplate := templateForSourceObject(sourceObject, templateAnnotations, templateLabels)
-	foundTemplate := &unstructured.Unstructured{}
-	if err := json.Unmarshal(fedObject.GetSpec().Template.Raw, foundTemplate); err != nil {
-		return false, fmt.Errorf("failed to unmarshal template from federated object: %w", err)
+	rawTargetTemplate, err := targetTemplate.MarshalJSON()
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal template: %w", err)
 	}
-	if !reflect.DeepEqual(foundTemplate.Object, targetTemplate.Object) {
-		rawTargetTemplate, err := json.Marshal(targetTemplate)
-		if err != nil {
-			return false, fmt.Errorf("failed to marshal template: %w", err)
-		}
-
+	
+	if !bytes.Equal(rawTargetTemplate, fedObject.GetSpec().Template.Raw) {
 		fedObject.GetSpec().Template.Raw = rawTargetTemplate
 		isUpdated = true
 	}
@@ -197,11 +197,6 @@ func updateFederatedObjectForSourceObject(
 			return federated
 		},
 	)
-
-	// Record the observed label and annotation keys in an annotation on the FederatedObject.
-
-	observedAnnotationKeys := generateObservedKeys(sourceObject.GetAnnotations(), federatedAnnotations)
-	observedLabelKeys := generateObservedKeys(sourceObject.GetLabels(), federatedLabels)
 
 	// Generate the JSON patch required to convert the source object to the FederatedObject's template and store it as
 	// an annotation in the FederatedObject.

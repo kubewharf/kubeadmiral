@@ -29,8 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
-	dynamicclient "k8s.io/client-go/dynamic"
-	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
@@ -46,7 +45,6 @@ import (
 	finalizersutil "github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
-	"github.com/kubewharf/kubeadmiral/pkg/util/meta"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
@@ -68,13 +66,11 @@ const (
 	RetainReplicasAnnotation = common.DefaultPrefix + "retain-replicas"
 )
 
-// FederateController federates objects of source type to objects of federated type
+// FederateController federates objects of source type to FederatedObjects or ClusterFederatedObjects.
 type FederateController struct {
 	informerManager          informermanager.InformerManager
 	fedObjectInformer        fedcorev1a1informers.FederatedObjectInformer
 	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer
-
-	fedSystemNamespace string
 
 	fedClient     fedclient.Interface
 	dynamicClient dynamic.Interface
@@ -91,13 +87,14 @@ func (c *FederateController) IsControllerReady() bool {
 }
 
 func NewFederateController(
-	kubeClient kubeclient.Interface,
-	dynamicClient dynamicclient.Interface,
+	kubeClient kubernetes.Interface,
+	dynamicClient dynamic.Interface,
 	fedClient fedclient.Interface,
 	fedObjectInformer fedcorev1a1informers.FederatedObjectInformer,
 	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer,
 	informerManager informermanager.InformerManager,
 	metrics stats.Metrics,
+	logger klog.Logger,
 	workerCount int,
 	fedSystemNamespace string,
 ) (*FederateController, error) {
@@ -105,13 +102,12 @@ func NewFederateController(
 		informerManager:          informerManager,
 		fedObjectInformer:        fedObjectInformer,
 		clusterFedObjectInformer: clusterFedObjectInformer,
-		fedSystemNamespace:       fedSystemNamespace,
 		fedClient:                fedClient,
 		dynamicClient:            dynamicClient,
 		worker:                   nil,
 		eventRecorder:            nil,
 		metrics:                  metrics,
-		logger:                   klog.Background().WithValues("controller", FederateControllerName),
+		logger:                   logger.WithValues("controller", FederateControllerName),
 	}
 
 	c.eventRecorder = eventsink.NewDefederatingRecorderMux(kubeClient, FederateControllerName, 6)
@@ -129,6 +125,9 @@ func NewFederateController(
 		Generator: func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler {
 			return cache.FilteringResourceEventHandler{
 				FilterFunc: func(obj interface{}) bool {
+					if deleted, ok := obj.(*cache.DeletedFinalStateUnknown); ok {
+						obj = deleted.Obj
+					}
 					uns := obj.(*unstructured.Unstructured)
 					return uns.GetNamespace() != fedSystemNamespace
 				},
@@ -148,6 +147,9 @@ func NewFederateController(
 
 	if _, err := fedObjectInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
+			if deleted, ok := obj.(*cache.DeletedFinalStateUnknown); ok {
+				obj = deleted.Obj
+			}
 			fedObj := obj.(*fedcorev1a1.FederatedObject)
 			return fedObj.Namespace != fedSystemNamespace
 		},
@@ -155,7 +157,7 @@ func NewFederateController(
 			fedObj := o.(*fedcorev1a1.FederatedObject)
 			logger := c.logger.WithValues("federated-object", common.NewQualifiedName(fedObj))
 
-			srcMeta, err := meta.GetSourceObjectMeta(fedObj)
+			srcMeta, err := fedObj.Spec.GetTemplateAsUnstructured()
 			if err != nil {
 				logger.Error(err, "Failed to get source object's metadata from FederatedObject")
 				return
@@ -178,7 +180,7 @@ func NewFederateController(
 			fedObj := o.(*fedcorev1a1.ClusterFederatedObject)
 			logger := c.logger.WithValues("cluster-federated-object", common.NewQualifiedName(fedObj))
 
-			srcMeta, err := meta.GetSourceObjectMeta(fedObj)
+			srcMeta, err := fedObj.Spec.GetTemplateAsUnstructured()
 			if err != nil {
 				logger.Error(err, "Failed to get source object's metadata from ClusterFederatedObject")
 				return
@@ -220,7 +222,7 @@ func (c *FederateController) HasSynced() bool {
 func (c *FederateController) reconcile(ctx context.Context, key workerKey) (status worker.Result) {
 	_ = c.metrics.Rate("federate.throughput", 1)
 	ctx, logger := logging.InjectLogger(ctx, c.logger)
-	ctx, logger = logging.InjectLoggerValues(ctx, "source-object", key.String())
+	ctx, logger = logging.InjectLoggerValues(ctx, "source-object", key.ObjectKey())
 	startTime := time.Now()
 
 	logger.V(3).Info("Start reconcile")
@@ -237,10 +239,9 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		logger.Error(nil, "FTC does not exist for GVK")
 		return worker.StatusError
 	}
-	ctx, logger = logging.InjectLoggerValues(ctx, "ftc", ftc.Name)
 
 	sourceGVR := ftc.GetSourceTypeGVR()
-	ctx, logger = logging.InjectLoggerValues(ctx, "gvr", sourceGVR)
+	ctx, logger = logging.InjectLoggerValues(ctx, "ftc", ftc.Name, "gvr", sourceGVR)
 
 	sourceObject, err := c.sourceObjectFromStore(key)
 	if err != nil && apierrors.IsNotFound(err) {
@@ -270,6 +271,37 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		fedObject = nil
 	} else {
 		fedObject = fedObject.DeepCopyGenericFederatedObject()
+	}
+
+	if fedObject != nil {
+		// To account for the very small chance of name collision, we verify the owner reference before proceeding.
+		ownedbySource := false
+		requiresUpdate := -1
+
+		for i, ref := range fedObject.GetOwnerReferences() {
+			if schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind) == sourceGVK &&
+				sourceObject.GetName() == ref.Name {
+				ownedbySource = true
+
+				// Allow different UIDs to support adopting forcibly orphaned FederatedObjects.
+				if ref.UID != sourceObject.GetUID() {
+					requiresUpdate = i
+				}
+
+				break
+			}
+		}
+
+		if !ownedbySource {
+			logger.Error(nil, "Federated object not owned by source object, possible name collision detected")
+			return worker.StatusErrorNoRetry
+		}
+
+		if requiresUpdate > -1 {
+			newRefs := fedObject.GetOwnerReferences()
+			newRefs[requiresUpdate].UID = sourceObject.GetUID()
+			fedObject.SetOwnerReferences(newRefs)
+		}
 	}
 
 	if sourceObject.GetDeletionTimestamp() != nil {

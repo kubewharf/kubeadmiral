@@ -23,6 +23,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
+	"k8s.io/klog/v2"
 )
 
 func startFederateController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
@@ -34,6 +35,7 @@ func startFederateController(ctx context.Context, controllerCtx *controllerconte
 		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
 		controllerCtx.InformerManager,
 		controllerCtx.Metrics,
+		klog.Background(),
 		controllerCtx.WorkerCount,
 		controllerCtx.FedSystemNamespace,
 	)
