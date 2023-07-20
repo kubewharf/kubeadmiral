@@ -20,13 +20,17 @@ import (
 	"context"
 	"fmt"
 
+	"k8s.io/klog/v2"
+
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
-	"k8s.io/klog/v2"
 )
 
-func startFederateController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
+func startFederateController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
 	federateController, err := federate.NewFederateController(
 		controllerCtx.KubeClientset,
 		controllerCtx.DynamicClientset,

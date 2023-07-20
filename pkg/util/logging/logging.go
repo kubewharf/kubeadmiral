@@ -24,7 +24,7 @@ import (
 )
 
 func InjectLogger(ctx context.Context, logger klog.Logger) (context.Context, logr.Logger) {
-    ctx = klog.NewContext(ctx, logger)
+	ctx = klog.NewContext(ctx, logger)
 	return ctx, logger
 }
 
