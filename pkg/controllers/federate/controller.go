@@ -223,7 +223,7 @@ func (c *FederateController) HasSynced() bool {
 func (c *FederateController) reconcile(ctx context.Context, key workerKey) (status worker.Result) {
 	_ = c.metrics.Rate("federate.throughput", 1)
 	ctx, logger := logging.InjectLogger(ctx, c.logger)
-	ctx, logger = logging.InjectLoggerValues(ctx, "source-object", key.ObjectKey())
+	ctx, logger = logging.InjectLoggerValues(ctx, "source-object", key.QualifiedName().String())
 	startTime := time.Now()
 
 	logger.V(3).Info("Start reconcile")
@@ -268,7 +268,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		}
 	}
 
-	sourceObject, err := getSourceObjectFromLister(lister, key)
+	sourceUns, err := lister.Get(key.QualifiedName().String())
 	if err != nil && apierrors.IsNotFound(err) {
 		logger.V(3).Info(fmt.Sprintf("No source object found, skip federating"))
 		return worker.StatusAllOK
@@ -277,7 +277,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		logger.Error(err, "Failed to get source object from store")
 		return worker.StatusError
 	}
-	sourceObject = sourceObject.DeepCopy()
+	sourceObject := sourceUns.(*unstructured.Unstructured).DeepCopy()
 
 	fedObjectName := naming.GenerateFederatedObjectName(sourceObject.GetName(), ftc.Name)
 	ctx, logger = logging.InjectLoggerValues(ctx, "federated-object", fedObjectName)
@@ -554,15 +554,4 @@ func (c *FederateController) handleExistingFederatedObject(
 	}
 
 	return true, nil
-}
-
-func getSourceObjectFromLister(lister cache.GenericLister, key workerKey) (*unstructured.Unstructured, error) {
-	var obj runtime.Object
-	var err error
-	if key.namespace == "" {
-		obj, err = lister.Get(key.name)
-	} else {
-		obj, err = lister.ByNamespace(key.namespace).Get(key.name)
-	}
-	return obj.(*unstructured.Unstructured), err
 }

@@ -47,8 +47,11 @@ type workerKey struct {
 	gvk       schema.GroupVersionKind
 }
 
-func (k workerKey) ObjectKey() string {
-	return fmt.Sprintf("%s/%s", k.namespace, k.name)
+func (k workerKey) QualifiedName() common.QualifiedName {
+	return common.QualifiedName{
+		Namespace: k.namespace,
+		Name:      k.name,
+	}
 }
 
 func templateForSourceObject(
