@@ -4,6 +4,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.1
+    kubeadmiral.io/no-federated-resource: "true"
   creationTimestamp: null
   name: federatedtypeconfigs.core.kubeadmiral.io
 spec:
@@ -13,163 +14,132 @@ spec:
     listKind: FederatedTypeConfigList
     plural: federatedtypeconfigs
     shortNames:
-    - ftc
+      - ftc
     singular: federatedtypeconfig
   scope: Cluster
   versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: FederatedTypeConfig specifies an API resource type to federate
-          and various type-specific options.
-        properties:
-          apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-            type: string
-          kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-            type: string
-          metadata:
-            type: object
-          spec:
-            properties:
-              autoMigration:
-                description: Configuration for AutoMigration. If left empty, the AutoMigration
-                  feature will be disabled.
-                properties:
-                  enabled:
-                    description: Whether or not to automatically migrate unschedulable
-                      pods to a different cluster.
-                    type: boolean
-                required:
-                - enabled
-                type: object
-              controllers:
-                description: The controllers that must run before the source object
-                  can be propagated to member clusters. Each inner slice specifies
-                  a step. Step T must complete before step T+1 can commence. Controllers
-                  within each step can execute in parallel.
-                items:
+    - name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: FederatedTypeConfig specifies an API resource type to federate and various type-specific options.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                autoMigration:
+                  description: Configuration for AutoMigration. If left empty, the AutoMigration feature will be disabled.
+                  properties:
+                    enabled:
+                      description: Whether or not to automatically migrate unschedulable pods to a different cluster.
+                      type: boolean
+                  required:
+                    - enabled
+                  type: object
+                controllers:
+                  description: The controllers that must run before the source object can be propagated to member clusters. Each inner slice specifies a step. Step T must complete before step T+1 can commence. Controllers within each step can execute in parallel.
                   items:
-                    type: string
-                  type: array
-                type: array
-              pathDefinition:
-                description: Defines the paths to various fields in the target object's
-                  schema.
-                properties:
-                  availableReplicasStatus:
-                    description: Path to a numeric field that reflects the number
-                      of available replicas that the object currently has. E.g. `status.availableReplicas`
-                      for Deployment and ReplicaSet.
-                    type: string
-                  labelSelector:
-                    description: Path to a metav1.LabelSelector field that selects
-                      the replicas for this object. E.g. `spec.selector` for Deployment
-                      and ReplicaSet.
-                    type: string
-                  readyReplicasStatus:
-                    description: Path to a numeric field that reflects the number
-                      of ready replicas that the object currently has. E.g. `status.readyReplicas`
-                      for Deployment and ReplicaSet.
-                    type: string
-                  replicasSpec:
-                    description: Path to a numeric field that indicates the number
-                      of replicas that an object can be divided into. E.g. `spec.replicas`
-                      for Deployment and ReplicaSet.
-                    type: string
-                  replicasStatus:
-                    description: Path to a numeric field that reflects the number
-                      of replicas that the object currently has. E.g. `status.replicas`
-                      for Deployment and ReplicaSet.
-                    type: string
-                type: object
-              revisionHistory:
-                description: Configuration for RevisionHistory. If left empty, the
-                  RevisionHistory feature will be disabled.
-                properties:
-                  enabled:
-                    description: Whether or not preserve a RevisionHistory for the
-                      federated object during updates.
-                    type: boolean
-                required:
-                - enabled
-                type: object
-              rolloutPlan:
-                description: Configuration for RolloutPlan. If left empty, the RolloutPlan
-                  feature will be disabled.
-                properties:
-                  enabled:
-                    description: Whether or not to synchronize the rollout process
-                      across clusters.
-                    type: boolean
-                required:
-                - enabled
-                type: object
-              sourceType:
-                description: The API resource type to be federated.
-                properties:
-                  group:
-                    description: Group of the resource.
-                    type: string
-                  kind:
-                    description: Kind of the resource.
-                    type: string
-                  pluralName:
-                    description: Lower-cased plural name of the resource (e.g. configmaps).  If
-                      not provided, it will be computed by lower-casing the kind and
-                      suffixing an 's'.
-                    type: string
-                  scope:
-                    description: Scope of the resource.
-                    type: string
-                  version:
-                    description: Version of the resource.
-                    type: string
-                required:
-                - kind
-                - pluralName
-                - scope
-                - version
-                type: object
-              statusAggregation:
-                description: Configuration for StatusAggregation. If left empty, the
-                  StatusAggregation feature will be disabled.
-                properties:
-                  enabled:
-                    description: Whether or not to enable status aggregation.
-                    type: boolean
-                required:
-                - enabled
-                type: object
-              statusCollection:
-                description: Configuration for StatusCollection. If left empty, the
-                  StatusCollection feature will be disabled.
-                properties:
-                  enabled:
-                    description: Whether or not to enable status collection.
-                    type: boolean
-                  fields:
-                    description: Contains the fields to be collected during status
-                      collection. Each field is a dot separated string that corresponds
-                      to its path in the source object's schema. E.g. `metadata.creationTimestamp`.
                     items:
                       type: string
                     type: array
-                required:
-                - enabled
-                type: object
-            required:
-            - sourceType
-            type: object
-        required:
-        - spec
-        type: object
-    served: true
-    storage: true
-    subresources:
-      status: {}
+                  type: array
+                pathDefinition:
+                  description: Defines the paths to various fields in the target object's schema.
+                  properties:
+                    availableReplicasStatus:
+                      description: Path to a numeric field that reflects the number of available replicas that the object currently has. E.g. `status.availableReplicas` for Deployment and ReplicaSet.
+                      type: string
+                    labelSelector:
+                      description: Path to a metav1.LabelSelector field that selects the replicas for this object. E.g. `spec.selector` for Deployment and ReplicaSet.
+                      type: string
+                    readyReplicasStatus:
+                      description: Path to a numeric field that reflects the number of ready replicas that the object currently has. E.g. `status.readyReplicas` for Deployment and ReplicaSet.
+                      type: string
+                    replicasSpec:
+                      description: Path to a numeric field that indicates the number of replicas that an object can be divided into. E.g. `spec.replicas` for Deployment and ReplicaSet.
+                      type: string
+                    replicasStatus:
+                      description: Path to a numeric field that reflects the number of replicas that the object currently has. E.g. `status.replicas` for Deployment and ReplicaSet.
+                      type: string
+                  type: object
+                revisionHistory:
+                  description: Configuration for RevisionHistory. If left empty, the RevisionHistory feature will be disabled.
+                  properties:
+                    enabled:
+                      description: Whether or not preserve a RevisionHistory for the federated object during updates.
+                      type: boolean
+                  required:
+                    - enabled
+                  type: object
+                rolloutPlan:
+                  description: Configuration for RolloutPlan. If left empty, the RolloutPlan feature will be disabled.
+                  properties:
+                    enabled:
+                      description: Whether or not to synchronize the rollout process across clusters.
+                      type: boolean
+                  required:
+                    - enabled
+                  type: object
+                sourceType:
+                  description: The API resource type to be federated.
+                  properties:
+                    group:
+                      description: Group of the resource.
+                      type: string
+                    kind:
+                      description: Kind of the resource.
+                      type: string
+                    pluralName:
+                      description: Lower-cased plural name of the resource (e.g. configmaps).  If not provided, it will be computed by lower-casing the kind and suffixing an 's'.
+                      type: string
+                    scope:
+                      description: Scope of the resource.
+                      type: string
+                    version:
+                      description: Version of the resource.
+                      type: string
+                  required:
+                    - kind
+                    - pluralName
+                    - scope
+                    - version
+                  type: object
+                statusAggregation:
+                  description: Configuration for StatusAggregation. If left empty, the StatusAggregation feature will be disabled.
+                  properties:
+                    enabled:
+                      description: Whether or not to enable status aggregation.
+                      type: boolean
+                  required:
+                    - enabled
+                  type: object
+                statusCollection:
+                  description: Configuration for StatusCollection. If left empty, the StatusCollection feature will be disabled.
+                  properties:
+                    enabled:
+                      description: Whether or not to enable status collection.
+                      type: boolean
+                    fields:
+                      description: Contains the fields to be collected during status collection. Each field is a dot separated string that corresponds to its path in the source object's schema. E.g. `metadata.creationTimestamp`.
+                      items:
+                        type: string
+                      type: array
+                  required:
+                    - enabled
+                  type: object
+              required:
+                - sourceType
+              type: object
+          required:
+            - spec
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
