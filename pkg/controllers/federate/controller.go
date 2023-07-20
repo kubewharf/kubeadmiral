@@ -244,7 +244,6 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		// For case 1, when the InformerManager becomes up-to-date, all the source objects will be enqueued once anyway,
 		// so it is safe to skip processing this time round. We do not have to process orphaned FederatedObjects.
 		// For case 2, the federate controller does not have to process FederatedObjects without a corresponding FTC.
-		logger.V(3).Info("FTC does not exist for GVK")
 		return worker.StatusAllOK
 	}
 
@@ -258,12 +257,11 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		// 2) We received an event from a FederatedObject without a corresponding FTC.
 		//
 		// See above comment for an explanation of the handling logic.
-		logger.V(3).Info("Lister does not exist for GVK")
 		return worker.StatusAllOK
 	}
 	if !hasSynced() {
-		// If lister has not synced, simply reenqueue after a short delay
-		logger.V(2).Info("Lister not yet synced, will reenqueue")
+		// If lister is not yet synced, simply reenqueue after a short delay.
+		logger.V(3).Info("Lister for source type not yet synced, will reenqueue")
 		return worker.Result{
 			Success:      true,
 			RequeueAfter: pointer.Duration(100 * time.Millisecond),
