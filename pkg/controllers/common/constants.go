@@ -112,6 +112,8 @@ const (
 	// TemplateGeneratorMergePatchAnnotation indicates the merge patch document capable of converting
 	// the source object to the template object.
 	TemplateGeneratorMergePatchAnnotation = FederateControllerPrefix + "template-generator-merge-patch"
+
+	LatestReplicasetDigestsAnnotation = DefaultPrefix + "latest-replicaset-digests"
 )
 
 // PropagatedAnnotationKeys and PropagatedLabelKeys are used to store the keys of annotations and labels that are present

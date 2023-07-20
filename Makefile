@@ -31,7 +31,7 @@ all: build
 #   make build BUILD_PLATFORMS=linux/amd64,darwin/amd64
 .PHONY: build
 build:
-	BUILD_FLAGS=$(BUILD_FLAGS) TARGET_NAME=$(TARGET_NAME) GOPROXY=$(GOPROXY) bash hack/make-rules/build.sh
+	BUILD_FLAGS="$(BUILD_FLAGS)" TARGET_NAME="$(TARGET_NAME)" GOPROXY="$(GOPROXY)" bash hack/make-rules/build.sh
 
 # Start a local kubeadmiral cluster for developers.
 #
