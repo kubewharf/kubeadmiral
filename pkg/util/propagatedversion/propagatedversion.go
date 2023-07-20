@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/util/meta"
 )
 
 const (
@@ -64,7 +65,7 @@ func ObjectNeedsUpdate(
 	// If versions match and the version is sourced from the
 	// generation field, a further check of metadata equivalency is
 	// required.
-	return strings.HasPrefix(targetVersion, generationPrefix) && !ObjectMetaObjEquivalent(desiredObj, clusterObj)
+	return strings.HasPrefix(targetVersion, generationPrefix) && !meta.ObjectMetaObjEquivalent(desiredObj, clusterObj)
 }
 
 // SortClusterVersions ASCII sorts the given cluster versions slice

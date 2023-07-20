@@ -41,8 +41,7 @@ const (
 
 const (
 	// annotations for federatedDeploymentStatus
-	LatestReplicasetDigestsAnnotation = common.DefaultPrefix + "latest-replicaset-digests"
-	AggregatedUpdatedReplicas         = common.DefaultPrefix + "aggregated-updated-replicas"
+	AggregatedUpdatedReplicas = common.DefaultPrefix + "aggregated-updated-replicas"
 )
 
 // FederatedResource is a generic representation of a federated type
