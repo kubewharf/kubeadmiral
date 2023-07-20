@@ -144,7 +144,7 @@ func checkReadyByHealthz(
 ) (offline, ready corev1.ConditionStatus) {
 	logger := klog.FromContext(ctx)
 
-	body, err := clusterDiscoveryClient.RESTClient().Get().AbsPath("/healthz").Do(ctx).Raw()
+	body, err := clusterDiscoveryClient.RESTClient().Get().AbsPath("/healthz").Timeout(30 * time.Second).Do(ctx).Raw()
 	if err != nil {
 		logger.Error(err, "Cluster health check failed")
 		return corev1.ConditionTrue, corev1.ConditionUnknown
