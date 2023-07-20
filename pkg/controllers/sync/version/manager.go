@@ -233,7 +233,10 @@ func (m *VersionManager) list(ctx context.Context) (runtimeclient.ObjectList, bo
 	var versionList runtimeclient.ObjectList
 	err := wait.PollImmediateInfiniteWithContext(ctx, 1*time.Second, func(ctx context.Context) (bool, error) {
 		var err error
-		versionList, err = m.adapter.List(ctx, m.client, m.namespace, metav1.ListOptions{})
+		versionList, err = m.adapter.List(
+			ctx, m.client, m.namespace, metav1.ListOptions{
+				ResourceVersion: "0",
+			})
 		if err != nil {
 			m.logger.Error(err, "Failed to list propagated versions")
 			// Do not return the error to allow the operation to be retried.
