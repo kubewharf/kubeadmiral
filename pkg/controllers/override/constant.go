@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -15,20 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package override
 
-import (
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/tools/cache"
+import "github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+
+var (
+	OverridePolicyNameLabel        = common.DefaultPrefix + "override-policy-name"
+	ClusterOverridePolicyNameLabel = common.DefaultPrefix + "cluster-override-policy-name"
 )
-
-func UnstructuredFromStore(store cache.Store, key string) (*unstructured.Unstructured, error) {
-	obj, exists, err := store.GetByKey(key)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, nil
-	}
-	return obj.(*unstructured.Unstructured), nil
-}

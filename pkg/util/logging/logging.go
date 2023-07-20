@@ -23,6 +23,11 @@ import (
 	"k8s.io/klog/v2"
 )
 
+func InjectLogger(ctx context.Context, logger klog.Logger) (context.Context, logr.Logger) {
+	ctx = klog.NewContext(ctx, logger)
+	return ctx, logger
+}
+
 func InjectLoggerValues(ctx context.Context, values ...interface{}) (context.Context, logr.Logger) {
 	logger := klog.FromContext(ctx).WithValues(values...)
 	ctx = klog.NewContext(ctx, logger)

@@ -1,3 +1,4 @@
+//go:build exclude
 /*
 Copyright 2016 The Kubernetes Authors.
 
