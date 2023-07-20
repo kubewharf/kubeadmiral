@@ -26,7 +26,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -146,8 +145,8 @@ func (a *resourceAccessor) FederatedResource(
 	}
 	federatedObject = federatedObject.DeepCopyGenericFederatedObject()
 
-	template := &unstructured.Unstructured{}
-	if err := template.UnmarshalJSON(federatedObject.GetSpec().Template.Raw); err != nil {
+	template, err := federatedObject.GetSpec().GetTemplateAsUnstructured()
+	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal template: %w", err)
 	}
 

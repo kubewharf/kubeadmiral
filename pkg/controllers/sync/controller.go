@@ -210,8 +210,7 @@ func NewSyncController(
 		&informermanager.ClusterEventHandler{
 			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
 				// Enqueue cluster when it's marked for deletion to ensure cascading deletion
-				return oldCluster != nil && newCluster != nil &&
-					oldCluster.GetDeletionTimestamp().IsZero() && !newCluster.GetDeletionTimestamp().IsZero()
+				return !newCluster.GetDeletionTimestamp().IsZero()
 			},
 			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
 				s.clusterCascadingDeletionWorker.Enqueue(common.NewQualifiedName(cluster))
@@ -219,7 +218,7 @@ func NewSyncController(
 		},
 		&informermanager.ClusterEventHandler{
 			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
-				// Reconcile all federated objects when cluster becomes available
+				// Reconcile all federated objects when cluster becomes ready
 				return oldCluster != nil && newCluster != nil &&
 					!clusterutil.IsClusterReady(&oldCluster.Status) && clusterutil.IsClusterReady(&newCluster.Status)
 			},
@@ -229,7 +228,7 @@ func NewSyncController(
 		},
 		&informermanager.ClusterEventHandler{
 			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
-				// Reconcile all federated objects when cluster becomes unavailable
+				// Reconcile all federated objects when cluster becomes unready
 				return oldCluster != nil && newCluster != nil &&
 					clusterutil.IsClusterReady(&oldCluster.Status) && !clusterutil.IsClusterReady(&newCluster.Status)
 			},
