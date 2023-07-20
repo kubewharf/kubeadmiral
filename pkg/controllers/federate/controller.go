@@ -276,18 +276,11 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 	if fedObject != nil {
 		// To account for the very small chance of name collision, we verify the owner reference before proceeding.
 		ownedbySource := false
-		requiresUpdate := -1
 
-		for i, ref := range fedObject.GetOwnerReferences() {
+		for _, ref := range fedObject.GetOwnerReferences() {
 			if schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind) == sourceGVK &&
 				sourceObject.GetName() == ref.Name {
 				ownedbySource = true
-
-				// Allow different UIDs to support adopting forcibly orphaned FederatedObjects.
-				if ref.UID != sourceObject.GetUID() {
-					requiresUpdate = i
-				}
-
 				break
 			}
 		}
@@ -295,12 +288,6 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		if !ownedbySource {
 			logger.Error(nil, "Federated object not owned by source object, possible name collision detected")
 			return worker.StatusErrorNoRetry
-		}
-
-		if requiresUpdate > -1 {
-			newRefs := fedObject.GetOwnerReferences()
-			newRefs[requiresUpdate].UID = sourceObject.GetUID()
-			fedObject.SetOwnerReferences(newRefs)
 		}
 	}
 
