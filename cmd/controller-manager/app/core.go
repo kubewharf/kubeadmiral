@@ -25,12 +25,13 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/policyrc"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/status"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/status"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync"
 )
 
 func startFederateController(
@@ -206,4 +207,32 @@ func startScheduler(
 	go scheduler.Run(ctx)
 
 	return scheduler, nil
+}
+
+func startSyncController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	syncController, err := sync.NewSyncController(
+		controllerCtx.KubeClientset,
+		controllerCtx.FedClientset,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
+		controllerCtx.InformerManager,
+		controllerCtx.FederatedInformerManager,
+		controllerCtx.FedSystemNamespace,
+		controllerCtx.TargetNamespace,
+		controllerCtx.ClusterAvailableDelay,
+		controllerCtx.ClusterUnavailableDelay,
+		klog.Background(),
+		controllerCtx.WorkerCount,
+		controllerCtx.Metrics,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating sync controller: %w", err)
+	}
+
+	go syncController.Run(ctx)
+
+	return syncController, nil
 }

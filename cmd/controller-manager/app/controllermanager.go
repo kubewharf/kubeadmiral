@@ -43,6 +43,7 @@ const (
 	NamespaceAutoPropagationControllerName = "nsautoprop"
 	StatusControllerName                   = "status"
 	SchedulerName                          = "scheduler"
+	SyncControllerName                     = "sync"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
@@ -53,6 +54,7 @@ var knownControllers = map[string]controllermanager.StartControllerFunc{
 	StatusControllerName:                   startStatusController,
 	FederatedClusterControllerName:         startFederatedClusterController,
 	SchedulerName:                          startScheduler,
+	SyncControllerName:                     startSyncController,
 }
 
 var controllersDisabledByDefault = sets.New[string]()

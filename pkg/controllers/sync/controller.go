@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2018 The Kubernetes Authors.
 
@@ -49,10 +48,13 @@ import (
 
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
+	"github.com/kubewharf/kubeadmiral/pkg/util/cascadingdeletion"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	"github.com/kubewharf/kubeadmiral/pkg/util/orphaning"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -60,13 +62,12 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/dispatch"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/status"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
-	finalizersutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
+	finalizersutil "github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
+	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
 const (
@@ -128,9 +129,6 @@ type SyncController struct {
 
 // NewSyncController returns a new sync controller for the configuration
 func NewSyncController(
-	logger klog.Logger,
-	controllerConfig *util.ControllerConfig,
-
 	kubeClient kubernetes.Interface,
 	fedClient fedclient.Interface,
 
@@ -139,6 +137,13 @@ func NewSyncController(
 
 	ftcManager informermanager.FederatedTypeConfigManager,
 	fedInformerManager informermanager.FederatedInformerManager,
+
+	fedSystemNamespace, targetNamespace string,
+	clusterAvailableDelay, clusterUnavailableDelay time.Duration,
+
+	logger klog.Logger,
+	workerCount int,
+	metrics stats.Metrics,
 ) (*SyncController, error) {
 	recorder := eventsink.NewDefederatingRecorderMux(kubeClient, SyncControllerName, 4)
 	logger = klog.LoggerWithValues(logger, "controller", SyncControllerName)
@@ -146,15 +151,15 @@ func NewSyncController(
 		fedClient:                     fedClient,
 		ftcManager:                    ftcManager,
 		fedInformerManager:            fedInformerManager,
-		clusterAvailableDelay:         controllerConfig.ClusterAvailableDelay,
-		clusterUnavailableDelay:       controllerConfig.ClusterUnavailableDelay,
+		clusterAvailableDelay:         clusterAvailableDelay,
+		clusterUnavailableDelay:       clusterUnavailableDelay,
 		reconcileOnClusterChangeDelay: time.Second * 3,
 		memberObjectEnqueueDelay:      time.Second * 10,
 		recheckAfterDispatchDelay:     time.Second * 10,
 		ensureDeletionRecheckDelay:    time.Second * 5,
 		cascadingDeletionRecheckDelay: time.Second * 10,
 		eventRecorder:                 recorder,
-		metrics:                       controllerConfig.Metrics,
+		metrics:                       metrics,
 		logger:                        logger,
 	}
 
@@ -163,8 +168,8 @@ func NewSyncController(
 		nil,
 		s.reconcile,
 		worker.RateLimiterOptions{},
-		controllerConfig.WorkerCount,
-		controllerConfig.Metrics,
+		workerCount,
+		metrics,
 	)
 
 	s.clusterCascadingDeletionWorker = worker.NewReconcileWorker[common.QualifiedName](
@@ -173,7 +178,7 @@ func NewSyncController(
 		s.reconcileClusterForCascadingDeletion,
 		worker.RateLimiterOptions{},
 		1,
-		controllerConfig.Metrics,
+		metrics,
 	)
 
 	// Build queue for triggering cluster reconciliations.
@@ -182,7 +187,7 @@ func NewSyncController(
 	if err := s.fedInformerManager.AddEventHandlerGenerator(&informermanager.EventHandlerGenerator{
 		Predicate: informermanager.RegisterOncePredicate,
 		Generator: func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler {
-			return util.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
+			return eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
 				obj := o.(*unstructured.Unstructured)
 
 				ftc, exists := s.ftcManager.GetResourceFTC(obj.GroupVersionKind())
@@ -192,7 +197,7 @@ func NewSyncController(
 
 				federatedName := common.QualifiedName{
 					Namespace: obj.GetNamespace(),
-					Name:      util.GenerateFederatedObjectName(obj.GetName(), ftc.GetName()),
+					Name:      naming.GenerateFederatedObjectName(obj.GetName(), ftc.GetName()),
 				}
 				s.worker.EnqueueWithDelay(federatedName, s.memberObjectEnqueueDelay)
 			})
@@ -237,7 +242,9 @@ func NewSyncController(
 	}
 
 	s.fedAccessor = NewFederatedResourceAccessor(
-		logger, controllerConfig, fedClient.CoreV1alpha1(),
+		logger,
+		fedSystemNamespace, targetNamespace,
+		fedClient.CoreV1alpha1(),
 		fedObjectInformer, clusterFedObjectInformer,
 		ftcManager,
 		func(qualifiedName common.QualifiedName) {
@@ -289,6 +296,10 @@ func (s *SyncController) HasSynced() bool {
 	}
 
 	return true
+}
+
+func (s *SyncController) IsControllerReady() bool {
+	return s.HasSynced()
 }
 
 func (s *SyncController) getClusterClient(clusterName string) (dynamic.Interface, error) {
@@ -389,7 +400,7 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 	for _, cluster := range clusters {
 		clusterName := cluster.Name
 		isSelectedCluster := selectedClusterNames.Has(clusterName)
-		isCascadingDeletionTriggered := cluster.GetDeletionTimestamp() != nil && util.IsCascadingDeleteEnabled(cluster)
+		isCascadingDeletionTriggered := cluster.GetDeletionTimestamp() != nil && cascadingdeletion.IsCascadingDeleteEnabled(cluster)
 		shouldBeDeleted := !isSelectedCluster || isCascadingDeletionTriggered
 
 		if !clusterutil.IsClusterReady(&cluster.Status) {
@@ -434,7 +445,7 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 				dispatcher.RecordStatus(clusterName, fedcorev1a1.WaitingForRemoval)
 				continue
 			}
-			if cluster.GetDeletionTimestamp() != nil && !util.IsCascadingDeleteEnabled(cluster) {
+			if cluster.GetDeletionTimestamp() != nil && !cascadingdeletion.IsCascadingDeleteEnabled(cluster) {
 				// If cluster is terminating and cascading-delete is disabled,
 				// disallow deletion to preserve cluster object.
 				// This could happen right after a cluster is deleted:
@@ -887,7 +898,7 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(ctx context.Contex
 		return worker.StatusAllOK
 	}
 
-	if !clusterutil.IsClusterJoined(&cluster.Status) || !util.IsCascadingDeleteEnabled(cluster) {
+	if !clusterutil.IsClusterJoined(&cluster.Status) || !cascadingdeletion.IsCascadingDeleteEnabled(cluster) {
 		// cascading-delete is not required, remove cascading-delete finalizer immediately
 		err := s.removeClusterFinalizer(ctx, cluster)
 		if err != nil {

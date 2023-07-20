@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2019 The Kubernetes Authors.
 
@@ -38,7 +37,7 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/version"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
@@ -76,7 +75,7 @@ type resourceAccessor struct {
 
 func NewFederatedResourceAccessor(
 	logger klog.Logger,
-	controllerConfig *util.ControllerConfig,
+	fedSystemNamespace, targetNamespace string,
 	client fedcorev1a1client.CoreV1alpha1Interface,
 	fedObjectInformer fedcorev1a1informers.FederatedObjectInformer,
 	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer,
@@ -85,7 +84,7 @@ func NewFederatedResourceAccessor(
 	eventRecorder record.EventRecorder,
 ) FederatedResourceAccessor {
 	a := &resourceAccessor{
-		fedNamespace:             controllerConfig.FedSystemNamespace,
+		fedNamespace:             fedSystemNamespace,
 		fedObjectInformer:        fedObjectInformer,
 		clusterFedObjectInformer: clusterFedObjectInformer,
 		ftcManager:               ftcManager,
@@ -93,7 +92,7 @@ func NewFederatedResourceAccessor(
 		logger:                   logger.WithValues("origin", "resource-accessor"),
 	}
 
-	handler := util.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
+	handler := eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
 		enqueue(common.NewQualifiedName(o))
 	})
 	fedObjectInformer.Informer().AddEventHandler(handler)
@@ -102,7 +101,7 @@ func NewFederatedResourceAccessor(
 	a.versionManager = version.NewNamespacedVersionManager(
 		logger,
 		client,
-		controllerConfig.TargetNamespace,
+		targetNamespace,
 	)
 	a.clusterVersionManager = version.NewClusterVersionManager(
 		logger,

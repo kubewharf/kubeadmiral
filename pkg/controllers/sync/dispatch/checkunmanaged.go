@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2019 The Kubernetes Authors.
 
@@ -33,7 +32,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
 
@@ -76,7 +74,7 @@ func (d *checkUnmanagedDispatcherImpl) CheckRemovedOrUnlabeled(ctx context.Conte
 	errLogMessage := fmt.Sprintf("Failed to %s target obj", op)
 	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client dynamic.Interface) bool {
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
-		targetName := d.targetNameForCluster(clusterName)
+		targetName := d.targetName
 
 		keyedLogger.V(2).Info("Checking for deletion of resource or removal of managed label from target obj")
 		clusterObj, err := client.Resource(d.targetGVR).Namespace(targetName.Namespace).Get(
@@ -108,11 +106,7 @@ func (d *checkUnmanagedDispatcherImpl) wrapOperationError(err error, clusterName
 		err,
 		operation,
 		d.targetGVR.String(),
-		d.targetNameForCluster(clusterName).String(),
+		d.targetName.String(),
 		clusterName,
 	)
-}
-
-func (d *checkUnmanagedDispatcherImpl) targetNameForCluster(clusterName string) common.QualifiedName {
-	return util.QualifiedNameForCluster(clusterName, d.targetName)
 }

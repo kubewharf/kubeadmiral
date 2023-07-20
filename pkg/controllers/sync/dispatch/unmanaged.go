@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2019 The Kubernetes Authors.
 
@@ -35,8 +34,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
+	"github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
 
@@ -96,7 +94,7 @@ func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string
 	const opContinuous = "Deleting"
 	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client dynamic.Interface) bool {
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
-		targetName := d.targetNameForCluster(clusterName)
+		targetName := d.targetName
 		keyedLogger.V(1).Info("Deleting target object in cluster")
 		if d.recorder != nil {
 			d.recorder.recordEvent(clusterName, op, opContinuous)
@@ -216,13 +214,9 @@ func (d *unmanagedDispatcherImpl) wrapOperationError(err error, clusterName, ope
 		err,
 		operation,
 		d.targetGVR.String(),
-		d.targetNameForCluster(clusterName).String(),
+		d.targetName.String(),
 		clusterName,
 	)
-}
-
-func (d *unmanagedDispatcherImpl) targetNameForCluster(clusterName string) common.QualifiedName {
-	return util.QualifiedNameForCluster(clusterName, d.targetName)
 }
 
 func wrapOperationError(err error, operation, targetGVR, targetName, clusterName string) error {

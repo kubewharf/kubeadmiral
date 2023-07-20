@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2018 The Kubernetes Authors.
 
@@ -38,7 +37,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1client "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/util/propagatedversion"
 )
 
 // VersionedResource defines the methods a federated resource must
@@ -195,7 +194,7 @@ func (m *VersionManager) Update(
 		ClusterVersions: clusterVersions,
 	}
 
-	if oldStatus != nil && util.PropagatedVersionStatusEquivalent(oldStatus, status) {
+	if oldStatus != nil && propagatedversion.PropagatedVersionStatusEquivalent(oldStatus, status) {
 		m.Unlock()
 		m.logger.WithValues("version-qualified-name", qualifiedName).
 			V(4).Info("No update necessary")
@@ -439,6 +438,6 @@ func VersionMapToClusterVersions(versionMap map[string]string) []fedcorev1a1.Clu
 			Version:     version,
 		})
 	}
-	util.SortClusterVersions(clusterVersions)
+	propagatedversion.SortClusterVersions(clusterVersions)
 	return clusterVersions
 }
