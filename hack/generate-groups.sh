@@ -51,6 +51,8 @@ for group in "${groups[@]}"; do
   INPUT_DIRS+=("${INPUT_BASE}/${group}")
 done
 
+NO_FEDERATED_ANNOTATION="kubeadmiral.io/no-federated-resource"
+
 # generate code
 function codegen::join() {
   local IFS="$1"
@@ -61,7 +63,13 @@ function codegen::join() {
 # generate manifests
 echo "Generating manifests"
 ${GOBIN}/controller-gen crd paths=$(codegen::join ";" "${INPUT_DIRS[@]}") output:crd:artifacts:config=config/crds
-# apply CRD patches
+
+# patch CRDs with no-federate annotation
+for crd_file in config/crds/*.yaml; do
+  yq eval -i ".metadata.annotations[\"${NO_FEDERATED_ANNOTATION}\"] = \"true\"" "${crd_file}"
+done
+
+# apply other CRD patches
 for patch_file in config/crds/patches/*.sh; do
   if [[ $patch_file == *.src.sh ]]; then
     continue

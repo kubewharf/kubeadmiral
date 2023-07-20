@@ -4,6 +4,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.1
+    kubeadmiral.io/no-federated-resource: "true"
   creationTimestamp: null
   name: clustercollectedstatuses.core.kubeadmiral.io
 spec:
@@ -13,58 +14,49 @@ spec:
     listKind: ClusterCollectedStatusList
     plural: clustercollectedstatuses
     shortNames:
-    - ccs
+      - ccs
     singular: clustercollectedstatus
   scope: Cluster
   versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: ClusterCollectedStatus stores the collected fields of Kubernetes
-          objects from member clusters, that are propagated by a ClusterFederatedObject.
-        properties:
-          apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-            type: string
-          clusters:
-            description: Clusters is the list of member clusters and collected fields
-              for its propagated Kubernetes object.
-            items:
-              description: CollectedFieldsWithCluster stores the collected fields
-                of a Kubernetes object in a member cluster.
-              properties:
-                cluster:
-                  description: Cluster is the name of the member cluster.
-                  type: string
-                collectedFields:
-                  description: CollectedFields is the the set of fields collected
-                    for the Kubernetes object.
-                  x-kubernetes-preserve-unknown-fields: true
-                error:
-                  description: Error records any errors encountered while collecting
-                    fields from the cluster.
-                  type: string
-              required:
-              - cluster
-              - collectedFields
+    - name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: ClusterCollectedStatus stores the collected fields of Kubernetes objects from member clusters, that are propagated by a ClusterFederatedObject.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            clusters:
+              description: Clusters is the list of member clusters and collected fields for its propagated Kubernetes object.
+              items:
+                description: CollectedFieldsWithCluster stores the collected fields of a Kubernetes object in a member cluster.
+                properties:
+                  cluster:
+                    description: Cluster is the name of the member cluster.
+                    type: string
+                  collectedFields:
+                    description: CollectedFields is the the set of fields collected for the Kubernetes object.
+                    x-kubernetes-preserve-unknown-fields: true
+                  error:
+                    description: Error records any errors encountered while collecting fields from the cluster.
+                    type: string
+                required:
+                  - cluster
+                  - collectedFields
+                type: object
+              type: array
+            kind:
+              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            lastUpdateTime:
+              description: LastUpdateTime is the last time that a collection was performed.
+              format: date-time
+              type: string
+            metadata:
               type: object
-            type: array
-          kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-            type: string
-          lastUpdateTime:
-            description: LastUpdateTime is the last time that a collection was performed.
-            format: date-time
-            type: string
-          metadata:
-            type: object
-        required:
-        - clusters
-        - lastUpdateTime
-        type: object
-    served: true
-    storage: true
+          required:
+            - clusters
+            - lastUpdateTime
+          type: object
+      served: true
+      storage: true

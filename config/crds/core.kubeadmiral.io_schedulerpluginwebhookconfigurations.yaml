@@ -4,6 +4,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.1
+    kubeadmiral.io/no-federated-resource: "true"
   creationTimestamp: null
   name: schedulerpluginwebhookconfigurations.core.kubeadmiral.io
 spec:
@@ -15,96 +16,72 @@ spec:
     singular: schedulerpluginwebhookconfiguration
   scope: Cluster
   versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: SchedulerPluginWebhookConfiguration is a webhook that can be
-          used as a scheduler plugin.
-        properties:
-          apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-            type: string
-          kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-            type: string
-          metadata:
-            type: object
-          spec:
-            properties:
-              filterPath:
-                description: Path for the filter call, empty if not supported. This
-                  path is appended to the URLPrefix when issuing the filter call to
-                  webhook.
-                type: string
-              httpTimeout:
-                default: 5s
-                description: HTTPTimeout specifies the timeout duration for a call
-                  to the webhook. Timeout fails the scheduling of the workload. Defaults
-                  to 5 seconds.
-                format: duration
-                type: string
-              payloadVersions:
-                description: PayloadVersions is an ordered list of preferred request
-                  and response versions the webhook expects. The scheduler will try
-                  to use the first version in the list which it supports. If none
-                  of the versions specified in this list supported by the scheduler,
-                  scheduling will fail for this object.
-                items:
+    - name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: SchedulerPluginWebhookConfiguration is a webhook that can be used as a scheduler plugin.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                filterPath:
+                  description: Path for the filter call, empty if not supported. This path is appended to the URLPrefix when issuing the filter call to webhook.
                   type: string
-                minItems: 1
-                type: array
-              scorePath:
-                description: Path for the score call, empty if not supported. This
-                  verb is appended to the URLPrefix when issuing the score call to
-                  webhook.
-                type: string
-              selectPath:
-                description: Path for the select call, empty if not supported. This
-                  verb is appended to the URLPrefix when issuing the select call to
-                  webhook.
-                type: string
-              tlsConfig:
-                description: TLSConfig specifies the transport layer security config.
-                properties:
-                  caData:
-                    description: CAData holds PEM-encoded bytes (typically read from
-                      a root certificates bundle).
-                    format: byte
+                httpTimeout:
+                  default: 5s
+                  description: HTTPTimeout specifies the timeout duration for a call to the webhook. Timeout fails the scheduling of the workload. Defaults to 5 seconds.
+                  format: duration
+                  type: string
+                payloadVersions:
+                  description: PayloadVersions is an ordered list of preferred request and response versions the webhook expects. The scheduler will try to use the first version in the list which it supports. If none of the versions specified in this list supported by the scheduler, scheduling will fail for this object.
+                  items:
                     type: string
-                  certData:
-                    description: CertData holds PEM-encoded bytes (typically read
-                      from a client certificate file).
-                    format: byte
-                    type: string
-                  insecure:
-                    description: Server should be accessed without verifying the TLS
-                      certificate. For testing only.
-                    type: boolean
-                  keyData:
-                    description: KeyData holds PEM-encoded bytes (typically read from
-                      a client certificate key file).
-                    format: byte
-                    type: string
-                  serverName:
-                    description: ServerName is passed to the server for SNI and is
-                      used in the client to check server certificates against. If
-                      ServerName is empty, the hostname used to contact the server
-                      is used.
-                    type: string
-                type: object
-              urlPrefix:
-                description: URLPrefix at which the webhook is available
-                type: string
-            required:
-            - payloadVersions
-            - urlPrefix
-            type: object
-        required:
-        - spec
-        type: object
-    served: true
-    storage: true
+                  minItems: 1
+                  type: array
+                scorePath:
+                  description: Path for the score call, empty if not supported. This verb is appended to the URLPrefix when issuing the score call to webhook.
+                  type: string
+                selectPath:
+                  description: Path for the select call, empty if not supported. This verb is appended to the URLPrefix when issuing the select call to webhook.
+                  type: string
+                tlsConfig:
+                  description: TLSConfig specifies the transport layer security config.
+                  properties:
+                    caData:
+                      description: CAData holds PEM-encoded bytes (typically read from a root certificates bundle).
+                      format: byte
+                      type: string
+                    certData:
+                      description: CertData holds PEM-encoded bytes (typically read from a client certificate file).
+                      format: byte
+                      type: string
+                    insecure:
+                      description: Server should be accessed without verifying the TLS certificate. For testing only.
+                      type: boolean
+                    keyData:
+                      description: KeyData holds PEM-encoded bytes (typically read from a client certificate key file).
+                      format: byte
+                      type: string
+                    serverName:
+                      description: ServerName is passed to the server for SNI and is used in the client to check server certificates against. If ServerName is empty, the hostname used to contact the server is used.
+                      type: string
+                  type: object
+                urlPrefix:
+                  description: URLPrefix at which the webhook is available
+                  type: string
+              required:
+                - payloadVersions
+                - urlPrefix
+              type: object
+          required:
+            - spec
+          type: object
+      served: true
+      storage: true
