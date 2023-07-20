@@ -25,10 +25,11 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sjson "k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic/scheme"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
@@ -65,18 +66,17 @@ func (list *eventList) freeze() []*corev1.Event {
 func TestDefederateTransformer(t *testing.T) {
 	t.Run("should emit event for source object", func(t *testing.T) {
 		sourceObj := appsv1.Deployment{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: appsv1.SchemeGroupVersion.String(),
+				Kind:       common.DeploymentKind,
+			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test-dp",
 				UID:  "testuid",
 			},
 		}
-		testObj := fedtypesv1a1.FederatedDeployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Annotations: map[string]string{
-					common.FederatedObjectAnnotation: "true",
-				},
-			},
-		}
+		testObj := fedcorev1a1.FederatedObject{}
+
 		testObj.SetOwnerReferences([]metav1.OwnerReference{
 			{
 				APIVersion: sourceObj.APIVersion,
@@ -86,6 +86,14 @@ func TestDefederateTransformer(t *testing.T) {
 				Controller: pointer.Bool(true),
 			},
 		})
+
+		assert := assert.New(t)
+		if data, err := k8sjson.Marshal(&sourceObj); err != nil {
+			assert.NoError(err)
+			return
+		} else {
+			testObj.Spec.Template.Raw = data
+		}
 
 		events := &eventList{}
 		testBroadcaster := record.NewBroadcasterForTests(0)
@@ -98,7 +106,6 @@ func TestDefederateTransformer(t *testing.T) {
 		mux.Event(&testObj, corev1.EventTypeWarning, "testReason", "testMessage")
 		testBroadcaster.Shutdown()
 
-		assert := assert.New(t)
 		assert.Eventually(
 			func() bool { return events.len() == 1 },
 			time.Second,
@@ -114,13 +121,25 @@ func TestDefederateTransformer(t *testing.T) {
 		assert.Equal(sourceObj.UID, eventObj.UID)
 		assert.Equal(sourceObj.APIVersion, eventObj.APIVersion)
 	})
-	t.Run("should not emit event if object is not federated", func(t *testing.T) {
-		testObj := fedtypesv1a1.FederatedDeployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Annotations: map[string]string{
-					common.FederatedObjectAnnotation: "true",
-				},
+	t.Run("should not emit event if source owner reference does not exist", func(t *testing.T) {
+		sourceObj := appsv1.Deployment{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: appsv1.SchemeGroupVersion.String(),
+				Kind:       common.DeploymentKind,
 			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-dp",
+				UID:  "testuid",
+			},
+		}
+		testObj := fedcorev1a1.FederatedObject{}
+
+		assert := assert.New(t)
+		if data, err := k8sjson.Marshal(&sourceObj); err != nil {
+			assert.NoError(err)
+			return
+		} else {
+			testObj.Spec.Template.Raw = data
 		}
 
 		events := &eventList{}
@@ -134,20 +153,41 @@ func TestDefederateTransformer(t *testing.T) {
 		mux.Event(&testObj, corev1.EventTypeWarning, "testReason", "testMessage")
 		testBroadcaster.Shutdown()
 
-		assert := assert.New(t)
 		assert.Never(
 			func() bool { return events.len() > 0 },
 			time.Second,
 			100*time.Millisecond,
 		)
 	})
-	t.Run("should not emit event if source owner reference does not exist", func(t *testing.T) {
-		testObj := fedtypesv1a1.FederatedDeployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Annotations: map[string]string{
-					common.FederatedObjectAnnotation: "true",
-				},
+	t.Run("should not emit event if owner reference is not the source object", func(t *testing.T) {
+		sourceObj := appsv1.Deployment{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: appsv1.SchemeGroupVersion.String(),
+				Kind:       common.DeploymentKind,
 			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-dp",
+				UID:  "testuid",
+			},
+		}
+		testObj := fedcorev1a1.FederatedObject{}
+
+		testObj.SetOwnerReferences([]metav1.OwnerReference{
+			{
+				APIVersion: "v1",
+				Kind:       "Secret",
+				Name:       "test-secret",
+				UID:        "testuid",
+				Controller: pointer.Bool(true),
+			},
+		})
+
+		assert := assert.New(t)
+		if data, err := k8sjson.Marshal(&sourceObj); err != nil {
+			assert.NoError(err)
+			return
+		} else {
+			testObj.Spec.Template.Raw = data
 		}
 
 		events := &eventList{}
@@ -161,7 +201,6 @@ func TestDefederateTransformer(t *testing.T) {
 		mux.Event(&testObj, corev1.EventTypeWarning, "testReason", "testMessage")
 		testBroadcaster.Shutdown()
 
-		assert := assert.New(t)
 		assert.Never(
 			func() bool { return events.len() > 0 },
 			time.Second,

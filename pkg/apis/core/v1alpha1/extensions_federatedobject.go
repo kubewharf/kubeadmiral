@@ -17,13 +17,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"encoding/json"
 	"reflect"
 	"sort"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8sjson "k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -222,16 +222,12 @@ func (spec *GenericFederatedObjectSpec) GetTemplateAsUnstructured() (*unstructur
 	return template, nil
 }
 
-// GetTemplateGVK returns the GVK of the FederatedObject's source object by parsing the FederatedObject's template.
-func (spec *GenericFederatedObjectSpec) GetTemplateGVK() (schema.GroupVersionKind, error) {
-	type partialTypeMetadata struct {
-		metav1.TypeMeta `json:",inline"`
+func (spec *GenericFederatedObjectSpec) GetTemplateMetadata() (*metav1.PartialObjectMetadata, error) {
+	metadata := &metav1.PartialObjectMetadata{}
+	if err := k8sjson.Unmarshal(spec.Template.Raw, metadata); err != nil {
+		return nil, err
 	}
-	metadata := &partialTypeMetadata{}
-	if err := json.Unmarshal(spec.Template.Raw, metadata); err != nil {
-		return schema.GroupVersionKind{}, nil
-	}
-	return metadata.GroupVersionKind(), nil
+	return metadata, nil
 }
 
 // Follower extensions

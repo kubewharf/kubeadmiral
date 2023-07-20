@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2019 The Kubernetes Authors.
 
@@ -39,10 +38,9 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/dispatch"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/version"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
+	"github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
+	overridesutil "github.com/kubewharf/kubeadmiral/pkg/util/overrides"
 )
 
 // FederatedResource encapsulates the behavior of a logical federated
@@ -69,7 +67,7 @@ type federatedResource struct {
 	federatedObject fedcorev1a1.GenericFederatedObject
 	template        *unstructured.Unstructured
 	versionManager  *version.VersionManager
-	overridesMap    util.OverridesMap
+	overridesMap    overridesutil.OverridesMap
 	versionMap      map[string]string
 	eventRecorder   record.EventRecorder
 }
@@ -154,7 +152,8 @@ func (r *federatedResource) ComputePlacement(clusters []*fedcorev1a1.FederatedCl
 func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.Unstructured, error) {
 	obj := r.template.DeepCopy()
 
-	if schemautil.IsJobGvk(r.TargetGVK()) {
+	switch r.TargetGVK() {
+	case common.JobGVK:
 		if err := dropJobFields(obj); err != nil {
 			return nil, err
 		}
@@ -162,15 +161,11 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 		if err := addRetainObjectFinalizer(obj); err != nil {
 			return nil, err
 		}
-	}
-
-	if schemautil.IsServiceGvk(r.TargetGVK()) {
+	case common.ServiceGVK:
 		if err := dropServiceFields(obj); err != nil {
 			return nil, err
 		}
-	}
-
-	if schemautil.IsPodGvk(r.TargetGVK()) {
+	case common.PodGVK:
 		if err := dropPodFields(obj); err != nil {
 			return nil, err
 		}
@@ -234,7 +229,7 @@ func (r *federatedResource) ApplyOverrides(
 		return err
 	}
 	if overrides != nil {
-		if err := util.ApplyJsonPatch(obj, overrides); err != nil {
+		if err := overridesutil.ApplyJsonPatch(obj, overrides); err != nil {
 			return err
 		}
 	}
@@ -291,7 +286,7 @@ func (r *federatedResource) overridesForCluster(clusterName string) (fedcorev1a1
 			return lhs < rhs
 		})
 
-		r.overridesMap = make(util.OverridesMap)
+		r.overridesMap = make(overridesutil.OverridesMap)
 
 		// Merge overrides in the specified order
 		for _, controllerOverride := range overrides {

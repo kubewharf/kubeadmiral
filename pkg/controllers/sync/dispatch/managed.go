@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2019 The Kubernetes Authors.
 
@@ -40,10 +39,10 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/status"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
+	"github.com/kubewharf/kubeadmiral/pkg/util/propagatedversion"
 )
 
 const IndexRolloutPlans = "federation_placement_rollout"
@@ -178,7 +177,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 			ctxWithTimeout, obj, metav1.CreateOptions{},
 		)
 		if err == nil {
-			version := util.ObjectVersion(obj)
+			version := propagatedversion.ObjectVersion(obj)
 			d.recordVersion(clusterName, version)
 			return true
 		}
@@ -271,7 +270,7 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			return d.recordOperationError(ctx, fedcorev1a1.VersionRetrievalFailed, clusterName, op, err)
 		}
 
-		if !util.ObjectNeedsUpdate(obj, clusterObj, version, d.fedResource.TypeConfig()) {
+		if !propagatedversion.ObjectNeedsUpdate(obj, clusterObj, version, d.fedResource.TypeConfig()) {
 			// Resource is current, we still record version in dispatcher
 			// so that federated status can be set with cluster resource generation
 			d.recordVersion(clusterName, version)
@@ -289,7 +288,7 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			return d.recordOperationError(ctx, fedcorev1a1.UpdateFailed, clusterName, op, err)
 		}
 		d.setResourcesUpdated()
-		version = util.ObjectVersion(obj)
+		version = propagatedversion.ObjectVersion(obj)
 		d.recordVersion(clusterName, version)
 		return true
 	})
@@ -334,7 +333,7 @@ func (d *managedDispatcherImpl) recordOperationError(
 }
 
 func (d *managedDispatcherImpl) recordError(ctx context.Context, clusterName, operation string, err error) {
-	targetName := d.unmanagedDispatcher.targetNameForCluster(clusterName)
+	targetName := d.unmanagedDispatcher.targetName
 	args := []interface{}{operation, d.fedResource.TargetGVR().String(), targetName, clusterName}
 	eventType := fmt.Sprintf("%sInClusterFailed", strings.Replace(strings.Title(operation), " ", "", -1))
 	eventErr := errors.Wrapf(err, "Failed to "+eventTemplate, args...)
@@ -349,7 +348,7 @@ func (d *managedDispatcherImpl) recordError(ctx context.Context, clusterName, op
 }
 
 func (d *managedDispatcherImpl) recordEvent(clusterName, operation, operationContinuous string) {
-	targetName := d.unmanagedDispatcher.targetNameForCluster(clusterName)
+	targetName := d.unmanagedDispatcher.targetName
 	args := []interface{}{operationContinuous, d.fedResource.TargetGVR().String(), targetName, clusterName}
 	eventType := fmt.Sprintf("%sInCluster", strings.Replace(strings.Title(operation), " ", "", -1))
 	d.fedResource.RecordEvent(eventType, eventTemplate, args...)
@@ -386,7 +385,7 @@ func (d *managedDispatcherImpl) CollectedStatus() status.CollectedPropagationSta
 	}
 	return status.CollectedPropagationStatus{
 		StatusMap:        statusMap,
-		GenerationMap:    util.ConvertVersionMapToGenerationMap(d.versionMap),
+		GenerationMap:    propagatedversion.ConvertVersionMapToGenerationMap(d.versionMap),
 		ResourcesUpdated: d.resourcesUpdated,
 	}
 }

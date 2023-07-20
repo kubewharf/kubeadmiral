@@ -18,7 +18,7 @@ This file may have been modified by The KubeAdmiral Authors
 are Copyright 2023 The KubeAdmiral Authors.
 */
 
-package util
+package meta
 
 import (
 	"testing"

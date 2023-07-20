@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2018 The Kubernetes Authors.
 
@@ -19,7 +18,7 @@ This file may have been modified by The KubeAdmiral Authors
 are Copyright 2023 The KubeAdmiral Authors.
 */
 
-package util
+package propagatedversion
 
 import (
 	"fmt"

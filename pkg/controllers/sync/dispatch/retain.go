@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2019 The Kubernetes Authors.
 
@@ -33,8 +32,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
-	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
+	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
 
 const (
@@ -60,32 +58,32 @@ func RetainOrMergeClusterFields(
 	mergeAnnotations(desiredObj, clusterObj)
 	mergeLabels(desiredObj, clusterObj)
 
-	switch {
-	case schemautil.IsServiceGvk(targetGvk):
+	switch targetGvk {
+	case common.ServiceGVK:
 		if err := retainServiceFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case schemautil.IsServiceAccountGvk(targetGvk):
+	case common.ServiceAccountGVK:
 		if err := retainServiceAccountFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case schemautil.IsJobGvk(targetGvk):
+	case common.JobGVK:
 		if err := retainJobFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case schemautil.IsPersistentVolumeGvk(targetGvk):
+	case common.PersistentVolumeGVK:
 		if err := retainPersistentVolumeFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case schemautil.IsPersistentVolumeClaimGvk(targetGvk):
+	case common.PersistentVolumeClaimGVK:
 		if err := retainPersistentVolumeClaimFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case schemautil.IsPodGvk(targetGvk):
+	case common.PodGVK:
 		if err := retainPodFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case targetGvk == schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"}:
+	case schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"}:
 		// TODO: this is a temporary hack to support Argo Workflow.
 		// We should come up with an extensible framework to support CRDs in the future.
 		if err := retainArgoWorkflow(desiredObj, clusterObj); err != nil {

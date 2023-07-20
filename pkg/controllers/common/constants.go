@@ -22,6 +22,7 @@ package common
 
 import (
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -30,29 +31,6 @@ const (
 	DefaultPrefix             = "kubeadmiral.io/"
 	InternalPrefix            = "internal." + DefaultPrefix
 	FederateControllerPrefix  = "federate.controller." + DefaultPrefix
-)
-
-const (
-	NamespaceResource  = "namespaces"
-	DeploymentResource = "deployments"
-	DaemonSetResource  = "daemonsets"
-	ConfigMapResource  = "configmaps"
-	SecretResource     = "secrets"
-
-	NamespaceKind             = "Namespace"
-	DeploymentKind            = "Deployment"
-	StatefulSetKind           = "StatefulSet"
-	DaemonSetKind             = "DaemonSet"
-	JobKind                   = "Job"
-	CronJobKind               = "CronJob"
-	ConfigMapKind             = "ConfigMap"
-	SecretKind                = "Secret"
-	ServiceKind               = "Service"
-	ServiceAccountKind        = "ServiceAccount"
-	IngressKind               = "Ingress"
-	PersistentVolumeKind      = "PersistentVolume"
-	PersistentVolumeClaimKind = "PersistentVolumeClaim"
-	PodKind                   = "Pod"
 )
 
 // The following consts are spec fields used to interact with unstructured resources
@@ -110,9 +88,6 @@ const (
 
 	NoSchedulingAnnotation = DefaultPrefix + "no-scheduling"
 
-	// FederatedObjectAnnotation indicates that the object was created by the federate controller.
-	FederatedObjectAnnotation = DefaultPrefix + "federated-object"
-
 	// RetainReplicasAnnotation indicates that the replicas field of the cluster objects should be retained during propagation.
 	RetainReplicasAnnotation = DefaultPrefix + "retain-replicas"
 
@@ -157,12 +132,46 @@ const (
 	ClusterServiceAccountCAKey     = "service-account-ca-data"
 )
 
+const (
+	NamespaceResource  = "namespaces"
+	DeploymentResource = "deployments"
+	DaemonSetResource  = "daemonsets"
+	ConfigMapResource  = "configmaps"
+	SecretResource     = "secrets"
+
+	NamespaceKind             = "Namespace"
+	DeploymentKind            = "Deployment"
+	StatefulSetKind           = "StatefulSet"
+	DaemonSetKind             = "DaemonSet"
+	JobKind                   = "Job"
+	CronJobKind               = "CronJob"
+	ConfigMapKind             = "ConfigMap"
+	SecretKind                = "Secret"
+	ServiceKind               = "Service"
+	ServiceAccountKind        = "ServiceAccount"
+	IngressKind               = "Ingress"
+	PersistentVolumeKind      = "PersistentVolume"
+	PersistentVolumeClaimKind = "PersistentVolumeClaim"
+	PodKind                   = "Pod"
+)
+
 var (
+	ServiceGVK               = corev1.SchemeGroupVersion.WithKind(ServiceKind)
+	ServiceAccountGVK        = corev1.SchemeGroupVersion.WithKind(ServiceAccountKind)
+	PersistentVolumeGVK      = corev1.SchemeGroupVersion.WithKind(PersistentVolumeKind)
+	PersistentVolumeClaimGVK = corev1.SchemeGroupVersion.WithKind(PersistentVolumeClaimKind)
+	PodGVK                   = corev1.SchemeGroupVersion.WithKind(PodKind)
+
+	JobGVK = batchv1.SchemeGroupVersion.WithKind(JobKind)
+)
+
+var (
+	NamespaceGVR = corev1.SchemeGroupVersion.WithResource(NamespaceResource)
+	ConfigMapGVR = corev1.SchemeGroupVersion.WithResource(ConfigMapResource)
+	SecretGVR    = corev1.SchemeGroupVersion.WithResource(SecretResource)
+
 	DeploymentGVR = appsv1.SchemeGroupVersion.WithResource(DeploymentResource)
 	DaemonSetGVR  = appsv1.SchemeGroupVersion.WithResource(DaemonSetResource)
-	NamespaceGVR  = corev1.SchemeGroupVersion.WithResource(NamespaceResource)
-	ConfigMapGVR  = corev1.SchemeGroupVersion.WithResource(ConfigMapResource)
-	SecretGVR     = corev1.SchemeGroupVersion.WithResource(SecretResource)
 )
 
 // MaxFederatedObjectNameLength defines the max length of a federated object name.

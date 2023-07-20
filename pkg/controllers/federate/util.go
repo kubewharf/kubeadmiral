@@ -306,7 +306,6 @@ func classifyAnnotations(annotations map[string]string) (
 	templateAnnotations map[string]string,
 ) {
 	federatedAnnotations, templateAnnotations = classifyStringMap(annotations, classifyAnnotation)
-	federatedAnnotations[common.FederatedObjectAnnotation] = "1"
 	return federatedAnnotations, templateAnnotations
 }
 
