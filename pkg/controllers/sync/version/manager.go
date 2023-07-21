@@ -261,7 +261,7 @@ func (m *VersionManager) load(ctx context.Context, versionList runtimeclient.Obj
 	for _, obj := range objs {
 		select {
 		case <-ctx.Done():
-			m.logger.V(4).Info("Halting version manager load due to closed stop channel")
+			m.logger.Info("Halting version manager load due to closed stop channel")
 			return false
 		default:
 		}
@@ -272,7 +272,7 @@ func (m *VersionManager) load(ctx context.Context, versionList runtimeclient.Obj
 	m.Lock()
 	m.hasSynced = true
 	m.Unlock()
-	m.logger.V(4).Info("Version manager synced")
+	m.logger.Info("Version manager synced")
 	return true
 }
 
@@ -317,10 +317,10 @@ func (m *VersionManager) writeVersion(obj runtimeclient.Object, qualifiedName co
 
 			createdObj := obj.DeepCopyObject().(runtimeclient.Object)
 			setResourceVersion(createdObj, "")
-			keyedLogger.V(2).Info("Creating resourceVersion")
+			keyedLogger.V(1).Info("Creating resourceVersion")
 			createdObj, err = m.adapter.Create(context.TODO(), m.client, createdObj, metav1.CreateOptions{})
 			if apierrors.IsAlreadyExists(err) {
-				keyedLogger.V(3).Info("ResourceVersion was created by another process. Will refresh the resourceVersion and attempt to update")
+				keyedLogger.V(1).Info("ResourceVersion was created by another process. Will refresh the resourceVersion and attempt to update")
 				refreshVersion = true
 				return false, nil
 			}
@@ -344,15 +344,15 @@ func (m *VersionManager) writeVersion(obj runtimeclient.Object, qualifiedName co
 		updatedObj := obj.DeepCopyObject().(runtimeclient.Object)
 		setResourceVersion(updatedObj, resourceVersion)
 
-		keyedLogger.V(2).Info("Updating the status")
+		keyedLogger.V(1).Info("Updating the status")
 		updatedObj, err = m.adapter.UpdateStatus(context.TODO(), m.client, updatedObj, metav1.UpdateOptions{})
 		if apierrors.IsConflict(err) {
-			keyedLogger.V(3).Info("ResourceVersion was updated by another process. Will refresh the resourceVersion and retry the update")
+			keyedLogger.V(1).Info("ResourceVersion was updated by another process. Will refresh the resourceVersion and retry the update")
 			refreshVersion = true
 			return false, nil
 		}
 		if apierrors.IsNotFound(err) {
-			keyedLogger.V(3).Info("ResourceVersion was deleted by another process. Will clear the resourceVersion and retry the update")
+			keyedLogger.V(1).Info("ResourceVersion was deleted by another process. Will clear the resourceVersion and retry the update")
 			resourceVersion = ""
 			return false, nil
 		}
