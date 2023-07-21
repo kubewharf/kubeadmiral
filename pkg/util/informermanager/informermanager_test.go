@@ -55,13 +55,20 @@ func TestInformerManager(t *testing.T) {
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{deploymentFTC, configmapFTC, secretFTC}
 		defaultObjs := []*unstructured.Unstructured{}
 		generators := []*EventHandlerGenerator{}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, _, _ := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, _, _ := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators, handlers)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for InformerManager cache sync")
+		}
 
 		// 2. Verify that the GVK mapping for each FTC is eventually available
 
@@ -91,13 +98,27 @@ func TestInformerManager(t *testing.T) {
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{}
 		defaultObjs := []*unstructured.Unstructured{}
 		generators := []*EventHandlerGenerator{}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, _, fedClient := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, _, fedClient := bootstrapInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+			handlers,
+		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for InformerManager cache sync")
+		}
 
 		ftc := daemonsetFTC
 		gvk := ftc.GetSourceTypeGVK()
@@ -133,13 +154,20 @@ func TestInformerManager(t *testing.T) {
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{deploymentFTC, configmapFTC, secretFTC}
 		defaultObjs := []*unstructured.Unstructured{}
 		generators := []*EventHandlerGenerator{}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, _, _ := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, _, _ := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators, handlers)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for InformerManager cache sync")
+		}
 
 		// 2. Verify that the listers for each FTC is eventually available
 
@@ -171,13 +199,27 @@ func TestInformerManager(t *testing.T) {
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{}
 		defaultObjs := []*unstructured.Unstructured{}
 		generators := []*EventHandlerGenerator{}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, _, fedClient := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, _, fedClient := bootstrapInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+			handlers,
+		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for InformerManager cache sync")
+		}
 
 		ftc := daemonsetFTC
 		gvk := ftc.GetSourceTypeGVK()
@@ -231,6 +273,7 @@ func TestInformerManager(t *testing.T) {
 				Generator: neverRegistered.GenerateEventHandler,
 			},
 		}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
 		manager, dynamicClient, _ := bootstrapInformerManagerWithFakeClients(
@@ -239,11 +282,18 @@ func TestInformerManager(t *testing.T) {
 			defaultFTCs,
 			defaultObjs,
 			generators,
+			handlers,
 		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for InformerManager cache sync")
+		}
 
 		// 2. Verify alwaysRegistered is eventually registered for all existing FTCs.
 
@@ -328,6 +378,7 @@ func TestInformerManager(t *testing.T) {
 				Generator: neverRegistered.GenerateEventHandler,
 			},
 		}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
 		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
@@ -336,11 +387,18 @@ func TestInformerManager(t *testing.T) {
 			defaultFTCs,
 			defaultObjs,
 			generators,
+			handlers,
 		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for InformerManager cache sync")
+		}
 
 		// 2. Verify that alwaysRegistered is not registered initially for daemonset
 
@@ -426,9 +484,17 @@ func TestInformerManager(t *testing.T) {
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{ftc}
 		defaultObjs := []*unstructured.Unstructured{}
 		generators := []*EventHandlerGenerator{generator}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
-		manager, _, fedClient := bootstrapInformerManagerWithFakeClients(g, ctx, defaultFTCs, defaultObjs, generators)
+		manager, _, fedClient := bootstrapInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+			handlers,
+		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
@@ -469,6 +535,7 @@ func TestInformerManager(t *testing.T) {
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{ftc}
 		defaultObjs := []*unstructured.Unstructured{dp1}
 		generators := []*EventHandlerGenerator{generator}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
 		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
@@ -477,11 +544,18 @@ func TestInformerManager(t *testing.T) {
 			defaultFTCs,
 			defaultObjs,
 			generators,
+			handlers,
 		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for InformerManager cache sync")
+		}
 
 		// 2. Verify that handler is not registered initially.
 
@@ -528,6 +602,7 @@ func TestInformerManager(t *testing.T) {
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{ftc}
 		defaultObjs := []*unstructured.Unstructured{dp1}
 		generators := []*EventHandlerGenerator{generator}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
 		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
@@ -536,11 +611,18 @@ func TestInformerManager(t *testing.T) {
 			defaultFTCs,
 			defaultObjs,
 			generators,
+			handlers,
 		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for InformerManager cache sync")
+		}
 
 		// 2. Verify that handler is registered initially.
 
@@ -586,6 +668,7 @@ func TestInformerManager(t *testing.T) {
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{ftc}
 		defaultObjs := []*unstructured.Unstructured{dp1}
 		generators := []*EventHandlerGenerator{generator}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
 		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
@@ -594,6 +677,7 @@ func TestInformerManager(t *testing.T) {
 			defaultFTCs,
 			defaultObjs,
 			generators,
+			handlers,
 		)
 		defer func() {
 			cancel()
@@ -645,6 +729,7 @@ func TestInformerManager(t *testing.T) {
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{ftc}
 		defaultObjs := []*unstructured.Unstructured{dp1}
 		generators := []*EventHandlerGenerator{generator}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
 		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
@@ -653,11 +738,18 @@ func TestInformerManager(t *testing.T) {
 			defaultFTCs,
 			defaultObjs,
 			generators,
+			handlers,
 		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for InformerManager cache sync")
+		}
 
 		// 2. Verify that handler is registered initially
 
@@ -710,6 +802,7 @@ func TestInformerManager(t *testing.T) {
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{deploymentFTC, configmapFTC, secretFTC}
 		defaultObjs := []*unstructured.Unstructured{dp1, cm1, sc1}
 		generators := []*EventHandlerGenerator{generator1, generator2}
+		handlers := []FTCUpdateHandler{}
 
 		ctx, cancel := context.WithCancel(ctx)
 		manager, dynamicClient, fedClient := bootstrapInformerManagerWithFakeClients(
@@ -718,11 +811,18 @@ func TestInformerManager(t *testing.T) {
 			defaultFTCs,
 			defaultObjs,
 			generators,
+			handlers,
 		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for InformerManager cache sync")
+		}
 
 		// 2. Verify that handler1 and handler2 is registered initially for all FTCs
 
@@ -809,6 +909,7 @@ func TestInformerManager(t *testing.T) {
 		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{deploymentFTC, configmapFTC, secretFTC}
 		defaultObjs := []*unstructured.Unstructured{dp1, cm1, sc1}
 		generators := []*EventHandlerGenerator{generator1, generator2}
+		handlers := []FTCUpdateHandler{}
 
 		managerCtx, managerCancel := context.WithCancel(ctx)
 
@@ -819,11 +920,18 @@ func TestInformerManager(t *testing.T) {
 			defaultFTCs,
 			defaultObjs,
 			generators,
+			handlers,
 		)
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for InformerManager cache sync")
+		}
 
 		// 2. Verify that handler1 and handler2 is registered initially for all FTCs
 
@@ -872,6 +980,75 @@ func TestInformerManager(t *testing.T) {
 		handler1.AssertConsistently(g, time.Second*2)
 		handler2.AssertConsistently(g, time.Second*2)
 	})
+
+	t.Run("ftc update event handlers should be called on ftc events", func(t *testing.T) {
+		g := gomega.NewWithT(t)
+
+		// 1. Bootstrap environment
+
+		generation := &atomic.Int64{}
+		generation.Store(1)
+
+		// assertionCh is used to achieve 3 things:
+		// 1. It is used to pass assertions to the main goroutine.
+		// 2. It is used as an implicit lock to ensure FTC events are not squashed by the InformerManager.
+		// 3. It is used to ensure that the last event has been processed before the main goroutine sends an update.
+		assertionCh := make(chan func())
+
+		ftc := deploymentFTC.DeepCopy()
+		ftc.SetGeneration(generation.Load())
+
+		handler := func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
+			curGeneration := generation.Load()
+			if curGeneration == 1 {
+				assertionCh <- func() {
+					g.Expect(lastObserved).To(gomega.BeNil())
+					g.Expect(latest.GetGeneration()).To(gomega.BeNumerically("==", 1))
+				}
+			} else {
+				assertionCh <- func() {
+					g.Expect(lastObserved.GetGeneration()).To(gomega.BeNumerically("==", curGeneration-1))
+					g.Expect(latest.GetGeneration()).To(gomega.BeNumerically("==", curGeneration))
+				}
+			}
+		}
+
+		defaultFTCs := []*fedcorev1a1.FederatedTypeConfig{ftc}
+		defaultObjs := []*unstructured.Unstructured{}
+		generators := []*EventHandlerGenerator{}
+		handlers := []FTCUpdateHandler{handler}
+
+		ctx, cancel := context.WithCancel(ctx)
+		manager, _, fedClient := bootstrapInformerManagerWithFakeClients(
+			g,
+			ctx,
+			defaultFTCs,
+			defaultObjs,
+			generators,
+			handlers,
+		)
+		defer func() {
+			cancel()
+			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
+		}()
+
+		fn := <-assertionCh
+		fn()
+
+		// 3. Generate FTC update events
+
+		for i := 0; i < 5; i++ {
+			generation.Add(1)
+			ftc.SetGeneration(generation.Load())
+
+			var err error
+			ftc, err = fedClient.CoreV1alpha1().FederatedTypeConfigs().Update(ctx, ftc, metav1.UpdateOptions{})
+			g.Expect(err).ToNot(gomega.HaveOccurred())
+
+			fn = <-assertionCh
+			fn()
+		}
+	})
 }
 
 func bootstrapInformerManagerWithFakeClients(
@@ -880,6 +1057,7 @@ func bootstrapInformerManagerWithFakeClients(
 	ftcs []*fedcorev1a1.FederatedTypeConfig,
 	objects []*unstructured.Unstructured,
 	eventHandlerGenerators []*EventHandlerGenerator,
+	ftcUpdateHandlers []FTCUpdateHandler,
 ) (InformerManager, dynamicclient.Interface, fedclient.Interface) {
 	scheme := runtime.NewScheme()
 
@@ -910,15 +1088,13 @@ func bootstrapInformerManagerWithFakeClients(
 		g.Expect(err).ToNot(gomega.HaveOccurred())
 	}
 
+	for _, handler := range ftcUpdateHandlers {
+		err := informerManager.AddFTCUpdateHandler(handler)
+		g.Expect(err).ToNot(gomega.HaveOccurred())
+	}
+
 	factory.Start(ctx.Done())
 	informerManager.Start(ctx)
-
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-
-	if !cache.WaitForCacheSync(ctxWithTimeout.Done(), informerManager.HasSynced) {
-		g.Fail("Timed out waiting for InformerManager cache sync")
-	}
 
 	return informerManager, dynamicClient, fedClient
 }
