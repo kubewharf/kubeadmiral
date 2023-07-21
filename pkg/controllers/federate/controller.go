@@ -223,7 +223,8 @@ func (c *FederateController) HasSynced() bool {
 func (c *FederateController) reconcile(ctx context.Context, key workerKey) (status worker.Result) {
 	_ = c.metrics.Rate("federate.throughput", 1)
 	ctx, logger := logging.InjectLogger(ctx, c.logger)
-	ctx, logger = logging.InjectLoggerValues(ctx, "source-object", key.QualifiedName().String())
+	ctx, logger = logging.InjectLoggerValues(ctx, "source-object", key.QualifiedName().String(), "gvk", key.gvk)
+
 	startTime := time.Now()
 
 	logger.V(3).Info("Start reconcile")
@@ -231,9 +232,6 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		c.metrics.Duration(fmt.Sprintf("%s.latency", FederateControllerName), startTime)
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()
-
-	sourceGVK := key.gvk
-	ctx, logger = logging.InjectLoggerValues(ctx, "gvk", sourceGVK)
 
 	ftc, exists := c.informerManager.GetResourceFTC(key.gvk)
 	if !exists {
@@ -303,7 +301,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		ownedbySource := false
 
 		for _, ref := range fedObject.GetOwnerReferences() {
-			if schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind) == sourceGVK &&
+			if schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind) == key.gvk &&
 				sourceObject.GetName() == ref.Name {
 				ownedbySource = true
 				break
