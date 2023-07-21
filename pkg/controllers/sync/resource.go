@@ -25,6 +25,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"sort"
 	"sync"
 
@@ -86,6 +87,11 @@ func (r *federatedResource) TargetGVK() schema.GroupVersionKind {
 
 func (r *federatedResource) TargetGVR() schema.GroupVersionResource {
 	return r.typeConfig.GetSourceTypeGVR()
+}
+
+func (r *federatedResource) FederatedGVK() schema.GroupVersionKind {
+	// NOTE: remember to update this method when we switch to a different apiVersion.
+	return fedcorev1a1.SchemeGroupVersion.WithKind(reflect.TypeOf(r.federatedObject).Elem().Name())
 }
 
 func (r *federatedResource) TypeConfig() *fedcorev1a1.FederatedTypeConfig {

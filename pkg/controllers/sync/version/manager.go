@@ -29,6 +29,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
@@ -47,6 +48,7 @@ type VersionedResource interface {
 	Object() fedcorev1a1.GenericFederatedObject
 	TemplateVersion() (string, error)
 	OverrideVersion() (string, error)
+	FederatedGVK() schema.GroupVersionKind
 }
 
 type VersionManager struct {
@@ -197,12 +199,12 @@ func (m *VersionManager) Update(
 	if oldStatus != nil && propagatedversion.PropagatedVersionStatusEquivalent(oldStatus, status) {
 		m.Unlock()
 		m.logger.WithValues("version-qualified-name", qualifiedName).
-			V(4).Info("No update necessary")
+			V(4).Info("No need to update propagated version status")
 		return nil
 	}
 
 	if obj == nil {
-		ownerReference := ownerReferenceForFederatedObject(resource.Object())
+		ownerReference := ownerReferenceForFederatedObject(resource)
 		obj = m.adapter.NewVersion(qualifiedName, ownerReference, status)
 		m.versions[key] = obj
 	} else {
@@ -400,8 +402,9 @@ func setResourceVersion(obj runtimeclient.Object, resourceVersion string) {
 	obj.SetResourceVersion(resourceVersion)
 }
 
-func ownerReferenceForFederatedObject(obj fedcorev1a1.GenericFederatedObject) metav1.OwnerReference {
-	gvk := obj.GetObjectKind().GroupVersionKind()
+func ownerReferenceForFederatedObject(resource VersionedResource) metav1.OwnerReference {
+	gvk := resource.FederatedGVK()
+	obj := resource.Object()
 	return metav1.OwnerReference{
 		APIVersion: gvk.GroupVersion().String(),
 		Kind:       gvk.Kind,
