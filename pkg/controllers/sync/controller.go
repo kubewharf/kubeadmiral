@@ -550,6 +550,8 @@ func (s *SyncController) setFederatedStatus(
 	}
 
 	obj := fedResource.Object()
+	objNamespace := obj.GetNamespace()
+	objName := obj.GetName()
 	keyedLogger := klog.FromContext(ctx)
 
 	// If the underlying resource has changed, attempt to retrieve and
@@ -567,7 +569,7 @@ func (s *SyncController) setFederatedStatus(
 			return true, nil
 		}
 		if apierrors.IsConflict(err) {
-			obj, err = fedobjectadapters.Get(ctx, s.fedClient.CoreV1alpha1(), obj.GetNamespace(), obj.GetName(), metav1.GetOptions{})
+			obj, err = fedobjectadapters.Get(ctx, s.fedClient.CoreV1alpha1(), objNamespace, objName, metav1.GetOptions{})
 			if err != nil {
 				return false, errors.Wrapf(err, "failed to retrieve resource")
 			}
