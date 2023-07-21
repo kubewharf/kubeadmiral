@@ -39,6 +39,11 @@ type EventHandlerGenerator struct {
 	Generator func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler
 }
 
+// FTCUpdateHandler is called by InformerManager each time it finishes processing an FTC. This allows controllers to
+// hook into the InformerManager's view of an FTC's lifecycle. When a new FTC is observed, lastObserved will be nil.
+// When a FTC deletion is observed, latest will be nil.
+type FTCUpdateHandler func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig)
+
 // InformerManager provides an interface for controllers that need to dynamically register event handlers and access
 // objects based on FederatedTypeConfigs. InformerManager will listen to FTC events and maintain informers for the
 // source type of each FTC.
@@ -48,6 +53,9 @@ type EventHandlerGenerator struct {
 type InformerManager interface {
 	// Adds an EventHandler used to generate and register ResourceEventHandlers for each FTC's source type informer.
 	AddEventHandlerGenerator(generator *EventHandlerGenerator) error
+	// Adds a FTCUpdateHandler that is called each time the InformerManager finishes processing an FTC.
+	AddFTCUpdateHandler(handler FTCUpdateHandler) error
+
 	// Returns a lister for the given GroupResourceVersion if it exists. The lister for each FTC's source type will
 	// eventually exist.
 	GetResourceLister(gvk schema.GroupVersionKind) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool)
