@@ -268,8 +268,11 @@ func (s *SyncController) Run(ctx context.Context) {
 	}()
 
 	if !cache.WaitForNamedCacheSync(SyncControllerName, ctx.Done(), s.HasSynced) {
+		s.logger.Error(nil, "Timed out waiting for cache sync")
 		return
 	}
+
+	s.logger.Info("Caches are synced")
 
 	s.worker.Run(ctx)
 	s.clusterCascadingDeletionWorker.Run(ctx)
@@ -284,6 +287,10 @@ func (s *SyncController) Run(ctx context.Context) {
 // Check whether all data stores are in sync. False is returned if any of the informer/stores is not yet
 // synced with the corresponding api server.
 func (s *SyncController) HasSynced() bool {
+	if !s.ftcManager.HasSynced() {
+		s.logger.V(3).Info("FederatedTypeConfigManager not synced")
+		return false
+	}
 	if !s.fedInformerManager.HasSynced() {
 		s.logger.V(3).Info("FederatedInformerManager not synced")
 		return false
@@ -318,16 +325,7 @@ func (s *SyncController) enqueueAllObjects() {
 }
 
 func (s *SyncController) reconcile(ctx context.Context, federatedName common.QualifiedName) (status worker.Result) {
-	keyedLogger := s.logger.WithValues("federated-name", federatedName.String())
-	ctx = klog.NewContext(ctx, keyedLogger)
-
-	s.metrics.Rate("sync.throughput", 1)
-	keyedLogger.V(3).Info("Starting to reconcile")
-	startTime := time.Now()
-	defer func() {
-		s.metrics.Duration("sync.latency", startTime)
-		keyedLogger.WithValues("duration", time.Since(startTime), "status", status).V(3).Info("Finished reconciling")
-	}()
+	ctx, keyedLogger := logging.InjectLogger(ctx, s.logger.WithValues("federated-name", federatedName.String()))
 
 	fedResource, err := s.fedAccessor.FederatedResource(federatedName)
 	if err != nil {
@@ -343,6 +341,14 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 		"target-name", fedResource.TargetName().String(),
 		"gvk", fedResource.TargetGVK().String(),
 	)
+
+	s.metrics.Rate("sync.throughput", 1)
+	keyedLogger.V(3).Info("Starting to reconcile")
+	startTime := time.Now()
+	defer func() {
+		s.metrics.Duration("sync.latency", startTime)
+		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconciling")
+	}()
 
 	if fedResource.Object().GetDeletionTimestamp() != nil {
 		return s.ensureDeletion(ctx, fedResource)
