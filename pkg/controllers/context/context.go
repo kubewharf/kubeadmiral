@@ -77,8 +77,7 @@ func (c *Context) StartFactories(ctx context.Context) {
 }
 
 type ComponentConfig struct {
-	NSAutoPropExcludeRegexp              *regexp.Regexp
-	FederatedTypeConfigCreateCRDsForFTCs bool
-	ClusterJoinTimeout                   time.Duration
-	MemberObjectEnqueueDelay             time.Duration
+	NSAutoPropExcludeRegexp  *regexp.Regexp
+	ClusterJoinTimeout       time.Duration
+	MemberObjectEnqueueDelay time.Duration
 }
