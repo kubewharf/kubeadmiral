@@ -105,8 +105,6 @@ func NewFederateController(
 		clusterFedObjectInformer: clusterFedObjectInformer,
 		fedClient:                fedClient,
 		dynamicClient:            dynamicClient,
-		worker:                   nil,
-		eventRecorder:            nil,
 		metrics:                  metrics,
 		logger:                   logger.WithValues("controller", FederateControllerName),
 	}
@@ -209,8 +207,11 @@ func (c *FederateController) Run(ctx context.Context) {
 	defer logger.Info("Stopping controller")
 
 	if !cache.WaitForNamedCacheSync(FederateControllerName, ctx.Done(), c.HasSynced) {
+		logger.Error(nil, "Timed out waiting for cache sync")
 		return
 	}
+
+	logger.Info("Caches are synced")
 
 	c.worker.Run(ctx)
 	<-ctx.Done()
