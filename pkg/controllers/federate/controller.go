@@ -33,6 +33,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
@@ -104,8 +105,6 @@ func NewFederateController(
 		clusterFedObjectInformer: clusterFedObjectInformer,
 		fedClient:                fedClient,
 		dynamicClient:            dynamicClient,
-		worker:                   nil,
-		eventRecorder:            nil,
 		metrics:                  metrics,
 		logger:                   logger.WithValues("controller", FederateControllerName),
 	}
@@ -208,21 +207,26 @@ func (c *FederateController) Run(ctx context.Context) {
 	defer logger.Info("Stopping controller")
 
 	if !cache.WaitForNamedCacheSync(FederateControllerName, ctx.Done(), c.HasSynced) {
+		logger.Error(nil, "Timed out waiting for cache sync")
 		return
 	}
+
+	logger.Info("Caches are synced")
 
 	c.worker.Run(ctx)
 	<-ctx.Done()
 }
 
 func (c *FederateController) HasSynced() bool {
-	return c.informerManager.HasSynced() && c.fedObjectInformer.Informer().HasSynced()
+	return c.informerManager.HasSynced() && c.fedObjectInformer.Informer().HasSynced() &&
+		c.clusterFedObjectInformer.Informer().HasSynced()
 }
 
 func (c *FederateController) reconcile(ctx context.Context, key workerKey) (status worker.Result) {
 	_ = c.metrics.Rate("federate.throughput", 1)
 	ctx, logger := logging.InjectLogger(ctx, c.logger)
-	ctx, logger = logging.InjectLoggerValues(ctx, "source-object", key.ObjectKey())
+	ctx, logger = logging.InjectLoggerValues(ctx, "source-object", key.QualifiedName().String(), "gvk", key.gvk)
+
 	startTime := time.Now()
 
 	logger.V(3).Info("Start reconcile")
@@ -231,28 +235,49 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()
 
-	sourceGVK := key.gvk
-	ctx, logger = logging.InjectLoggerValues(ctx, "gvk", sourceGVK)
-
 	ftc, exists := c.informerManager.GetResourceFTC(key.gvk)
 	if !exists {
-		logger.Error(nil, "FTC does not exist for GVK")
-		return worker.StatusError
+		// This could happen if:
+		// 1) The InformerManager is not yet up-to-date.
+		// 2) We received an event from a FederatedObject without a corresponding FTC.
+		//
+		// For case 1, when the InformerManager becomes up-to-date, all the source objects will be enqueued once anyway,
+		// so it is safe to skip processing this time round. We do not have to process orphaned FederatedObjects.
+		// For case 2, the federate controller does not have to process FederatedObjects without a corresponding FTC.
+		return worker.StatusAllOK
 	}
 
 	sourceGVR := ftc.GetSourceTypeGVR()
 	ctx, logger = logging.InjectLoggerValues(ctx, "ftc", ftc.Name, "gvr", sourceGVR)
 
-	sourceObject, err := c.sourceObjectFromStore(key)
+	lister, hasSynced, exists := c.informerManager.GetResourceLister(key.gvk)
+	if !exists {
+		// Once again, this could happen if:
+		// 1) The InformerManager is not yet up-to-date.
+		// 2) We received an event from a FederatedObject without a corresponding FTC.
+		//
+		// See above comment for an explanation of the handling logic.
+		return worker.StatusAllOK
+	}
+	if !hasSynced() {
+		// If lister is not yet synced, simply reenqueue after a short delay.
+		logger.V(3).Info("Lister for source type not yet synced, will reenqueue")
+		return worker.Result{
+			Success:      true,
+			RequeueAfter: pointer.Duration(100 * time.Millisecond),
+		}
+	}
+
+	sourceUns, err := lister.Get(key.QualifiedName().String())
 	if err != nil && apierrors.IsNotFound(err) {
-		logger.V(3).Info(fmt.Sprintf("No source object for found, skip federating"))
+		logger.V(3).Info(fmt.Sprintf("No source object found, skip federating"))
 		return worker.StatusAllOK
 	}
 	if err != nil {
 		logger.Error(err, "Failed to get source object from store")
 		return worker.StatusError
 	}
-	sourceObject = sourceObject.DeepCopy()
+	sourceObject := sourceUns.(*unstructured.Unstructured).DeepCopy()
 
 	fedObjectName := naming.GenerateFederatedObjectName(sourceObject.GetName(), ftc.Name)
 	ctx, logger = logging.InjectLoggerValues(ctx, "federated-object", fedObjectName)
@@ -278,7 +303,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 		ownedbySource := false
 
 		for _, ref := range fedObject.GetOwnerReferences() {
-			if schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind) == sourceGVK &&
+			if schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind) == key.gvk &&
 				sourceObject.GetName() == ref.Name {
 				ownedbySource = true
 				break
@@ -331,7 +356,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 			)
 
 			if apierrors.IsInvalid(err) {
-				// if the federated object template is invalid, reenqueueing will not help solve the problem. instead,
+				// If the federated object template is invalid, reenqueueing will not help solve the problem. Instead,
 				// we should wait for the source object template to be updated - which will trigger its own reconcile.
 				return worker.StatusErrorNoRetry
 			}
@@ -376,27 +401,6 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 	}
 
 	return worker.StatusAllOK
-}
-
-func (c *FederateController) sourceObjectFromStore(key workerKey) (*unstructured.Unstructured, error) {
-	lister, hasSynced, exists := c.informerManager.GetResourceLister(key.gvk)
-	if !exists {
-		return nil, fmt.Errorf("lister for %s does not exist", key.gvk)
-	}
-	if !hasSynced() {
-		return nil, fmt.Errorf("lister for %s not synced", key.gvk)
-	}
-
-	var obj runtime.Object
-	var err error
-
-	if key.namespace == "" {
-		obj, err = lister.Get(key.name)
-	} else {
-		obj, err = lister.ByNamespace(key.namespace).Get(key.name)
-	}
-
-	return obj.(*unstructured.Unstructured), err
 }
 
 func (c *FederateController) ensureFinalizer(
