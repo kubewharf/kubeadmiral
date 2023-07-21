@@ -116,6 +116,14 @@ func (a *resourceAccessor) Run(ctx context.Context) {
 }
 
 func (a *resourceAccessor) HasSynced() bool {
+	if !a.fedObjectInformer.Informer().HasSynced() {
+		a.logger.V(3).Info("FederatedObject informer not synced")
+		return false
+	}
+	if !a.clusterFedObjectInformer.Informer().HasSynced() {
+		a.logger.V(3).Info("ClusterFederatedObject informer not synced")
+		return false
+	}
 	if !a.versionManager.HasSynced() {
 		a.logger.V(3).Info("Version manager not synced")
 		return false
