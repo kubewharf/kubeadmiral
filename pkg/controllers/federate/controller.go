@@ -217,7 +217,8 @@ func (c *FederateController) Run(ctx context.Context) {
 }
 
 func (c *FederateController) HasSynced() bool {
-	return c.informerManager.HasSynced() && c.fedObjectInformer.Informer().HasSynced()
+	return c.informerManager.HasSynced() && c.fedObjectInformer.Informer().HasSynced() &&
+		c.clusterFedObjectInformer.Informer().HasSynced()
 }
 
 func (c *FederateController) reconcile(ctx context.Context, key workerKey) (status worker.Result) {
