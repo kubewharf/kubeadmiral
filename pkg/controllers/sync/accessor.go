@@ -116,6 +116,10 @@ func (a *resourceAccessor) Run(ctx context.Context) {
 }
 
 func (a *resourceAccessor) HasSynced() bool {
+	if !a.ftcManager.HasSynced() {
+		a.logger.V(3).Info("FederatedTypeConfigManager not synced")
+		return false
+	}
 	if !a.fedObjectInformer.Informer().HasSynced() {
 		a.logger.V(3).Info("FederatedObject informer not synced")
 		return false
