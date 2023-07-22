@@ -273,11 +273,12 @@ func (s *SyncController) Run(ctx context.Context) {
 	s.fedAccessor.Run(ctx)
 	go func() {
 		for {
-			_, shutdown := s.clusterReadinessTransitionQueue.Get()
+			item, shutdown := s.clusterReadinessTransitionQueue.Get()
 			if shutdown {
 				break
 			}
 			s.enqueueAllObjects()
+			s.clusterReadinessTransitionQueue.Done(item)
 		}
 	}()
 

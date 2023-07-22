@@ -241,11 +241,12 @@ func NewStatusController(
 func (s *StatusController) Run(ctx context.Context) {
 	go func() {
 		for {
-			_, shutdown := s.clusterQueue.Get()
+			item, shutdown := s.clusterQueue.Get()
 			if shutdown {
 				break
 			}
 			s.reconcileOnClusterChange()
+			s.clusterQueue.Done(item)
 		}
 	}()
 
