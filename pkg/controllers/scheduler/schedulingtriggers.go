@@ -156,13 +156,13 @@ var knownSchedulingAnnotations = sets.New(
 )
 
 func getSchedulingAnnotations(fedObject fedcorev1a1.GenericFederatedObject) []keyValue[string, string] {
-	annotations := fedObject.GetAnnotations() // this is a deep copy
-	for k := range annotations {
-		if !knownSchedulingAnnotations.Has(k) {
-			delete(annotations, k)
+	result := map[string]string{}
+	for k, v := range fedObject.GetAnnotations() {
+		if knownSchedulingAnnotations.Has(k) {
+			result[k] = v
 		}
 	}
-	return sortMap(annotations)
+	return sortMap(result)
 }
 
 func getReplicaCount(
