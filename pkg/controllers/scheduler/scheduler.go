@@ -165,7 +165,8 @@ func NewScheduler(
 		s.enqueueFederatedObjectsForCluster,
 	))
 
-	s.webhookConfigurationSynced = webhookConfigurationInformer.Informer().HasSynced
+	schedulingProfileInformer.Informer()
+
 	webhookConfigurationInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			s.cacheWebhookPlugin(obj.(*fedcorev1a1.SchedulerPluginWebhookConfiguration))
@@ -190,6 +191,7 @@ func NewScheduler(
 			s.webhookPlugins.Delete(obj.(*fedcorev1a1.SchedulerPluginWebhookConfiguration).Name)
 		},
 	})
+	s.webhookConfigurationSynced = webhookConfigurationInformer.Informer().HasSynced
 
 	informerManager.AddFTCUpdateHandler(func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
 		if lastObserved == nil && latest != nil {
@@ -603,7 +605,7 @@ func (s *Scheduler) persistSchedulingResult(
 		return worker.StatusError
 	}
 
-	logger.V(1).Info("Updated federated object")
+	logger.V(1).Info("Scheduling success")
 	s.eventRecorder.Eventf(
 		fedObject,
 		corev1.EventTypeNormal,

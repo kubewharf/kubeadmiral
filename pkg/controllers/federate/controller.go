@@ -408,8 +408,6 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 			"Federated object updated: %s",
 			fedObject.GetName(),
 		)
-	} else {
-		logger.V(3).Info("No updates required to the federated object")
 	}
 
 	return worker.StatusAllOK
