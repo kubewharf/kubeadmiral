@@ -426,6 +426,7 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 			// Find out if this is ok.
 			lister, hasSynced, exists := s.fedInformerManager.GetResourceLister(fedResource.TargetGVK(), clusterName)
 			if !exists || !hasSynced() {
+				shouldRecheckAfterDispatch = true
 				wrappedErr := fmt.Errorf("cluster cache is not synced")
 				dispatcher.RecordClusterError(fedcorev1a1.CachedRetrievalFailed, clusterName, wrappedErr)
 				continue
@@ -933,6 +934,7 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(ctx context.Contex
 		gvk := ftc.GetSourceTypeGVK().String()
 		resourceLister, hasSynced, exists := s.fedInformerManager.GetResourceLister(ftc.GetSourceTypeGVK(), cluster.Name)
 		if !exists {
+			remainingByGVK[gvk] = fmt.Sprintf("failed to get resource lister for %s", gvk)
 			continue
 		}
 
