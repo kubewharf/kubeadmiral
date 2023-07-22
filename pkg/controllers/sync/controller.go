@@ -99,9 +99,8 @@ type SyncController struct {
 	// For handling cascading deletion.
 	clusterCascadingDeletionWorker worker.ReconcileWorker[common.QualifiedName]
 
-	// For triggering reconciliation of all target resources. This is
-	// used when a new cluster becomes available.
-	clusterReadinessTransitionQueue workqueue.DelayingInterface
+	// For triggering reconciliation of all target resources.
+	reconcileAllResourcesQueue workqueue.DelayingInterface
 
 	fedClient fedclient.Interface
 
@@ -183,8 +182,8 @@ func NewSyncController(
 		metrics,
 	)
 
-	// Build queue for triggering cluster reconciliations.
-	s.clusterReadinessTransitionQueue = workqueue.NewNamedDelayingQueue("sync-controller-cluster-readiness-transition-queue")
+	// Build queue for triggering reconciliation of all federated resources..
+	s.reconcileAllResourcesQueue = workqueue.NewNamedDelayingQueue(SyncControllerName + "-reconcile-all-resources-queue")
 
 	if err := s.ftcManager.AddFTCUpdateHandler(func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
 		isNewFTC := lastObserved == nil && latest != nil
@@ -222,7 +221,7 @@ func NewSyncController(
 		&informermanager.ClusterEventHandler{
 			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
 				// Enqueue cluster when it's added or marked for deletion to ensure cascading deletion
-				return oldCluster == nil || newCluster != nil && !newCluster.GetDeletionTimestamp().IsZero()
+				return oldCluster == nil || newCluster != nil && oldCluster.GetDeletionTimestamp().IsZero() && !newCluster.GetDeletionTimestamp().IsZero()
 			},
 			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
 				s.clusterCascadingDeletionWorker.Enqueue(common.NewQualifiedName(cluster))
@@ -236,18 +235,34 @@ func NewSyncController(
 				return newClusterIsReady && oldClusterIsUnready
 			},
 			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
-				s.clusterReadinessTransitionQueue.AddAfter(struct{}{}, s.clusterAvailableDelay)
+				s.reconcileAllResourcesQueue.AddAfter(struct{}{}, s.clusterAvailableDelay)
 			},
 		},
 		&informermanager.ClusterEventHandler{
 			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
 				// Reconcile all federated objects when cluster becomes unready
-				oldClusterIsReady := oldCluster != nil && clusterutil.IsClusterReady(&oldCluster.Status)
-				newClusterIsUnready := newCluster == nil || !clusterutil.IsClusterReady(&newCluster.Status)
-				return oldClusterIsReady && newClusterIsUnready
+
+				if newCluster == nil {
+					// When the cluster is deleted
+					return true
+				}
+				if clusterutil.IsClusterReady(&newCluster.Status) {
+					return false
+				}
+				return oldCluster != nil && clusterutil.IsClusterReady(&oldCluster.Status)
 			},
 			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
-				s.clusterReadinessTransitionQueue.AddAfter(struct{}{}, s.clusterUnavailableDelay)
+				s.reconcileAllResourcesQueue.AddAfter(struct{}{}, s.clusterUnavailableDelay)
+			},
+		},
+		&informermanager.ClusterEventHandler{
+			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
+				// Trigger cascading deletion when cluster is marked for deletion
+				return newCluster != nil && !newCluster.GetDeletionTimestamp().IsZero() &&
+					(oldCluster == nil || oldCluster.GetDeletionTimestamp().IsZero())
+			},
+			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
+				s.reconcileAllResourcesQueue.Add(struct{}{})
 			},
 		},
 	); err != nil {
@@ -273,12 +288,12 @@ func (s *SyncController) Run(ctx context.Context) {
 	s.fedAccessor.Run(ctx)
 	go func() {
 		for {
-			item, shutdown := s.clusterReadinessTransitionQueue.Get()
+			item, shutdown := s.reconcileAllResourcesQueue.Get()
 			if shutdown {
 				break
 			}
 			s.enqueueAllObjects()
-			s.clusterReadinessTransitionQueue.Done(item)
+			s.reconcileAllResourcesQueue.Done(item)
 		}
 	}()
 
@@ -295,7 +310,7 @@ func (s *SyncController) Run(ctx context.Context) {
 	// Ensure all goroutines are cleaned up when the stop channel closes
 	go func() {
 		<-ctx.Done()
-		s.clusterReadinessTransitionQueue.ShutDown()
+		s.reconcileAllResourcesQueue.ShutDown()
 	}()
 }
 
@@ -909,10 +924,14 @@ func (s *SyncController) removeClusterFinalizer(ctx context.Context, cluster *fe
 	return nil
 }
 
-func (s *SyncController) reconcileClusterForCascadingDeletion(ctx context.Context, qualifiedName common.QualifiedName) worker.Result {
+func (s *SyncController) reconcileClusterForCascadingDeletion(ctx context.Context, qualifiedName common.QualifiedName) (status worker.Result) {
 	logger := s.logger.WithValues("cluster-name", qualifiedName.String(), "process", "cluster-cascading-deletion")
 	ctx = klog.NewContext(ctx, logger)
+	start := time.Now()
 	logger.V(3).Info("Starting to reconcile cluster for cascading deletion")
+	defer func() {
+		logger.V(3).Info("Finished reconciling cluster for cascading deletion", "duration", time.Since(start), "status", status.String())
+	}()
 
 	clusterLister := s.fedInformerManager.GetFederatedClusterLister()
 	cluster, err := clusterLister.Get(qualifiedName.Name)
