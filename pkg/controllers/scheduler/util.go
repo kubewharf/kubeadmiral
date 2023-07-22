@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -18,170 +17,64 @@ limitations under the License.
 package scheduler
 
 import (
-	"sync"
+	"fmt"
 
-	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/dynamic"
-
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
+	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/json"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
+	"github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
 
 const (
-	operationReplace = "replace"
+	overridePatchOpReplace = "replace"
 )
 
-func MatchedPolicyKey(obj fedcorev1a1.GenericFederatedObject, isNamespaced bool) (result common.QualifiedName, ok bool) {
+func GetMatchedPolicyKey(obj metav1.Object) (result common.QualifiedName, ok bool) {
 	labels := obj.GetLabels()
+	isNamespaced := len(obj.GetNamespace()) > 0
 
-	if policyName, exists := labels[PropagationPolicyNameLabel]; exists && isNamespaced {
+	if policyName, exists := labels[common.PropagationPolicyNameLabel]; exists && isNamespaced {
 		return common.QualifiedName{Namespace: obj.GetNamespace(), Name: policyName}, true
 	}
 
-	if policyName, exists := labels[ClusterPropagationPolicyNameLabel]; exists {
+	if policyName, exists := labels[common.ClusterPropagationPolicyNameLabel]; exists {
 		return common.QualifiedName{Namespace: "", Name: policyName}, true
 	}
 
 	return common.QualifiedName{}, false
 }
 
-type ClusterClients struct {
-	clients sync.Map
-}
-
-func (c *ClusterClients) Get(cluster string) dynamic.Interface {
-	val, ok := c.clients.Load(cluster)
-	if ok {
-		return val.(dynamic.Interface)
-	}
-	return nil
-}
-
-func (c *ClusterClients) Set(cluster string, client dynamic.Interface) {
-	c.clients.Store(cluster, client)
-}
-
-func (c *ClusterClients) Delete(cluster string) {
-	c.clients.Delete(cluster)
-}
-
 func UpdateReplicasOverride(
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	fedObject *unstructured.Unstructured,
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	fedObject fedcorev1a1.GenericFederatedObject,
 	result map[string]int64,
 ) (updated bool, err error) {
-	overridesMap, err := util.GetOverrides(fedObject, PrefixedGlobalSchedulerName)
-	if err != nil {
-		return updated, errors.Wrapf(
-			err,
-			"Error reading cluster overrides for %s/%s",
-			fedObject.GetNamespace(),
-			fedObject.GetName(),
-		)
-	}
+	replicasPath := unstructured.ToSlashPath(ftc.Spec.PathDefinition.ReplicasSpec)
 
-	if OverrideUpdateNeeded(typeConfig, overridesMap, result) {
-		err := setOverrides(typeConfig, fedObject, overridesMap, result)
+	newOverrides := []fedcorev1a1.ClusterReferenceWithPatches{}
+	for cluster, replicas := range result {
+		replicasRaw, err := json.Marshal(replicas)
 		if err != nil {
-			return updated, err
+			return false, fmt.Errorf("failed to marshal replicas value: %w", err)
 		}
-		updated = true
+		override := fedcorev1a1.ClusterReferenceWithPatches{
+			Cluster: cluster,
+			Patches: fedcorev1a1.OverridePatches{
+				{
+					Op:   overridePatchOpReplace,
+					Path: replicasPath,
+					Value: v1.JSON{
+						Raw: replicasRaw,
+					},
+				},
+			},
+		}
+		newOverrides = append(newOverrides, override)
 	}
+
+	updated = fedObject.GetSpec().SetControllerOverrides(PrefixedGlobalSchedulerName, newOverrides)
 	return updated, nil
-}
-
-func setOverrides(
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	obj *unstructured.Unstructured,
-	overridesMap util.OverridesMap,
-	replicasMap map[string]int64,
-) error {
-	if overridesMap == nil {
-		overridesMap = make(util.OverridesMap)
-	}
-	updateOverridesMap(typeConfig, overridesMap, replicasMap)
-	return util.SetOverrides(obj, PrefixedGlobalSchedulerName, overridesMap)
-}
-
-func updateOverridesMap(
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	overridesMap util.OverridesMap,
-	replicasMap map[string]int64,
-) {
-	replicasPath := utilunstructured.ToSlashPath(typeConfig.Spec.PathDefinition.ReplicasSpec)
-
-	// Remove replicas override for clusters that are not scheduled
-	for clusterName, clusterOverrides := range overridesMap {
-		if _, ok := replicasMap[clusterName]; !ok {
-			for i, overrideItem := range clusterOverrides {
-				if overrideItem.Path == replicasPath {
-					clusterOverrides = append(clusterOverrides[:i], clusterOverrides[i+1:]...)
-					if len(clusterOverrides) == 0 {
-						// delete empty ClusterOverrides item
-						delete(overridesMap, clusterName)
-					} else {
-						overridesMap[clusterName] = clusterOverrides
-					}
-					break
-				}
-			}
-		}
-	}
-	// Add/update replicas override for clusters that are scheduled
-	for clusterName, replicas := range replicasMap {
-		replicasOverrideFound := false
-		for idx, overrideItem := range overridesMap[clusterName] {
-			if overrideItem.Path == replicasPath {
-				overridesMap[clusterName][idx].Value = replicas
-				replicasOverrideFound = true
-				break
-			}
-		}
-		if !replicasOverrideFound {
-			clusterOverrides, exist := overridesMap[clusterName]
-			if !exist {
-				clusterOverrides = fedtypesv1a1.OverridePatches{}
-			}
-			clusterOverrides = append(clusterOverrides, fedtypesv1a1.OverridePatch{Path: replicasPath, Value: replicas})
-			overridesMap[clusterName] = clusterOverrides
-		}
-	}
-}
-
-func OverrideUpdateNeeded(
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	overridesMap util.OverridesMap,
-	result map[string]int64,
-) bool {
-	resultLen := len(result)
-	checkLen := 0
-	for clusterName, clusterOverridesMap := range overridesMap {
-		for _, overrideItem := range clusterOverridesMap {
-			path := overrideItem.Path
-			rawValue := overrideItem.Value
-			if path != utilunstructured.ToSlashPath(typeConfig.Spec.PathDefinition.ReplicasSpec) {
-				continue
-			}
-			// The type of the value will be float64 due to how json
-			// marshalling works for interfaces.
-			floatValue, ok := rawValue.(float64)
-			if !ok {
-				return true
-			}
-			value := int64(floatValue)
-			replicas, ok := result[clusterName]
-
-			if !ok || value != replicas {
-				return true
-			}
-			checkLen += 1
-		}
-	}
-
-	return checkLen != resultLen
 }

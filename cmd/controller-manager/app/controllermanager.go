@@ -42,6 +42,7 @@ const (
 	OverrideControllerName                 = "overridepolicy"
 	NamespaceAutoPropagationControllerName = "nsautoprop"
 	StatusControllerName                   = "status"
+	SchedulerName                          = "scheduler"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
@@ -50,6 +51,8 @@ var knownControllers = map[string]controllermanager.StartControllerFunc{
 	OverrideControllerName:                 startOverridePolicyController,
 	NamespaceAutoPropagationControllerName: startNamespaceAutoPropagationController,
 	StatusControllerName:                   startStatusController,
+	FederatedClusterControllerName:         startFederatedClusterController,
+	SchedulerName:                          startScheduler,
 }
 
 var controllersDisabledByDefault = sets.New[string]()
