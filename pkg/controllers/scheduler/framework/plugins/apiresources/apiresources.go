@@ -1,4 +1,3 @@
-//go:build exclude
 // The design of this plugin is heavily inspired by karmada-scheduler. Kudos!
 
 package apiresources

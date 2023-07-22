@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -39,7 +38,7 @@ func ConvertSchedulingUnit(su *framework.SchedulingUnit) *schedwebhookv1a1.Sched
 		}
 	}
 
-	placements := []fedcorev1a1.ClusterReference{}
+	placements := []fedcorev1a1.DesiredPlacement{}
 	for cluster := range su.ClusterNames {
 		var weight *int64
 		if w, ok := su.Weights[cluster]; ok {
@@ -51,7 +50,7 @@ func ConvertSchedulingUnit(su *framework.SchedulingUnit) *schedwebhookv1a1.Sched
 			maxReplicas = &max
 		}
 
-		placement := fedcorev1a1.ClusterReference{
+		placement := fedcorev1a1.DesiredPlacement{
 			Cluster: cluster,
 			Preferences: fedcorev1a1.Preferences{
 				MinReplicas: su.MinReplicas[cluster],

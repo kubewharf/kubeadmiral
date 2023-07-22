@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -26,16 +25,12 @@ import (
 
 	"golang.org/x/exp/constraints"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/labels"
-	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
+	unstructuredutil "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
 
 /*
@@ -105,7 +100,8 @@ type schedulingTriggers struct {
 }
 
 func (s *Scheduler) computeSchedulingTriggerHash(
-	fedObject *unstructured.Unstructured,
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	fedObject fedcorev1a1.GenericFederatedObject,
 	policy fedcorev1a1.GenericPropagationPolicy,
 	clusters []*fedcorev1a1.FederatedCluster,
 ) (string, error) {
@@ -114,7 +110,7 @@ func (s *Scheduler) computeSchedulingTriggerHash(
 	var err error
 
 	trigger.SchedulingAnnotations = getSchedulingAnnotations(fedObject)
-	if trigger.ReplicaCount, err = getReplicaCount(s.typeConfig, fedObject); err != nil {
+	if trigger.ReplicaCount, err = getReplicaCount(ftc, fedObject); err != nil {
 		return "", fmt.Errorf("failed to get object replica count: %w", err)
 	}
 	trigger.ResourceRequest = getResourceRequest(fedObject)
@@ -159,7 +155,7 @@ var knownSchedulingAnnotations = sets.New(
 	FollowsObjectAnnotation,
 )
 
-func getSchedulingAnnotations(fedObject *unstructured.Unstructured) []keyValue[string, string] {
+func getSchedulingAnnotations(fedObject fedcorev1a1.GenericFederatedObject) []keyValue[string, string] {
 	annotations := fedObject.GetAnnotations() // this is a deep copy
 	for k := range annotations {
 		if !knownSchedulingAnnotations.Has(k) {
@@ -169,16 +165,20 @@ func getSchedulingAnnotations(fedObject *unstructured.Unstructured) []keyValue[s
 	return sortMap(annotations)
 }
 
-func getReplicaCount(typeConfig *fedcorev1a1.FederatedTypeConfig, fedObject *unstructured.Unstructured) (int64, error) {
-	if len(typeConfig.Spec.PathDefinition.ReplicasSpec) == 0 {
+func getReplicaCount(
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	fedObject fedcorev1a1.GenericFederatedObject,
+) (int64, error) {
+	if len(ftc.Spec.PathDefinition.ReplicasSpec) == 0 {
 		return 0, nil
 	}
 
-	value, err := utilunstructured.GetInt64FromPath(
-		fedObject,
-		typeConfig.Spec.PathDefinition.ReplicasSpec,
-		common.TemplatePath,
-	)
+	template, err := fedObject.GetSpec().GetTemplateAsUnstructured()
+	if err != nil {
+		return 0, err
+	}
+
+	value, err := unstructuredutil.GetInt64FromPath(template, ftc.Spec.PathDefinition.ReplicasSpec, nil)
 	if err != nil || value == nil {
 		return 0, err
 	}
@@ -186,7 +186,7 @@ func getReplicaCount(typeConfig *fedcorev1a1.FederatedTypeConfig, fedObject *uns
 	return *value, nil
 }
 
-func getResourceRequest(fedObject *unstructured.Unstructured) framework.Resource {
+func getResourceRequest(fedObject fedcorev1a1.GenericFederatedObject) framework.Resource {
 	// TODO: update once we have a proper way to obtian resource request from federated objects
 	return framework.Resource{}
 }
@@ -231,7 +231,9 @@ func getClusterTaints(clusters []*fedcorev1a1.FederatedCluster) []keyValue[strin
 	return sortMap(ret)
 }
 
-func getClusterAPIResourceTypes(clusters []*fedcorev1a1.FederatedCluster) []keyValue[string, []fedcorev1a1.APIResource] {
+func getClusterAPIResourceTypes(
+	clusters []*fedcorev1a1.FederatedCluster,
+) []keyValue[string, []fedcorev1a1.APIResource] {
 	ret := make(map[string][]fedcorev1a1.APIResource)
 
 	for _, cluster := range clusters {
@@ -260,54 +262,4 @@ func getClusterAPIResourceTypes(clusters []*fedcorev1a1.FederatedCluster) []keyV
 		ret[cluster.Name] = types
 	}
 	return sortMap(ret)
-}
-
-// enqueueFederatedObjectsForPolicy enqueues federated objects which match the policy
-func (s *Scheduler) enqueueFederatedObjectsForPolicy(policy pkgruntime.Object) {
-	policyAccessor, ok := policy.(fedcorev1a1.GenericPropagationPolicy)
-	if !ok {
-		s.logger.Error(fmt.Errorf("policy is not a valid type (%T)", policy), "Failed to enqueue federated object for policy")
-		return
-	}
-
-	s.logger.WithValues("policy", policyAccessor.GetName()).V(2).Info("Enqueue federated objects for policy")
-
-	fedObjects, err := s.federatedObjectLister.List(labels.Everything())
-	if err != nil {
-		s.logger.WithValues("policy", policyAccessor.GetName()).Error(err, "Failed to enqueue federated objects for policy")
-		return
-	}
-
-	for _, fedObject := range fedObjects {
-		fedObject := fedObject.(*unstructured.Unstructured)
-		policyKey, found := MatchedPolicyKey(fedObject, s.typeConfig.GetNamespaced())
-		if !found {
-			continue
-		}
-
-		if policyKey.Name == policyAccessor.GetName() && policyKey.Namespace == policyAccessor.GetNamespace() {
-			s.worker.EnqueueObject(fedObject)
-		}
-	}
-}
-
-// enqueueFederatedObjectsForCluster enqueues all federated objects only if the cluster is joined
-func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster pkgruntime.Object) {
-	clusterObj := cluster.(*fedcorev1a1.FederatedCluster)
-	if !util.IsClusterJoined(&clusterObj.Status) {
-		s.logger.WithValues("cluster", clusterObj.Name).V(3).Info("Skip enqueue federated objects for cluster, cluster not joined")
-		return
-	}
-
-	s.logger.WithValues("cluster", clusterObj.Name).V(2).Info("Enqueue federated objects for cluster")
-
-	fedObjects, err := s.federatedObjectLister.List(labels.Everything())
-	if err != nil {
-		s.logger.Error(err, "Failed to enqueue federated object for cluster")
-		return
-	}
-
-	for _, fedObject := range fedObjects {
-		s.worker.EnqueueObject(fedObject)
-	}
 }

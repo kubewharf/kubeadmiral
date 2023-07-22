@@ -19,6 +19,7 @@ package eventhandlers
 import (
 	"reflect"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -81,6 +82,40 @@ func NewTriggerOnChanges[Source any, Key any](
 			curObj := cur.(Source)
 			if predicate(oldObj, curObj) {
 				triggerFunc(keyFunc(curObj))
+			}
+		},
+	}
+}
+
+// NewTriggerOnGenerationChanges returns a cache.ResourceEventHandlerFuncs that will call the given triggerFunc on
+// object generation changes. The object is first transformed with the given keyFunc. triggerFunc is also called for add
+// and delete events.
+func NewTriggerOnGenerationChanges[Source any, Key any](
+	keyFunc func(Source) Key,
+	triggerFunc func(Key),
+) *cache.ResourceEventHandlerFuncs {
+	return &cache.ResourceEventHandlerFuncs{
+		DeleteFunc: func(old interface{}) {
+			if deleted, ok := old.(cache.DeletedFinalStateUnknown); ok {
+				// This object might be stale but ok for our current usage.
+				old = deleted.Obj
+				if old == nil {
+					return
+				}
+			}
+			oldObj := old.(Source)
+			triggerFunc(keyFunc(oldObj))
+		},
+		AddFunc: func(cur interface{}) {
+			curObj := cur.(Source)
+			triggerFunc(keyFunc(curObj))
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			oldObj := old.(metav1.Object)
+			curObj := cur.(metav1.Object)
+
+			if oldObj.GetGeneration() != curObj.GetGeneration() {
+				triggerFunc(keyFunc(cur.(Source)))
 			}
 		},
 	}

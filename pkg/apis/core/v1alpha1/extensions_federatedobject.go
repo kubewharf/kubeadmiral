@@ -81,8 +81,9 @@ func (spec *GenericFederatedObjectSpec) GetControllerPlacement(controller string
 	return nil
 }
 
-// SetControllerPlacement sets the ClusterPlacements for a given controller. If clusterNames is nil or empty, the previous
-// placement for the given controller will be deleted. Returns a bool indicating if the GenericFederatedObject has changed.
+// SetControllerPlacement sets the cluster placements for a given controller. If clusterNames is nil or empty, the
+// previous placement for the given controller will be deleted. Returns a bool indicating if the GenericFederatedObject
+// has changed.
 func (spec *GenericFederatedObjectSpec) SetControllerPlacement(controller string, clusterNames []string) bool {
 	if len(clusterNames) == 0 {
 		return spec.DeleteControllerPlacement(controller)
@@ -140,6 +141,79 @@ func (spec *GenericFederatedObjectSpec) DeleteControllerPlacement(controller str
 	return true
 }
 
+// Overrides extensions
+
+func (spec *GenericFederatedObjectSpec) GetControllerOverrides(controller string) []ClusterReferenceWithPatches {
+	for _, overrides := range spec.Overrides {
+		if overrides.Controller == controller {
+			return overrides.Override
+		}
+	}
+	return nil
+}
+
+// SetControllerOverrides sets the cluster overrides for a given controller. If clusterNames is nil or empty, the
+// previous overrides for the given controller will be deleted. Returns a bool indicating if the GenericFederatedObject
+// has changed.
+func (spec *GenericFederatedObjectSpec) SetControllerOverrides(
+	controller string,
+	clusterOverrides []ClusterReferenceWithPatches,
+) bool {
+	if len(clusterOverrides) == 0 {
+		return spec.DeleteControllerOverrides(controller)
+	}
+
+	// sort the clusters by name for readability and to avoid unnecessary updates
+	sort.Slice(clusterOverrides, func(i, j int) bool {
+		return clusterOverrides[i].Cluster < clusterOverrides[j].Cluster
+	})
+
+	oldOverridesWithControllerIdx := -1
+	for i := range spec.Overrides {
+		if spec.Overrides[i].Controller == controller {
+			oldOverridesWithControllerIdx = i
+			break
+		}
+	}
+
+	newOverridesWithController := OverrideWithController{
+		Controller: controller,
+		Override:   clusterOverrides,
+	}
+	if oldOverridesWithControllerIdx == -1 {
+		spec.Overrides = append(spec.Overrides, newOverridesWithController)
+		return true
+	}
+	if !reflect.DeepEqual(newOverridesWithController, spec.Overrides[oldOverridesWithControllerIdx]) {
+		spec.Overrides[oldOverridesWithControllerIdx] = newOverridesWithController
+		return true
+	}
+
+	return false
+}
+
+// DeleteControllerOverrides deletes a controller's overrides, returning a bool to indicate if the
+// GenericFederatedObject has changed.
+func (spec *GenericFederatedObjectSpec) DeleteControllerOverrides(controller string) bool {
+	oldOverridesIdx := -1
+	for i := range spec.Overrides {
+		if spec.Overrides[i].Controller == controller {
+			oldOverridesIdx = i
+			break
+		}
+	}
+
+	if oldOverridesIdx == -1 {
+		return false
+	}
+
+	spec.Overrides = append(spec.Overrides[:oldOverridesIdx], spec.Overrides[(oldOverridesIdx+1):]...)
+	return true
+}
+
+// Template extensions
+
+// GetTemplateAsUnstructured returns the FederatedObject's template unmarshalled into an *unstructured.Unstructured.
 func (spec *GenericFederatedObjectSpec) GetTemplateAsUnstructured() (*unstructured.Unstructured, error) {
 	template := &unstructured.Unstructured{}
 	if err := template.UnmarshalJSON(spec.Template.Raw); err != nil {
@@ -148,6 +222,7 @@ func (spec *GenericFederatedObjectSpec) GetTemplateAsUnstructured() (*unstructur
 	return template, nil
 }
 
+// GetTemplateGVK returns the GVK of the FederatedObject's source object by parsing the FederatedObject's template.
 func (spec *GenericFederatedObjectSpec) GetTemplateGVK() (schema.GroupVersionKind, error) {
 	type partialTypeMetadata struct {
 		metav1.TypeMeta `json:",inline"`
