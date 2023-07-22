@@ -209,8 +209,8 @@ func NewSyncController(
 	if err := s.fedInformerManager.AddClusterEventHandlers(
 		&informermanager.ClusterEventHandler{
 			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
-				// Enqueue cluster when it's marked for deletion to ensure cascading deletion
-				return !newCluster.GetDeletionTimestamp().IsZero()
+				// Enqueue cluster when it's added or marked for deletion to ensure cascading deletion
+				return oldCluster == nil || newCluster != nil && !newCluster.GetDeletionTimestamp().IsZero()
 			},
 			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
 				s.clusterCascadingDeletionWorker.Enqueue(common.NewQualifiedName(cluster))
@@ -219,8 +219,9 @@ func NewSyncController(
 		&informermanager.ClusterEventHandler{
 			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
 				// Reconcile all federated objects when cluster becomes ready
-				return oldCluster != nil && newCluster != nil &&
-					!clusterutil.IsClusterReady(&oldCluster.Status) && clusterutil.IsClusterReady(&newCluster.Status)
+				newClusterIsReady := newCluster != nil && clusterutil.IsClusterReady(&newCluster.Status)
+				oldClusterIsUnready := oldCluster == nil || !clusterutil.IsClusterReady(&oldCluster.Status)
+				return newClusterIsReady && oldClusterIsUnready
 			},
 			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
 				s.clusterReadinessTransitionQueue.AddAfter(struct{}{}, s.clusterAvailableDelay)
@@ -229,8 +230,9 @@ func NewSyncController(
 		&informermanager.ClusterEventHandler{
 			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
 				// Reconcile all federated objects when cluster becomes unready
-				return oldCluster != nil && newCluster != nil &&
-					clusterutil.IsClusterReady(&oldCluster.Status) && !clusterutil.IsClusterReady(&newCluster.Status)
+				oldClusterIsReady := oldCluster != nil && clusterutil.IsClusterReady(&oldCluster.Status)
+				newClusterIsUnready := newCluster == nil || !clusterutil.IsClusterReady(&newCluster.Status)
+				return oldClusterIsReady && newClusterIsUnready
 			},
 			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
 				s.clusterReadinessTransitionQueue.AddAfter(struct{}{}, s.clusterUnavailableDelay)
