@@ -25,6 +25,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
@@ -51,8 +52,10 @@ type informerManager struct {
 	ftcInformer              fedcorev1a1informers.FederatedTypeConfigInformer
 
 	eventHandlerGenerators []*EventHandlerGenerator
+	ftcUpdateHandlers      []FTCUpdateHandler
 
-	gvkMapping *bijection.Bijection[string, schema.GroupVersionKind]
+	initialFTCs sets.Set[string]
+	gvkMapping  *bijection.Bijection[string, schema.GroupVersionKind]
 
 	lastObservedFTCs          map[string]*fedcorev1a1.FederatedTypeConfig
 	informers                 map[string]informers.GenericInformer
@@ -71,10 +74,13 @@ func NewInformerManager(
 	manager := &informerManager{
 		lock:                      sync.RWMutex{},
 		started:                   false,
+		shutdown:                  false,
 		client:                    client,
 		informerTweakListOptions:  informerTweakListOptions,
 		ftcInformer:               ftcInformer,
 		eventHandlerGenerators:    []*EventHandlerGenerator{},
+		ftcUpdateHandlers:         []FTCUpdateHandler{},
+		initialFTCs:               sets.New[string](),
 		gvkMapping:                bijection.NewBijection[string, schema.GroupVersionKind](),
 		lastObservedFTCs:          map[string]*fedcorev1a1.FederatedTypeConfig{},
 		informers:                 map[string]informers.GenericInformer{},
@@ -200,12 +206,17 @@ func (m *informerManager) processFTC(
 		ctx, cancel := context.WithCancel(ctx)
 		go informer.Informer().Run(ctx.Done())
 
-		m.lastObservedFTCs[ftcName] = ftc
 		m.informers[ftcName] = informer
 		m.informerCancelFuncs[ftcName] = cancel
 		m.eventHandlerRegistrations[ftcName] = map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{}
 		m.lastAppliedFTCsCache[ftcName] = map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig{}
 	}
+
+	for _, handler := range m.ftcUpdateHandlers {
+		handler(m.lastObservedFTCs[ftcName], ftc)
+	}
+	m.lastObservedFTCs[ftcName] = ftc
+	m.initialFTCs.Delete(ftcName)
 
 	if !informer.Informer().HasSynced() {
 		logger.V(3).Info("Informer for FederatedTypeConfig not synced, will not register event handlers yet")
@@ -265,10 +276,19 @@ func (m *informerManager) processFTCDeletionUnlocked(ctx context.Context, ftcNam
 
 	m.gvkMapping.DeleteT1(ftcName)
 
-	delete(m.lastObservedFTCs, ftcName)
 	delete(m.informers, ftcName)
 	delete(m.informerCancelFuncs, ftcName)
 	delete(m.eventHandlerRegistrations, ftcName)
+
+	lastObservedFTC := m.lastObservedFTCs[ftcName]
+	if lastObservedFTC != nil {
+		for _, handler := range m.ftcUpdateHandlers {
+			handler(lastObservedFTC, nil)
+		}
+	}
+	delete(m.lastObservedFTCs, ftcName)
+
+	m.initialFTCs.Delete(ftcName)
 
 	return nil
 }
@@ -282,6 +302,18 @@ func (m *informerManager) AddEventHandlerGenerator(generator *EventHandlerGenera
 	}
 
 	m.eventHandlerGenerators = append(m.eventHandlerGenerators, generator)
+	return nil
+}
+
+func (m *informerManager) AddFTCUpdateHandler(handler FTCUpdateHandler) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	if m.started {
+		return fmt.Errorf("failed to add FTCUpdateHandler: InformerManager is already started")
+	}
+
+	m.ftcUpdateHandlers = append(m.ftcUpdateHandlers, handler)
 	return nil
 }
 
@@ -326,7 +358,9 @@ func (m *informerManager) GetResourceFTC(gvk schema.GroupVersionKind) (*fedcorev
 }
 
 func (m *informerManager) HasSynced() bool {
-	return m.ftcInformer.Informer().HasSynced()
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	return m.ftcInformer.Informer().HasSynced() && len(m.initialFTCs) == 0
 }
 
 func (m *informerManager) Start(ctx context.Context) {
@@ -344,9 +378,16 @@ func (m *informerManager) Start(ctx context.Context) {
 
 	m.started = true
 
-	if !cache.WaitForCacheSync(ctx.Done(), m.HasSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), m.ftcInformer.Informer().HasSynced) {
 		logger.Error(nil, "Failed to wait for InformerManager cache sync")
 		return
+	}
+
+	// Populate the intial snapshot of FTCs
+
+	ftcs := m.ftcInformer.Informer().GetStore().List()
+	for _, ftc := range ftcs {
+		m.initialFTCs.Insert(ftc.(*fedcorev1a1.FederatedTypeConfig).GetName())
 	}
 
 	go wait.UntilWithContext(ctx, m.worker, 0)
