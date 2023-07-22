@@ -432,13 +432,13 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 			}
 
 			clusterObjAny, err := lister.Get(fedResource.TargetName().String())
-			if err != nil || clusterObjAny == nil {
+			if err == nil {
+				clusterObj = clusterObjAny.(*unstructured.Unstructured)
+			} else if !apierrors.IsNotFound(err) {
 				wrappedErr := fmt.Errorf("failed to get cluster object: %w", err)
 				dispatcher.RecordClusterError(fedcorev1a1.CachedRetrievalFailed, clusterName, wrappedErr)
 				continue
 			}
-
-			clusterObj = clusterObjAny.(*unstructured.Unstructured)
 		}
 
 		// Resource should not exist in the named cluster
