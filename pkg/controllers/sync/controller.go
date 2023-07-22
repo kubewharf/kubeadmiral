@@ -117,6 +117,7 @@ type SyncController struct {
 	clusterAvailableDelay         time.Duration
 	clusterUnavailableDelay       time.Duration
 	reconcileOnClusterChangeDelay time.Duration
+	reconcileOnFTCChangeDelay     time.Duration
 	memberObjectEnqueueDelay      time.Duration
 	recheckAfterDispatchDelay     time.Duration
 	ensureDeletionRecheckDelay    time.Duration
@@ -154,6 +155,7 @@ func NewSyncController(
 		clusterAvailableDelay:         clusterAvailableDelay,
 		clusterUnavailableDelay:       clusterUnavailableDelay,
 		reconcileOnClusterChangeDelay: time.Second * 3,
+		reconcileOnFTCChangeDelay:     time.Second * 3,
 		memberObjectEnqueueDelay:      time.Second * 10,
 		recheckAfterDispatchDelay:     time.Second * 10,
 		ensureDeletionRecheckDelay:    time.Second * 5,
@@ -183,6 +185,16 @@ func NewSyncController(
 
 	// Build queue for triggering cluster reconciliations.
 	s.clusterReadinessTransitionQueue = workqueue.NewNamedDelayingQueue("sync-controller-cluster-readiness-transition-queue")
+
+	if err := s.ftcManager.AddFTCUpdateHandler(func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
+		isNewFTC := lastObserved == nil && latest != nil
+		ftcPathDefinitionsChanged := lastObserved != nil && latest != nil && lastObserved.Spec.PathDefinition != latest.Spec.PathDefinition
+		if isNewFTC || ftcPathDefinitionsChanged {
+			s.enqueueForGVK(latest.GetSourceTypeGVK())
+		}
+	}); err != nil {
+		return nil, fmt.Errorf("failed to add FTC update handler: %w", err)
+	}
 
 	if err := s.fedInformerManager.AddEventHandlerGenerator(&informermanager.EventHandlerGenerator{
 		Predicate: informermanager.RegisterOncePredicate,
@@ -317,12 +329,28 @@ func (s *SyncController) getClusterClient(clusterName string) (dynamic.Interface
 	return nil, fmt.Errorf("client does not exist for cluster")
 }
 
-// The function triggers reconciliation of all target federated resources.
+// Triggers reconciliation of all target federated resources.
 func (s *SyncController) enqueueAllObjects() {
 	s.logger.V(2).Info("Enqueuing all federated resources")
 	s.fedAccessor.VisitFederatedResources(func(obj fedcorev1a1.GenericFederatedObject) {
 		qualifiedName := common.NewQualifiedName(obj)
 		s.worker.EnqueueWithDelay(qualifiedName, s.reconcileOnClusterChangeDelay)
+	})
+}
+
+// Triggers reconciliation of all target federated resources of the given gvk.
+func (s *SyncController) enqueueForGVK(gvk schema.GroupVersionKind) {
+	s.logger.V(2).Info("Enqueuing federated resources for gvk", "gvk", gvk.String())
+	s.fedAccessor.VisitFederatedResources(func(obj fedcorev1a1.GenericFederatedObject) {
+		templateMeta, err := obj.GetSpec().GetTemplateMetadata()
+		if err != nil {
+			s.logger.Error(err, "failed to get template metadata")
+			return
+		}
+		if templateMeta.GroupVersionKind() == gvk {
+			qualifiedName := common.NewQualifiedName(obj)
+			s.worker.EnqueueWithDelay(qualifiedName, s.reconcileOnFTCChangeDelay)
+		}
 	})
 }
 
