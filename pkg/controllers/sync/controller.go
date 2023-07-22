@@ -941,7 +941,7 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(ctx context.Contex
 		if hasSynced() {
 			objects, err := resourceLister.List(labels.Everything())
 			if err != nil {
-				remainingByGVK[gvk] = fmt.Sprintf("Unknown (failed to list from cluster lister: %w)", err)
+				remainingByGVK[gvk] = fmt.Sprintf("Unknown (failed to list from cluster lister: %v)", err)
 			} else if len(objects) > 0 {
 				remainingByGVK[gvk] = strconv.Itoa(len(objects))
 			}
