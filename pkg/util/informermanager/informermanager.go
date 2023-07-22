@@ -281,11 +281,13 @@ func (m *informerManager) processFTCDeletionUnlocked(ctx context.Context, ftcNam
 	delete(m.eventHandlerRegistrations, ftcName)
 
 	lastObservedFTC := m.lastObservedFTCs[ftcName]
-	for _, handler := range m.ftcUpdateHandlers {
-		handler(lastObservedFTC, nil)
+	if lastObservedFTC != nil {
+		for _, handler := range m.ftcUpdateHandlers {
+			handler(lastObservedFTC, nil)
+		}
 	}
-
 	delete(m.lastObservedFTCs, ftcName)
+
 	m.initialFTCs.Delete(ftcName)
 
 	return nil
