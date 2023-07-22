@@ -76,14 +76,6 @@ func (f *FederatedTypeConfig) GetPolicyRcEnabled() bool {
 	return true // TODO: should this be configurable?
 }
 
-func (f *FederatedTypeConfig) GetRevisionHistoryEnabled() bool {
-	return f.Spec.RevisionHistory != nil && f.Spec.RevisionHistory.Enabled
-}
-
-func (f *FederatedTypeConfig) GetRolloutPlanEnabled() bool {
-	return f.Spec.RolloutPlan != nil && f.Spec.RolloutPlan.Enabled
-}
-
 func (f *FederatedTypeConfig) GetControllers() [][]string {
 	return f.Spec.Controllers
 }

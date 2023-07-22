@@ -56,12 +56,6 @@ type FederatedTypeConfigSpec struct {
 	// Configuration for StatusAggregation. If left empty, the StatusAggregation feature will be disabled.
 	// +optional
 	StatusAggregation *StatusAggregationConfig `json:"statusAggregation,omitempty"`
-	// Configuration for RevisionHistory. If left empty, the RevisionHistory feature will be disabled.
-	// +optional
-	RevisionHistory *RevisionHistoryConfig `json:"revisionHistory,omitempty"`
-	// Configuration for RolloutPlan. If left empty, the RolloutPlan feature will be disabled.
-	// +optional
-	RolloutPlan *RolloutPlanConfig `json:"rolloutPlan,omitempty"`
 	// Configuration for StatusCollection. If left empty, the StatusCollection feature will be disabled.
 	// +optional
 	StatusCollection *StatusCollectionConfig `json:"statusCollection,omitempty"`
@@ -121,18 +115,6 @@ type StatusCollectionConfig struct {
 // StatusAggregationConfig defines the configurations for the StatusAggregation feature.
 type StatusAggregationConfig struct {
 	// Whether or not to enable status aggregation.
-	Enabled bool `json:"enabled"`
-}
-
-// RevisionHistoryConfig defines the configurations for the RevisionHistory feature.
-type RevisionHistoryConfig struct {
-	// Whether or not preserve a RevisionHistory for the federated object during updates.
-	Enabled bool `json:"enabled"`
-}
-
-// RolloutPlanConfig defines the configurations for the RolloutPlan feature.
-type RolloutPlanConfig struct {
-	// Whether or not to synchronize the rollout process across clusters.
 	Enabled bool `json:"enabled"`
 }
 
