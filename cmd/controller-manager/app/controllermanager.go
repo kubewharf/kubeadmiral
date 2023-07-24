@@ -35,18 +35,20 @@ import (
 )
 
 const (
-	FederatedClusterControllerName = "cluster"
-	FederateControllerName         = "federate"
-	MonitorControllerName          = "monitor"
-	FollowerControllerName         = "follower"
-	PolicyRCControllerName         = "policyrc"
-	OverrideControllerName         = "overridepolicy"
+	FederatedClusterControllerName         = "cluster"
+	FederateControllerName                 = "federate"
+	MonitorControllerName                  = "monitor"
+	FollowerControllerName                 = "follower"
+	PolicyRCControllerName                 = "policyrc"
+	OverrideControllerName                 = "overridepolicy"
+	NamespaceAutoPropagationControllerName = "nsautoprop"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
-	FederateControllerName: startFederateController,
-	PolicyRCControllerName: startPolicyRCController,
-	OverrideControllerName: startOverridePolicyController,
+	FederateControllerName:                 startFederateController,
+	PolicyRCControllerName:                 startPolicyRCController,
+	OverrideControllerName:                 startOverridePolicyController,
+	NamespaceAutoPropagationControllerName: startNamespaceAutoPropagationController,
 }
 
 var controllersDisabledByDefault = sets.New(MonitorControllerName)
