@@ -21,6 +21,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	corev1listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -117,8 +120,13 @@ type FederatedInformerManager interface {
 		gvk schema.GroupVersionKind,
 		cluster string,
 	) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool)
-	// Returns a client for the given cluster if it exists. The client for each cluster will eventually exist.
-	GetClusterClient(cluster string) (client dynamic.Interface, exists bool)
+	// Returns a dynamic client for the given cluster if it exists. The client for each cluster will eventually exist.
+	GetClusterDynamicClient(cluster string) (client dynamic.Interface, exists bool)
+	// Returns a kubernetes client for the given cluster if it exists. The client for each cluster will eventually exist.
+	GetClusterKubeClient(cluster string) (client kubernetes.Interface, exists bool)
+
+	GetPodLister(cluster string) (lister corev1listers.PodLister, informerSynced cache.InformerSynced, exists bool)
+	GetNodeLister(cluster string) (lister corev1listers.NodeLister, informerSynced cache.InformerSynced, exists bool)
 
 	// Returns the FederatedTypeConfig lister used by the FederatedInformerManager.
 	GetFederatedTypeConfigLister() fedcorev1a1listers.FederatedTypeConfigLister
@@ -140,12 +148,12 @@ type FederatedInformerManager interface {
 	IsShutdown() bool
 }
 
-// ClusterClientGetter is used by the FederatedInformerManager to create clients for joined member clusters.
-type ClusterClientGetter struct {
+// ClusterClientHelper is used by the FederatedInformerManager to create clients for joined member clusters.
+type ClusterClientHelper struct {
 	// ConnectionHash should return a string that uniquely identifies the combination of parameters used to generate the
 	// cluster client. A change in the connection hash indicates a need to create a new client for a given member
 	// cluster.
 	ConnectionHash func(cluster *fedcorev1a1.FederatedCluster) ([]byte, error)
-	// ClientGetter returns a dynamic client for the given member cluster.
-	ClientGetter func(cluster *fedcorev1a1.FederatedCluster) (dynamic.Interface, error)
+	// RestConfigGetter returns a *rest.Config for the given member cluster.
+	RestConfigGetter func(cluster *fedcorev1a1.FederatedCluster) (*rest.Config, error)
 }

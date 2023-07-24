@@ -31,13 +31,16 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	dynamicclient "k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
-	"github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/fake"
+	fedfake "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/fake"
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
@@ -78,11 +81,17 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		// 2. Verify that the clients for each cluster is eventually available
 
 		for _, cluster := range defaultClusters {
 			g.Eventually(func(g gomega.Gomega) {
-				client, exists := manager.GetClusterClient(cluster.Name)
+				client, exists := manager.GetClusterDynamicClient(cluster.Name)
 				g.Expect(exists).To(gomega.BeTrue())
 				g.Expect(client).ToNot(gomega.BeNil())
 			}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
@@ -90,7 +99,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		// 3. Verify that the client for a non-existent cluster is not available
 
-		client, exists := manager.GetClusterClient("cluster-4")
+		client, exists := manager.GetClusterDynamicClient("cluster-4")
 		g.Expect(exists).To(gomega.BeFalse())
 		g.Expect(client).To(gomega.BeNil())
 	})
@@ -122,10 +131,16 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		// 2. Verify that client for cluster-1 does is not available initially.
 
 		g.Consistently(func(g gomega.Gomega) {
-			client, exists := manager.GetClusterClient("cluster-1")
+			client, exists := manager.GetClusterDynamicClient("cluster-1")
 			g.Expect(exists).To(gomega.BeFalse())
 			g.Expect(client).To(gomega.BeNil())
 		}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
@@ -142,7 +157,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 4. Verify that client for new cluster is eventually available
 
 		g.Eventually(func(g gomega.Gomega) {
-			client, exists := manager.GetClusterClient(cluster.Name)
+			client, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 			g.Expect(client).ToNot(gomega.BeNil())
 		}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
@@ -179,6 +194,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		// 2. Verify that listers for existing FTCs and clusters are eventually available
 
 		for _, ftc := range defaultFTCs {
@@ -193,6 +214,24 @@ func TestFederatedInformerManager(t *testing.T) {
 					g.Expect(informerSynced()).To(gomega.BeTrue())
 				}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
 			}
+		}
+
+		for _, cluster := range defaultClusters {
+			g.Eventually(func(g gomega.Gomega) {
+				lister, informerSynced, exists := manager.GetPodLister(cluster.Name)
+
+				g.Expect(exists).To(gomega.BeTrue())
+				g.Expect(lister).ToNot(gomega.BeNil())
+				g.Expect(informerSynced()).To(gomega.BeTrue())
+			}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
+
+			g.Eventually(func(g gomega.Gomega) {
+				lister, informerSynced, exists := manager.GetNodeLister(cluster.Name)
+
+				g.Expect(exists).To(gomega.BeTrue())
+				g.Expect(lister).ToNot(gomega.BeNil())
+				g.Expect(informerSynced()).To(gomega.BeTrue())
+			}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
 		}
 
 		// 3. Verify that the lister for non-existent FTCs or clusters are not available
@@ -243,6 +282,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
 
 		ftc := daemonsetFTC
 		gvk := ftc.GetSourceTypeGVK()
@@ -302,6 +347,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		cluster := getTestCluster("cluster-1")
 
 		// 2. Verify that listers for cluster-1 is not available at the start
@@ -315,6 +366,16 @@ func TestFederatedInformerManager(t *testing.T) {
 				g.Expect(lister).To(gomega.BeNil())
 				g.Expect(informerSynced).To(gomega.BeNil())
 			}
+
+			podLister, informerSynced, exists := manager.GetPodLister(cluster.Name)
+			g.Expect(exists).To(gomega.BeFalse())
+			g.Expect(podLister).To(gomega.BeNil())
+			g.Expect(informerSynced).To(gomega.BeNil())
+
+			nodeLister, informerSynced, exists := manager.GetNodeLister(cluster.Name)
+			g.Expect(exists).To(gomega.BeFalse())
+			g.Expect(nodeLister).To(gomega.BeNil())
+			g.Expect(informerSynced).To(gomega.BeNil())
 		}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
 
 		// 3. Create cluster-1
@@ -333,6 +394,16 @@ func TestFederatedInformerManager(t *testing.T) {
 				g.Expect(lister).ToNot(gomega.BeNil())
 				g.Expect(informerSynced()).To(gomega.BeTrue())
 			}
+
+			podLister, informerSynced, exists := manager.GetPodLister(cluster.Name)
+			g.Expect(exists).To(gomega.BeTrue())
+			g.Expect(podLister).ToNot(gomega.BeNil())
+			g.Expect(informerSynced()).To(gomega.BeTrue())
+
+			nodeLister, informerSynced, exists := manager.GetNodeLister(cluster.Name)
+			g.Expect(exists).To(gomega.BeTrue())
+			g.Expect(nodeLister).ToNot(gomega.BeNil())
+			g.Expect(informerSynced()).To(gomega.BeTrue())
 		}).WithTimeout(time.Second * 2).Should(gomega.Succeed())
 	})
 
@@ -387,6 +458,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		// 2. Verify alwaysRegistered is eventually registered for all existing FTCs and clusters.
 
 		for _, cluster := range defaultClusters {
@@ -406,7 +483,7 @@ func TestFederatedInformerManager(t *testing.T) {
 
 		dp1.SetAnnotations(map[string]string{"test": "test"})
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -439,7 +516,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 5. Verify that events for non-existent FTCs are not received
 
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -504,11 +581,16 @@ func TestFederatedInformerManager(t *testing.T) {
 			generators,
 			clusterHandlers,
 		)
-
 		defer func() {
 			cancel()
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
+
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
 
 		// 2. Verify that alwaysRegistered is not registered initially for daemonset
 
@@ -531,7 +613,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 5. Verify that newly generated events are also received by alwaysRegistered
 
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -548,7 +630,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 6. Verify that events for non-existent FTCs are not received by alwaysRegistered
 
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -614,6 +696,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		// 2. Verify that alwaysRegistered is not registered initially since there are no clusters
 
 		alwaysRegistered.AssertConsistently(g, time.Second*2)
@@ -653,7 +741,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 5. Verify that newly generated events are also received by alwaysRegistered
 
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -670,7 +758,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 6. Verify that events for non-existent FTCs are not received by alwaysRegistered
 
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -812,6 +900,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		// 2. Verify that handler is not registered initially.
 
 		handler.AssertConsistently(g, time.Second*2)
@@ -830,7 +924,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		handler.AssertEventually(g, time.Second*2)
 
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -888,6 +982,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		// 2. Verify that handler is registered initially.
 
 		handler.ExpectGenerateEvents(ftc.Name, len(defaultClusters))
@@ -905,7 +1005,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 4. Verify that handler is unregistered and new events are no longer received by handler.
 
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -963,6 +1063,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		// 2. Verify that handler is registered initially
 
 		handler.ExpectGenerateEvents(ftc.Name, len(defaultClusters))
@@ -982,7 +1088,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		dp1.SetAnnotations(map[string]string{"test": "test"})
 
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -1041,6 +1147,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		// 2. Verify that handler is registered initially
 
 		handler.ExpectGenerateEvents(ftc.Name, len(defaultClusters))
@@ -1060,7 +1172,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		dp1.SetAnnotations(map[string]string{"test": "test"})
 
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -1125,6 +1237,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		// 2. Verify that handler1 and handler2 is registered initially for all FTCs and clusters
 
 		for _, cluster := range defaultClusters {
@@ -1157,7 +1275,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 4. Verify that handler1 and handler2 is unregistered for deployments and no additional events are received
 
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -1174,7 +1292,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 5. Verify that handler1 and handler2 is not unregistered for other FTCs.
 
 		for _, cluster := range defaultClusters {
-			dynamicClient, exists := manager.GetClusterClient(cluster.Name)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster.Name)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -1250,6 +1368,12 @@ func TestFederatedInformerManager(t *testing.T) {
 			_ = wait.PollInfinite(time.Millisecond, func() (done bool, err error) { return manager.IsShutdown(), nil })
 		}()
 
+		ctxWithTimeout, timeoutCancel := context.WithTimeout(ctx, time.Second)
+		defer timeoutCancel()
+		if !cache.WaitForCacheSync(ctxWithTimeout.Done(), manager.HasSynced) {
+			g.Fail("Timed out waiting for FederatedInformerManager cache sync")
+		}
+
 		// 2. Verify that handler1 and handler2 is registered initially for all FTCs and clusters
 
 		for _, cluster := range defaultClusters {
@@ -1271,7 +1395,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 3. Delete cluster-1
 
 		// Get client before deletion
-		dynamicClient, exists := manager.GetClusterClient("cluster-1")
+		dynamicClient, exists := manager.GetClusterDynamicClient("cluster-1")
 
 		err := fedClient.CoreV1alpha1().FederatedClusters().Delete(ctx, "cluster-1", metav1.DeleteOptions{})
 		g.Expect(err).ToNot(gomega.HaveOccurred())
@@ -1295,7 +1419,7 @@ func TestFederatedInformerManager(t *testing.T) {
 		// 5. Verify that handler1 and handler2 is not unregistered for other clusters.
 
 		for _, cluster := range []string{"cluster-2", "cluster-3"} {
-			dynamicClient, exists := manager.GetClusterClient(cluster)
+			dynamicClient, exists := manager.GetClusterDynamicClient(cluster)
 			g.Expect(exists).To(gomega.BeTrue())
 
 			generateEvents(
@@ -1437,7 +1561,7 @@ func bootstrapFederatedInformerManagerWithFakeClients(
 	for _, ftc := range ftcs {
 		fedObjects = append(fedObjects, runtime.Object(ftc.DeepCopy()))
 	}
-	fedClient := fake.NewSimpleClientset(fedObjects...)
+	fedClient := fedfake.NewSimpleClientset(fedObjects...)
 
 	factory := fedinformers.NewSharedInformerFactory(fedClient, 0)
 
@@ -1450,15 +1574,27 @@ func bootstrapFederatedInformerManagerWithFakeClients(
 	}
 
 	informerManager := NewFederatedInformerManager(
-		ClusterClientGetter{
+		ClusterClientHelper{
 			ConnectionHash: DefaultClusterConnectionHash,
-			ClientGetter: func(cluster *fedcorev1a1.FederatedCluster) (dynamicclient.Interface, error) {
-				return dynamicfake.NewSimpleDynamicClient(scheme, dynamicObjects[cluster.Name]...), nil
+			RestConfigGetter: func(cluster *fedcorev1a1.FederatedCluster) (*rest.Config, error) {
+				return nil, nil
 			},
 		},
 		factory.Core().V1alpha1().FederatedTypeConfigs(),
 		factory.Core().V1alpha1().FederatedClusters(),
 	)
+	informerManager.(*federatedInformerManager).dynamicClientGetter = func(
+		cluster *fedcorev1a1.FederatedCluster,
+		config *rest.Config,
+	) (dynamicclient.Interface, error) {
+		return dynamicfake.NewSimpleDynamicClient(scheme, dynamicObjects[cluster.Name]...), nil
+	}
+	informerManager.(*federatedInformerManager).kubeClientGetter = func(
+		cluster *fedcorev1a1.FederatedCluster,
+		config *rest.Config,
+	) (kubernetes.Interface, error) {
+		return fake.NewSimpleClientset(), nil
+	}
 
 	for _, generator := range eventHandlerGenerators {
 		err := informerManager.AddEventHandlerGenerator(generator)
@@ -1471,13 +1607,6 @@ func bootstrapFederatedInformerManagerWithFakeClients(
 
 	factory.Start(ctx.Done())
 	informerManager.Start(ctx)
-
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-
-	if !cache.WaitForCacheSync(ctxWithTimeout.Done(), informerManager.HasSynced) {
-		g.Fail("Timed out waiting for FederatedInformerManager cache sync")
-	}
 
 	return informerManager, fedClient
 }

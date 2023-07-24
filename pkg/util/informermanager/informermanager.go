@@ -54,8 +54,7 @@ type informerManager struct {
 	eventHandlerGenerators []*EventHandlerGenerator
 	ftcUpdateHandlers      []FTCUpdateHandler
 
-	initialFTCs sets.Set[string]
-	gvkMapping  *bijection.Bijection[string, schema.GroupVersionKind]
+	gvkMapping *bijection.Bijection[string, schema.GroupVersionKind]
 
 	lastObservedFTCs          map[string]*fedcorev1a1.FederatedTypeConfig
 	informers                 map[string]informers.GenericInformer
@@ -63,7 +62,8 @@ type informerManager struct {
 	eventHandlerRegistrations map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration
 	lastAppliedFTCsCache      map[string]map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig
 
-	queue workqueue.RateLimitingInterface
+	queue       workqueue.RateLimitingInterface
+	initialFTCs sets.Set[string]
 }
 
 func NewInformerManager(
@@ -80,7 +80,6 @@ func NewInformerManager(
 		ftcInformer:               ftcInformer,
 		eventHandlerGenerators:    []*EventHandlerGenerator{},
 		ftcUpdateHandlers:         []FTCUpdateHandler{},
-		initialFTCs:               sets.New[string](),
 		gvkMapping:                bijection.NewBijection[string, schema.GroupVersionKind](),
 		lastObservedFTCs:          map[string]*fedcorev1a1.FederatedTypeConfig{},
 		informers:                 map[string]informers.GenericInformer{},
@@ -88,6 +87,7 @@ func NewInformerManager(
 		eventHandlerRegistrations: map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{},
 		lastAppliedFTCsCache:      map[string]map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig{},
 		queue:                     workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
+		initialFTCs:               sets.New[string](),
 	}
 
 	ftcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -383,7 +383,7 @@ func (m *informerManager) Start(ctx context.Context) {
 		return
 	}
 
-	// Populate the intial snapshot of FTCs
+	// Populate the initial snapshot of FTCs
 
 	ftcs := m.ftcInformer.Informer().GetStore().List()
 	for _, ftc := range ftcs {
