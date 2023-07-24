@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app/options"
@@ -115,19 +116,15 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 		nil,
 	)
 	federatedInformerManager := informermanager.NewFederatedInformerManager(
-		informermanager.ClusterClientGetter{
+		informermanager.ClusterClientHelper{
 			ConnectionHash: informermanager.DefaultClusterConnectionHash,
-			ClientGetter: func(cluster *fedcorev1a1.FederatedCluster) (dynamic.Interface, error) {
-				restConfig, err := clusterutil.BuildClusterConfig(
+			RestConfigGetter: func(cluster *fedcorev1a1.FederatedCluster) (*rest.Config, error) {
+				return clusterutil.BuildClusterConfig(
 					cluster,
 					kubeClientset,
 					restConfig,
 					common.DefaultFedSystemNamespace,
 				)
-				if err != nil {
-					return nil, err
-				}
-				return dynamic.NewForConfig(restConfig)
 			},
 		},
 		fedInformerFactory.Core().V1alpha1().FederatedTypeConfigs(),
