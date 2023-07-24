@@ -39,13 +39,13 @@ type bidirectionalCache[V1, V2 comparable] struct {
 func (c *bidirectionalCache[V1, V2]) lookup(key V1) sets.Set[V2] {
 	c.RLock()
 	defer c.RUnlock()
-	return c.cache[key]
+	return c.cache[key].Clone()
 }
 
 func (c *bidirectionalCache[V1, V2]) reverseLookup(key V2) sets.Set[V1] {
 	c.RLock()
 	defer c.RUnlock()
-	return c.reverseCache[key]
+	return c.reverseCache[key].Clone()
 }
 
 func (c *bidirectionalCache[V1, V2]) update(key V1, newValues sets.Set[V2]) {
