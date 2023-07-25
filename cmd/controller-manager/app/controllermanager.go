@@ -37,7 +37,6 @@ import (
 const (
 	FederatedClusterControllerName         = "cluster"
 	FederateControllerName                 = "federate"
-	MonitorControllerName                  = "monitor"
 	FollowerControllerName                 = "follower"
 	PolicyRCControllerName                 = "policyrc"
 	OverrideControllerName                 = "overridepolicy"
@@ -53,7 +52,7 @@ var knownControllers = map[string]controllermanager.StartControllerFunc{
 	StatusControllerName:                   startStatusController,
 }
 
-var controllersDisabledByDefault = sets.New(MonitorControllerName)
+var controllersDisabledByDefault = sets.New[string]()
 
 // Run starts the controller manager according to the given options.
 func Run(ctx context.Context, opts *options.Options) {
