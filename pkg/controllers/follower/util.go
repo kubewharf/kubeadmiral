@@ -19,17 +19,15 @@ package follower
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	podutil "github.com/kubewharf/kubeadmiral/pkg/lifted/kubernetes/pkg/api/v1/pod"
+	fedpodutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
 )
 
 type objectGroupKindKey struct {
@@ -89,7 +87,7 @@ func getFollowersFromPodSpec(
 	fedObject fedcorev1a1.GenericFederatedObject,
 	podSpecPath string,
 ) (sets.Set[FollowerReference], error) {
-	podSpec, err := getPodSpec(fedObject, podSpecPath)
+	podSpec, err := fedpodutil.GetPodSpec(fedObject, podSpecPath)
 	if err != nil {
 		return nil, err
 	}
@@ -144,29 +142,4 @@ func getFollowersFromPod(
 	}
 
 	return followers
-}
-
-func getPodSpec(fedObject fedcorev1a1.GenericFederatedObject, podSpecPath string) (*corev1.PodSpec, error) {
-	if fedObject == nil {
-		return nil, fmt.Errorf("fedObject is nil")
-	}
-
-	templateObj := &unstructured.Unstructured{}
-	err := templateObj.UnmarshalJSON(fedObject.GetSpec().Template.Raw)
-	if err != nil {
-		return nil, err
-	}
-
-	podSpecMap, found, err := unstructured.NestedMap(templateObj.Object, strings.Split(podSpecPath, ".")...)
-	if err != nil {
-		return nil, err
-	}
-	if !found {
-		return nil, fmt.Errorf("pod spec does not exist at path %q", podSpecPath)
-	}
-	podSpec := &corev1.PodSpec{}
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(podSpecMap, podSpec); err != nil {
-		return nil, err
-	}
-	return podSpec, nil
 }

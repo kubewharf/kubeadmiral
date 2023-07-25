@@ -38,7 +38,6 @@ func PropagationPolicyForClustersWithPlacements(
 		},
 		Spec: fedcorev1a1.PropagationPolicySpec{
 			SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
-			StickyCluster:  false,
 			Placements:     []fedcorev1a1.ClusterReference{},
 		},
 	}

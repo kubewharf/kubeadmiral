@@ -160,7 +160,7 @@ spec:
                     type: object
                   type: array
                 replicaRescheduling:
-                  description: Configures behaviors related to replica rescheduling. Default set via a post-generation patch. See patch file for details.
+                  description: 'Configures behaviors related to replica rescheduling. Default set via a post-generation patch. See patch file for details. Deprecated: Please use reschedulePolicy.disableRescheduling instead. This field will be removed in the next release.'
                   properties:
                     avoidDisruption:
                       default: true
@@ -168,6 +168,45 @@ spec:
                       type: boolean
                   type: object
                   default: {}
+                reschedulePolicy:
+                  default:
+                    rescheduleWhen:
+                      policyContentChanged: true
+                  description: Configures behaviors related to rescheduling.
+                  properties:
+                    disableRescheduling:
+                      description: DisableRescheduling determines if a federated object can be rescheduled.
+                      type: boolean
+                    replicaRescheduling:
+                      description: Configures behaviors related to replica rescheduling. Default set via a post-generation patch. See patch file for details.
+                      properties:
+                        avoidDisruption:
+                          default: true
+                          description: If set to true, the scheduler will attempt to prevent migrating existing replicas during rescheduling. In order to do so, replica scheduling preferences might not be fully respected. If set to false, the scheduler will always rebalance the replicas based on the specified preferences, which might cause temporary service disruption.
+                          type: boolean
+                      type: object
+                      default: {}
+                    rescheduleWhen:
+                      description: When the related objects should be subject to reschedule.
+                      properties:
+                        clusterAPIResourcesChanged:
+                          default: false
+                          description: If set to true, changes to clusters' enabled list of api resources will trigger rescheduling. It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the requested resources of the template changed.
+                          type: boolean
+                        clusterJoined:
+                          default: false
+                          description: If set to true, clusters joining the federation will trigger rescheduling. It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the requested resources of the template changed.
+                          type: boolean
+                        clusterLabelsChanged:
+                          default: false
+                          description: If set to true, changes to cluster labels will trigger rescheduling. It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the requested resources of the template changed.
+                          type: boolean
+                        policyContentChanged:
+                          default: true
+                          description: If set to true, the scheduler will trigger rescheduling when the semantics of the policy changes. For example, modifying placement, schedulingMode, maxClusters, clusterSelector, and other configurations related to scheduling (includes reschedulePolicy itself) will immediately trigger rescheduling. Modifying the labels, annotations, autoMigration configuration will not trigger rescheduling. It set to false, the scheduler will not reschedule when the policy content changes.
+                          type: boolean
+                      type: object
+                  type: object
                 schedulingMode:
                   description: SchedulingMode determines the mode used for scheduling.
                   enum:
@@ -178,7 +217,7 @@ spec:
                   description: Profile determines the scheduling profile to be used for scheduling
                   type: string
                 stickyCluster:
-                  description: StickyCluster determines if a federated object can be rescheduled.
+                  description: 'StickyCluster determines if a federated object can be rescheduled. Deprecated: Please use reschedulePolicy.disableRescheduling instead. This field will be removed in the next release.'
                   type: boolean
                 tolerations:
                   description: Tolerations describe a set of cluster taints that the policy tolerates.

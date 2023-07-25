@@ -17,20 +17,27 @@ limitations under the License.
 package scheduler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 
-	"golang.org/x/exp/constraints"
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
-	unstructuredutil "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
+	"github.com/kubewharf/kubeadmiral/pkg/util/annotation"
+	podutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
+	resourceutil "github.com/kubewharf/kubeadmiral/pkg/util/resource"
+	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
 
 /*
@@ -49,99 +56,245 @@ Federated object changes:
 
 Propagation policy changes:
 1. policy creation
-2. generation change (spec update)
+2. semantics of policy change, can be toggled on or off
+   (see PropagationPolicySpec.ReschedulePolicy.Trigger.PolicyContentChanged for more detail)
 
 Cluster changes:
-1. cluster creation
-2. cluster labels change
+1. cluster join, can be toggled on or off
+   (see PropagationPolicySpec.ReschedulePolicy.Trigger.ClusterJoined for more detail)
+2. cluster labels change, can be toggled on or off
+   (see PropagationPolicySpec.ReschedulePolicy.Trigger.ClusterLabelsChanged for more detail)
 3. cluster taints change
-4. cluster apiresource changes
+4. cluster apiresource changes, can be toggled on or off
+   (see PropagationPolicySpec.ReschedulePolicy.Trigger.ClusterAPIResourcesChanged for more detail)
 
 Simply checking for these triggers in the event handlers is insufficient. This is because when the controller restarts, all objects will be
 "created" again, causing mass rescheduling for all objects. Thus, we hash the scheduling triggers and write it into the federated object's
 annotations. Before reconciling a federated object, we check this hash to determine if any scheduling triggers have changed.
 */
 
-type keyValue[K any, V any] struct {
-	Key   K `json:"key"`
-	Value V `json:"value"`
-}
-
-func sortMap[K constraints.Ordered, V any](m map[K]V) []keyValue[K, V] {
-	ret := make([]keyValue[K, V], 0, len(m))
-	for k, v := range m {
-		ret = append(ret, keyValue[K, V]{Key: k, Value: v})
-	}
-
-	sort.Slice(ret, func(i, j int) bool {
-		return ret[i].Key < ret[j].Key
-	})
-	return ret
-}
-
 type schedulingTriggers struct {
 	// NOTE: Use slices instead of maps for deterministic iteration order
 
-	SchedulingAnnotations []keyValue[string, string] `json:"schedulingAnnotations"`
-	ReplicaCount          int64                      `json:"replicaCount"`
-	ResourceRequest       framework.Resource         `json:"resourceRequest"`
+	SchedulingAnnotationsHash string             `json:"schedulingAnnotationsHash"`
+	ReplicaCount              int64              `json:"replicaCount"`
+	ResourceRequest           framework.Resource `json:"resourceRequest"`
 
 	AutoMigrationInfo *string `json:"autoMigrationInfo,omitempty"`
 
-	PolicyName       string `json:"policyName"`
-	PolicyGeneration int64  `json:"policyGeneration"`
+	PolicyName                  string `json:"policyName"`
+	PolicySchedulingContentHash string `json:"policyContentHash"`
 
+	// a slice from joined clusters
+	Clusters []string `json:"clusters"`
 	// a map from each cluster to its labels
-	ClusterLabels []keyValue[string, []keyValue[string, string]] `json:"clusterLabels"`
+	ClusterLabelsHashes map[string]string `json:"clusterLabelsHashes"`
 	// a map from each cluster to its taints
-	ClusterTaints []keyValue[string, []corev1.Taint] `json:"clusterTaints"`
+	ClusterTaintsHashes map[string]string `json:"clusterTaintsHashes"`
 	// a map from each cluster to its apiresources
-	ClusterAPIResourceTypes []keyValue[string, []fedcorev1a1.APIResource] `json:"clusterAPIResourceTypes"`
+	ClusterAPIResourceTypesHashes map[string]string `json:"clusterAPIResourceTypesHashes"`
 }
 
-func (s *Scheduler) computeSchedulingTriggerHash(
+func (t *schedulingTriggers) Marshal() (string, error) {
+	triggerBytes, err := json.Marshal(t)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal scheduling trigger: %w", err)
+	}
+	return string(triggerBytes), nil
+}
+
+func (t *schedulingTriggers) Unmarshal(v []byte) error {
+	if t == nil {
+		return fmt.Errorf("nil receiver")
+	}
+	trigger := &schedulingTriggers{}
+	err := json.Unmarshal(v, trigger)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal scheduling trigger: %w", err)
+	}
+
+	*t = *trigger
+	return nil
+}
+
+// If the member cluster is removed, we regard as the trigger triggered.
+// But if a cluster joins, we think there is no trigger triggers.
+func isClusterTriggerChanged(newClusters, oldClusters map[string]string) bool {
+	newLen, oldLen := len(newClusters), len(oldClusters)
+	if newLen == 0 {
+		return oldLen != 0
+	}
+
+	for cluster, trigger := range oldClusters {
+		if t, ok := newClusters[cluster]; !ok || t != trigger {
+			return true
+		}
+	}
+	return false
+}
+
+func compareStableTriggers(latest, last *schedulingTriggers) bool {
+	if latest.SchedulingAnnotationsHash != last.SchedulingAnnotationsHash ||
+		latest.ReplicaCount != last.ReplicaCount ||
+		!reflect.DeepEqual(latest.ResourceRequest, last.ResourceRequest) ||
+		latest.PolicyName != last.PolicyName {
+		return true
+	}
+	if latest.AutoMigrationInfo != nil {
+		return last.AutoMigrationInfo == nil || *last.AutoMigrationInfo != *latest.AutoMigrationInfo
+	}
+	return last.AutoMigrationInfo != nil
+}
+
+func computeSchedulingAnnotations(
+	ctx context.Context,
+	newTriggers *schedulingTriggers,
+	fedObject fedcorev1a1.GenericFederatedObject,
+	policy fedcorev1a1.GenericPropagationPolicy,
+) (triggers, deferredReasons string, triggersChanged bool, err error) {
+	logger := klog.FromContext(ctx)
+
+	triggers, err = newTriggers.Marshal()
+	if err != nil {
+		return "", "", false, err
+	}
+	anno := fedObject.GetAnnotations()
+	if len(anno) == 0 {
+		return triggers, "", true, nil
+	}
+
+	old, ok := anno[SchedulingTriggersAnnotation]
+	if !ok || old == "" || old == triggers || policy == nil {
+		return triggers, "", old != triggers, nil
+	}
+
+	oldTriggers := &schedulingTriggers{}
+	if err = oldTriggers.Unmarshal([]byte(old)); err != nil {
+		logger.Error(err, "Failed to unmarshal triggers, maybe it was manually modified", "old-triggers", old)
+		// We ignore the error here so that the annotation can be overwritten with the correct value
+		return triggers, "", true, nil
+	}
+	if compareStableTriggers(newTriggers, oldTriggers) {
+		return triggers, "", true, nil
+	}
+
+	if getIsStickyClusterFromPolicy(policy) {
+		return old, "disableRescheduling:true", false, nil
+	}
+
+	reschedulePolicy := policy.GetSpec().ReschedulePolicy
+	if reschedulePolicy == nil || reschedulePolicy.Trigger == nil {
+		return old, "rescheduleWhen:nil", false, nil
+	}
+	policyTrigger := reschedulePolicy.Trigger
+
+	var reasons []string
+	if newTriggers.PolicySchedulingContentHash != oldTriggers.PolicySchedulingContentHash {
+		if policyTrigger.PolicyContentChanged {
+			return triggers, "", true, nil
+		}
+		reasons = append(reasons, "policyContentChanged:false")
+	}
+
+	if isClusterTriggerChanged(newTriggers.ClusterLabelsHashes, oldTriggers.ClusterLabelsHashes) {
+		if policyTrigger.ClusterLabelsChanged {
+			return triggers, "", true, nil
+		}
+		reasons = append(reasons, "clusterLabelsChanged:false")
+	}
+
+	if isClusterTriggerChanged(newTriggers.ClusterTaintsHashes, oldTriggers.ClusterTaintsHashes) {
+		return triggers, "", true, nil
+	}
+
+	if isClusterTriggerChanged(newTriggers.ClusterAPIResourceTypesHashes, oldTriggers.ClusterAPIResourceTypesHashes) {
+		if policyTrigger.ClusterAPIResourcesChanged {
+			return triggers, "", true, nil
+		}
+		reasons = append(reasons, "clusterAPIResourcesChanged:false")
+	}
+
+	newClusters, oldClusters := sets.NewString(newTriggers.Clusters...), sets.NewString(oldTriggers.Clusters...)
+	if newClusters.IsSuperset(oldClusters) && len(newClusters) != len(oldClusters) {
+		if policyTrigger.ClusterJoined {
+			return triggers, "", true, nil
+		}
+		reasons = append(reasons, "clusterJoined:false")
+	}
+
+	return old, strings.Join(reasons, "; "), false, nil
+}
+
+func updateSchedulingAnnotations(
+	triggers, deferredReasons string,
+	fedObject fedcorev1a1.GenericFederatedObject,
+) (annotationChanged bool, err error) {
+	triggersChanged, err := annotation.AddAnnotation(fedObject, SchedulingTriggersAnnotation, triggers)
+	if err != nil {
+		return false, err
+	}
+	if len(deferredReasons) == 0 {
+		deferred, err := annotation.RemoveAnnotation(fedObject, SchedulingDeferredReasonsAnnotation)
+		return triggersChanged || deferred, err
+	}
+	deferred, err := annotation.AddAnnotation(fedObject, SchedulingDeferredReasonsAnnotation, deferredReasons)
+	return triggersChanged || deferred, err
+}
+
+func computeSchedulingTriggers(
 	ftc *fedcorev1a1.FederatedTypeConfig,
 	fedObject fedcorev1a1.GenericFederatedObject,
 	policy fedcorev1a1.GenericPropagationPolicy,
 	clusters []*fedcorev1a1.FederatedCluster,
-) (string, error) {
-	trigger := &schedulingTriggers{}
+) (*schedulingTriggers, error) {
+	trigger := &schedulingTriggers{
+		Clusters: make([]string, len(clusters)),
+	}
 
 	var err error
 
-	trigger.SchedulingAnnotations = getSchedulingAnnotations(fedObject)
-	if trigger.ReplicaCount, err = getReplicaCount(ftc, fedObject); err != nil {
-		return "", fmt.Errorf("failed to get object replica count: %w", err)
+	trigger.SchedulingAnnotationsHash, err = getSchedulingAnnotationsHash(fedObject)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get scheduling annotations: %w", err)
 	}
-	trigger.ResourceRequest = getResourceRequest(fedObject)
+	if trigger.ReplicaCount, err = getReplicaCount(ftc, fedObject); err != nil {
+		return nil, fmt.Errorf("failed to get object replica count: %w", err)
+	}
+	if trigger.ResourceRequest, err = getResourceRequest(ftc, fedObject); err != nil {
+		return nil, fmt.Errorf("failed to get object resource request: %w", err)
+	}
 
 	if policy != nil {
 		trigger.PolicyName = policy.GetName()
-		trigger.PolicyGeneration = policy.GetGeneration()
 		if policy.GetSpec().AutoMigration != nil {
 			// Only consider auto-migration annotation when auto-migration is enabled in the policy.
 			if value, exists := fedObject.GetAnnotations()[common.AutoMigrationInfoAnnotation]; exists {
 				trigger.AutoMigrationInfo = &value
 			}
 		}
+		if trigger.PolicySchedulingContentHash, err = getPolicySchedulingContentHash(policy.GetSpec()); err != nil {
+			return nil, fmt.Errorf("failed to get scheduling content of policy %s: %w", policy.GetName(), err)
+		}
 	}
 
-	trigger.ClusterLabels = getClusterLabels(clusters)
-	trigger.ClusterTaints = getClusterTaints(clusters)
-	trigger.ClusterAPIResourceTypes = getClusterAPIResourceTypes(clusters)
+	for i := range clusters {
+		trigger.Clusters[i] = clusters[i].Name
+	}
 
-	triggerBytes, err := json.Marshal(trigger)
+	trigger.ClusterLabelsHashes, err = getClusterLabelsHashes(clusters)
 	if err != nil {
-		return "", fmt.Errorf("failed to compute scheduling trigger hash: %w", err)
+		return nil, fmt.Errorf("failed to get cluster labels hashes: %w", err)
+	}
+	trigger.ClusterTaintsHashes, err = getClusterTaintsHashes(clusters)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cluster taints hashes: %w", err)
+	}
+	trigger.ClusterAPIResourceTypesHashes, err = getClusterAPIResourceTypesHashes(clusters)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cluster API resource types hashes: %w", err)
 	}
 
-	hash := fnv.New32()
-	if _, err = hash.Write(triggerBytes); err != nil {
-		return "", fmt.Errorf("failed to compute scheduling trigger hash: %w", err)
-	}
-	triggerHash := strconv.FormatInt(int64(hash.Sum32()), 10)
-
-	return triggerHash, nil
+	return trigger, nil
 }
 
 var knownSchedulingAnnotations = sets.New(
@@ -155,14 +308,29 @@ var knownSchedulingAnnotations = sets.New(
 	FollowsObjectAnnotation,
 )
 
-func getSchedulingAnnotations(fedObject fedcorev1a1.GenericFederatedObject) []keyValue[string, string] {
+func getSchedulingAnnotationsHash(fedObject fedcorev1a1.GenericFederatedObject) (string, error) {
 	result := map[string]string{}
 	for k, v := range fedObject.GetAnnotations() {
 		if knownSchedulingAnnotations.Has(k) {
 			result[k] = v
 		}
 	}
-	return sortMap(result)
+	return hashResult(result)
+}
+
+func hashResult(v any) (string, error) {
+	hashBytes, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute scheduling trigger hash: %w", err)
+	}
+
+	hash := fnv.New32()
+	if _, err = hash.Write(hashBytes); err != nil {
+		return "", fmt.Errorf("failed to compute scheduling trigger hash: %w", err)
+	}
+	result := strconv.FormatInt(int64(hash.Sum32()), 10)
+
+	return result, nil
 }
 
 func getReplicaCount(
@@ -178,7 +346,7 @@ func getReplicaCount(
 		return 0, err
 	}
 
-	value, err := unstructuredutil.GetInt64FromPath(template, ftc.Spec.PathDefinition.ReplicasSpec, nil)
+	value, err := utilunstructured.GetInt64FromPath(template, ftc.Spec.PathDefinition.ReplicasSpec, nil)
 	if err != nil || value == nil {
 		return 0, err
 	}
@@ -186,21 +354,43 @@ func getReplicaCount(
 	return *value, nil
 }
 
-func getResourceRequest(fedObject fedcorev1a1.GenericFederatedObject) framework.Resource {
-	// TODO: update once we have a proper way to obtian resource request from federated objects
-	return framework.Resource{}
-}
-
-func getClusterLabels(clusters []*fedcorev1a1.FederatedCluster) []keyValue[string, []keyValue[string, string]] {
-	ret := make(map[string][]keyValue[string, string], len(clusters))
-	for _, cluster := range clusters {
-		ret[cluster.Name] = sortMap(cluster.GetLabels())
+func getResourceRequest(
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	fedObject fedcorev1a1.GenericFederatedObject,
+) (framework.Resource, error) {
+	gvk := ftc.GetSourceTypeGVK()
+	podSpec, err := podutil.GetResourcePodSpec(fedObject, gvk)
+	if err != nil {
+		if errors.Is(err, podutil.ErrUnknownTypeToGetPodSpec) {
+			return framework.Resource{}, nil
+		}
+		return framework.Resource{}, err
 	}
-	return sortMap(ret)
+	resource := resourceutil.GetPodResourceRequests(podSpec)
+	return *framework.NewResource(resource), nil
 }
 
-func getClusterTaints(clusters []*fedcorev1a1.FederatedCluster) []keyValue[string, []corev1.Taint] {
-	ret := make(map[string][]corev1.Taint, len(clusters))
+func getPolicySchedulingContentHash(policySpec *fedcorev1a1.PropagationPolicySpec) (string, error) {
+	policySpec = policySpec.DeepCopy()
+	policySpec.DisableFollowerScheduling = false
+	policySpec.AutoMigration = nil
+	return hashResult(policySpec)
+}
+
+func getClusterLabelsHashes(clusters []*fedcorev1a1.FederatedCluster) (map[string]string, error) {
+	ret := make(map[string]string, len(clusters))
+	for _, cluster := range clusters {
+		hash, err := hashResult(cluster.GetLabels())
+		if err != nil {
+			return nil, err
+		}
+		ret[cluster.Name] = hash
+	}
+	return ret, nil
+}
+
+func getClusterTaintsHashes(clusters []*fedcorev1a1.FederatedCluster) (map[string]string, error) {
+	ret := make(map[string]string, len(clusters))
 	for _, cluster := range clusters {
 		taints := make([]corev1.Taint, len(cluster.Spec.Taints))
 		for i, t := range cluster.Spec.Taints {
@@ -226,15 +416,17 @@ func getClusterTaints(clusters []*fedcorev1a1.FederatedCluster) []keyValue[strin
 				return false
 			}
 		})
-		ret[cluster.Name] = taints
+		hash, err := hashResult(taints)
+		if err != nil {
+			return nil, err
+		}
+		ret[cluster.Name] = hash
 	}
-	return sortMap(ret)
+	return ret, nil
 }
 
-func getClusterAPIResourceTypes(
-	clusters []*fedcorev1a1.FederatedCluster,
-) []keyValue[string, []fedcorev1a1.APIResource] {
-	ret := make(map[string][]fedcorev1a1.APIResource)
+func getClusterAPIResourceTypesHashes(clusters []*fedcorev1a1.FederatedCluster) (map[string]string, error) {
+	ret := make(map[string]string, len(clusters))
 
 	for _, cluster := range clusters {
 		types := make([]fedcorev1a1.APIResource, len(cluster.Status.APIResourceTypes))
@@ -259,7 +451,11 @@ func getClusterAPIResourceTypes(
 			}
 		})
 
-		ret[cluster.Name] = types
+		hash, err := hashResult(types)
+		if err != nil {
+			return nil, err
+		}
+		ret[cluster.Name] = hash
 	}
-	return sortMap(ret)
+	return ret, nil
 }
