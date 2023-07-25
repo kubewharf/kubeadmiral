@@ -170,7 +170,7 @@ func (m *federatedInformerManager) worker(ctx context.Context) {
 		return
 	}
 
-	err, needReenqueue, delay := m.processCluster(ctx, cluster)
+	needReenqueue, delay, err := m.processCluster(ctx, cluster)
 	if err != nil {
 		if needReenqueue {
 			logger.Error(err, "Failed to process FederatedCluster, will retry")
@@ -191,7 +191,7 @@ func (m *federatedInformerManager) worker(ctx context.Context) {
 func (m *federatedInformerManager) processCluster(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
-) (err error, needReenqueue bool, delay time.Duration) {
+) (needReenqueue bool, reenqueueDelay time.Duration, err error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -199,7 +199,7 @@ func (m *federatedInformerManager) processCluster(
 
 	connectionHash, err := m.clientHelper.ConnectionHash(cluster)
 	if err != nil {
-		return fmt.Errorf("failed to get connection hash for cluster %s: %w", clusterName, err), true, 0
+		return true, 0, fmt.Errorf("failed to get connection hash for cluster %s: %w", clusterName, err)
 	}
 	if oldConnectionHash, exists := m.connectionMap[clusterName]; exists {
 		if !bytes.Equal(oldConnectionHash, connectionHash) {
@@ -208,22 +208,22 @@ func (m *federatedInformerManager) processCluster(
 			// reenqueue.
 			// Note: updating of cluster connection details, however, is still not a supported use case.
 			err := m.processClusterDeletionUnlocked(ctx, clusterName)
-			return err, true, 0
+			return true, 0, err
 		}
 	} else {
 		clusterRestConfig, err := m.clientHelper.RestConfigGetter(cluster)
 		if err != nil {
-			return fmt.Errorf("failed to get rest config for cluster %s: %w", clusterName, err), true, 0
+			return true, 0, fmt.Errorf("failed to get rest config for cluster %s: %w", clusterName, err)
 		}
 
 		clusterDynamicClient, err := m.dynamicClientGetter(cluster, clusterRestConfig)
 		if err != nil {
-			return fmt.Errorf("failed to get dynamic client for cluster %s: %w", clusterName, err), true, 0
+			return true, 0, fmt.Errorf("failed to get dynamic client for cluster %s: %w", clusterName, err)
 		}
 
 		clusterKubeClient, err := m.kubeClientGetter(cluster, clusterRestConfig)
 		if err != nil {
-			return fmt.Errorf("failed to get kubernetes client for cluster %s: %w", clusterName, err), true, 0
+			return true, 0, fmt.Errorf("failed to get kubernetes client for cluster %s: %w", clusterName, err)
 		}
 
 		manager := NewInformerManager(
@@ -244,7 +244,7 @@ func (m *federatedInformerManager) processCluster(
 		for _, generator := range m.eventHandlerGenerators {
 			if err := manager.AddEventHandlerGenerator(generator); err != nil {
 				cancel()
-				return fmt.Errorf("failed to initialized InformerManager for cluster %s: %w", clusterName, err), true, 0
+				return true, 0, fmt.Errorf("failed to initialized InformerManager for cluster %s: %w", clusterName, err)
 			}
 		}
 
@@ -272,11 +272,11 @@ func (m *federatedInformerManager) processCluster(
 			m.initialClusters.Delete(cluster.Name)
 		} else {
 			klog.FromContext(ctx).V(3).Info("Waiting for InformerManager sync")
-			return nil, true, 100 * time.Millisecond
+			return true, 100 * time.Millisecond, nil
 		}
 	}
 
-	return nil, false, 0
+	return false, 0, nil
 }
 
 func (m *federatedInformerManager) processClusterDeletion(ctx context.Context, clusterName string) error {
@@ -287,13 +287,15 @@ func (m *federatedInformerManager) processClusterDeletion(ctx context.Context, c
 
 func (m *federatedInformerManager) processClusterDeletionUnlocked(ctx context.Context, clusterName string) error {
 	delete(m.connectionMap, clusterName)
+	delete(m.kubeClients, clusterName)
 	delete(m.dynamicClients, clusterName)
 
 	if cancel, ok := m.clusterCancelFuncs[clusterName]; ok {
-		klog.FromContext(ctx).V(2).Info("Stopping InformerManager for FederatedCluster")
+		klog.FromContext(ctx).V(2).Info("Stopping InformerManager and SharedInformerFactory for FederatedCluster")
 		cancel()
 	}
 	delete(m.informerManagers, clusterName)
+	delete(m.informerFactories, clusterName)
 	delete(m.clusterCancelFuncs, clusterName)
 
 	m.initialClusters.Delete(clusterName)
