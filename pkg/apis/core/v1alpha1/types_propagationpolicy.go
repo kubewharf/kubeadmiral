@@ -68,6 +68,7 @@ type PropagationPolicySpec struct {
 	SchedulingMode SchedulingMode `json:"schedulingMode"`
 	// StickyCluster determines if a federated object can be rescheduled.
 	// +optional
+	// Deprecated: Please use reschedulePolicy.disableRescheduling instead. This field will be removed in the next release.
 	StickyCluster bool `json:"stickyCluster"`
 
 	// ClusterSelector is a label query over clusters to consider for scheduling.
@@ -106,7 +107,13 @@ type PropagationPolicySpec struct {
 	// +optional
 	// Default set via a post-generation patch.
 	// See patch file for details.
+	// Deprecated: Please use reschedulePolicy.disableRescheduling instead. This field will be removed in the next release.
 	ReplicaRescheduling *ReplicaRescheduling `json:"replicaRescheduling,omitempty"`
+
+	// Configures behaviors related to rescheduling.
+	// +optional
+	// +kubebuilder:default:={rescheduleWhen:{policyContentChanged:true}}
+	ReschedulePolicy *ReschedulePolicy `json:"reschedulePolicy,omitempty"`
 }
 
 type PropagationPolicyStatus struct {
@@ -186,4 +193,49 @@ type ReplicaRescheduling struct {
 	// +optional
 	// +kubebuilder:default:=true
 	AvoidDisruption bool `json:"avoidDisruption"`
+}
+
+// ReschedulePolicy describes the rescheduling policy.
+type ReschedulePolicy struct {
+	// DisableRescheduling determines if a federated object can be rescheduled.
+	// +optional
+	DisableRescheduling bool `json:"disableRescheduling,omitempty"`
+	// When the related objects should be subject to reschedule.
+	// +optional
+	Trigger *RescheduleTrigger `json:"rescheduleWhen,omitempty"`
+	// Configures behaviors related to replica rescheduling.
+	// +optional
+	// Default set via a post-generation patch.
+	// See patch file for details.
+	ReplicaRescheduling *ReplicaRescheduling `json:"replicaRescheduling,omitempty"`
+}
+
+// RescheduleTrigger configures the criteria for triggering rescheduling.
+type RescheduleTrigger struct {
+	// If set to true, the scheduler will trigger rescheduling when the semantics of the policy changes. For example,
+	// modifying placement, schedulingMode, maxClusters, clusterSelector, and other configurations related to
+	// scheduling (includes reschedulePolicy itself) will immediately trigger rescheduling. Modifying the labels,
+	// annotations, autoMigration configuration will not trigger rescheduling.
+	// It set to false, the scheduler will not reschedule when the policy content changes.
+	// +optional
+	// +kubebuilder:default:=true
+	PolicyContentChanged bool `json:"policyContentChanged"`
+	// If set to true, clusters joining the federation will trigger rescheduling.
+	// It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the
+	// requested resources of the template changed.
+	// +optional
+	// +kubebuilder:default:=false
+	ClusterJoined bool `json:"clusterJoined"`
+	// If set to true, changes to cluster labels will trigger rescheduling.
+	// It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the
+	// requested resources of the template changed.
+	// +optional
+	// +kubebuilder:default:=false
+	ClusterLabelsChanged bool `json:"clusterLabelsChanged"`
+	// If set to true, changes to clusters' enabled list of api resources will trigger rescheduling.
+	// It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the
+	// requested resources of the template changed.
+	// +optional
+	// +kubebuilder:default:=false
+	ClusterAPIResourcesChanged bool `json:"clusterAPIResourcesChanged"`
 }
