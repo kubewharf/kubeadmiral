@@ -29,6 +29,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/policyrc"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/status"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
 )
 
 func startFederateController(
@@ -151,4 +152,28 @@ func startStatusController(
 	go statusController.Run(ctx)
 
 	return statusController, nil
+}
+
+func startFederatedClusterController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	federatedClusterController, err := federatedcluster.NewFederatedClusterController(
+		controllerCtx.KubeClientset,
+		controllerCtx.FedClientset,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedClusters(),
+		controllerCtx.FederatedInformerManager,
+		controllerCtx.Metrics,
+		klog.Background(),
+		controllerCtx.ComponentConfig.ClusterJoinTimeout,
+		controllerCtx.WorkerCount,
+		controllerCtx.FedSystemNamespace,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating federate controller: %w", err)
+	}
+
+	go federatedClusterController.Run(ctx)
+
+	return federatedClusterController, nil
 }
