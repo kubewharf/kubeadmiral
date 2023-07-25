@@ -28,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	corev1informers "k8s.io/client-go/informers/core/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
@@ -133,22 +132,27 @@ func NewNamespaceAutoPropagationController(
 	)
 
 	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandlerWithResyncPeriod(
-		eventhandlers.NewTriggerOnAllChanges(func(o runtime.Object) {
-			fedObj := o.(*fedcorev1a1.ClusterFederatedObject)
-			logger := c.logger.WithValues("cluster-federated-object", common.NewQualifiedName(fedObj))
-
-			srcMeta, err := fedObj.Spec.GetTemplateAsUnstructured()
-			if err != nil {
-				logger.Error(err, "Failed to get source object's metadata from ClusterFederatedObject")
-				return
-			}
-
-			if srcMeta.GetKind() != common.NamespaceKind || !c.shouldBeAutoPropagated(srcMeta) {
-				return
-			}
-
-			c.worker.Enqueue(common.QualifiedName{Name: fedObj.GetName()})
-		}), util.NoResyncPeriod); err != nil {
+		eventhandlers.NewTriggerOnAllChanges(
+			func(obj *fedcorev1a1.ClusterFederatedObject) *fedcorev1a1.ClusterFederatedObject {
+				return obj
+			},
+			func(obj *fedcorev1a1.ClusterFederatedObject) {
+				srcMeta, err := obj.Spec.GetTemplateAsUnstructured()
+				if err != nil {
+					logger.Error(
+						err,
+						"Failed to get source object's metadata from ClusterFederatedObject",
+						"object",
+						common.NewQualifiedName(obj),
+					)
+					return
+				}
+				if srcMeta.GetKind() != common.NamespaceKind || !c.shouldBeAutoPropagated(srcMeta) {
+					return
+				}
+				c.worker.Enqueue(common.QualifiedName{Name: obj.GetName()})
+			},
+		), util.NoResyncPeriod); err != nil {
 		return nil, err
 	}
 
@@ -240,7 +244,9 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		}
 
 		if updated {
-			_, err = c.fedClient.CoreV1alpha1().ClusterFederatedObjects().Update(ctx, fedNamespace, metav1.UpdateOptions{})
+			_, err = c.fedClient.CoreV1alpha1().
+				ClusterFederatedObjects().
+				Update(ctx, fedNamespace, metav1.UpdateOptions{})
 			if err != nil {
 				if apierrors.IsConflict(err) {
 					return worker.StatusConflict
@@ -355,7 +361,10 @@ func (c *Controller) shouldBeAutoPropagated(fedNamespace *unstructured.Unstructu
 	return true
 }
 
-func (c *Controller) ensureAnnotation(fedNamespace *fedcorev1a1.ClusterFederatedObject, key, value string) (bool, error) {
+func (c *Controller) ensureAnnotation(
+	fedNamespace *fedcorev1a1.ClusterFederatedObject,
+	key, value string,
+) (bool, error) {
 	needsUpdate, err := annotationutil.AddAnnotation(fedNamespace, key, value)
 	if err != nil {
 		return false, fmt.Errorf(
