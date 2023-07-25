@@ -38,7 +38,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -153,9 +152,12 @@ func NewStatusController(
 	// Build queue for triggering cluster reconciliations.
 	s.clusterQueue = workqueue.NewNamedDelayingQueue("status-controller-cluster-queue")
 
-	fedObjectHandler := util.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
-		s.enqueueEnableCollectedStatusObject(common.NewQualifiedName(o), 0)
-	})
+	fedObjectHandler := eventhandlers.NewTriggerOnAllChanges(
+		common.NewQualifiedName,
+		func(key common.QualifiedName) {
+			s.enqueueEnableCollectedStatusObject(key, 0)
+		},
+	)
 
 	if _, err := s.fedObjectInformer.Informer().AddEventHandler(fedObjectHandler); err != nil {
 		return nil, err
@@ -165,15 +167,17 @@ func NewStatusController(
 		return nil, err
 	}
 
-	if _, err := s.collectedStatusInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
-		s.worker.Enqueue(common.NewQualifiedName(o))
-	})); err != nil {
+	if _, err := s.collectedStatusInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+		common.NewQualifiedName,
+		s.worker.Enqueue,
+	)); err != nil {
 		return nil, err
 	}
 
-	if _, err := s.clusterCollectedStatusInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
-		s.worker.Enqueue(common.NewQualifiedName(o))
-	})); err != nil {
+	if _, err := s.clusterCollectedStatusInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+		common.NewQualifiedName,
+		s.worker.Enqueue,
+	)); err != nil {
 		return nil, err
 	}
 
@@ -189,20 +193,23 @@ func NewStatusController(
 				return nil
 			}
 
-			return eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
-				obj := o.(*unstructured.Unstructured)
+			return eventhandlers.NewTriggerOnAllChanges(
+				func(uns *unstructured.Unstructured) *unstructured.Unstructured {
+					return uns
+				},
+				func(uns *unstructured.Unstructured) {
+					ftc, exists := s.ftcManager.GetResourceFTC(uns.GroupVersionKind())
+					if !exists {
+						return
+					}
 
-				ftc, exists := s.ftcManager.GetResourceFTC(obj.GroupVersionKind())
-				if !exists {
-					return
-				}
-
-				federatedName := common.QualifiedName{
-					Namespace: obj.GetNamespace(),
-					Name:      naming.GenerateFederatedObjectName(obj.GetName(), ftc.GetName()),
-				}
-				s.worker.EnqueueWithDelay(federatedName, s.memberObjectEnqueueDelay)
-			})
+					federatedName := common.QualifiedName{
+						Namespace: uns.GetNamespace(),
+						Name:      naming.GenerateFederatedObjectName(uns.GetName(), ftc.GetName()),
+					}
+					s.worker.EnqueueWithDelay(federatedName, s.memberObjectEnqueueDelay)
+				},
+			)
 		},
 	}); err != nil {
 		return nil, fmt.Errorf("failed to add event handler generator: %w", err)
@@ -298,7 +305,10 @@ func (s *StatusController) reconcileOnClusterChange() {
 	}
 }
 
-func (s *StatusController) reconcile(ctx context.Context, qualifiedName common.QualifiedName) (reconcileStatus worker.Result) {
+func (s *StatusController) reconcile(
+	ctx context.Context,
+	qualifiedName common.QualifiedName,
+) (reconcileStatus worker.Result) {
 	keyedLogger := s.logger.WithValues("federated-name", qualifiedName.String())
 	ctx = klog.NewContext(ctx, keyedLogger)
 
@@ -327,7 +337,13 @@ func (s *StatusController) reconcile(ctx context.Context, qualifiedName common.Q
 
 	if fedObject == nil || fedObject.GetDeletionTimestamp() != nil {
 		keyedLogger.V(1).Info("No federated type found, deleting status object")
-		err = collectedstatusadapters.Delete(ctx, s.fedClient.CoreV1alpha1(), qualifiedName.Namespace, qualifiedName.Name, metav1.DeleteOptions{})
+		err = collectedstatusadapters.Delete(
+			ctx,
+			s.fedClient.CoreV1alpha1(),
+			qualifiedName.Namespace,
+			qualifiedName.Name,
+			metav1.DeleteOptions{},
+		)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return worker.StatusError
 		}
@@ -379,7 +395,13 @@ func (s *StatusController) reconcile(ctx context.Context, qualifiedName common.Q
 
 	var rsDigestsAnnotation string
 	if targetIsDeployment {
-		latestReplicasetDigests, err := s.latestReplicasetDigests(ctx, clusterNames, templateQualifiedName, templateGVK, typeConfig)
+		latestReplicasetDigests, err := s.latestReplicasetDigests(
+			ctx,
+			clusterNames,
+			templateQualifiedName,
+			templateGVK,
+			typeConfig,
+		)
 		if err != nil {
 			keyedLogger.Error(err, "Failed to get latest replicaset digests")
 		} else {
@@ -426,7 +448,12 @@ func (s *StatusController) reconcile(ctx context.Context, qualifiedName common.Q
 
 	if existingStatus == nil {
 		collectedStatus.GetLastUpdateTime().Time = time.Now()
-		_, err = collectedstatusadapters.Create(ctx, s.fedClient.CoreV1alpha1(), collectedStatus, metav1.CreateOptions{})
+		_, err = collectedstatusadapters.Create(
+			ctx,
+			s.fedClient.CoreV1alpha1(),
+			collectedStatus,
+			metav1.CreateOptions{},
+		)
 		if err != nil {
 			if apierrors.IsAlreadyExists(err) {
 				return worker.StatusConflict
@@ -594,8 +621,14 @@ func (s *StatusController) clusterStatuses(
 			sort.Slice(failedFields, func(i, j int) bool {
 				return failedFields[i] < failedFields[j]
 			})
-			resourceClusterStatus.Error = fmt.Sprintf("Failed to get those fields: %s", strings.Join(failedFields, ", "))
-			errList = append(errList, fmt.Sprintf("cluster-name: %s, error-info: %s", clusterName, resourceClusterStatus.Error))
+			resourceClusterStatus.Error = fmt.Sprintf(
+				"Failed to get those fields: %s",
+				strings.Join(failedFields, ", "),
+			)
+			errList = append(
+				errList,
+				fmt.Sprintf("cluster-name: %s, error-info: %s", clusterName, resourceClusterStatus.Error),
+			)
 		}
 		clusterStatus = append(clusterStatus, resourceClusterStatus)
 	}
@@ -698,7 +731,9 @@ func (s *StatusController) realUpdatedReplicas(
 			keyedLogger.WithValues("cluster-name", clusterName).Error(err, "Failed to get latestreplicaset digest")
 			continue
 		}
-		keyedLogger.WithValues("cluster-name", clusterName, "replicas-digest", digest).V(4).Info("Got latestreplicaset digest")
+		keyedLogger.WithValues("cluster-name", clusterName, "replicas-digest", digest).
+			V(4).
+			Info("Got latestreplicaset digest")
 		if digest.CurrentRevision != revision {
 			continue
 		}

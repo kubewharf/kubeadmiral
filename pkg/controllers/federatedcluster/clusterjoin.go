@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2018 The Kubernetes Authors.
 
@@ -33,15 +32,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
-	kubeclient "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 )
 
 const (
@@ -81,17 +79,11 @@ const (
 // The returned condition (if not-nil) will have status, reason and message set. The other fields
 // should be added by the caller.
 // The returned err is for informational purpose only and the caller should not abort on non-nil error.
-func handleNotJoinedCluster(
+func (c *FederatedClusterController) handleNotJoinedCluster(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
-	client fedclient.Interface,
-	kubeClient kubeclient.Interface,
-	eventRecorder record.EventRecorder,
-	fedSystemNamespace string,
-	clusterJoinTimeout time.Duration,
-) (c *fedcorev1a1.FederatedCluster, condition *fedcorev1a1.ClusterCondition, joinPerformed *bool, err error) {
-	logger := klog.FromContext(ctx).WithValues("process", "cluster-join")
-	ctx = klog.NewContext(ctx, logger)
+) (updated *fedcorev1a1.FederatedCluster, condition *fedcorev1a1.ClusterCondition, joinPerformed *bool, err error) {
+	logger := klog.FromContext(ctx)
 
 	joinedCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterJoined)
 
@@ -99,10 +91,10 @@ func handleNotJoinedCluster(
 
 	if joinedCondition != nil &&
 		joinedCondition.Status == corev1.ConditionFalse &&
-		time.Since(joinedCondition.LastTransitionTime.Time) > clusterJoinTimeout {
-		// join timed out
+		time.Since(joinedCondition.LastTransitionTime.Time) > c.clusterJoinTimeout {
+		// Join timed out
 		logger.Error(nil, "Cluster join timed out")
-		eventRecorder.Eventf(
+		c.eventRecorder.Eventf(
 			cluster,
 			corev1.EventTypeWarning,
 			EventReasonJoinClusterTimeoutExceeded,
@@ -117,11 +109,11 @@ func handleNotJoinedCluster(
 
 	// 2. The remaining steps require a cluster kube client, attempt to create one
 
-	_, clusterKubeClient, err := getClusterClient(ctx, kubeClient, fedSystemNamespace, cluster)
+	_, clusterKubeClient, err := c.getClusterClient(ctx, cluster)
 	if err != nil {
 		logger.Error(err, "Failed to create cluster client")
 		msg := fmt.Sprintf("Failed to create cluster client: %v", err.Error())
-		eventRecorder.Eventf(
+		c.eventRecorder.Eventf(
 			cluster,
 			corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
 		)
@@ -134,13 +126,15 @@ func handleNotJoinedCluster(
 
 	// 3. Get or create system namespace in the cluster, this will also tell us if the cluster is unjoinable
 
-	logger.V(2).WithValues("fed-system-namespace", fedSystemNamespace).Info("Get system namespace in cluster")
-	memberFedNamespace, err := clusterKubeClient.CoreV1().Namespaces().Get(ctx, fedSystemNamespace, metav1.GetOptions{ResourceVersion: "0"})
+	ctx, logger = logging.InjectLoggerValues(ctx, "fed-system-namespace", c.fedSystemNamespace)
+
+	logger.V(2).Info("Get system namespace in cluster")
+	memberFedNamespace, err := clusterKubeClient.CoreV1().Namespaces().Get(ctx, c.fedSystemNamespace, metav1.GetOptions{ResourceVersion: "0"})
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
 			msg := fmt.Sprintf("Failed to get namespace: %v", err.Error())
 			logger.Error(err, "Failed to get namespace")
-			eventRecorder.Eventf(
+			c.eventRecorder.Eventf(
 				cluster,
 				corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
 			)
@@ -156,12 +150,14 @@ func handleNotJoinedCluster(
 	}
 
 	if memberFedNamespace != nil && memberFedNamespace.Annotations[FederatedClusterUID] != string(cluster.UID) {
-		// ns exists and is not created by us - the cluster is managed by another control plane
+		// Namespace exists and is not created by us - the cluster is managed by another control plane.
 		msg := "Cluster is unjoinable (check if cluster is already joined to another federation)"
 		logger.Error(nil, msg, "UID", memberFedNamespace.Annotations[FederatedClusterUID], "clusterUID", string(cluster.UID))
-		eventRecorder.Eventf(
+		c.eventRecorder.Eventf(
 			cluster,
-			corev1.EventTypeWarning, EventReasonClusterUnjoinable, msg,
+			corev1.EventTypeWarning,
+			EventReasonClusterUnjoinable,
+			msg,
 		)
 		return cluster, &fedcorev1a1.ClusterCondition{
 				Status:  corev1.ConditionFalse,
@@ -180,19 +176,19 @@ func handleNotJoinedCluster(
 	if memberFedNamespace == nil {
 		memberFedNamespace = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: fedSystemNamespace,
+				Name: c.fedSystemNamespace,
 				Annotations: map[string]string{
 					FederatedClusterUID: string(cluster.UID),
 				},
 			},
 		}
 
-		logger.V(1).WithValues("fed-system-namespace", fedSystemNamespace).Info("Create system namespace in cluster")
+		logger.V(1).Info("Create system namespace in cluster")
 		memberFedNamespace, err = clusterKubeClient.CoreV1().Namespaces().Create(ctx, memberFedNamespace, metav1.CreateOptions{})
 		if err != nil {
 			msg := fmt.Sprintf("Failed to create system namespace: %v", err.Error())
 			logger.Error(err, "Failed to create system namespace")
-			eventRecorder.Eventf(
+			c.eventRecorder.Eventf(
 				cluster,
 				corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
 			)
@@ -208,12 +204,12 @@ func handleNotJoinedCluster(
 
 	if cluster.Spec.UseServiceAccountToken {
 		logger.V(2).Info("Get and save cluster token")
-		err = getAndSaveClusterToken(ctx, cluster, kubeClient, clusterKubeClient, fedSystemNamespace, memberFedNamespace)
+		err = c.getAndSaveClusterToken(ctx, cluster, clusterKubeClient, memberFedNamespace)
 
 		if err != nil {
 			msg := fmt.Sprintf("Failed to get and save cluster token: %v", err.Error())
 			logger.Error(err, "Failed to get and save cluster token")
-			eventRecorder.Eventf(
+			c.eventRecorder.Eventf(
 				cluster,
 				corev1.EventTypeWarning, EventReasonJoinClusterError, msg,
 			)
@@ -228,9 +224,11 @@ func handleNotJoinedCluster(
 	// 5. Cluster is joined, update condition
 
 	logger.V(2).Info("Cluster joined successfully")
-	eventRecorder.Eventf(
+	c.eventRecorder.Eventf(
 		cluster,
-		corev1.EventTypeNormal, EventReasonJoinClusterSuccess, "Cluster joined successfully",
+		corev1.EventTypeNormal,
+		EventReasonJoinClusterSuccess,
+		"Cluster joined successfully",
 	)
 	return cluster, &fedcorev1a1.ClusterCondition{
 		Status:  corev1.ConditionTrue,
@@ -239,12 +237,10 @@ func handleNotJoinedCluster(
 	}, joinPerformed, nil
 }
 
-func getAndSaveClusterToken(
+func (c *FederatedClusterController) getAndSaveClusterToken(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
-	kubeClient kubeclient.Interface,
-	clusterKubeClient kubeclient.Interface,
-	fedSystemNamespace string,
+	clusterKubeClient kubernetes.Interface,
 	memberSystemNamespace *corev1.Namespace,
 ) error {
 	logger := klog.FromContext(ctx)
@@ -262,13 +258,17 @@ func getAndSaveClusterToken(
 	}
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		secret, err := kubeClient.CoreV1().Secrets(fedSystemNamespace).Get(ctx, cluster.Spec.SecretRef.Name, metav1.GetOptions{})
+		secret, err := c.kubeClient.CoreV1().Secrets(c.fedSystemNamespace).Get(
+			ctx,
+			cluster.Spec.SecretRef.Name,
+			metav1.GetOptions{},
+		)
 		if err != nil {
 			return err
 		}
 		secret.Data[ServiceAccountTokenKey] = token
 		secret.Data[ServiceAccountCAKey] = ca
-		_, err = kubeClient.CoreV1().Secrets(fedSystemNamespace).Update(ctx, secret, metav1.UpdateOptions{})
+		_, err = c.kubeClient.CoreV1().Secrets(c.fedSystemNamespace).Update(ctx, secret, metav1.UpdateOptions{})
 		return err
 	})
 	if err != nil {
@@ -286,22 +286,29 @@ func getAndSaveClusterToken(
 // resources in the joining cluster.  The created secret name is returned on success.
 func createAuthorizedServiceAccount(
 	ctx context.Context,
-	clusterKubeClient kubeclient.Interface,
+	clusterKubeClient kubernetes.Interface,
 	memberSystemNamespace *corev1.Namespace,
 	clusterName string,
 	errorOnExisting bool,
 ) (string, error) {
-	logger := klog.FromContext(ctx).WithValues("member-service-account-name", MemberServiceAccountName)
-	ctx = klog.NewContext(ctx, logger)
+	ctx, logger := logging.InjectLoggerValues(ctx, "member-service-account-name", MemberServiceAccountName)
 
 	// 1. create service account
+
 	logger.V(1).Info("Creating service account")
-	err := createServiceAccount(ctx, clusterKubeClient, memberSystemNamespace.Name, MemberServiceAccountName, clusterName, errorOnExisting)
-	if err != nil {
+	if err := createServiceAccount(
+		ctx,
+		clusterKubeClient,
+		memberSystemNamespace.Name,
+		MemberServiceAccountName,
+		clusterName,
+		errorOnExisting,
+	); err != nil {
 		return "", fmt.Errorf("failed to create service account %s: %w", MemberServiceAccountName, err)
 	}
 
 	// 2. create service account token secret
+
 	logger.V(1).Info("Creating service account token secret")
 	saTokenSecretName, err := createServiceAccountTokenSecret(
 		ctx,
@@ -314,12 +321,21 @@ func createAuthorizedServiceAccount(
 	if err != nil {
 		return "", fmt.Errorf("error creating service account token secret %s : %w", MemberServiceAccountName, err)
 	}
-	logger.V(1).WithValues("sa-token-secret-name", saTokenSecretName).Info("Created service account token secret for service account")
+
+	ctx, logger = logging.InjectLoggerValues(ctx, "sa-token-secret-name", saTokenSecretName)
+	logger.V(1).Info("Created service account token secret for service account")
 
 	// 3. create rbac
+
 	logger.V(1).Info("Creating RBAC for service account")
-	err = createClusterRoleAndBinding(ctx, clusterKubeClient, memberSystemNamespace, MemberServiceAccountName, clusterName, errorOnExisting)
-	if err != nil {
+	if err = createClusterRoleAndBinding(
+		ctx,
+		clusterKubeClient,
+		memberSystemNamespace,
+		MemberServiceAccountName,
+		clusterName,
+		errorOnExisting,
+	); err != nil {
 		return "", fmt.Errorf("error creating cluster role and binding for service account %s: %w", MemberServiceAccountName, err)
 	}
 
@@ -331,8 +347,9 @@ func createAuthorizedServiceAccount(
 // to access its API server.
 func createServiceAccount(
 	ctx context.Context,
-	clusterClientset kubeclient.Interface,
-	namespace, saName, joiningClusterName string, errorOnExisting bool,
+	clusterClientset kubernetes.Interface,
+	namespace, saName, joiningClusterName string,
+	errorOnExisting bool,
 ) error {
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -367,7 +384,7 @@ func createServiceAccount(
 // to access its API server.
 func createServiceAccountTokenSecret(
 	ctx context.Context,
-	clusterClientset kubeclient.Interface,
+	clusterClientset kubernetes.Interface,
 	namespace, saName, joiningClusterName string,
 	errorOnExisting bool,
 ) (string, error) {
@@ -421,7 +438,7 @@ func bindingSubjects(saName, namespace string) []rbacv1.Subject {
 // with clientset.
 func createClusterRoleAndBinding(
 	ctx context.Context,
-	clientset kubeclient.Interface,
+	clientset kubernetes.Interface,
 	namespace *corev1.Namespace,
 	saName, clusterName string,
 	errorOnExisting bool,
@@ -551,7 +568,7 @@ func createClusterRoleAndBinding(
 
 func getServiceAccountToken(
 	ctx context.Context,
-	clusterClientset kubeclient.Interface,
+	clusterClientset kubernetes.Interface,
 	memberSystemNamespace, secretName string,
 ) ([]byte, []byte, error) {
 	// Get the secret from the joining cluster.

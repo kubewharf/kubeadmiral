@@ -22,7 +22,6 @@ import (
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -33,8 +32,8 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
@@ -71,7 +70,6 @@ func NewPolicyRCController(
 	logger klog.Logger,
 	workerCount int,
 ) (*Controller, error) {
-
 	c := &Controller{
 		client:                           generic.NewForConfigOrDie(restConfig),
 		fedObjectInformer:                fedInformerFactory.Core().V1alpha1().FederatedObjects(),
@@ -84,15 +82,17 @@ func NewPolicyRCController(
 		logger:                           logger.WithValues("controller", ControllerName),
 	}
 
-	if _, err := c.fedObjectInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
-		c.countWorker.Enqueue(common.NewQualifiedName(o))
-	})); err != nil {
+	if _, err := c.fedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+		common.NewQualifiedName,
+		c.countWorker.Enqueue,
+	)); err != nil {
 		return nil, err
 	}
 
-	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
-		c.countWorker.Enqueue(common.NewQualifiedName(o))
-	})); err != nil {
+	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+		common.NewQualifiedName,
+		c.countWorker.Enqueue,
+	)); err != nil {
 		return nil, err
 	}
 
@@ -141,27 +141,31 @@ func NewPolicyRCController(
 		metrics,
 	)
 
-	persistPpWorkerTrigger := func(o pkgruntime.Object) {
-		c.persistPpWorker.Enqueue(common.NewQualifiedName(o))
-	}
-
-	if _, err := c.propagationPolicyInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(persistPpWorkerTrigger)); err != nil {
+	if _, err := c.propagationPolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+		common.NewQualifiedName,
+		c.persistPpWorker.Enqueue,
+	)); err != nil {
 		return nil, err
 	}
 
-	if _, err := c.clusterPropagationPolicyInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(persistPpWorkerTrigger)); err != nil {
+	if _, err := c.clusterPropagationPolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+		common.NewQualifiedName,
+		c.persistPpWorker.Enqueue,
+	)); err != nil {
 		return nil, err
 	}
 
-	persistOpWorkerTrigger := func(o pkgruntime.Object) {
-		c.persistOpWorker.Enqueue(common.NewQualifiedName(o))
-	}
-
-	if _, err := c.overridePolicyInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(persistOpWorkerTrigger)); err != nil {
+	if _, err := c.overridePolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+		common.NewQualifiedName,
+		c.persistOpWorker.Enqueue,
+	)); err != nil {
 		return nil, err
 	}
 
-	if _, err := c.clusterOverridePolicyInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(persistOpWorkerTrigger)); err != nil {
+	if _, err := c.clusterOverridePolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+		common.NewQualifiedName,
+		c.persistPpWorker.Enqueue,
+	)); err != nil {
 		return nil, err
 	}
 
@@ -223,7 +227,12 @@ func (c *Controller) reconcileCount(ctx context.Context, qualifiedName common.Qu
 			Info("Policyrc count controller finished reconciling")
 	}()
 
-	fedObj, err := fedobjectadapters.GetFromLister(c.fedObjectInformer.Lister(), c.clusterFedObjectInformer.Lister(), qualifiedName.Namespace, qualifiedName.Name)
+	fedObj, err := fedobjectadapters.GetFromLister(
+		c.fedObjectInformer.Lister(),
+		c.clusterFedObjectInformer.Lister(),
+		qualifiedName.Namespace,
+		qualifiedName.Name,
+	)
 	if err != nil && !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to get federated object")
 		return worker.StatusError
@@ -270,7 +279,9 @@ func (c *Controller) reconcilePersist(
 	startTime := time.Now()
 	defer func() {
 		c.metrics.Duration(fmt.Sprintf("policyrc-persist-%s-controller.latency", metricName), startTime)
-		logger.V(3).WithValues("duration", time.Since(startTime)).Info("Policyrc persist controller finished reconciling")
+		logger.V(3).
+			WithValues("duration", time.Since(startTime)).
+			Info("Policyrc persist controller finished reconciling")
 	}()
 
 	store := clusterScopeStore
