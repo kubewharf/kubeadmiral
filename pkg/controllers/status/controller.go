@@ -560,11 +560,13 @@ func (s *StatusController) clusterStatuses(
 		clusterStatus = append(clusterStatus, resourceClusterStatus)
 	}
 
-	s.eventRecorder.Eventf(
-		fedObject,
-		corev1.EventTypeWarning, EventReasonGetObjectStatusError,
-		fmt.Sprintf("Failed to get some cluster status, error info: %s", strings.Join(errList, ". ")),
-	)
+	if len(errList) != 0 {
+		s.eventRecorder.Eventf(
+			fedObject,
+			corev1.EventTypeWarning, EventReasonGetObjectStatusError,
+			fmt.Sprintf("Failed to get some cluster status, error info: %s", strings.Join(errList, ". ")),
+		)
+	}
 
 	sort.Slice(clusterStatus, func(i, j int) bool {
 		return clusterStatus[i].ClusterName < clusterStatus[j].ClusterName
