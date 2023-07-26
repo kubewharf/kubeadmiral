@@ -28,6 +28,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/policyrc"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/status"
 )
 
 func startFederateController(
@@ -55,7 +56,10 @@ func startFederateController(
 	return federateController, nil
 }
 
-func startPolicyRCController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
+func startPolicyRCController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
 	policyRCController, err := policyrc.NewPolicyRCController(
 		controllerCtx.RestConfig,
 		controllerCtx.FedInformerFactory,
@@ -72,7 +76,10 @@ func startPolicyRCController(ctx context.Context, controllerCtx *controllerconte
 	return policyRCController, nil
 }
 
-func startOverridePolicyController(ctx context.Context, controllerCtx *controllercontext.Context) (controllermanager.Controller, error) {
+func startOverridePolicyController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
 	overrideController, err := override.NewOverridePolicyController(
 		controllerCtx.KubeClientset,
 		controllerCtx.FedClientset,
@@ -115,4 +122,33 @@ func startNamespaceAutoPropagationController(
 	go nsAutoPropController.Run(ctx)
 
 	return nsAutoPropController, nil
+}
+
+func startStatusController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	statusController, err := status.NewStatusController(
+		controllerCtx.KubeClientset,
+		controllerCtx.FedClientset,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().CollectedStatuses(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterCollectedStatuses(),
+		controllerCtx.InformerManager,
+		controllerCtx.FederatedInformerManager,
+		controllerCtx.ClusterAvailableDelay,
+		controllerCtx.ClusterUnavailableDelay,
+		controllerCtx.ComponentConfig.MemberObjectEnqueueDelay,
+		klog.Background(),
+		controllerCtx.WorkerCount,
+		controllerCtx.Metrics,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating sync controller: %w", err)
+	}
+
+	go statusController.Run(ctx)
+
+	return statusController, nil
 }

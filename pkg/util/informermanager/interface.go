@@ -44,6 +44,17 @@ type EventHandlerGenerator struct {
 // When a FTC deletion is observed, latest will be nil.
 type FTCUpdateHandler func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig)
 
+type FederatedTypeConfigManager interface {
+	// Returns the known FTC mapping for the given GVK if it exists.
+	GetResourceFTC(gvk schema.GroupVersionKind) (ftc *fedcorev1a1.FederatedTypeConfig, exists bool)
+
+	// Returns the FederatedTypeConfig lister used by the manager.
+	GetFederatedTypeConfigLister() fedcorev1a1listers.FederatedTypeConfigLister
+
+	// Returns true if the manager's view of FederatedTypeConfigs is synced.
+	HasSynced() bool
+}
+
 // InformerManager provides an interface for controllers that need to dynamically register event handlers and access
 // objects based on FederatedTypeConfigs. InformerManager will listen to FTC events and maintain informers for the
 // source type of each FTC.
@@ -113,6 +124,8 @@ type FederatedInformerManager interface {
 	GetFederatedTypeConfigLister() fedcorev1a1listers.FederatedTypeConfigLister
 	// Returns the FederatedCluster lister used by the FederatedInformerManager.
 	GetFederatedClusterLister() fedcorev1a1listers.FederatedClusterLister
+	// Returns the joined clusters in ready status listed from the FederatedInformerManager.
+	GetReadyClusters() ([]*fedcorev1a1.FederatedCluster, error)
 	// Returns true if the FederatedInformerManager's view of FederatedTypeConfigs and FederatedClusters is synced.
 	HasSynced() bool
 

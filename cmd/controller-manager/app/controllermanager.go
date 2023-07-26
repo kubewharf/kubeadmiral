@@ -42,6 +42,7 @@ const (
 	PolicyRCControllerName                 = "policyrc"
 	OverrideControllerName                 = "overridepolicy"
 	NamespaceAutoPropagationControllerName = "nsautoprop"
+	StatusControllerName                   = "status"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
@@ -49,6 +50,7 @@ var knownControllers = map[string]controllermanager.StartControllerFunc{
 	PolicyRCControllerName:                 startPolicyRCController,
 	OverrideControllerName:                 startOverridePolicyController,
 	NamespaceAutoPropagationControllerName: startNamespaceAutoPropagationController,
+	StatusControllerName:                   startStatusController,
 }
 
 var controllersDisabledByDefault = sets.New(MonitorControllerName)

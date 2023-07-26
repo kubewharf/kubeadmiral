@@ -59,6 +59,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&ClusterFederatedObjectList{},
 		&CollectedStatus{},
 		&CollectedStatusList{},
+		&ClusterCollectedStatus{},
+		&ClusterCollectedStatusList{},
 		&FederatedCluster{},
 		&FederatedClusterList{},
 		&FederatedTypeConfig{},
