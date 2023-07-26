@@ -40,11 +40,13 @@ const (
 	MonitorControllerName          = "monitor"
 	FollowerControllerName         = "follower"
 	PolicyRCControllerName         = "policyrc"
+	OverrideControllerName         = "overridepolicy"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
 	FederateControllerName: startFederateController,
 	PolicyRCControllerName: startPolicyRCController,
+	OverrideControllerName: startOverridePolicyController,
 }
 
 var controllersDisabledByDefault = sets.New(MonitorControllerName)
