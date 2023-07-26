@@ -25,6 +25,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/policyrc"
 )
@@ -88,4 +89,30 @@ func startOverridePolicyController(ctx context.Context, controllerCtx *controlle
 	go overrideController.Run(ctx)
 
 	return overrideController, nil
+}
+
+func startNamespaceAutoPropagationController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	nsAutoPropController, err := nsautoprop.NewNamespaceAutoPropagationController(
+		controllerCtx.KubeClientset,
+		controllerCtx.InformerManager,
+		controllerCtx.FedClientset,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedClusters(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
+		controllerCtx.KubeInformerFactory.Core().V1().Namespaces(),
+		controllerCtx.ComponentConfig.NSAutoPropExcludeRegexp,
+		controllerCtx.FedSystemNamespace,
+		controllerCtx.Metrics,
+		klog.Background(),
+		controllerCtx.WorkerCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating namespace auto propagation controller: %w", err)
+	}
+
+	go nsAutoPropController.Run(ctx)
+
+	return nsAutoPropController, nil
 }
