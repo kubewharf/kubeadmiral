@@ -24,8 +24,9 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 
-	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
+
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
@@ -35,7 +36,7 @@ const (
 	operationReplace = "replace"
 )
 
-func MatchedPolicyKey(obj *unstructured.Unstructured, isNamespaced bool) (result common.QualifiedName, ok bool) {
+func MatchedPolicyKey(obj fedcorev1a1.GenericFederatedObject, isNamespaced bool) (result common.QualifiedName, ok bool) {
 	labels := obj.GetLabels()
 
 	if policyName, exists := labels[PropagationPolicyNameLabel]; exists && isNamespaced {

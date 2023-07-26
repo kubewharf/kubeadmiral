@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2018 The Kubernetes Authors.
 
@@ -38,8 +37,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
 
 var mutex = sync.Mutex{}
