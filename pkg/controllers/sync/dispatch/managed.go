@@ -173,11 +173,11 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		defer cancel()
 
 		keyedLogger.V(1).Info("Creating target object in cluster")
-		obj, err = client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Create(
+		createdObj, err := client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Create(
 			ctxWithTimeout, obj, metav1.CreateOptions{},
 		)
 		if err == nil {
-			version := propagatedversion.ObjectVersion(obj)
+			version := propagatedversion.ObjectVersion(createdObj)
 			d.recordVersion(clusterName, version)
 			return true
 		}
