@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"strconv"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
@@ -38,21 +37,6 @@ const (
 	LatestReplicasetReadyReplicasAnnotation      = "latestreplicaset.kubeadmiral.io/ready-replicas"
 	LatestReplicasetObservedGenerationAnnotation = "latestreplicaset.kubeadmiral.io/observed-generation"
 )
-
-// FederatedResource is a generic representation of a federated type
-type FederatedResource struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	ClusterStatus []ResourceClusterStatus `json:"clusterStatus,omitempty"`
-}
-
-// ResourceClusterStatus defines the status of federated resource within a cluster
-type ResourceClusterStatus struct {
-	ClusterName     string                 `json:"clusterName,omitempty"`
-	Error           string                 `json:"error,omitempty"`
-	CollectedFields map[string]interface{} `json:"collectedFields,omitempty"`
-}
 
 type LatestReplicasetDigest struct {
 	ClusterName        string `json:"clusterName,omitempty"`
