@@ -259,7 +259,7 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			return d.recordOperationError(ctx, fedcorev1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
 		}
 
-		err = retainReplicas(obj, clusterObj, d.fedResource.Object(), d.fedResource.TypeConfig())
+		err = retainReplicas(obj, clusterObj, d.fedResource.Object(), d.fedResource.TypeConfig().Spec.PathDefinition.ReplicasSpec)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain replicas")
 			return d.recordOperationError(ctx, fedcorev1a1.FieldRetentionFailed, clusterName, op, wrappedErr)

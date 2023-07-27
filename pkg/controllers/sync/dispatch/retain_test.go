@@ -24,10 +24,12 @@ import (
 	"testing"
 
 	"github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
 func TestRetainClusterFields(t *testing.T) {
@@ -67,20 +69,15 @@ func TestRetainClusterFields(t *testing.T) {
 					},
 				},
 			}
-			fedObj := &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"spec": map[string]interface{}{
-						"retainReplicas": testCase.retainReplicas,
-					},
+			fedObj := &fedcorev1a1.FederatedObject{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: make(map[string]string),
 				},
 			}
-			if err := retainReplicas(desiredObj, clusterObj, fedObj, &fedcorev1a1.FederatedTypeConfig{
-				Spec: fedcorev1a1.FederatedTypeConfigSpec{
-					PathDefinition: fedcorev1a1.PathDefinition{
-						ReplicasSpec: "spec.replicas",
-					},
-				},
-			}); err != nil {
+			if testCase.retainReplicas {
+				fedObj.GetAnnotations()[common.RetainReplicasAnnotation] = common.AnnotationValueTrue
+			}
+			if err := retainReplicas(desiredObj, clusterObj, fedObj, "spec.replicas"); err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
 
