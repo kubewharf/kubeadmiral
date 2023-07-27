@@ -69,7 +69,7 @@ type PropagatedVersionStatus struct {
 type ClusterObjectVersion struct {
 	// The name of the cluster the version is for.
 	ClusterName string `json:"clusterName"`
-	// The last version produced for the resource by a KubeFed
+	// The last version produced for the resource by a KubeAdmiral
 	// operation.
 	Version string `json:"version"`
 }

@@ -68,7 +68,7 @@ func NewResourceInformerWithEventHandler(
 }
 
 // NewManagedResourceInformer returns an informer limited to resources
-// managed by KubeFed as indicated by labeling.
+// managed by KubeAdmiral as indicated by labeling.
 func NewManagedResourceInformer(
 	client ResourceClient,
 	namespace string,
