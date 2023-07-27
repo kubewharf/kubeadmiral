@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
@@ -526,20 +525,20 @@ func checkRetainReplicas(fedObj metav1.Object) bool {
 	return fedObj.GetAnnotations()[common.RetainReplicasAnnotation] == common.AnnotationValueTrue
 }
 
-func retainReplicas(desiredObj, clusterObj *unstructured.Unstructured, fedObj metav1.Object, typeConfig *fedcorev1a1.FederatedTypeConfig) error {
+func retainReplicas(desiredObj, clusterObj *unstructured.Unstructured, fedObj metav1.Object, replicasPath string) error {
 	// Retain the replicas field if the federated object has been
 	// configured to do so.  If the replicas field is intended to be
 	// set by the in-cluster HPA controller, not retaining it will
 	// thrash the scheduler.
 	retain := checkRetainReplicas(fedObj)
 	if retain {
-		replicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
+		replicas, err := utilunstructured.GetInt64FromPath(clusterObj, replicasPath, nil)
 		if err != nil {
 			return err
 		}
 
 		if replicas != nil {
-			if err := utilunstructured.SetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, replicas, nil); err != nil {
+			if err := utilunstructured.SetInt64FromPath(desiredObj, replicasPath, replicas, nil); err != nil {
 				return err
 			}
 		}
