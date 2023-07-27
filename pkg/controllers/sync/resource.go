@@ -47,7 +47,7 @@ import (
 
 // FederatedResource encapsulates the behavior of a logical federated
 // resource which may be implemented by one or more kubernetes
-// resources in the cluster hosting the KubeFed control plane.
+// resources in the cluster hosting the control plane.
 type FederatedResource interface {
 	dispatch.FederatedResourceForDispatch
 
@@ -247,9 +247,9 @@ func (r *federatedResource) ApplyOverrides(
 		}
 	}
 
-	// Ensure that resources managed by KubeFed always have the
+	// Ensure that resources managed by us always have the
 	// managed label.  The label is intended to be targeted by all the
-	// KubeFed controllers.
+	// KubeAdmiral controllers.
 	managedlabel.AddManagedLabel(obj)
 
 	return nil
