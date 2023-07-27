@@ -224,6 +224,7 @@ func startSyncController(
 		controllerCtx.TargetNamespace,
 		controllerCtx.ClusterAvailableDelay,
 		controllerCtx.ClusterUnavailableDelay,
+		controllerCtx.ComponentConfig.MemberObjectEnqueueDelay,
 		klog.Background(),
 		controllerCtx.WorkerCount,
 		controllerCtx.Metrics,
