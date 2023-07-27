@@ -41,12 +41,14 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	"github.com/kubewharf/kubeadmiral/pkg/util/orphaning"
 	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
@@ -277,8 +279,8 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 	// Ensure we adopt pre-existing namespaces in member clusters
 	isDirty, err = c.ensureAnnotation(
 		fedNamespace,
-		util.ConflictResolutionInternalAnnotation,
-		string(util.ConflictResolutionAdopt),
+		adoption.ConflictResolutionInternalAnnotation,
+		string(adoption.ConflictResolutionAdopt),
 	)
 	if err != nil {
 		utilruntime.HandleError(err)
@@ -289,8 +291,8 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 	// Ensure we don't delete adopted member namespaces when the federated namespace is deleted
 	isDirty, err = c.ensureAnnotation(
 		fedNamespace,
-		util.OrphanManagedResourcesInternalAnnotation,
-		string(util.OrphanManagedResourcesAdopted),
+		orphaning.OrphanManagedResourcesInternalAnnotation,
+		string(orphaning.OrphanManagedResourcesAdopted),
 	)
 	if err != nil {
 		utilruntime.HandleError(err)
