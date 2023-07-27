@@ -38,12 +38,13 @@ import (
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/meta"
 	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
@@ -105,28 +106,28 @@ func NewOverridePolicyController(
 		metrics,
 	)
 
-	if _, err := c.fedObjectInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
+	if _, err := c.fedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
 		fedObj := o.(*fedcorev1a1.FederatedObject)
 		c.worker.Enqueue(common.QualifiedName{Namespace: fedObj.Namespace, Name: fedObj.Name})
 	})); err != nil {
 		return nil, err
 	}
 
-	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
+	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
 		fedObj := o.(*fedcorev1a1.ClusterFederatedObject)
 		c.worker.Enqueue(common.QualifiedName{Name: fedObj.Name})
 	})); err != nil {
 		return nil, err
 	}
 
-	if _, err := c.overridePolicyInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
+	if _, err := c.overridePolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
 		policy := o.(fedcorev1a1.GenericOverridePolicy)
 		c.enqueueFedObjectsUsingPolicy(policy, OverridePolicyNameLabel)
 	})); err != nil {
 		return nil, err
 	}
 
-	if _, err := c.clusterOverridePolicyInformer.Informer().AddEventHandler(util.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
+	if _, err := c.clusterOverridePolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
 		policy := o.(fedcorev1a1.GenericOverridePolicy)
 		c.enqueueFedObjectsUsingPolicy(policy, OverridePolicyNameLabel)
 	})); err != nil {
@@ -190,12 +191,12 @@ func (c *Controller) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedTyp
 	}
 
 	for _, obj := range allObjects {
-		sourceGVK, err := obj.GetSpec().GetTemplateGVK()
+		sourceMetadata, err := obj.GetSpec().GetTemplateMetadata()
 		if err != nil {
-			c.logger.Error(err, "Failed to get source GVK from FederatedObject, will not enqueue")
+			c.logger.Error(err, "Failed to get source metadata from FederatedObject, will not enqueue")
 			continue
 		}
-		if sourceGVK == ftc.GetSourceTypeGVK() {
+		if sourceMetadata.GroupVersionKind() == ftc.GetSourceTypeGVK() {
 			c.worker.Enqueue(common.NewQualifiedName(obj))
 		}
 	}
@@ -289,11 +290,12 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		return worker.StatusAllOK
 	}
 
-	templateGVK, err := fedObject.GetSpec().GetTemplateGVK()
+	templateMetadata, err := fedObject.GetSpec().GetTemplateMetadata()
 	if err != nil {
-		keyedLogger.Error(err, "Failed to get template gvk")
+		keyedLogger.Error(err, "Failed to get template metadata")
 		return worker.StatusError
 	}
+	templateGVK := templateMetadata.GroupVersionKind()
 
 	ctx, keyedLogger = logging.InjectLoggerValues(ctx, "source-gvk", templateGVK.String())
 	typeConfig, exist := c.informerManager.GetResourceFTC(templateGVK)
@@ -348,7 +350,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 				corev1.EventTypeWarning,
 				EventReasonParseOverridePolicyFailed,
 				"failed to parse overrides from %s %q: %v",
-				util.GetResourceKind(policy),
+				meta.GetResourceKind(policy),
 				policy.GetKey(),
 				err.Error(),
 			)
