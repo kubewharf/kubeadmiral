@@ -413,7 +413,7 @@ func TestParseOverrides(t *testing.T) {
 										Operator: "replace",
 										Path:     "/aa/bb",
 										Value: apiextensionsv1.JSON{
-											Raw: []byte(`["banana", "mango"]`),
+											Raw: []byte(`["banana","mango"]`),
 										},
 									},
 								},
@@ -516,7 +516,7 @@ func TestParseOverrides(t *testing.T) {
 										Operator: "replace",
 										Path:     "/aa/bb",
 										Value: apiextensionsv1.JSON{
-											Raw: []byte(`["banana", "mango"]`),
+											Raw: []byte(`["banana","mango"]`),
 										},
 									},
 								},
@@ -541,7 +541,7 @@ func TestParseOverrides(t *testing.T) {
 										Operator: "replace",
 										Path:     "/cc/dd",
 										Value: apiextensionsv1.JSON{
-											Raw: []byte(`{"key": "value"}`),
+											Raw: []byte(`{"key":"value"}`),
 										},
 									},
 								},
