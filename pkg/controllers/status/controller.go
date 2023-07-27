@@ -179,6 +179,9 @@ func NewStatusController(
 
 	if err := s.fedInformerManager.AddEventHandlerGenerator(&informermanager.EventHandlerGenerator{
 		Predicate: func(lastApplied, latest *fedcorev1a1.FederatedTypeConfig) bool {
+			if lastApplied == nil || latest == nil {
+				return true
+			}
 			return lastApplied.IsStatusCollectionEnabled() != latest.IsStatusCollectionEnabled()
 		},
 		Generator: func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler {
