@@ -63,7 +63,6 @@ func templateForSourceObject(
 	template.SetSelfLink("")
 	template.SetUID("")
 	template.SetResourceVersion("")
-	template.SetGeneration(0)
 	template.SetCreationTimestamp(metav1.Time{})
 	template.SetDeletionTimestamp(nil)
 	template.SetAnnotations(annotations)
@@ -72,6 +71,8 @@ func templateForSourceObject(
 	template.SetFinalizers(nil)
 	template.SetManagedFields(nil)
 	unstructured.RemoveNestedField(template.Object, common.StatusField)
+	// NOTE: we intentionally do not set generation to 0 so the SourceGeneration annotation
+	// can be populated in target objects.
 	return template
 }
 

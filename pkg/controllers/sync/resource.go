@@ -39,6 +39,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/dispatch"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/version"
+	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 	overridesutil "github.com/kubewharf/kubeadmiral/pkg/util/overrides"
@@ -157,6 +158,12 @@ func (r *federatedResource) ComputePlacement(clusters []*fedcorev1a1.FederatedCl
 
 func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.Unstructured, error) {
 	obj := r.template.DeepCopy()
+
+	if obj.GetGeneration() != 0 {
+		if _, err := annotationutil.AddAnnotation(obj, common.SourceGenerationAnnotation, fmt.Sprintf("%d", obj.GetGeneration())); err != nil {
+			return nil, err
+		}
+	}
 
 	switch r.TargetGVK() {
 	case common.JobGVK:
