@@ -22,7 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
+	"github.com/kubewharf/kubeadmiral/pkg/util/annotation"
 )
 
 func TestCopySubmap(t *testing.T) {
