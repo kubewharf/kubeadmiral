@@ -84,6 +84,8 @@ const (
 	AnnotationValueTrue  = "true"
 	AnnotationValueFalse = "false"
 
+	SourceGenerationAnnotation = DefaultPrefix + "source-generation"
+
 	// The following annotations control the behavior of Kubeadmiral controllers.
 
 	NoSchedulingAnnotation = DefaultPrefix + "no-scheduling"
