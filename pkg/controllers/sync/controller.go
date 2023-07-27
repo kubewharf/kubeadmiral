@@ -139,7 +139,7 @@ func NewSyncController(
 	fedInformerManager informermanager.FederatedInformerManager,
 
 	fedSystemNamespace, targetNamespace string,
-	clusterAvailableDelay, clusterUnavailableDelay time.Duration,
+	clusterAvailableDelay, clusterUnavailableDelay, memberObjectEnqueueDelay time.Duration,
 
 	logger klog.Logger,
 	workerCount int,
@@ -155,7 +155,7 @@ func NewSyncController(
 		clusterUnavailableDelay:       clusterUnavailableDelay,
 		reconcileOnClusterChangeDelay: time.Second * 3,
 		reconcileOnFTCChangeDelay:     time.Second * 3,
-		memberObjectEnqueueDelay:      time.Second * 10,
+		memberObjectEnqueueDelay:      memberObjectEnqueueDelay,
 		recheckAfterDispatchDelay:     time.Second * 10,
 		ensureDeletionRecheckDelay:    time.Second * 5,
 		cascadingDeletionRecheckDelay: time.Second * 10,
