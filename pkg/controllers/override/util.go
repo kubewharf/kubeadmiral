@@ -80,7 +80,7 @@ func lookForMatchedPolicies(
 			return nil, true, err
 		}
 		if errors.IsNotFound(err) {
-			return nil, false, fmt.Errorf("OverridePolicy %s/%s not found", matchedPolicy.Namespace, matchedPolicy.Name)
+			return nil, false, fmt.Errorf("OverridePolicy %s/%s not found", obj.GetNamespace(), policyName)
 		}
 		policies = append(policies, matchedPolicy)
 	}
