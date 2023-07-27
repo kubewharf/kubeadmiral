@@ -45,8 +45,8 @@ Returns the policy if found, whether a recheck is needed on error, and encounter
 func lookForMatchedPolicies(
 	obj fedcorev1a1.GenericFederatedObject,
 	isNamespaced bool,
-	overridePolicyStore fedcorev1a1listers.OverridePolicyLister,
-	clusterOverridePolicyStore fedcorev1a1listers.ClusterOverridePolicyLister,
+	overridePolicyLister fedcorev1a1listers.OverridePolicyLister,
+	clusterOverridePolicyLister fedcorev1a1listers.ClusterOverridePolicyLister,
 ) ([]fedcorev1a1.GenericOverridePolicy, bool, error) {
 	policies := make([]fedcorev1a1.GenericOverridePolicy, 0)
 
@@ -58,7 +58,7 @@ func lookForMatchedPolicies(
 			return nil, false, fmt.Errorf("policy name cannot be empty")
 		}
 
-		matchedPolicy, err := clusterOverridePolicyStore.Get(clusterPolicyName)
+		matchedPolicy, err := clusterOverridePolicyLister.Get(clusterPolicyName)
 		if err != nil && !errors.IsNotFound(err) {
 			return nil, true, err
 		}
@@ -75,7 +75,7 @@ func lookForMatchedPolicies(
 			return nil, false, fmt.Errorf("policy name cannot be empty")
 		}
 
-		matchedPolicy, err := overridePolicyStore.OverridePolicies(obj.GetNamespace()).Get(policyName)
+		matchedPolicy, err := overridePolicyLister.OverridePolicies(obj.GetNamespace()).Get(policyName)
 		if err != nil && !errors.IsNotFound(err) {
 			return nil, true, err
 		}

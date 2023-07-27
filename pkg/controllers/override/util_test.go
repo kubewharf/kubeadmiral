@@ -21,13 +21,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	jsonutil "k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/tools/cache"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 )
 
 func TestLookForMatchedPolicies(t *testing.T) {
@@ -263,42 +264,48 @@ func TestLookForMatchedPolicies(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			obj := &unstructured.Unstructured{Object: make(map[string]interface{})}
+			var obj fedcorev1a1.GenericFederatedObject
 			isNamespaced := testCase.obj.Namespace != ""
 			if isNamespaced {
-				err := unstructured.SetNestedField(obj.Object, testCase.obj.Namespace, "metadata", "namespace")
-				if err != nil {
-					panic(err)
+				obj = &fedcorev1a1.FederatedObject{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: testCase.obj.Namespace,
+					},
+				}
+			} else {
+				obj = &fedcorev1a1.ClusterFederatedObject{
+					ObjectMeta: metav1.ObjectMeta{},
 				}
 			}
-			err := unstructured.SetNestedStringMap(obj.Object, testCase.obj.Labels, "metadata", "labels")
-			if err != nil {
-				panic(err)
-			}
+			obj.SetLabels(testCase.obj.Labels)
 
-			overridePolicyStore := cache.NewStore(cache.DeletionHandlingMetaNamespaceKeyFunc)
+			overridePolicyIndexer := cache.NewIndexer(cache.DeletionHandlingMetaNamespaceKeyFunc, cache.Indexers{
+				cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
+			})
+			overridePolicyLister := fedcorev1a1listers.NewOverridePolicyLister(overridePolicyIndexer)
 			for _, opMeta := range testCase.overridePolicies {
 				op := &fedcorev1a1.OverridePolicy{
 					ObjectMeta: opMeta,
 				}
-				err := overridePolicyStore.Add(op)
+				err := overridePolicyIndexer.Add(op)
 				if err != nil {
 					panic(err)
 				}
 			}
 
-			clusterOverridePolicyStore := cache.NewStore(cache.DeletionHandlingMetaNamespaceKeyFunc)
+			clusterOverridePolicyIndexer := cache.NewIndexer(cache.DeletionHandlingMetaNamespaceKeyFunc, cache.Indexers{})
+			clusterOverridePolicyStore := fedcorev1a1listers.NewClusterOverridePolicyLister(clusterOverridePolicyIndexer)
 			for _, copMeta := range testCase.clusterOverridePolicies {
 				cop := &fedcorev1a1.ClusterOverridePolicy{
 					ObjectMeta: copMeta,
 				}
-				err := clusterOverridePolicyStore.Add(cop)
+				err := clusterOverridePolicyIndexer.Add(cop)
 				if err != nil {
 					panic(err)
 				}
 			}
 
-			foundPolicies, needsRecheckOnError, err := lookForMatchedPolicies(obj, isNamespaced, overridePolicyStore, clusterOverridePolicyStore)
+			foundPolicies, needsRecheckOnError, err := lookForMatchedPolicies(obj, isNamespaced, overridePolicyLister, clusterOverridePolicyStore)
 			if (err != nil) != testCase.isErrorExpected {
 				t.Fatalf("err = %v, but isErrorExpected = %v", err, testCase.isErrorExpected)
 			}
@@ -325,7 +332,7 @@ func TestParseOverrides(t *testing.T) {
 	testCases := map[string]struct {
 		policy               fedcorev1a1.GenericOverridePolicy
 		clusters             []*fedcorev1a1.FederatedCluster
-		expectedOverridesMap util.OverridesMap
+		expectedOverridesMap overridesMap
 		isErrorExpected      bool
 	}{
 		"no clusters - should return no overrides": {
@@ -341,7 +348,7 @@ func TestParseOverrides(t *testing.T) {
 				},
 			},
 			clusters:             nil,
-			expectedOverridesMap: make(util.OverridesMap),
+			expectedOverridesMap: make(overridesMap),
 			isErrorExpected:      false,
 		},
 		"invalid clusterSelector - should return error": {
@@ -381,7 +388,7 @@ func TestParseOverrides(t *testing.T) {
 					},
 				},
 			},
-			expectedOverridesMap: make(util.OverridesMap),
+			expectedOverridesMap: make(overridesMap),
 			isErrorExpected:      false,
 		},
 		"single cluster multiple OverrideRules - should return overrides from matched rules in order": {
@@ -462,17 +469,17 @@ func TestParseOverrides(t *testing.T) {
 					},
 				},
 			},
-			expectedOverridesMap: util.OverridesMap{
-				"cluster1": fedtypesv1a1.OverridePatches{
+			expectedOverridesMap: overridesMap{
+				"cluster1": fedcorev1a1.OverridePatches{
 					{
 						Op:    "add",
 						Path:  "/a/b",
-						Value: float64(1),
+						Value: asJSON(float64(1)),
 					},
 					{
 						Op:    "replace",
 						Path:  "/aa/bb",
-						Value: []interface{}{"banana", "mango"},
+						Value: asJSON([]interface{}{"banana", "mango"}),
 					},
 					{
 						Op:   "remove",
@@ -481,7 +488,7 @@ func TestParseOverrides(t *testing.T) {
 					{
 						Op:    "add",
 						Path:  "/ee/ff",
-						Value: "some string",
+						Value: asJSON("some string"),
 					},
 				},
 			},
@@ -577,41 +584,41 @@ func TestParseOverrides(t *testing.T) {
 					},
 				},
 			},
-			expectedOverridesMap: util.OverridesMap{
-				"cluster1": fedtypesv1a1.OverridePatches{
+			expectedOverridesMap: overridesMap{
+				"cluster1": fedcorev1a1.OverridePatches{
 					{
 						Op:    "add",
 						Path:  "/a/b",
-						Value: float64(1),
+						Value: asJSON(float64(1)),
 					},
 					{
 						Op:    "replace",
 						Path:  "/aa/bb",
-						Value: []interface{}{"banana", "mango"},
+						Value: asJSON([]interface{}{"banana", "mango"}),
 					},
 					{
 						Op:    "replace",
 						Path:  "/c/d",
-						Value: float64(1),
+						Value: asJSON(float64(1)),
 					},
 					{
 						Op:   "replace",
 						Path: "/cc/dd",
-						Value: map[string]interface{}{
+						Value: asJSON(map[string]interface{}{
 							"key": "value",
-						},
+						}),
 					},
 				},
-				"cluster2": fedtypesv1a1.OverridePatches{
+				"cluster2": fedcorev1a1.OverridePatches{
 					{
 						Op:    "add",
 						Path:  "/a/b",
-						Value: float64(1),
+						Value: asJSON(float64(1)),
 					},
 					{
 						Op:    "replace",
 						Path:  "/aa/bb",
-						Value: []interface{}{"banana", "mango"},
+						Value: asJSON([]interface{}{"banana", "mango"}),
 					},
 					{
 						Op:   "remove",
@@ -620,7 +627,7 @@ func TestParseOverrides(t *testing.T) {
 					{
 						Op:    "add",
 						Path:  "/ee/ff",
-						Value: "some string",
+						Value: asJSON("some string"),
 					},
 				},
 			},
@@ -1002,123 +1009,123 @@ func TestIsClusterMatched(t *testing.T) {
 
 func TestMergeOverrides(t *testing.T) {
 	testCases := map[string]struct {
-		dst            util.OverridesMap
-		src            util.OverridesMap
-		expectedResult util.OverridesMap
+		dst            overridesMap
+		src            overridesMap
+		expectedResult overridesMap
 	}{
 		"nil dst - result should be equivalent to src": {
 			dst: nil,
-			src: util.OverridesMap{
-				"cluster1": []fedtypesv1a1.OverridePatch{
+			src: overridesMap{
+				"cluster1": []fedcorev1a1.OverridePatch{
 					{
 						Op:    "replace",
 						Path:  "/spec/replicas",
-						Value: 1,
+						Value: asJSON(1),
 					},
 				},
-				"cluster2": []fedtypesv1a1.OverridePatch{
+				"cluster2": []fedcorev1a1.OverridePatch{
 					{
 						Op:    "replace",
 						Path:  "/spec/replicas",
-						Value: 2,
+						Value: asJSON(2),
 					},
 				},
 			},
-			expectedResult: util.OverridesMap{
-				"cluster1": []fedtypesv1a1.OverridePatch{
+			expectedResult: overridesMap{
+				"cluster1": []fedcorev1a1.OverridePatch{
 					{
 						Op:    "replace",
 						Path:  "/spec/replicas",
-						Value: 1,
+						Value: asJSON(1),
 					},
 				},
-				"cluster2": []fedtypesv1a1.OverridePatch{
+				"cluster2": []fedcorev1a1.OverridePatch{
 					{
 						Op:    "replace",
 						Path:  "/spec/replicas",
-						Value: 2,
+						Value: asJSON(2),
 					},
 				},
 			},
 		},
 		"non-nil dst - override patches for the same cluster should be appended from src": {
-			dst: util.OverridesMap{
-				"cluster1": []fedtypesv1a1.OverridePatch{
+			dst: overridesMap{
+				"cluster1": []fedcorev1a1.OverridePatch{
 					{
 						Op:    "replace",
 						Path:  "/spec/replicas",
-						Value: 1,
+						Value: asJSON(1),
 					},
 				},
 			},
-			src: util.OverridesMap{
-				"cluster1": []fedtypesv1a1.OverridePatch{
+			src: overridesMap{
+				"cluster1": []fedcorev1a1.OverridePatch{
 					{
 						Op:    "add",
 						Path:  "/spec/replicas",
-						Value: 10,
+						Value: asJSON(10),
 					},
 				},
 			},
-			expectedResult: util.OverridesMap{
-				"cluster1": []fedtypesv1a1.OverridePatch{
+			expectedResult: overridesMap{
+				"cluster1": []fedcorev1a1.OverridePatch{
 					{
 						Op:    "replace",
 						Path:  "/spec/replicas",
-						Value: 1,
+						Value: asJSON(1),
 					},
 					{
 						Op:    "add",
 						Path:  "/spec/replicas",
-						Value: 10,
+						Value: asJSON(10),
 					},
 				},
 			},
 		},
 		"non-nil dst - existing overrides patches should be kept": {
-			dst: util.OverridesMap{
-				"cluster1": []fedtypesv1a1.OverridePatch{
+			dst: overridesMap{
+				"cluster1": []fedcorev1a1.OverridePatch{
 					{
 						Op:    "replace",
 						Path:  "/spec/replicas",
-						Value: 1,
+						Value: asJSON(1),
 					},
 				},
-				"cluster2": []fedtypesv1a1.OverridePatch{
+				"cluster2": []fedcorev1a1.OverridePatch{
 					{
 						Op:    "replace",
 						Path:  "/spec/replicas",
-						Value: 2,
-					},
-				},
-			},
-			src: util.OverridesMap{
-				"cluster1": []fedtypesv1a1.OverridePatch{
-					{
-						Op:    "replace",
-						Path:  "/spec/replicas",
-						Value: 3,
+						Value: asJSON(2),
 					},
 				},
 			},
-			expectedResult: util.OverridesMap{
-				"cluster1": []fedtypesv1a1.OverridePatch{
+			src: overridesMap{
+				"cluster1": []fedcorev1a1.OverridePatch{
 					{
 						Op:    "replace",
 						Path:  "/spec/replicas",
-						Value: 1,
-					},
-					{
-						Op:    "replace",
-						Path:  "/spec/replicas",
-						Value: 3,
+						Value: asJSON(3),
 					},
 				},
-				"cluster2": []fedtypesv1a1.OverridePatch{
+			},
+			expectedResult: overridesMap{
+				"cluster1": []fedcorev1a1.OverridePatch{
 					{
 						Op:    "replace",
 						Path:  "/spec/replicas",
-						Value: 2,
+						Value: asJSON(1),
+					},
+					{
+						Op:    "replace",
+						Path:  "/spec/replicas",
+						Value: asJSON(3),
+					},
+				},
+				"cluster2": []fedcorev1a1.OverridePatch{
+					{
+						Op:    "replace",
+						Path:  "/spec/replicas",
+						Value: asJSON(2),
 					},
 				},
 			},
@@ -1131,4 +1138,14 @@ func TestMergeOverrides(t *testing.T) {
 			assert.Equal(t, testCase.expectedResult, result)
 		})
 	}
+}
+
+func asJSON(value any) apiextensionsv1.JSON {
+	var ret apiextensionsv1.JSON
+	if data, err := jsonutil.Marshal(value); err != nil {
+		panic(err)
+	} else {
+		ret.Raw = data
+	}
+	return ret
 }
