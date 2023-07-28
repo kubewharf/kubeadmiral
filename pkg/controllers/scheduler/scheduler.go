@@ -773,7 +773,7 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 
 	fedObjects, err := s.fedObjectInformer.Lister().List(labels.Everything())
 	if err != nil {
-		s.logger.Error(err, "Failed to enquue FederatedObjects for policy")
+		s.logger.Error(err, "Failed to enqueue FederatedObjects for policy")
 		return
 	}
 	for _, obj := range fedObjects {
@@ -781,7 +781,7 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 	}
 	clusterFedObjects, err := s.clusterFedObjectInformer.Lister().List(labels.Everything())
 	if err != nil {
-		s.logger.Error(err, "Failed to enquue ClusterFederatedObjects for policy")
+		s.logger.Error(err, "Failed to enqueue ClusterFederatedObjects for policy")
 		return
 	}
 	for _, obj := range clusterFedObjects {

@@ -94,7 +94,7 @@ func TestMatchedPolicyKey(t *testing.T) {
 			}
 			object.SetLabels(labels)
 
-			policy, found := GetMatchedPolicyKey(object, object.GetNamespace() != "")
+			policy, found := GetMatchedPolicyKey(object)
 			if found != testCase.expectedPolicyFound {
 				t.Fatalf("found = %v, but expectedPolicyFound = %v", found, testCase.expectedPolicyFound)
 			}
