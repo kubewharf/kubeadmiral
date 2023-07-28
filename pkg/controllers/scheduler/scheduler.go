@@ -715,7 +715,7 @@ func (s *Scheduler) enqueueFederatedObjectsForPolicy(policy metav1.Object) {
 
 	policyKey := common.NewQualifiedName(policyAccessor)
 	logger := s.logger.WithValues("policy", policyKey.String())
-	logger.V(2).Info("Enqueue FederatedObjects and ClusterFederatedObjects for policy")
+	logger.V(2).Info("Enqueue federated objects for policy")
 
 	isPolicyNamespaced := len(policyKey.Namespace) > 0
 
@@ -778,36 +778,33 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 
 	logger.V(2).Info("Enqueue federated objects for cluster")
 
-	hasPropagationPolicy, err := labels.NewRequirement(PropagationPolicyNameLabel, selection.Exists, []string{})
-	if err != nil {
-		logger.Error(err, "Failed to generate label selector for federated objects")
-		return
-	}
-	hasClusterPropagationPolicy, err := labels.NewRequirement(
-		ClusterPropagationPolicyNameLabel,
-		selection.Exists,
-		[]string{},
-	)
-	if err != nil {
-		logger.Error(err, "Failed to generate label selector for federated objects")
-	}
-	labelSelector := labels.NewSelector().Add(*hasPropagationPolicy).Add(*hasClusterPropagationPolicy)
+	for _, policyLabel := range []string{PropagationPolicyNameLabel, ClusterPropagationPolicyNameLabel} {
+		hasPolicy, err := labels.NewRequirement(policyLabel, selection.Exists, []string{})
+		if err != nil {
+			logger.Error(err, "Failed to generate label selector for federated objects")
+			return
+		}
+		if err != nil {
+			logger.Error(err, "Failed to generate label selector for federated objects")
+		}
+		labelSelector := labels.NewSelector().Add(*hasPolicy)
 
-	fedObjects, err := s.fedObjectInformer.Lister().List(labelSelector)
-	if err != nil {
-		logger.Error(err, "Failed to enqueue FederatedObjects for policy")
-		return
-	}
-	for _, obj := range fedObjects {
-		s.worker.Enqueue(common.NewQualifiedName(obj))
-	}
-	clusterFedObjects, err := s.clusterFedObjectInformer.Lister().List(labelSelector)
-	if err != nil {
-		logger.Error(err, "Failed to enqueue ClusterFederatedObjects for policy")
-		return
-	}
-	for _, obj := range clusterFedObjects {
-		s.worker.Enqueue(common.NewQualifiedName(obj))
+		fedObjects, err := s.fedObjectInformer.Lister().List(labelSelector)
+		if err != nil {
+			logger.Error(err, "Failed to enqueue FederatedObjects for cluster")
+			return
+		}
+		for _, obj := range fedObjects {
+			s.worker.Enqueue(common.NewQualifiedName(obj))
+		}
+		clusterFedObjects, err := s.clusterFedObjectInformer.Lister().List(labelSelector)
+		if err != nil {
+			logger.Error(err, "Failed to enqueue ClusterFederatedObjects for cluster")
+			return
+		}
+		for _, obj := range clusterFedObjects {
+			s.worker.Enqueue(common.NewQualifiedName(obj))
+		}
 	}
 }
 
