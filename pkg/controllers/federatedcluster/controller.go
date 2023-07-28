@@ -292,7 +292,7 @@ func (c *FederatedClusterController) reconcile(
 
 	// Trigger initial status collection if successfully joined
 	if joined, alreadyFailed := isClusterJoined(&cluster.Status); joined && !alreadyFailed {
-		c.statusCollectWorker.EnqueueObject(cluster)
+		c.statusCollectWorker.Enqueue(common.NewQualifiedName(cluster))
 	}
 
 	return worker.StatusAllOK
