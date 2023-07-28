@@ -111,7 +111,6 @@ func NewFederateController(
 	c.eventRecorder = eventsink.NewDefederatingRecorderMux(kubeClient, FederateControllerName, 6)
 	c.worker = worker.NewReconcileWorker[workerKey](
 		FederateControllerName,
-		nil,
 		c.reconcile,
 		worker.RateLimiterOptions{},
 		workerCount,

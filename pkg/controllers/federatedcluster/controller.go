@@ -125,7 +125,6 @@ func NewFederatedClusterController(
 
 	c.worker = worker.NewReconcileWorker[common.QualifiedName](
 		FederatedClusterControllerName,
-		nil,
 		c.reconcile,
 		worker.RateLimiterOptions{},
 		workerCount,
@@ -134,7 +133,6 @@ func NewFederatedClusterController(
 
 	c.statusCollectWorker = worker.NewReconcileWorker[common.QualifiedName](
 		FederatedClusterControllerName,
-		nil,
 		c.collectClusterStatus,
 		worker.RateLimiterOptions{
 			InitialDelay: 50 * time.Millisecond,

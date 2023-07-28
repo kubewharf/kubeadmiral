@@ -99,7 +99,6 @@ func NewOverridePolicyController(
 	c.eventRecorder = eventsink.NewDefederatingRecorderMux(kubeClient, ControllerName, 4)
 	c.worker = worker.NewReconcileWorker[common.QualifiedName](
 		ControllerName,
-		nil,
 		c.reconcile,
 		worker.RateLimiterOptions{},
 		workerCount,

@@ -130,7 +130,6 @@ func NewScheduler(
 	s.eventRecorder = eventsink.NewDefederatingRecorderMux(kubeClient, SchedulerName, 6)
 	s.worker = worker.NewReconcileWorker[common.QualifiedName](
 		SchedulerName,
-		nil,
 		s.reconcile,
 		worker.RateLimiterOptions{},
 		workerCount,
@@ -754,7 +753,7 @@ func (s *Scheduler) enqueueFederatedObjectsForPolicy(policy metav1.Object) {
 		if policyKey, found := GetMatchedPolicyKey(obj); !found {
 			continue
 		} else if policyKey.Name == policyAccessor.GetName() && policyKey.Namespace == policyAccessor.GetNamespace() {
-			s.worker.EnqueueObject(obj)
+			s.worker.Enqueue(common.NewQualifiedName(obj))
 		}
 	}
 }
@@ -777,7 +776,7 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 		return
 	}
 	for _, obj := range fedObjects {
-		s.worker.EnqueueObject(obj)
+		s.worker.Enqueue(common.NewQualifiedName(obj))
 	}
 	clusterFedObjects, err := s.clusterFedObjectInformer.Lister().List(labels.Everything())
 	if err != nil {
@@ -785,7 +784,7 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 		return
 	}
 	for _, obj := range clusterFedObjects {
-		s.worker.EnqueueObject(obj)
+		s.worker.Enqueue(common.NewQualifiedName(obj))
 	}
 }
 
@@ -819,7 +818,7 @@ func (s *Scheduler) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedType
 			continue
 		}
 		if sourceGVK == ftc.GetSourceTypeGVK() {
-			s.worker.EnqueueObject(obj)
+			s.worker.Enqueue(common.NewQualifiedName(obj))
 		}
 	}
 }

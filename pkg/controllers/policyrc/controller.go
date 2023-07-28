@@ -85,7 +85,6 @@ func NewPolicyRCController(
 
 	c.countWorker = worker.NewReconcileWorker[common.QualifiedName](
 		"policyrc-controller-count-worker",
-		nil,
 		c.reconcileCount,
 		worker.RateLimiterOptions{},
 		1, // currently only one worker is meaningful due to the global mutex
@@ -94,7 +93,6 @@ func NewPolicyRCController(
 
 	c.persistPpWorker = worker.NewReconcileWorker[common.QualifiedName](
 		"policyrc-controller-persist-worker",
-		nil,
 		func(ctx context.Context, qualifiedName common.QualifiedName) worker.Result {
 			return c.reconcilePersist(
 				ctx,
@@ -112,7 +110,6 @@ func NewPolicyRCController(
 
 	c.persistOpWorker = worker.NewReconcileWorker[common.QualifiedName](
 		"policyrc-controller-persist-worker",
-		nil,
 		func(ctx context.Context, qualifiedName common.QualifiedName) worker.Result {
 			return c.reconcilePersist(
 				ctx,
