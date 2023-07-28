@@ -140,9 +140,6 @@ const (
 	// TemplateGeneratorMergePatchAnnotation indicates the merge patch document capable of converting
 	// the source object to the template object.
 	TemplateGeneratorMergePatchAnnotation = FederateControllerPrefix + "template-generator-merge-patch"
-
-	PropagationPolicyNameLabel        = DefaultPrefix + "propagation-policy-name"
-	ClusterPropagationPolicyNameLabel = DefaultPrefix + "cluster-propagation-policy-name"
 )
 
 // PropagatedAnnotationKeys and PropagatedLabelKeys are used to store the keys of annotations and labels that are present
