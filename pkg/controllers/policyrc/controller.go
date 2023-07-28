@@ -83,20 +83,6 @@ func NewPolicyRCController(
 		logger:                           logger.WithValues("controller", ControllerName),
 	}
 
-	if _, err := c.fedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
-		common.NewQualifiedName,
-		c.countWorker.Enqueue,
-	)); err != nil {
-		return nil, err
-	}
-
-	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
-		common.NewQualifiedName,
-		c.countWorker.Enqueue,
-	)); err != nil {
-		return nil, err
-	}
-
 	c.countWorker = worker.NewReconcileWorker[common.QualifiedName](
 		"policyrc-controller-count-worker",
 		nil,
@@ -141,6 +127,21 @@ func NewPolicyRCController(
 		workerCount,
 		metrics,
 	)
+
+	if _, err := c.fedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
+		common.NewQualifiedName,
+		c.countWorker.Enqueue,
+	)); err != nil {
+		return nil, err
+	}
+
+	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
+		common.NewQualifiedName,
+		c.countWorker.Enqueue,
+	)); err != nil {
+		return nil, err
+	}
+
 
 	if _, err := c.propagationPolicyInformer.Informer().AddEventHandler(
 		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistPpWorker.Enqueue),
