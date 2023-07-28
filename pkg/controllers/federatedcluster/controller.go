@@ -492,7 +492,7 @@ func (c *FederatedClusterController) enqueueAllJoinedClusters() {
 
 	for _, cluster := range clusters {
 		if clusterutil.IsClusterJoined(&cluster.Status) {
-			c.statusCollectWorker.EnqueueObject(cluster)
+			c.statusCollectWorker.Enqueue(common.NewQualifiedName(cluster))
 		}
 	}
 }
