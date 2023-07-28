@@ -32,6 +32,7 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
@@ -236,7 +237,7 @@ func (c *Controller) reconcileCount(ctx context.Context, qualifiedName common.Qu
 
 	var newPps []PolicyKey
 	if fedObj != nil {
-		newPolicy, newHasPolicy := fedobjectadapters.MatchedPolicyKey(fedObj, fedObj.GetNamespace() != "")
+		newPolicy, newHasPolicy := scheduler.GetMatchedPolicyKey(fedObj)
 		if newHasPolicy {
 			newPps = []PolicyKey{PolicyKey(newPolicy)}
 		}

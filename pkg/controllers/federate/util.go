@@ -273,8 +273,8 @@ var (
 	)
 
 	federatedLabelSet = sets.New[string](
-		common.PropagationPolicyNameLabel,
-		common.ClusterPropagationPolicyNameLabel,
+		scheduler.PropagationPolicyNameLabel,
+		scheduler.ClusterPropagationPolicyNameLabel,
 		override.OverridePolicyNameLabel,
 		override.ClusterOverridePolicyNameLabel,
 	)

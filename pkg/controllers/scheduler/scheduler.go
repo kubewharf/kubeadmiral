@@ -56,7 +56,9 @@ import (
 )
 
 const (
-	SchedulerName = "scheduler"
+	SchedulerName                     = "scheduler"
+	PropagationPolicyNameLabel        = common.DefaultPrefix + "propagation-policy-name"
+	ClusterPropagationPolicyNameLabel = common.DefaultPrefix + "cluster-propagation-policy-name"
 )
 
 type ClusterWeight struct {
