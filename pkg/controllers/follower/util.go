@@ -77,12 +77,12 @@ func getFollowersFromAnnotation(
 	return followers, nil
 }
 
-func getFollowersFromPodTemplate(
+func getFollowersFromPodSpec(
 	fedObject *unstructured.Unstructured,
-	podTemplatePath string,
+	podSpecPath string,
 	sourceToFederatedGKMap map[schema.GroupKind]schema.GroupKind,
 ) (sets.Set[FollowerReference], error) {
-	podSpec, err := getPodSpec(fedObject, podTemplatePath)
+	podSpec, err := getPodSpec(fedObject, podSpecPath)
 	if err != nil {
 		return nil, err
 	}
@@ -148,23 +148,23 @@ func getFollowersFromPod(
 	return followers
 }
 
-func getPodSpec(fedObject *unstructured.Unstructured, podTemplatePath string) (*corev1.PodSpec, error) {
+func getPodSpec(fedObject *unstructured.Unstructured, podSpecPath string) (*corev1.PodSpec, error) {
 	if fedObject == nil {
 		return nil, fmt.Errorf("fedObject is nil")
 	}
-	fedObjectPodTemplatePath := append(
+	fedObjectPodSpecPath := append(
 		[]string{common.SpecField, common.TemplateField},
-		strings.Split(podTemplatePath, ".")...)
-	podTemplateMap, found, err := unstructured.NestedMap(fedObject.Object, fedObjectPodTemplatePath...)
+		strings.Split(podSpecPath, ".")...)
+	podSpecMap, found, err := unstructured.NestedMap(fedObject.Object, fedObjectPodSpecPath...)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		return nil, fmt.Errorf("pod template does not exist at path %q", podTemplatePath)
+		return nil, fmt.Errorf("pod spec does not exist at path %q", podSpecPath)
 	}
-	podTemplate := &corev1.PodTemplateSpec{}
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(podTemplateMap, podTemplate); err != nil {
+	podSpec := &corev1.PodSpec{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(podSpecMap, podSpec); err != nil {
 		return nil, err
 	}
-	return &podTemplate.Spec, nil
+	return podSpec, nil
 }
