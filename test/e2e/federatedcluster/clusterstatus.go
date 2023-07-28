@@ -39,7 +39,10 @@ var _ = ginkgo.Describe("Cluster Status", federatedClusterTestLabels, func() {
 
 	waitForClusterJoin := func(ctx context.Context) {
 		gomega.Eventually(func(g gomega.Gomega, ctx context.Context) {
-			cluster, err := f.HostFedClient().CoreV1alpha1().FederatedClusters().Get(ctx, cluster.Name, metav1.GetOptions{})
+			cluster, err := f.HostFedClient().
+				CoreV1alpha1().
+				FederatedClusters().
+				Get(ctx, cluster.Name, metav1.GetOptions{})
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 			g.Expect(cluster).To(gomega.Satisfy(clusterfwk.ClusterJoined))
 		}).WithTimeout(clusterJoinTimeout).WithContext(ctx).Should(gomega.Succeed(), "Timed out waiting for cluster join")
@@ -48,7 +51,10 @@ var _ = ginkgo.Describe("Cluster Status", federatedClusterTestLabels, func() {
 	waitForFirstStatusUpdate := func(ctx context.Context) {
 		// check initial status update
 		gomega.Eventually(func(g gomega.Gomega, ctx context.Context) {
-			cluster, err := f.HostFedClient().CoreV1alpha1().FederatedClusters().Get(ctx, cluster.Name, metav1.GetOptions{})
+			cluster, err := f.HostFedClient().
+				CoreV1alpha1().
+				FederatedClusters().
+				Get(ctx, cluster.Name, metav1.GetOptions{})
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 			g.Expect(cluster).To(gomega.Satisfy(statusCollected))
 		}).WithTimeout(clusterStatusCollectTimeout).WithContext(ctx).Should(gomega.Succeed(), "Timed out waiting for first status update")
@@ -58,7 +64,10 @@ var _ = ginkgo.Describe("Cluster Status", federatedClusterTestLabels, func() {
 		waitForStatusConvergence := func(ctx context.Context) {
 			gomega.Eventually(func(g gomega.Gomega, ctx context.Context) {
 				var err error
-				cluster, err := f.HostFedClient().CoreV1alpha1().FederatedClusters().Get(ctx, cluster.Name, metav1.GetOptions{})
+				cluster, err := f.HostFedClient().
+					CoreV1alpha1().
+					FederatedClusters().
+					Get(ctx, cluster.Name, metav1.GetOptions{})
 				gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 				g.Expect(cluster).To(gomega.Satisfy(clusterfwk.ClusterReachable))
 				g.Expect(cluster.Status.APIResourceTypes).ToNot(gomega.BeEmpty())
@@ -118,7 +127,10 @@ var _ = ginkgo.Describe("Cluster Status", federatedClusterTestLabels, func() {
 		waitForStatusConvergence := func(ctx context.Context) {
 			gomega.Eventually(func(g gomega.Gomega, ctx context.Context) {
 				var err error
-				cluster, err := f.HostFedClient().CoreV1alpha1().FederatedClusters().Get(ctx, cluster.Name, metav1.GetOptions{})
+				cluster, err := f.HostFedClient().
+					CoreV1alpha1().
+					FederatedClusters().
+					Get(ctx, cluster.Name, metav1.GetOptions{})
 				gomega.Expect(err).ToNot(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 				g.Expect(cluster).To(gomega.Satisfy(clusterfwk.ClusterUnreachable))
 			}).WithTimeout(clusterStatusUpdateInterval*2).WithContext(ctx).Should(gomega.Succeed(), "Timed out waiting for status convergence")

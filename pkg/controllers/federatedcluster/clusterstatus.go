@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/discovery"
 	corev1listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
@@ -68,23 +69,13 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	if !exists {
 		return 0, fmt.Errorf("failed to get cluster client: FederatedInformerManager not yet up-to-date")
 	}
-
 	podLister, podsSynced, exists := c.federatedInformerManager.GetPodLister(cluster.Name)
 	if !exists {
 		return 0, fmt.Errorf("failed to get pod lister: FederatedInformerManager not yet up-to-date")
 	}
-	if !podsSynced() {
-		logger.V(3).Info("Pod informer not synced, will reenqueue")
-		return 100 * time.Millisecond, nil
-	}
-
 	nodeLister, nodesSynced, exists := c.federatedInformerManager.GetNodeLister(cluster.Name)
 	if !exists {
 		return 0, fmt.Errorf("failed to get node lister: FederatedInformerManager not yet up-to-date")
-	}
-	if !nodesSynced() {
-		logger.V(3).Info("Pod informer not synced, will reenqueue")
-		return 100 * time.Millisecond, nil
 	}
 
 	discoveryClient := clusterKubeClient.Discovery()
@@ -108,7 +99,14 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 
 	// We skip updating cluster resources and api resources if cluster is not ready
 	if readyStatus == corev1.ConditionTrue {
-		if err := updateClusterResources(ctx, &cluster.Status, podLister, nodeLister); err != nil {
+		if err := updateClusterResources(
+			ctx,
+			&cluster.Status,
+			podLister,
+			podsSynced,
+			nodeLister,
+			nodesSynced,
+		); err != nil {
 			logger.Error(err, "Failed to update cluster resources")
 			readyStatus = corev1.ConditionFalse
 			readyReason = ClusterResourceCollectionFailedReason
@@ -174,8 +172,16 @@ func updateClusterResources(
 	ctx context.Context,
 	clusterStatus *fedcorev1a1.FederatedClusterStatus,
 	podLister corev1listers.PodLister,
+	podsSynced cache.InformerSynced,
 	nodeLister corev1listers.NodeLister,
+	nodesSynced cache.InformerSynced,
 ) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if !cache.WaitForCacheSync(ctx.Done(), podsSynced, nodesSynced) {	
+		return fmt.Errorf("timeout waiting for node and pod informer sync")	
+	}
+
 	nodes, err := nodeLister.List(labels.Everything())
 	if err != nil {
 		return fmt.Errorf("failed to list nodes: %w", err)
