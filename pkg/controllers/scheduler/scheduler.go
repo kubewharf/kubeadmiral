@@ -30,6 +30,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -293,7 +294,7 @@ func (s *Scheduler) reconcile(ctx context.Context, key common.QualifiedName) (st
 	if schedulingProfile != nil {
 		ctx, logger = logging.InjectLoggerValues(
 			ctx,
-			"schedulingProfile",
+			"scheduling-profile",
 			common.NewQualifiedName(schedulingProfile).String(),
 		)
 	}
@@ -314,13 +315,13 @@ func (s *Scheduler) reconcile(ctx context.Context, key common.QualifiedName) (st
 		spec := policy.GetSpec()
 
 		auxInfo.enableFollowerScheduling = !spec.DisableFollowerScheduling
-		ctx, logger = logging.InjectLoggerValues(ctx, "enableFollowerScheduling", auxInfo.enableFollowerScheduling)
+		ctx, logger = logging.InjectLoggerValues(ctx, "enable-follower-scheduling", auxInfo.enableFollowerScheduling)
 
 		if autoMigration := spec.AutoMigration; autoMigration != nil {
 			auxInfo.unschedulableThreshold = pointer.Duration(autoMigration.Trigger.PodUnschedulableDuration.Duration)
 			ctx, logger = logging.InjectLoggerValues(
 				ctx,
-				"unschedulableThreshold",
+				"unschedulable-threshold",
 				auxInfo.unschedulableThreshold.String(),
 			)
 		}
@@ -716,13 +717,22 @@ func (s *Scheduler) enqueueFederatedObjectsForPolicy(policy metav1.Object) {
 	logger := s.logger.WithValues("policy", policyKey.String())
 	logger.V(2).Info("Enqueue FederatedObjects and ClusterFederatedObjects for policy")
 
+	isPolicyNamespaced := len(policyKey.Namespace) > 0
+
 	allObjects := []metav1.Object{}
 
-	if len(policyKey.Namespace) > 0 {
+	var labelSelector labels.Selector
+	if isPolicyNamespaced {
+		labelSelector = labels.Set{PropagationPolicyNameLabel: policyKey.Name}.AsSelector()
+	} else {
+		labelSelector = labels.Set{ClusterPropagationPolicyNameLabel: policyKey.Name}.AsSelector()
+	}
+
+	if isPolicyNamespaced {
 		// If the policy is namespaced, we only need to scan FederatedObjects in the same namespace.
-		fedObjects, err := s.fedObjectInformer.Lister().FederatedObjects(policyKey.Namespace).List(labels.Everything())
+		fedObjects, err := s.fedObjectInformer.Lister().FederatedObjects(policyKey.Namespace).List(labelSelector)
 		if err != nil {
-			s.logger.Error(err, "Failed to enqueue FederatedObjects for policy")
+			logger.Error(err, "Failed to enqueue FederatedObjects for policy")
 			return
 		}
 		for _, obj := range fedObjects {
@@ -730,18 +740,18 @@ func (s *Scheduler) enqueueFederatedObjectsForPolicy(policy metav1.Object) {
 		}
 	} else {
 		// If the policy is cluster-scoped, we need to scan all FederatedObjects and ClusterFederatedObjects
-		fedObjects, err := s.fedObjectInformer.Lister().List(labels.Everything())
+		fedObjects, err := s.fedObjectInformer.Lister().List(labelSelector)
 		if err != nil {
-			s.logger.Error(err, "Failed to enqueue FederatedObjects for policy")
+			logger.Error(err, "Failed to enqueue FederatedObjects for policy")
 			return
 		}
 		for _, obj := range fedObjects {
 			allObjects = append(allObjects, obj)
 		}
 
-		clusterFedObjects, err := s.clusterFedObjectInformer.Lister().List(labels.Everything())
+		clusterFedObjects, err := s.clusterFedObjectInformer.Lister().List(labelSelector)
 		if err != nil {
-			s.logger.Error(err, "Failed to enqueue ClusterFederatedObjects for policy")
+			logger.Error(err, "Failed to enqueue ClusterFederatedObjects for policy")
 			return
 		}
 		for _, obj := range clusterFedObjects {
@@ -762,25 +772,38 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 	logger := s.logger.WithValues("cluster", cluster.GetName())
 
 	if !clusterutil.IsClusterJoined(&cluster.Status) {
-		s.logger.WithValues("cluster", cluster.Name).
-			V(3).
-			Info("Skip enqueue federated objects for cluster, cluster not joined")
+		logger.V(3).Info("Skip enqueue federated objects for cluster, cluster not joined")
 		return
 	}
 
 	logger.V(2).Info("Enqueue federated objects for cluster")
 
-	fedObjects, err := s.fedObjectInformer.Lister().List(labels.Everything())
+	hasPropagationPolicy, err := labels.NewRequirement(PropagationPolicyNameLabel, selection.Exists, []string{})
 	if err != nil {
-		s.logger.Error(err, "Failed to enqueue FederatedObjects for policy")
+		logger.Error(err, "Failed to generate label selector for federated objects")
+		return
+	}
+	hasClusterPropagationPolicy, err := labels.NewRequirement(
+		ClusterPropagationPolicyNameLabel,
+		selection.Exists,
+		[]string{},
+	)
+	if err != nil {
+		logger.Error(err, "Failed to generate label selector for federated objects")
+	}
+	labelSelector := labels.NewSelector().Add(*hasPropagationPolicy).Add(*hasClusterPropagationPolicy)
+
+	fedObjects, err := s.fedObjectInformer.Lister().List(labelSelector)
+	if err != nil {
+		logger.Error(err, "Failed to enqueue FederatedObjects for policy")
 		return
 	}
 	for _, obj := range fedObjects {
 		s.worker.Enqueue(common.NewQualifiedName(obj))
 	}
-	clusterFedObjects, err := s.clusterFedObjectInformer.Lister().List(labels.Everything())
+	clusterFedObjects, err := s.clusterFedObjectInformer.Lister().List(labelSelector)
 	if err != nil {
-		s.logger.Error(err, "Failed to enqueue ClusterFederatedObjects for policy")
+		logger.Error(err, "Failed to enqueue ClusterFederatedObjects for policy")
 		return
 	}
 	for _, obj := range clusterFedObjects {
@@ -796,7 +819,7 @@ func (s *Scheduler) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedType
 	allObjects := []fedcorev1a1.GenericFederatedObject{}
 	fedObjects, err := s.fedObjectInformer.Lister().List(labels.Everything())
 	if err != nil {
-		s.logger.Error(err, "Failed to enquue FederatedObjects for policy")
+		logger.Error(err, "Failed to enqueue FederatedObjects for policy")
 		return
 	}
 	for _, obj := range fedObjects {
@@ -804,7 +827,7 @@ func (s *Scheduler) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedType
 	}
 	clusterFedObjects, err := s.clusterFedObjectInformer.Lister().List(labels.Everything())
 	if err != nil {
-		s.logger.Error(err, "Failed to enquue ClusterFederatedObjects for policy")
+		logger.Error(err, "Failed to enqueue ClusterFederatedObjects for policy")
 		return
 	}
 	for _, obj := range clusterFedObjects {
@@ -814,7 +837,7 @@ func (s *Scheduler) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedType
 	for _, obj := range allObjects {
 		sourceGVK, err := obj.GetSpec().GetTemplateGVK()
 		if err != nil {
-			s.logger.Error(err, "Failed to get source GVK from FederatedObject, will not enqueue")
+			logger.Error(err, "Failed to get source GVK from FederatedObject, will not enqueue")
 			continue
 		}
 		if sourceGVK == ftc.GetSourceTypeGVK() {
