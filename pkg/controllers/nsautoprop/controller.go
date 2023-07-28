@@ -135,7 +135,7 @@ func NewNamespaceAutoPropagationController(
 			func(obj *fedcorev1a1.ClusterFederatedObject) {
 				srcMeta, err := obj.Spec.GetTemplateAsUnstructured()
 				if err != nil {
-					logger.Error(
+					c.logger.Error(
 						err,
 						"Failed to get source object's metadata from ClusterFederatedObject",
 						"object",
