@@ -805,7 +805,7 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 		}
 	}
 
-	for  obj := range allObjects {
+	for obj := range allObjects {
 		s.worker.Enqueue(obj)
 	}
 }
