@@ -778,14 +778,12 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 
 	logger.V(2).Info("Enqueue federated objects for cluster")
 
+	allObjects := sets.New[common.QualifiedName]()
 	for _, policyLabel := range []string{PropagationPolicyNameLabel, ClusterPropagationPolicyNameLabel} {
 		hasPolicy, err := labels.NewRequirement(policyLabel, selection.Exists, []string{})
 		if err != nil {
 			logger.Error(err, "Failed to generate label selector for federated objects")
 			return
-		}
-		if err != nil {
-			logger.Error(err, "Failed to generate label selector for federated objects")
 		}
 		labelSelector := labels.NewSelector().Add(*hasPolicy)
 
@@ -795,7 +793,7 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 			return
 		}
 		for _, obj := range fedObjects {
-			s.worker.Enqueue(common.NewQualifiedName(obj))
+			allObjects.Insert(common.NewQualifiedName(obj))
 		}
 		clusterFedObjects, err := s.clusterFedObjectInformer.Lister().List(labelSelector)
 		if err != nil {
@@ -803,8 +801,12 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 			return
 		}
 		for _, obj := range clusterFedObjects {
-			s.worker.Enqueue(common.NewQualifiedName(obj))
+			allObjects.Insert(common.NewQualifiedName(obj))
 		}
+	}
+
+	for  obj := range allObjects {
+		s.worker.Enqueue(obj)
 	}
 }
 
