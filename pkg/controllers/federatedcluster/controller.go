@@ -96,14 +96,14 @@ func NewFederatedClusterController(
 	logger klog.Logger,
 	clusterJoinTimeout time.Duration,
 	workerCount int,
-	fedsystemNamespace string,
+	fedSystemNamespace string,
 ) (*FederatedClusterController, error) {
 	c := &FederatedClusterController{
 		clusterInformer:          clusterInformer,
 		federatedInformerManager: federatedInformerManager,
 		kubeClient:               kubeClient,
 		fedClient:                fedClient,
-		fedSystemNamespace:       fedsystemNamespace,
+		fedSystemNamespace:       fedSystemNamespace,
 		clusterHealthCheckConfig: &ClusterHealthCheckConfig{
 			// TODO: make health check period configurable
 			Period: time.Second * 30,
@@ -165,7 +165,7 @@ func NewFederatedClusterController(
 }
 
 func (c *FederatedClusterController) HasSynced() bool {
-	return c.clusterInformer.Informer().HasSynced()
+	return c.clusterInformer.Informer().HasSynced() && c.federatedInformerManager.HasSynced()
 }
 
 func (c *FederatedClusterController) IsControllerReady() bool {

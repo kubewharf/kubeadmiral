@@ -436,8 +436,11 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 	// Populate the initial snapshot of clusters
 
 	clusters := m.clusterInformer.Informer().GetStore().List()
-	for _, cluster := range clusters {
-		m.initialClusters.Insert(cluster.(*fedcorev1a1.FederatedCluster).GetName())
+	for _, clusterObj := range clusters {
+		cluster := clusterObj.(*fedcorev1a1.FederatedCluster)
+		if clusterutil.IsClusterJoined(&cluster.Status) {
+			m.initialClusters.Insert(cluster.GetName())
+		}
 	}
 
 	for _, handler := range m.clusterEventHandlers {
