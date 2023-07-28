@@ -38,7 +38,6 @@ type KeyFunc[Key any] func(metav1.Object) Key
 
 type ReconcileWorker[Key any] interface {
 	Enqueue(key Key)
-	EnqueueObject(obj metav1.Object)
 	EnqueueWithBackoff(key Key)
 	EnqueueWithDelay(key Key, delay time.Duration)
 	Run(ctx context.Context)
@@ -59,9 +58,6 @@ type asyncWorker[Key any] struct {
 	// Name of this reconcile worker.
 	name string
 
-	// Function to extract queue key from a metav1.Object
-	keyFunc KeyFunc[Key]
-
 	// Work queue holding keys to be processed.
 	queue workqueue.RateLimitingInterface
 
@@ -78,7 +74,6 @@ type asyncWorker[Key any] struct {
 
 func NewReconcileWorker[Key any](
 	name string,
-	keyFunc KeyFunc[Key],
 	reconcile ReconcileFunc[Key],
 	timing RateLimiterOptions,
 	workerCount int,
@@ -109,7 +104,6 @@ func NewReconcileWorker[Key any](
 
 	return &asyncWorker[Key]{
 		name:        name,
-		keyFunc:     keyFunc,
 		reconcile:   reconcile,
 		queue:       queue,
 		workerCount: workerCount,
@@ -119,10 +113,6 @@ func NewReconcileWorker[Key any](
 
 func (w *asyncWorker[Key]) Enqueue(key Key) {
 	w.queue.Add(key)
-}
-
-func (w *asyncWorker[Key]) EnqueueObject(obj metav1.Object) {
-	w.Enqueue(w.keyFunc(obj))
 }
 
 func (w *asyncWorker[Key]) EnqueueWithBackoff(key Key) {

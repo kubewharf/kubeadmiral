@@ -124,7 +124,6 @@ func NewNamespaceAutoPropagationController(
 
 	c.worker = worker.NewReconcileWorker[common.QualifiedName](
 		NamespaceAutoPropagationControllerName,
-		nil,
 		c.reconcile,
 		worker.RateLimiterOptions{},
 		workerCount,

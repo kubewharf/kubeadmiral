@@ -142,7 +142,6 @@ func NewStatusController(
 
 	s.worker = worker.NewReconcileWorker(
 		StatusControllerName,
-		nil,
 		s.reconcile,
 		worker.RateLimiterOptions{},
 		workerCount,
