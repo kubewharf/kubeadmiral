@@ -39,7 +39,7 @@ const (
 	FederateControllerName                 = "federate"
 	FollowerControllerName                 = "follower"
 	PolicyRCControllerName                 = "policyrc"
-	OverrideControllerName                 = "overridepolicy"
+	OverrideControllerName                 = "override"
 	NamespaceAutoPropagationControllerName = "nsautoprop"
 	StatusControllerName                   = "status"
 	SchedulerName                          = "scheduler"
