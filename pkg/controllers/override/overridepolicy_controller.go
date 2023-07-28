@@ -234,7 +234,7 @@ func (c *Controller) enqueueFedObjectsUsingPolicy(policy fedcorev1a1.GenericOver
 
 func (c *Controller) reconcileOnClusterChange(cluster *fedcorev1a1.FederatedCluster) {
 	logger := c.logger.WithValues("federated-cluster", cluster.GetName())
-	logger.V(2).Info("observed a cluster change")
+	logger.V(2).Info("Observed a cluster change")
 
 	opRequirement, _ := labels.NewRequirement(OverridePolicyNameLabel, selection.Exists, nil)
 	copRequirement, _ := labels.NewRequirement(ClusterOverridePolicyNameLabel, selection.Exists, nil)
