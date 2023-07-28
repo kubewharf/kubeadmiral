@@ -152,7 +152,7 @@ func NewStatusController(
 	// Build queue for triggering cluster reconciliations.
 	s.clusterQueue = workqueue.NewNamedDelayingQueue("status-controller-cluster-queue")
 
-	fedObjectHandler := eventhandlers.NewTriggerOnAllChanges(
+	fedObjectHandler := eventhandlers.NewTriggerOnAllChangesWithTransform(
 		common.NewQualifiedName,
 		func(key common.QualifiedName) {
 			s.enqueueEnableCollectedStatusObject(key, 0)
@@ -167,17 +167,15 @@ func NewStatusController(
 		return nil, err
 	}
 
-	if _, err := s.collectedStatusInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
-		common.NewQualifiedName,
-		s.worker.Enqueue,
-	)); err != nil {
+	if _, err := s.collectedStatusInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, s.worker.Enqueue),
+	); err != nil {
 		return nil, err
 	}
 
-	if _, err := s.clusterCollectedStatusInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
-		common.NewQualifiedName,
-		s.worker.Enqueue,
-	)); err != nil {
+	if _, err := s.clusterCollectedStatusInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, s.worker.Enqueue),
+	); err != nil {
 		return nil, err
 	}
 
@@ -194,9 +192,6 @@ func NewStatusController(
 			}
 
 			return eventhandlers.NewTriggerOnAllChanges(
-				func(uns *unstructured.Unstructured) *unstructured.Unstructured {
-					return uns
-				},
 				func(uns *unstructured.Unstructured) {
 					ftc, exists := s.ftcManager.GetResourceFTC(uns.GroupVersionKind())
 					if !exists {

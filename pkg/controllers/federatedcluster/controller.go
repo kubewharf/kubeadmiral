@@ -156,8 +156,9 @@ func NewFederatedClusterController(
 			}
 			return false
 		},
-		common.NewQualifiedName,
-		c.worker.Enqueue,
+		func(cluster metav1.Object) {
+			c.worker.Enqueue(common.NewQualifiedName(cluster))
+		},
 	))
 
 	return c, nil
