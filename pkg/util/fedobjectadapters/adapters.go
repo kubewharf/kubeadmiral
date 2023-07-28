@@ -9,8 +9,6 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1client "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 )
 
 func ensureNilInterface(
@@ -124,16 +122,3 @@ func Delete(
 	}
 }
 
-func MatchedPolicyKey(obj fedcorev1a1.GenericFederatedObject, isNamespaced bool) (result common.QualifiedName, ok bool) {
-	labels := obj.GetLabels()
-
-	if policyName, exists := labels[scheduler.PropagationPolicyNameLabel]; exists && isNamespaced {
-		return common.QualifiedName{Namespace: obj.GetNamespace(), Name: policyName}, true
-	}
-
-	if policyName, exists := labels[scheduler.ClusterPropagationPolicyNameLabel]; exists {
-		return common.QualifiedName{Namespace: "", Name: policyName}, true
-	}
-
-	return common.QualifiedName{}, false
-}

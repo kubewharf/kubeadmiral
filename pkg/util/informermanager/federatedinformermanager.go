@@ -22,15 +22,22 @@ import (
 	"encoding/gob"
 	"fmt"
 	"sync"
+	"time"
 
+	"golang.org/x/sync/semaphore"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	v1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
@@ -50,40 +57,51 @@ type federatedInformerManager struct {
 	started  bool
 	shutdown bool
 
-	clientGetter    ClusterClientGetter
+	clientHelper        ClusterClientHelper
+	kubeClientGetter    func(*fedcorev1a1.FederatedCluster, *rest.Config) (kubernetes.Interface, error)
+	dynamicClientGetter func(*fedcorev1a1.FederatedCluster, *rest.Config) (dynamic.Interface, error)
+
 	ftcInformer     fedcorev1a1informers.FederatedTypeConfigInformer
 	clusterInformer fedcorev1a1informers.FederatedClusterInformer
 
 	eventHandlerGenerators []*EventHandlerGenerator
 	clusterEventHandlers   []*ClusterEventHandler
 
-	clients                     map[string]dynamic.Interface
-	connectionMap               map[string][]byte
-	informerManagers            map[string]InformerManager
-	informerManagersCancelFuncs map[string]context.CancelFunc
+	kubeClients        map[string]kubernetes.Interface
+	dynamicClients     map[string]dynamic.Interface
+	connectionMap      map[string][]byte
+	clusterCancelFuncs map[string]context.CancelFunc
+	informerManagers   map[string]InformerManager
+	informerFactories  map[string]informers.SharedInformerFactory
 
-	queue workqueue.RateLimitingInterface
+	queue              workqueue.RateLimitingInterface
+	podListerSemaphore *semaphore.Weighted
+	initialClusters    sets.Set[string]
 }
 
 func NewFederatedInformerManager(
-	clientGetter ClusterClientGetter,
+	clientHelper ClusterClientHelper,
 	ftcInformer fedcorev1a1informers.FederatedTypeConfigInformer,
 	clusterInformer fedcorev1a1informers.FederatedClusterInformer,
 ) FederatedInformerManager {
 	manager := &federatedInformerManager{
-		lock:                        sync.RWMutex{},
-		started:                     false,
-		shutdown:                    false,
-		clientGetter:                clientGetter,
-		ftcInformer:                 ftcInformer,
-		clusterInformer:             clusterInformer,
-		eventHandlerGenerators:      []*EventHandlerGenerator{},
-		clusterEventHandlers:        []*ClusterEventHandler{},
-		clients:                     map[string]dynamic.Interface{},
-		connectionMap:               map[string][]byte{},
-		informerManagers:            map[string]InformerManager{},
-		informerManagersCancelFuncs: map[string]context.CancelFunc{},
-		queue:                       workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
+		lock:                   sync.RWMutex{},
+		started:                false,
+		shutdown:               false,
+		clientHelper:           clientHelper,
+		ftcInformer:            ftcInformer,
+		clusterInformer:        clusterInformer,
+		eventHandlerGenerators: []*EventHandlerGenerator{},
+		clusterEventHandlers:   []*ClusterEventHandler{},
+		kubeClients:            map[string]kubernetes.Interface{},
+		dynamicClients:         map[string]dynamic.Interface{},
+		connectionMap:          map[string][]byte{},
+		clusterCancelFuncs:     map[string]context.CancelFunc{},
+		informerManagers:       map[string]InformerManager{},
+		informerFactories:      map[string]informers.SharedInformerFactory{},
+		queue:                  workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
+		podListerSemaphore:     semaphore.NewWeighted(3), // TODO: make this configurable
+		initialClusters:        sets.New[string](),
 	}
 
 	clusterInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
@@ -99,6 +117,13 @@ func NewFederatedInformerManager(
 	})
 
 	ftcInformer.Informer()
+
+	manager.dynamicClientGetter = func(_ *fedcorev1a1.FederatedCluster, config *rest.Config) (dynamic.Interface, error) {
+		return dynamic.NewForConfig(config)
+	}
+	manager.kubeClientGetter = func(_ *fedcorev1a1.FederatedCluster, config *rest.Config) (kubernetes.Interface, error) {
+		return kubernetes.NewForConfig(config)
+	}
 
 	return manager
 }
@@ -145,7 +170,7 @@ func (m *federatedInformerManager) worker(ctx context.Context) {
 		return
 	}
 
-	err, needReenqueue := m.processCluster(ctx, cluster)
+	needReenqueue, delay, err := m.processCluster(ctx, cluster)
 	if err != nil {
 		if needReenqueue {
 			logger.Error(err, "Failed to process FederatedCluster, will retry")
@@ -159,22 +184,22 @@ func (m *federatedInformerManager) worker(ctx context.Context) {
 
 	m.queue.Forget(key)
 	if needReenqueue {
-		m.queue.Add(key)
+		m.queue.AddAfter(key, delay)
 	}
 }
 
 func (m *federatedInformerManager) processCluster(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
-) (err error, needReenqueue bool) {
+) (needReenqueue bool, reenqueueDelay time.Duration, err error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
 	clusterName := cluster.Name
 
-	connectionHash, err := m.clientGetter.ConnectionHash(cluster)
+	connectionHash, err := m.clientHelper.ConnectionHash(cluster)
 	if err != nil {
-		return fmt.Errorf("failed to get connection hash for cluster %s: %w", clusterName, err), true
+		return true, 0, fmt.Errorf("failed to get connection hash for cluster %s: %w", clusterName, err)
 	}
 	if oldConnectionHash, exists := m.connectionMap[clusterName]; exists {
 		if !bytes.Equal(oldConnectionHash, connectionHash) {
@@ -183,16 +208,26 @@ func (m *federatedInformerManager) processCluster(
 			// reenqueue.
 			// Note: updating of cluster connection details, however, is still not a supported use case.
 			err := m.processClusterDeletionUnlocked(ctx, clusterName)
-			return err, true
+			return true, 0, err
 		}
 	} else {
-		clusterClient, err := m.clientGetter.ClientGetter(cluster)
+		clusterRestConfig, err := m.clientHelper.RestConfigGetter(cluster)
 		if err != nil {
-			return fmt.Errorf("failed to get client for cluster %s: %w", clusterName, err), true
+			return true, 0, fmt.Errorf("failed to get rest config for cluster %s: %w", clusterName, err)
+		}
+
+		clusterDynamicClient, err := m.dynamicClientGetter(cluster, clusterRestConfig)
+		if err != nil {
+			return true, 0, fmt.Errorf("failed to get dynamic client for cluster %s: %w", clusterName, err)
+		}
+
+		clusterKubeClient, err := m.kubeClientGetter(cluster, clusterRestConfig)
+		if err != nil {
+			return true, 0, fmt.Errorf("failed to get kubernetes client for cluster %s: %w", clusterName, err)
 		}
 
 		manager := NewInformerManager(
-			clusterClient,
+			clusterDynamicClient,
 			m.ftcInformer,
 			func(opts *metav1.ListOptions) {
 				selector := &metav1.LabelSelector{}
@@ -209,21 +244,39 @@ func (m *federatedInformerManager) processCluster(
 		for _, generator := range m.eventHandlerGenerators {
 			if err := manager.AddEventHandlerGenerator(generator); err != nil {
 				cancel()
-				return fmt.Errorf("failed to initialized InformerManager for cluster %s: %w", clusterName, err), true
+				return true, 0, fmt.Errorf("failed to initialized InformerManager for cluster %s: %w", clusterName, err)
 			}
 		}
 
-		klog.FromContext(ctx).V(2).Info("Starting new InformerManager for FederatedCluster")
+		factory := informers.NewSharedInformerFactory(clusterKubeClient, 0)
+		addPodInformer(ctx, factory, clusterKubeClient, m.podListerSemaphore, true)
+		factory.Core().V1().Nodes().Informer()
 
+		klog.FromContext(ctx).V(2).Info("Starting new InformerManager for FederatedCluster")
 		manager.Start(ctx)
 
+		klog.FromContext(ctx).V(2).Info("Starting new SharedInformerFactory for FederatedCluster")
+		factory.Start(ctx.Done())
+
 		m.connectionMap[clusterName] = connectionHash
-		m.clients[clusterName] = clusterClient
+		m.kubeClients[clusterName] = clusterKubeClient
+		m.dynamicClients[clusterName] = clusterDynamicClient
+		m.clusterCancelFuncs[clusterName] = cancel
 		m.informerManagers[clusterName] = manager
-		m.informerManagersCancelFuncs[clusterName] = cancel
+		m.informerFactories[clusterName] = factory
 	}
 
-	return nil, false
+	if m.initialClusters.Has(cluster.Name) {
+		manager := m.informerManagers[cluster.Name]
+		if manager != nil && manager.HasSynced() {
+			m.initialClusters.Delete(cluster.Name)
+		} else {
+			klog.FromContext(ctx).V(3).Info("Waiting for InformerManager sync")
+			return true, 100 * time.Millisecond, nil
+		}
+	}
+
+	return false, 0, nil
 }
 
 func (m *federatedInformerManager) processClusterDeletion(ctx context.Context, clusterName string) error {
@@ -234,14 +287,18 @@ func (m *federatedInformerManager) processClusterDeletion(ctx context.Context, c
 
 func (m *federatedInformerManager) processClusterDeletionUnlocked(ctx context.Context, clusterName string) error {
 	delete(m.connectionMap, clusterName)
-	delete(m.clients, clusterName)
+	delete(m.kubeClients, clusterName)
+	delete(m.dynamicClients, clusterName)
 
-	if cancel, ok := m.informerManagersCancelFuncs[clusterName]; ok {
-		klog.FromContext(ctx).V(2).Info("Stopping InformerManager for FederatedCluster")
+	if cancel, ok := m.clusterCancelFuncs[clusterName]; ok {
+		klog.FromContext(ctx).V(2).Info("Stopping InformerManager and SharedInformerFactory for FederatedCluster")
 		cancel()
 	}
 	delete(m.informerManagers, clusterName)
-	delete(m.informerManagersCancelFuncs, clusterName)
+	delete(m.informerFactories, clusterName)
+	delete(m.clusterCancelFuncs, clusterName)
+
+	m.initialClusters.Delete(clusterName)
 
 	return nil
 }
@@ -270,10 +327,17 @@ func (m *federatedInformerManager) AddEventHandlerGenerator(generator *EventHand
 	return nil
 }
 
-func (m *federatedInformerManager) GetClusterClient(cluster string) (client dynamic.Interface, exists bool) {
+func (m *federatedInformerManager) GetClusterDynamicClient(cluster string) (client dynamic.Interface, exists bool) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
-	client, ok := m.clients[cluster]
+	client, ok := m.dynamicClients[cluster]
+	return client, ok
+}
+
+func (m *federatedInformerManager) GetClusterKubeClient(cluster string) (client kubernetes.Interface, exists bool) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	client, ok := m.kubeClients[cluster]
 	return client, ok
 }
 
@@ -301,6 +365,34 @@ func (m *federatedInformerManager) GetFederatedTypeConfigLister() fedcorev1a1lis
 	return m.ftcInformer.Lister()
 }
 
+func (m *federatedInformerManager) GetNodeLister(
+	cluster string,
+) (lister v1.NodeLister, informerSynced cache.InformerSynced, exists bool) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	factory, ok := m.informerFactories[cluster]
+	if !ok {
+		return nil, nil, false
+	}
+
+	return factory.Core().V1().Nodes().Lister(), factory.Core().V1().Nodes().Informer().HasSynced, true
+}
+
+func (m *federatedInformerManager) GetPodLister(
+	cluster string,
+) (lister v1.PodLister, informerSynced cache.InformerSynced, exists bool) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	factory, ok := m.informerFactories[cluster]
+	if !ok {
+		return nil, nil, false
+	}
+
+	return factory.Core().V1().Pods().Lister(), factory.Core().V1().Pods().Informer().HasSynced, true
+}
+
 func (m *federatedInformerManager) GetResourceLister(
 	gvk schema.GroupVersionKind,
 	cluster string,
@@ -317,7 +409,10 @@ func (m *federatedInformerManager) GetResourceLister(
 }
 
 func (m *federatedInformerManager) HasSynced() bool {
-	return m.ftcInformer.Informer().HasSynced() && m.clusterInformer.Informer().HasSynced()
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	return m.ftcInformer.Informer().HasSynced() && m.clusterInformer.Informer().HasSynced() &&
+		len(m.initialClusters) == 0
 }
 
 func (m *federatedInformerManager) Start(ctx context.Context) {
@@ -333,9 +428,19 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 
 	m.started = true
 
-	if !cache.WaitForCacheSync(ctx.Done(), m.HasSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), m.ftcInformer.Informer().HasSynced, m.clusterInformer.Informer().HasSynced) {
 		logger.Error(nil, "Failed to wait for FederatedInformerManager cache sync")
 		return
+	}
+
+	// Populate the initial snapshot of clusters
+
+	clusters := m.clusterInformer.Informer().GetStore().List()
+	for _, clusterObj := range clusters {
+		cluster := clusterObj.(*fedcorev1a1.FederatedCluster)
+		if clusterutil.IsClusterJoined(&cluster.Status) {
+			m.initialClusters.Insert(cluster.GetName())
+		}
 	}
 
 	for _, handler := range m.clusterEventHandlers {
@@ -428,7 +533,7 @@ func GetClusterObject(
 		return clusterObj.(*unstructured.Unstructured), true, nil
 	}
 
-	client, exists := fedInformerManager.GetClusterClient(clusterName)
+	client, exists := fedInformerManager.GetClusterDynamicClient(clusterName)
 	if !exists {
 		return nil, false, fmt.Errorf("cluster client does not exist for cluster %q", clusterName)
 	}

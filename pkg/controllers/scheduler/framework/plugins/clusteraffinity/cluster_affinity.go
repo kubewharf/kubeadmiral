@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2019 The Kubernetes Authors.
 
@@ -29,7 +28,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clusterselector"
+	"github.com/kubewharf/kubeadmiral/pkg/util/clusterselector"
 )
 
 const (

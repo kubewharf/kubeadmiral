@@ -99,7 +99,6 @@ func NewOverridePolicyController(
 	c.eventRecorder = eventsink.NewDefederatingRecorderMux(kubeClient, ControllerName, 4)
 	c.worker = worker.NewReconcileWorker[common.QualifiedName](
 		ControllerName,
-		nil,
 		c.reconcile,
 		worker.RateLimiterOptions{},
 		workerCount,
@@ -235,7 +234,7 @@ func (c *Controller) enqueueFedObjectsUsingPolicy(policy fedcorev1a1.GenericOver
 
 func (c *Controller) reconcileOnClusterChange(cluster *fedcorev1a1.FederatedCluster) {
 	logger := c.logger.WithValues("federated-cluster", cluster.GetName())
-	logger.V(2).Info("observed a cluster change")
+	logger.V(2).Info("Observed a cluster change")
 
 	opRequirement, _ := labels.NewRequirement(OverridePolicyNameLabel, selection.Exists, nil)
 	copRequirement, _ := labels.NewRequirement(ClusterOverridePolicyNameLabel, selection.Exists, nil)
@@ -339,7 +338,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		return worker.StatusError
 	}
 
-	var overrides util.OverridesMap
+	var overrides overridesMap
 	// Apply overrides from each policy in order
 	for _, policy := range policies {
 		newOverrides, err := parseOverrides(policy, placedClusters)
@@ -358,16 +357,11 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		overrides = mergeOverrides(overrides, newOverrides)
 	}
 
-	currentOverrides, err := util.GetOverrides(fedObject, PrefixedControllerName)
-	if err != nil {
-		keyedLogger.Error(err, "Failed to get overrides")
-		return worker.StatusError
-	}
-
+	currentOverrides := fedObject.GetSpec().GetControllerOverrides(PrefixedControllerName)
 	needsUpdate := !equality.Semantic.DeepEqual(overrides, currentOverrides)
 
 	if needsUpdate {
-		err = util.SetOverrides(fedObject, PrefixedControllerName, overrides)
+		err = setOverrides(fedObject, overrides)
 		if err != nil {
 			keyedLogger.Error(err, "Failed to set overrides")
 			return worker.StatusError

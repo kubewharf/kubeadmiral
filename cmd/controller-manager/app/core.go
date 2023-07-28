@@ -29,6 +29,8 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/policyrc"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/status"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 )
 
 func startFederateController(
@@ -151,4 +153,57 @@ func startStatusController(
 	go statusController.Run(ctx)
 
 	return statusController, nil
+}
+
+func startFederatedClusterController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	federatedClusterController, err := federatedcluster.NewFederatedClusterController(
+		controllerCtx.KubeClientset,
+		controllerCtx.FedClientset,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedClusters(),
+		controllerCtx.FederatedInformerManager,
+		controllerCtx.Metrics,
+		klog.Background(),
+		controllerCtx.ComponentConfig.ClusterJoinTimeout,
+		controllerCtx.WorkerCount,
+		controllerCtx.FedSystemNamespace,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating federate controller: %w", err)
+	}
+
+	go federatedClusterController.Run(ctx)
+
+	return federatedClusterController, nil
+}
+
+func startScheduler(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	scheduler, err := scheduler.NewScheduler(
+		controllerCtx.KubeClientset,
+		controllerCtx.FedClientset,
+		controllerCtx.DynamicClientset,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().PropagationPolicies(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterPropagationPolicies(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedClusters(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().SchedulingProfiles(),
+		controllerCtx.InformerManager,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().SchedulerPluginWebhookConfigurations(),
+		controllerCtx.Metrics,
+		klog.Background(),
+		controllerCtx.WorkerCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating scheduler: %w", err)
+	}
+
+	go scheduler.Run(ctx)
+
+	return scheduler, nil
 }

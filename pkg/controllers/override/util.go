@@ -26,9 +26,10 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clusterselector"
+	"github.com/kubewharf/kubeadmiral/pkg/util/clusterselector"
 )
+
+type overridesMap map[string]fedcorev1a1.OverridePatches
 
 /*
 lookForMatchedPolicies looks for OverridePolicy and/or ClusterOverridePolicy
@@ -90,8 +91,8 @@ func lookForMatchedPolicies(
 func parseOverrides(
 	policy fedcorev1a1.GenericOverridePolicy,
 	clusters []*fedcorev1a1.FederatedCluster,
-) (util.OverridesMap, error) {
-	overridesMap := make(util.OverridesMap)
+) (overridesMap, error) {
+	overridesMap := make(overridesMap)
 
 	for _, cluster := range clusters {
 		patches := make(fedcorev1a1.OverridePatches, 0)
@@ -130,9 +131,9 @@ func parseOverrides(
 	return overridesMap, nil
 }
 
-func mergeOverrides(dest, src util.OverridesMap) util.OverridesMap {
+func mergeOverrides(dest, src overridesMap) overridesMap {
 	if dest == nil {
-		dest = make(util.OverridesMap)
+		dest = make(overridesMap)
 	}
 
 	for clusterName, srcOverrides := range src {
@@ -228,4 +229,30 @@ func policyJsonPatchOverriderToOverridePatch(
 	}
 
 	return overridePatch, nil
+}
+
+func setOverrides(federatedObj fedcorev1a1.GenericFederatedObject, overridesMap overridesMap) error {
+	for clusterName, clusterOverrides := range overridesMap {
+		if len(clusterOverrides) == 0 {
+			delete(overridesMap, clusterName)
+		}
+	}
+
+	if len(overridesMap) == 0 {
+		federatedObj.GetSpec().DeleteControllerOverrides(PrefixedControllerName)
+		return nil
+	}
+
+	overrides := []fedcorev1a1.ClusterReferenceWithPatches{}
+
+	for clusterName, clusterOverrides := range overridesMap {
+		overrides = append(overrides, fedcorev1a1.ClusterReferenceWithPatches{
+			Cluster: clusterName,
+			Patches: clusterOverrides,
+		})
+	}
+
+	federatedObj.GetSpec().SetControllerOverrides(PrefixedControllerName, overrides)
+
+	return nil
 }

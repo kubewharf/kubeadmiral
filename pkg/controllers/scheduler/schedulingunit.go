@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2023 The KubeAdmiral Authors.
 
@@ -23,27 +22,23 @@ import (
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
+	unstructuredutil "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
 
 func schedulingUnitForFedObject(
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	fedObject *unstructured.Unstructured,
+	fedObject fedcorev1a1.GenericFederatedObject,
 	policy fedcorev1a1.GenericPropagationPolicy,
 ) (*framework.SchedulingUnit, error) {
-	template, err := getTemplate(fedObject)
+	template, err := fedObject.GetSpec().GetTemplateAsUnstructured()
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving template: %w", err)
+		return nil, fmt.Errorf("error retrieving template from FederatedObject: %w", err)
 	}
 
 	schedulingMode := getSchedulingModeFromPolicy(policy)
@@ -58,11 +53,7 @@ func schedulingUnitForFedObject(
 		schedulingMode = fedcorev1a1.SchedulingModeDuplicate
 	}
 	if schedulingMode == fedcorev1a1.SchedulingModeDivide {
-		value, err := utilunstructured.GetInt64FromPath(
-			fedObject,
-			typeConfig.Spec.PathDefinition.ReplicasSpec,
-			common.TemplatePath,
-		)
+		value, err := unstructuredutil.GetInt64FromPath(template, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -75,11 +66,11 @@ func schedulingUnitForFedObject(
 		return nil, err
 	}
 
-	targetType := typeConfig.GetTargetType()
+	sourceType := typeConfig.GetSourceType()
 	schedulingUnit := &framework.SchedulingUnit{
-		GroupVersion:    schema.GroupVersion{Group: targetType.Group, Version: targetType.Version},
-		Kind:            targetType.Kind,
-		Resource:        targetType.Name,
+		GroupVersion:    schema.GroupVersion{Group: sourceType.Group, Version: sourceType.Version},
+		Kind:            sourceType.Kind,
+		Resource:        sourceType.Name,
 		Namespace:       template.GetNamespace(),
 		Name:            template.GetName(),
 		Labels:          template.GetLabels(),
@@ -163,57 +154,33 @@ func schedulingUnitForFedObject(
 	return schedulingUnit, nil
 }
 
-func getTemplate(fedObject *unstructured.Unstructured) (*metav1.PartialObjectMetadata, error) {
-	templateContent, exists, err := unstructured.NestedMap(fedObject.Object, common.TemplatePath...)
-	if err != nil {
-		return nil, fmt.Errorf("error retrieving template: %w", err)
-	}
-	if !exists {
-		return nil, fmt.Errorf("template not found")
-	}
-	obj := metav1.PartialObjectMetadata{}
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(templateContent, &obj)
-	if err != nil {
-		return nil, fmt.Errorf("template cannot be converted from unstructured: %w", err)
-	}
-	return &obj, nil
-}
-
 func getCurrentReplicasFromObject(
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	object *unstructured.Unstructured,
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	fedObject fedcorev1a1.GenericFederatedObject,
 ) (map[string]*int64, error) {
-	placementObj, err := util.UnmarshalGenericPlacements(object)
-	if err != nil {
-		return nil, err
+	placements := fedObject.GetSpec().GetControllerPlacement(PrefixedGlobalSchedulerName)
+	overrides := fedObject.GetSpec().GetControllerOverrides(PrefixedGlobalSchedulerName)
+
+	res := make(map[string]*int64, len(placements))
+
+	for _, placement := range placements {
+		res[placement.Cluster] = nil
 	}
 
-	var clusterNames map[string]struct{}
-	if placement := placementObj.Spec.GetPlacementOrNil(PrefixedGlobalSchedulerName); placement != nil {
-		clusterNames = placement.ClusterNames()
-	}
+	replicasPath := unstructuredutil.ToSlashPath(ftc.Spec.PathDefinition.ReplicasSpec)
 
-	clusterOverridesMap, err := util.GetOverrides(object, PrefixedGlobalSchedulerName)
-	if err != nil {
-		return nil, err
-	}
-
-	res := make(map[string]*int64, len(clusterNames))
-	for cluster := range clusterNames {
-		res[cluster] = nil
-
-		clusterOverrides, exists := clusterOverridesMap[cluster]
-		if !exists {
+	for _, override := range overrides {
+		if _, ok := res[override.Cluster]; !ok {
 			continue
 		}
 
-		for _, override := range clusterOverrides {
-			if override.Path == utilunstructured.ToSlashPath(typeConfig.Spec.PathDefinition.ReplicasSpec) &&
-				(override.Op == operationReplace || override.Op == "") {
-				// The type of the value will be float64 due to how json
-				// marshalling works for interfaces.
-				replicas := int64(override.Value.(float64))
-				res[cluster] = &replicas
+		for _, patch := range override.Patches {
+			if patch.Op == replicasPath && (patch.Op == overridePatchOpReplace || patch.Op == "") {
+				var replicas *int64
+				if err := json.Unmarshal(patch.Value.Raw, replicas); err != nil {
+					continue
+				}
+				res[override.Cluster] = replicas
 				break
 			}
 		}
@@ -232,8 +199,8 @@ func getSchedulingModeFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) fe
 	return DefaultSchedulingMode
 }
 
-func getSchedulingModeFromObject(object *unstructured.Unstructured) (fedcorev1a1.SchedulingMode, bool) {
-	annotations := object.GetAnnotations()
+func getSchedulingModeFromObject(fedObject fedcorev1a1.GenericFederatedObject) (fedcorev1a1.SchedulingMode, bool) {
+	annotations := fedObject.GetAnnotations()
 	if annotations == nil {
 		return "", false
 	}
@@ -254,12 +221,12 @@ func getSchedulingModeFromObject(object *unstructured.Unstructured) (fedcorev1a1
 		"Invalid value %s for scheduling mode annotation (%s) on fed object %s",
 		annotation,
 		SchedulingModeAnnotation,
-		object.GetName(),
+		fedObject.GetName(),
 	)
 	return "", false
 }
 
-func getAutoMigrationInfo(fedObject *unstructured.Unstructured) (*framework.AutoMigrationInfo, error) {
+func getAutoMigrationInfo(fedObject fedcorev1a1.GenericFederatedObject) (*framework.AutoMigrationInfo, error) {
 	value, exists := fedObject.GetAnnotations()[common.AutoMigrationInfoAnnotation]
 	if !exists {
 		return nil, nil
@@ -276,7 +243,7 @@ func getIsStickyClusterFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) b
 	return policy.GetSpec().StickyCluster
 }
 
-func getIsStickyClusterFromObject(object *unstructured.Unstructured) (bool, bool) {
+func getIsStickyClusterFromObject(object fedcorev1a1.GenericFederatedObject) (bool, bool) {
 	// TODO: consider passing in the annotations directly to prevent incurring a deep copy for each call
 	annotations := object.GetAnnotations()
 	if annotations == nil {
@@ -308,7 +275,7 @@ func getClusterSelectorFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) m
 	return policy.GetSpec().ClusterSelector
 }
 
-func getClusterSelectorFromObject(object *unstructured.Unstructured) (map[string]string, bool) {
+func getClusterSelectorFromObject(object fedcorev1a1.GenericFederatedObject) (map[string]string, bool) {
 	annotations := object.GetAnnotations()
 	if annotations == nil {
 		return nil, false
@@ -351,7 +318,7 @@ func getAffinityFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) *framewo
 	return affinity
 }
 
-func getAffinityFromObject(object *unstructured.Unstructured) (*framework.Affinity, bool) {
+func getAffinityFromObject(object fedcorev1a1.GenericFederatedObject) (*framework.Affinity, bool) {
 	annotations := object.GetAnnotations()
 	if annotations == nil {
 		return nil, false
@@ -381,7 +348,7 @@ func getTolerationsFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) []cor
 	return policy.GetSpec().Tolerations
 }
 
-func getTolerationsFromObject(object *unstructured.Unstructured) ([]corev1.Toleration, bool) {
+func getTolerationsFromObject(object fedcorev1a1.GenericFederatedObject) ([]corev1.Toleration, bool) {
 	annotations := object.GetAnnotations()
 	if annotations == nil {
 		return nil, false
@@ -411,7 +378,7 @@ func getMaxClustersFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) *int6
 	return policy.GetSpec().MaxClusters
 }
 
-func getMaxClustersFromObject(object *unstructured.Unstructured) (*int64, bool) {
+func getMaxClustersFromObject(object fedcorev1a1.GenericFederatedObject) (*int64, bool) {
 	annotations := object.GetAnnotations()
 	if annotations == nil {
 		return nil, false
@@ -463,7 +430,7 @@ func getWeightsFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[strin
 	return weights
 }
 
-func getWeightsFromObject(object *unstructured.Unstructured) (map[string]int64, bool) {
+func getWeightsFromObject(object fedcorev1a1.GenericFederatedObject) (map[string]int64, bool) {
 	annotations := object.GetAnnotations()
 	if annotations == nil {
 		return nil, false
@@ -474,7 +441,7 @@ func getWeightsFromObject(object *unstructured.Unstructured) (map[string]int64, 
 		return nil, false
 	}
 
-	var placements []fedcorev1a1.ClusterReference
+	var placements []fedcorev1a1.DesiredPlacement
 	err := json.Unmarshal([]byte(annotation), &placements)
 	if err != nil {
 		klog.Errorf(
@@ -521,7 +488,7 @@ func getMinReplicasFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[s
 	return minReplicas
 }
 
-func getMinReplicasFromObject(object *unstructured.Unstructured) (map[string]int64, bool) {
+func getMinReplicasFromObject(object fedcorev1a1.GenericFederatedObject) (map[string]int64, bool) {
 	annotations := object.GetAnnotations()
 	if annotations == nil {
 		return nil, false
@@ -532,7 +499,7 @@ func getMinReplicasFromObject(object *unstructured.Unstructured) (map[string]int
 		return nil, false
 	}
 
-	var placements []fedcorev1a1.ClusterReference
+	var placements []fedcorev1a1.DesiredPlacement
 	err := json.Unmarshal([]byte(annotation), &placements)
 	if err != nil {
 		klog.Errorf(
@@ -579,7 +546,7 @@ func getMaxReplicasFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[s
 	return maxReplicas
 }
 
-func getMaxReplicasFromObject(object *unstructured.Unstructured) (map[string]int64, bool) {
+func getMaxReplicasFromObject(object fedcorev1a1.GenericFederatedObject) (map[string]int64, bool) {
 	annotations := object.GetAnnotations()
 	if annotations == nil {
 		return nil, false
@@ -590,7 +557,7 @@ func getMaxReplicasFromObject(object *unstructured.Unstructured) (map[string]int
 		return nil, false
 	}
 
-	var placements []fedcorev1a1.ClusterReference
+	var placements []fedcorev1a1.DesiredPlacement
 	err := json.Unmarshal([]byte(annotation), &placements)
 	if err != nil {
 		klog.Errorf(
@@ -637,7 +604,7 @@ func getClusterNamesFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[
 	return clusterNames
 }
 
-func getClusterNamesFromObject(object *unstructured.Unstructured) (map[string]struct{}, bool) {
+func getClusterNamesFromObject(object fedcorev1a1.GenericFederatedObject) (map[string]struct{}, bool) {
 	annotations := object.GetAnnotations()
 	if annotations == nil {
 		return nil, false

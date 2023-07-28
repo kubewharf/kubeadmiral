@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/meta"
-	pkgruntime "k8s.io/apimachinery/pkg/runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // QualifiedName comprises a resource name with an optional namespace.
@@ -39,7 +39,7 @@ type QualifiedName struct {
 	Name      string
 }
 
-func NewQualifiedName(obj pkgruntime.Object) QualifiedName {
+func NewQualifiedName(obj metav1.Object) QualifiedName {
 	accessor, err := meta.Accessor(obj)
 	if err != nil {
 		// This should never happen, but if it does, the

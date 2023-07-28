@@ -25,7 +25,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
@@ -112,7 +111,6 @@ func NewFederateController(
 	c.eventRecorder = eventsink.NewDefederatingRecorderMux(kubeClient, FederateControllerName, 6)
 	c.worker = worker.NewReconcileWorker[workerKey](
 		FederateControllerName,
-		nil,
 		c.reconcile,
 		worker.RateLimiterOptions{},
 		workerCount,
@@ -130,14 +128,15 @@ func NewFederateController(
 					uns := obj.(*unstructured.Unstructured)
 					return uns.GetNamespace() != fedSystemNamespace
 				},
-				Handler: eventhandlers.NewTriggerOnAllChanges(func(obj runtime.Object) {
-					uns := obj.(*unstructured.Unstructured)
-					c.worker.Enqueue(workerKey{
-						name:      uns.GetName(),
-						namespace: uns.GetNamespace(),
-						gvk:       ftc.GetSourceTypeGVK(),
-					})
-				}),
+				Handler: eventhandlers.NewTriggerOnAllChanges(
+					func(uns *unstructured.Unstructured) {
+						c.worker.Enqueue(workerKey{
+							name:      uns.GetName(),
+							namespace: uns.GetNamespace(),
+							gvk:       ftc.GetSourceTypeGVK(),
+						})
+					},
+				),
 			}
 		},
 	}); err != nil {
@@ -152,47 +151,53 @@ func NewFederateController(
 			fedObj := obj.(*fedcorev1a1.FederatedObject)
 			return fedObj.Namespace != fedSystemNamespace
 		},
-		Handler: eventhandlers.NewTriggerOnAllChanges(func(o runtime.Object) {
-			fedObj := o.(*fedcorev1a1.FederatedObject)
-			logger := c.logger.WithValues("federated-object", common.NewQualifiedName(fedObj))
+		Handler: eventhandlers.NewTriggerOnAllChanges(
+			func(fedObj *fedcorev1a1.FederatedObject) {
+				srcMeta, err := fedObj.Spec.GetTemplateAsUnstructured()
+				if err != nil {
+					c.logger.Error(
+						err,
+						"Failed to get source object's metadata from FederatedObject",
+						"object",
+						common.NewQualifiedName(fedObj),
+					)
+					return
+				}
 
-			srcMeta, err := fedObj.Spec.GetTemplateAsUnstructured()
-			if err != nil {
-				logger.Error(err, "Failed to get source object's metadata from FederatedObject")
-				return
-			}
+				gvk := srcMeta.GroupVersionKind()
 
-			gvk := srcMeta.GroupVersionKind()
-
-			c.worker.Enqueue(workerKey{
-				name:      srcMeta.GetName(),
-				namespace: srcMeta.GetNamespace(),
-				gvk:       gvk,
-			})
-		}),
+				c.worker.Enqueue(workerKey{
+					name:      srcMeta.GetName(),
+					namespace: srcMeta.GetNamespace(),
+					gvk:       gvk,
+				})
+			}),
 	}); err != nil {
 		return nil, err
 	}
 
 	if _, err := clusterFedObjectInformer.Informer().AddEventHandler(
-		eventhandlers.NewTriggerOnAllChanges(func(o runtime.Object) {
-			fedObj := o.(*fedcorev1a1.ClusterFederatedObject)
-			logger := c.logger.WithValues("cluster-federated-object", common.NewQualifiedName(fedObj))
+		eventhandlers.NewTriggerOnAllChanges(
+			func(fedObj *fedcorev1a1.ClusterFederatedObject) {
+				srcMeta, err := fedObj.Spec.GetTemplateAsUnstructured()
+				if err != nil {
+					logger.Error(
+						err,
+						"Failed to get source object's metadata from ClusterFederatedObject",
+						"object",
+						common.NewQualifiedName(fedObj),
+					)
+					return
+				}
 
-			srcMeta, err := fedObj.Spec.GetTemplateAsUnstructured()
-			if err != nil {
-				logger.Error(err, "Failed to get source object's metadata from ClusterFederatedObject")
-				return
-			}
+				gvk := srcMeta.GroupVersionKind()
 
-			gvk := srcMeta.GroupVersionKind()
-
-			c.worker.Enqueue(workerKey{
-				name:      srcMeta.GetName(),
-				namespace: srcMeta.GetNamespace(),
-				gvk:       gvk,
-			})
-		}),
+				c.worker.Enqueue(workerKey{
+					name:      srcMeta.GetName(),
+					namespace: srcMeta.GetNamespace(),
+					gvk:       gvk,
+				})
+			}),
 	); err != nil {
 		return nil, err
 	}
@@ -224,8 +229,7 @@ func (c *FederateController) HasSynced() bool {
 
 func (c *FederateController) reconcile(ctx context.Context, key workerKey) (status worker.Result) {
 	_ = c.metrics.Rate("federate.throughput", 1)
-	ctx, logger := logging.InjectLogger(ctx, c.logger)
-	ctx, logger = logging.InjectLoggerValues(ctx, "source-object", key.QualifiedName().String(), "gvk", key.gvk)
+	ctx, logger := logging.InjectLoggerValues(ctx, "source-object", key.QualifiedName().String(), "gvk", key.gvk)
 
 	startTime := time.Now()
 
@@ -396,8 +400,6 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 			"Federated object updated: %s",
 			fedObject.GetName(),
 		)
-	} else {
-		logger.V(3).Info("No updates required to the federated object")
 	}
 
 	return worker.StatusAllOK

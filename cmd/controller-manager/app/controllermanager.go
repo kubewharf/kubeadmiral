@@ -37,12 +37,12 @@ import (
 const (
 	FederatedClusterControllerName         = "cluster"
 	FederateControllerName                 = "federate"
-	MonitorControllerName                  = "monitor"
 	FollowerControllerName                 = "follower"
 	PolicyRCControllerName                 = "policyrc"
-	OverrideControllerName                 = "overridepolicy"
+	OverrideControllerName                 = "override"
 	NamespaceAutoPropagationControllerName = "nsautoprop"
 	StatusControllerName                   = "status"
+	SchedulerName                          = "scheduler"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
@@ -51,9 +51,11 @@ var knownControllers = map[string]controllermanager.StartControllerFunc{
 	OverrideControllerName:                 startOverridePolicyController,
 	NamespaceAutoPropagationControllerName: startNamespaceAutoPropagationController,
 	StatusControllerName:                   startStatusController,
+	FederatedClusterControllerName:         startFederatedClusterController,
+	SchedulerName:                          startScheduler,
 }
 
-var controllersDisabledByDefault = sets.New(MonitorControllerName)
+var controllersDisabledByDefault = sets.New[string]()
 
 // Run starts the controller manager according to the given options.
 func Run(ctx context.Context, opts *options.Options) {
