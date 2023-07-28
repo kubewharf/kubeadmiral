@@ -135,32 +135,27 @@ func NewScheduler(
 		metrics,
 	)
 
-	fedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+	fedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
 		common.NewQualifiedName,
 		s.worker.Enqueue,
 	))
-	clusterFedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+	clusterFedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
 		common.NewQualifiedName,
 		s.worker.Enqueue,
 	))
 
-	propagationPolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnGenerationChanges(
-		func(obj metav1.Object) metav1.Object { return obj },
-		s.enqueueFederatedObjectsForPolicy,
-	))
-	clusterPropagationPolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnGenerationChanges(
-		func(obj metav1.Object) metav1.Object { return obj },
-		s.enqueueFederatedObjectsForPolicy,
-	))
+	propagationPolicyInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnGenerationChanges(s.enqueueFederatedObjectsForPolicy),
+	)
+	clusterPropagationPolicyInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnGenerationChanges(s.enqueueFederatedObjectsForPolicy),
+	)
 
 	federatedClusterInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnChanges(
 		func(oldCluster, curCluster *fedcorev1a1.FederatedCluster) bool {
 			return !equality.Semantic.DeepEqual(oldCluster.Labels, curCluster.Labels) ||
 				!equality.Semantic.DeepEqual(oldCluster.Spec.Taints, curCluster.Spec.Taints) ||
 				!equality.Semantic.DeepEqual(oldCluster.Status.APIResourceTypes, curCluster.Status.APIResourceTypes)
-		},
-		func(cluster *fedcorev1a1.FederatedCluster) *fedcorev1a1.FederatedCluster {
-			return cluster
 		},
 		s.enqueueFederatedObjectsForCluster,
 	))

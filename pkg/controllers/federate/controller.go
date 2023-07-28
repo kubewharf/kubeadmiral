@@ -130,14 +130,13 @@ func NewFederateController(
 					return uns.GetNamespace() != fedSystemNamespace
 				},
 				Handler: eventhandlers.NewTriggerOnAllChanges(
-					func(uns *unstructured.Unstructured) workerKey {
-						return workerKey{
+					func(uns *unstructured.Unstructured) {
+						c.worker.Enqueue(workerKey{
 							name:      uns.GetName(),
 							namespace: uns.GetNamespace(),
 							gvk:       ftc.GetSourceTypeGVK(),
-						}
+						})
 					},
-					c.worker.Enqueue,
 				),
 			}
 		},
@@ -154,9 +153,6 @@ func NewFederateController(
 			return fedObj.Namespace != fedSystemNamespace
 		},
 		Handler: eventhandlers.NewTriggerOnAllChanges(
-			func(fedObj *fedcorev1a1.FederatedObject) *fedcorev1a1.FederatedObject {
-				return fedObj
-			},
 			func(fedObj *fedcorev1a1.FederatedObject) {
 				srcMeta, err := fedObj.Spec.GetTemplateAsUnstructured()
 				if err != nil {
@@ -183,9 +179,6 @@ func NewFederateController(
 
 	if _, err := clusterFedObjectInformer.Informer().AddEventHandler(
 		eventhandlers.NewTriggerOnAllChanges(
-			func(fedObj *fedcorev1a1.ClusterFederatedObject) *fedcorev1a1.ClusterFederatedObject {
-				return fedObj
-			},
 			func(fedObj *fedcorev1a1.ClusterFederatedObject) {
 				srcMeta, err := fedObj.Spec.GetTemplateAsUnstructured()
 				if err != nil {

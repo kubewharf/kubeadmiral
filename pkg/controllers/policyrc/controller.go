@@ -82,14 +82,14 @@ func NewPolicyRCController(
 		logger:                           logger.WithValues("controller", ControllerName),
 	}
 
-	if _, err := c.fedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+	if _, err := c.fedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
 		common.NewQualifiedName,
 		c.countWorker.Enqueue,
 	)); err != nil {
 		return nil, err
 	}
 
-	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
+	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
 		common.NewQualifiedName,
 		c.countWorker.Enqueue,
 	)); err != nil {
@@ -141,31 +141,27 @@ func NewPolicyRCController(
 		metrics,
 	)
 
-	if _, err := c.propagationPolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
-		common.NewQualifiedName,
-		c.persistPpWorker.Enqueue,
-	)); err != nil {
+	if _, err := c.propagationPolicyInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistPpWorker.Enqueue),
+	); err != nil {
 		return nil, err
 	}
 
-	if _, err := c.clusterPropagationPolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
-		common.NewQualifiedName,
-		c.persistPpWorker.Enqueue,
-	)); err != nil {
+	if _, err := c.clusterPropagationPolicyInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistPpWorker.Enqueue),
+	); err != nil {
 		return nil, err
 	}
 
-	if _, err := c.overridePolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
-		common.NewQualifiedName,
-		c.persistOpWorker.Enqueue,
-	)); err != nil {
+	if _, err := c.overridePolicyInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistOpWorker.Enqueue),
+	); err != nil {
 		return nil, err
 	}
 
-	if _, err := c.clusterOverridePolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(
-		common.NewQualifiedName,
-		c.persistPpWorker.Enqueue,
-	)); err != nil {
+	if _, err := c.clusterOverridePolicyInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistPpWorker.Enqueue),
+	); err != nil {
 		return nil, err
 	}
 

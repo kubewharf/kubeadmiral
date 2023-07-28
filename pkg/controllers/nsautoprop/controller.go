@@ -133,9 +133,6 @@ func NewNamespaceAutoPropagationController(
 
 	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandlerWithResyncPeriod(
 		eventhandlers.NewTriggerOnAllChanges(
-			func(obj *fedcorev1a1.ClusterFederatedObject) *fedcorev1a1.ClusterFederatedObject {
-				return obj
-			},
 			func(obj *fedcorev1a1.ClusterFederatedObject) {
 				srcMeta, err := obj.Spec.GetTemplateAsUnstructured()
 				if err != nil {

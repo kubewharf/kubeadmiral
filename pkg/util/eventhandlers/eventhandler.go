@@ -24,11 +24,8 @@ import (
 )
 
 // NewTriggerOnAllChanges returns a cache.ResourceEventHandlerFuncs that will call the given triggerFunc on all object
-// changes. The object is first transformed with the given keyFunc. triggerFunc is also called for add or delete events.
-func NewTriggerOnAllChanges[Source any, Key any](
-	keyFunc func(Source) Key,
-	triggerFunc func(Key),
-) *cache.ResourceEventHandlerFuncs {
+// changes. triggerFunc is also called for add or delete events.
+func NewTriggerOnAllChanges[Source any](triggerFunc func(Source)) *cache.ResourceEventHandlerFuncs {
 	return &cache.ResourceEventHandlerFuncs{
 		DeleteFunc: func(old interface{}) {
 			if deleted, ok := old.(cache.DeletedFinalStateUnknown); ok {
@@ -38,28 +35,57 @@ func NewTriggerOnAllChanges[Source any, Key any](
 				}
 			}
 			oldSource := old.(Source)
-			triggerFunc(keyFunc(oldSource))
+			triggerFunc(oldSource)
 		},
 		AddFunc: func(cur interface{}) {
 			curObj := cur.(Source)
-			triggerFunc(keyFunc(curObj))
+			triggerFunc(curObj)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
 				curObj := cur.(Source)
-				triggerFunc(keyFunc(curObj))
+				triggerFunc(curObj)
+			}
+		},
+	}
+}
+
+// NewTriggerOnAllChangesWithTransform returns a cache.ResourceEventHandler that will call the given triggerFunc on all
+// object changes. triggerFunc is also called for add or delete events. transformFunc will first be used to transform
+// the original object into the target type.
+func NewTriggerOnAllChangesWithTransform[Source any, Target any](
+	transformFunc func(Source) Target,
+	triggerFunc func(Target),
+) cache.ResourceEventHandler {
+	return &cache.ResourceEventHandlerFuncs{
+		DeleteFunc: func(old interface{}) {
+			if deleted, ok := old.(cache.DeletedFinalStateUnknown); ok {
+				old = deleted.Obj
+				if old == nil {
+					return
+				}
+			}
+			oldSource := transformFunc(old.(Source))
+			triggerFunc(oldSource)
+		},
+		AddFunc: func(cur interface{}) {
+			curObj := transformFunc(cur.(Source))
+			triggerFunc(curObj)
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			if !reflect.DeepEqual(old, cur) {
+				curObj := transformFunc(cur.(Source))
+				triggerFunc(curObj)
 			}
 		},
 	}
 }
 
 // NewTriggerOnChanges returns a cache.ResourceEventHandlerFuncs that will call the given triggerFunc on object changes
-// that passes the given predicate. The object is first transformed with the given keyFunc. triggerFunc is also called
-// for add and delete events.
-func NewTriggerOnChanges[Source any, Key any](
+// that passes the given predicate. triggerFunc is also called for add and delete events.
+func NewTriggerOnChanges[Source any](
 	predicate func(old, cur Source) bool,
-	keyFunc func(Source) Key,
-	triggerFunc func(Key),
+	triggerFunc func(Source),
 ) *cache.ResourceEventHandlerFuncs {
 	return &cache.ResourceEventHandlerFuncs{
 		DeleteFunc: func(old interface{}) {
@@ -71,29 +97,25 @@ func NewTriggerOnChanges[Source any, Key any](
 				}
 			}
 			oldObj := old.(Source)
-			triggerFunc(keyFunc(oldObj))
+			triggerFunc(oldObj)
 		},
 		AddFunc: func(cur interface{}) {
 			curObj := cur.(Source)
-			triggerFunc(keyFunc(curObj))
+			triggerFunc(curObj)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			oldObj := old.(Source)
 			curObj := cur.(Source)
 			if predicate(oldObj, curObj) {
-				triggerFunc(keyFunc(curObj))
+				triggerFunc(curObj)
 			}
 		},
 	}
 }
 
 // NewTriggerOnGenerationChanges returns a cache.ResourceEventHandlerFuncs that will call the given triggerFunc on
-// object generation changes. The object is first transformed with the given keyFunc. triggerFunc is also called for add
-// and delete events.
-func NewTriggerOnGenerationChanges[Source any, Key any](
-	keyFunc func(Source) Key,
-	triggerFunc func(Key),
-) *cache.ResourceEventHandlerFuncs {
+// object generation changes. triggerFunc is also called for add and delete events.
+func NewTriggerOnGenerationChanges[Source any](triggerFunc func(Source)) *cache.ResourceEventHandlerFuncs {
 	return &cache.ResourceEventHandlerFuncs{
 		DeleteFunc: func(old interface{}) {
 			if deleted, ok := old.(cache.DeletedFinalStateUnknown); ok {
@@ -104,18 +126,18 @@ func NewTriggerOnGenerationChanges[Source any, Key any](
 				}
 			}
 			oldObj := old.(Source)
-			triggerFunc(keyFunc(oldObj))
+			triggerFunc(oldObj)
 		},
 		AddFunc: func(cur interface{}) {
 			curObj := cur.(Source)
-			triggerFunc(keyFunc(curObj))
+			triggerFunc(curObj)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			oldObj := old.(metav1.Object)
 			curObj := cur.(metav1.Object)
 
 			if oldObj.GetGeneration() != curObj.GetGeneration() {
-				triggerFunc(keyFunc(cur.(Source)))
+				triggerFunc(cur.(Source))
 			}
 		},
 	}
