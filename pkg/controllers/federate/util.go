@@ -98,6 +98,7 @@ func newFederatedObjectForSourceObject(
 	// the FederatedObject's template.
 
 	federatedLabels, templateLabels := classifyLabels(sourceObj.GetLabels())
+	federatedLabels[sourceObj.GetAPIVersion()] = sourceObj.GetKind()
 
 	// Classify annotations into annotations that should be copied onto the FederatedObject and labels that should be
 	// copied onto the FederatedObject's template.
@@ -163,6 +164,7 @@ func updateFederatedObjectForSourceObject(
 	// the FederatedObject's template and update the FederatedObject's template.
 
 	federatedLabels, templateLabels := classifyLabels(sourceObject.GetLabels())
+	federatedLabels[sourceObject.GetAPIVersion()] = sourceObject.GetKind()
 	if !equality.Semantic.DeepEqual(federatedLabels, fedObject.GetLabels()) {
 		fedObject.SetLabels(federatedLabels)
 		isUpdated = true
