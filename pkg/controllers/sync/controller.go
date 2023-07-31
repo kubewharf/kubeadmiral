@@ -693,15 +693,14 @@ func (s *SyncController) deleteFromCluster(
 }
 
 func (s *SyncController) deleteFromClusters(ctx context.Context, fedResource FederatedResource) (bool, error) {
-	gvk := fedResource.TargetGVK()
-	qualifiedName := fedResource.TargetName()
 	keyedLogger := klog.FromContext(ctx)
 
 	remainingClusters := []string{}
 	ok, err := s.handleDeletionInClusters(
 		ctx,
-		gvk,
-		qualifiedName,
+		fedResource.TargetGVK(),
+		fedResource.TargetGVR(),
+		fedResource.TargetName(),
 		func(dispatcher dispatch.UnmanagedDispatcher, clusterName string, clusterObj *unstructured.Unstructured) {
 			remainingClusters = append(remainingClusters, clusterName)
 			s.deleteFromCluster(ctx, dispatcher, clusterName, fedResource, clusterObj, true)
@@ -769,6 +768,7 @@ func (s *SyncController) ensureRemovedOrUnmanaged(ctx context.Context, fedResour
 func (s *SyncController) handleDeletionInClusters(
 	ctx context.Context,
 	targetGVK schema.GroupVersionKind,
+	targetGVR schema.GroupVersionResource,
 	targetQualifiedName common.QualifiedName,
 	deletionFunc func(dispatcher dispatch.UnmanagedDispatcher, clusterName string, clusterObj *unstructured.Unstructured),
 ) (bool, error) {
@@ -779,12 +779,7 @@ func (s *SyncController) handleDeletionInClusters(
 		return false, fmt.Errorf("failed to get a list of clusters: %w", err)
 	}
 
-	ftc, exists := s.ftcManager.GetResourceFTC(targetGVK)
-	if !exists {
-		return false, fmt.Errorf("FTC does not exist")
-	}
-
-	dispatcher := dispatch.NewUnmanagedDispatcher(s.getClusterClient, ftc.GetSourceTypeGVR(), targetQualifiedName)
+	dispatcher := dispatch.NewUnmanagedDispatcher(s.getClusterClient, targetGVR, targetQualifiedName)
 	retrievalFailureClusters := []string{}
 	unreadyClusters := []string{}
 	for _, cluster := range clusters {
