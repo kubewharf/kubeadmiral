@@ -50,6 +50,7 @@ import (
 // controller to propagate them to selected member clusters.
 type FederatedResource interface {
 	dispatch.FederatedResourceForDispatch
+	version.VersionedResource
 
 	FederatedName() common.QualifiedName
 	UpdateVersions(selectedClusters []string, versionMap map[string]string) error
