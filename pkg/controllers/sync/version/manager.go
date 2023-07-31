@@ -139,8 +139,9 @@ func (m *VersionManager) HasSynced() bool {
 	return m.hasSynced
 }
 
-// Get retrieves a mapping of cluster names to versions for the given
-// versioned resource.
+// Get retrieves a mapping of cluster names to versions for the given versioned
+// resource. It returns an empty map if the desired object for the versioned
+// resource is different from last recorded.
 func (m *VersionManager) Get(resource VersionedResource) (map[string]string, error) {
 	versionMap := make(map[string]string)
 
