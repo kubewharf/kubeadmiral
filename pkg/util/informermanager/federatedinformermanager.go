@@ -361,6 +361,22 @@ func (m *federatedInformerManager) GetFederatedClusterLister() fedcorev1a1lister
 	return m.clusterInformer.Lister()
 }
 
+func (m *federatedInformerManager) GetJoinedClusters() ([]*fedcorev1a1.FederatedCluster, error) {
+	var clusters []*fedcorev1a1.FederatedCluster
+
+	allClusters, err := m.GetFederatedClusterLister().List(labels.Everything())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list clusters: %w", err)
+	}
+	for _, cluster := range allClusters {
+		if clusterutil.IsClusterJoined(&cluster.Status) {
+			clusters = append(clusters, cluster)
+		}
+	}
+
+	return clusters, nil
+}
+
 func (m *federatedInformerManager) GetFederatedTypeConfigLister() fedcorev1a1listers.FederatedTypeConfigLister {
 	return m.ftcInformer.Lister()
 }
@@ -462,6 +478,12 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
+				if deleted, ok := obj.(*cache.DeletedFinalStateUnknown); ok {
+					obj = deleted.Obj
+					if obj == nil {
+						return
+					}
+				}
 				cluster := obj.(*fedcorev1a1.FederatedCluster)
 				if predicate(cluster, nil) {
 					callback(cluster)

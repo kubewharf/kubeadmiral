@@ -208,11 +208,12 @@ func (a *StatusAggregator) Run(stopChan <-chan struct{}) {
 	a.informer.Start()
 	go func() {
 		for {
-			_, shutdown := a.clusterQueue.Get()
+			item, shutdown := a.clusterQueue.Get()
 			if shutdown {
 				break
 			}
 			a.reconcileOnClusterChange()
+			a.clusterQueue.Done(item)
 		}
 	}()
 	if !cache.WaitForNamedCacheSync(a.name, stopChan, a.HasSynced) {

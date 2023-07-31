@@ -62,8 +62,7 @@ const (
 	FinalizerFederateController = common.DefaultPrefix + "federate-controller"
 
 	// If this annotation is present on the source object, skip federating it.
-	NoFederatedResource      = common.DefaultPrefix + "no-federated-resource"
-	RetainReplicasAnnotation = common.DefaultPrefix + "retain-replicas"
+	NoFederatedResource = common.DefaultPrefix + "no-federated-resource"
 )
 
 // FederateController federates objects of source type to FederatedObjects or ClusterFederatedObjects.

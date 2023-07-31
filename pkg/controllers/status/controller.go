@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -241,11 +240,12 @@ func NewStatusController(
 func (s *StatusController) Run(ctx context.Context) {
 	go func() {
 		for {
-			_, shutdown := s.clusterQueue.Get()
+			item, shutdown := s.clusterQueue.Get()
 			if shutdown {
 				break
 			}
 			s.reconcileOnClusterChange()
+			s.clusterQueue.Done(item)
 		}
 	}()
 
@@ -411,7 +411,7 @@ func (s *StatusController) reconcile(
 	if existingStatus != nil {
 		hasRSDigestsAnnotation, err = annotation.HasAnnotationKeyValue(
 			existingStatus,
-			util.LatestReplicasetDigestsAnnotation,
+			common.LatestReplicasetDigestsAnnotation,
 			rsDigestsAnnotation,
 		)
 		if err != nil {
@@ -422,18 +422,16 @@ func (s *StatusController) reconcile(
 	collectedStatus := newCollectedStatusObject(fedObject, clusterStatuses)
 
 	if rsDigestsAnnotation != "" {
-		collectedStatus.SetAnnotations(map[string]string{util.LatestReplicasetDigestsAnnotation: rsDigestsAnnotation})
+		collectedStatus.SetAnnotations(map[string]string{common.LatestReplicasetDigestsAnnotation: rsDigestsAnnotation})
 	}
-	replicasAnnotationUpdated := false
-	if targetIsDeployment {
-		replicasAnnotationUpdated, err = s.setReplicasAnnotations(
+
+	if existingStatus == nil {
+		collectedStatus.GetLastUpdateTime().Time = time.Now()
+		_, err = collectedstatusadapters.Create(
 			ctx,
+			s.fedClient.CoreV1alpha1(),
 			collectedStatus,
-			fedObject,
-			clusterNames,
-			templateQualifiedName,
-			templateGVK,
-			typeConfig,
+			metav1.CreateOptions{},
 		)
 		if err != nil {
 			keyedLogger.Error(err, "Failed to set annotations about replicas")
@@ -457,7 +455,6 @@ func (s *StatusController) reconcile(
 		}
 	} else if !reflect.DeepEqual(existingStatus.GetGenericCollectedStatus().Clusters, collectedStatus.GetGenericCollectedStatus().Clusters) ||
 		!reflect.DeepEqual(collectedStatus.GetLabels(), existingStatus.GetLabels()) ||
-		replicasAnnotationUpdated ||
 		(rsDigestsAnnotation != "" && !hasRSDigestsAnnotation) {
 		collectedStatus.GetLastUpdateTime().Time = time.Now()
 		existingStatus.GetGenericCollectedStatus().Clusters = collectedStatus.GetGenericCollectedStatus().Clusters
@@ -506,11 +503,12 @@ func (s *StatusController) enqueueEnableCollectedStatusObject(qualifiedName comm
 		return
 	}
 
-	templateGVK, err := fedObject.GetSpec().GetTemplateGVK()
+	templateMetadata, err := fedObject.GetSpec().GetTemplateMetadata()
 	if err != nil {
 		keyedLogger.Error(err, "Failed to get template gvk")
 		return
 	}
+	templateGVK := templateMetadata.GroupVersionKind()
 
 	typeConfig, exists := s.ftcManager.GetResourceFTC(templateGVK)
 	if !exists || typeConfig == nil {
@@ -689,83 +687,6 @@ func (s *StatusController) latestReplicasetDigests(
 		return digests[i].ClusterName < digests[j].ClusterName
 	})
 	return digests, nil
-}
-
-func (s *StatusController) realUpdatedReplicas(
-	ctx context.Context,
-	clusterNames []string,
-	targetQualifiedName common.QualifiedName,
-	targetGVK schema.GroupVersionKind,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	revision string,
-) (string, error) {
-	key := targetQualifiedName.String()
-	var updatedReplicas int64
-	targetKind := typeConfig.Spec.SourceType.Kind
-	keyedLogger := klog.FromContext(ctx)
-
-	for _, clusterName := range clusterNames {
-		clusterObj, exist, err := informermanager.GetClusterObject(
-			ctx,
-			s.ftcManager,
-			s.fedInformerManager,
-			clusterName,
-			targetQualifiedName,
-			targetGVK,
-		)
-		if err != nil {
-			return "", errors.Wrapf(err, "Failed to get %s %q from cluster %q", targetKind, key, clusterName)
-		}
-		if !exist {
-			continue
-		}
-		// ignore digest errors for now since we want to try the best to collect the status
-		digest, err := util.ReplicaSetDigestFromObject(clusterObj)
-		if err != nil {
-			keyedLogger.WithValues("cluster-name", clusterName).Error(err, "Failed to get latestreplicaset digest")
-			continue
-		}
-		keyedLogger.WithValues("cluster-name", clusterName, "replicas-digest", digest).
-			V(4).
-			Info("Got latestreplicaset digest")
-		if digest.CurrentRevision != revision {
-			continue
-		}
-		if digest.ObservedGeneration < digest.Generation {
-			continue
-		}
-		updatedReplicas += digest.UpdatedReplicas
-	}
-	return strconv.FormatInt(updatedReplicas, 10), nil
-}
-
-func (s *StatusController) setReplicasAnnotations(
-	ctx context.Context,
-	collectedStatus fedcorev1a1.GenericCollectedStatusObject,
-	fedObject fedcorev1a1.GenericFederatedObject,
-	clusterNames []string,
-	qualifedName common.QualifiedName,
-	targetGVK schema.GroupVersionKind,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) (bool, error) {
-	revision, ok := fedObject.GetAnnotations()[common.CurrentRevisionAnnotation]
-	if !ok {
-		return false, nil
-	}
-	updatedReplicas, err := s.realUpdatedReplicas(ctx, clusterNames, qualifedName, targetGVK, typeConfig, revision)
-	if err != nil {
-		return false, err
-	}
-
-	collectedStatusAnno := collectedStatus.GetAnnotations()
-	if collectedStatusAnno == nil {
-		collectedStatusAnno = make(map[string]string)
-	}
-	collectedStatusAnno[util.AggregatedUpdatedReplicas] = updatedReplicas
-	collectedStatusAnno[common.CurrentRevisionAnnotation] = revision
-
-	collectedStatus.SetAnnotations(collectedStatusAnno)
-	return true, nil
 }
 
 func newCollectedStatusObject(

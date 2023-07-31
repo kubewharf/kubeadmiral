@@ -20,15 +20,14 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic/scheme"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
 type EventRecorderMux struct {
@@ -67,27 +66,28 @@ func (mux *EventRecorderMux) WithTransform(
 
 func (mux *EventRecorderMux) WithDefederateTransformer(recorder record.EventRecorder) *EventRecorderMux {
 	return mux.WithTransform(recorder, func(obj runtime.Object) runtime.Object {
-		accessor, err := meta.Accessor(obj)
+		fedObject, ok := obj.(fedcorev1a1.GenericFederatedObject)
+		if !ok {
+			return nil
+		}
+
+		templateMeta, err := fedObject.GetSpec().GetTemplateMetadata()
 		if err != nil {
-			klog.Errorf("Could not construct reference to: '%#v' due to: '%v'.", obj, err)
 			return nil
 		}
 
-		if _, ok := accessor.GetAnnotations()[common.FederatedObjectAnnotation]; !ok {
-			// not a federated object
-			return nil
-		}
-
-		for _, owner := range accessor.GetOwnerReferences() {
-			if !(owner.Controller != nil && *owner.Controller) {
+		for _, owner := range fedObject.GetOwnerReferences() {
+			ownerIsSourceObject := owner.Controller != nil && *owner.Controller &&
+				owner.APIVersion == templateMeta.APIVersion && owner.Kind == templateMeta.Kind &&
+				owner.Name == templateMeta.Name
+			if !ownerIsSourceObject {
 				continue
 			}
 
-			namespace := accessor.GetNamespace()
 			return &corev1.ObjectReference{
 				APIVersion:      owner.APIVersion,
 				Kind:            owner.Kind,
-				Namespace:       namespace,
+				Namespace:       fedObject.GetNamespace(),
 				Name:            owner.Name,
 				UID:             owner.UID,
 				ResourceVersion: "", // this value should not be used

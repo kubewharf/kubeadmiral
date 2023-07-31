@@ -35,9 +35,10 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	"github.com/kubewharf/kubeadmiral/pkg/util/orphaning"
 	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 )
 
@@ -62,7 +63,6 @@ func templateForSourceObject(
 	template.SetSelfLink("")
 	template.SetUID("")
 	template.SetResourceVersion("")
-	template.SetGeneration(0)
 	template.SetCreationTimestamp(metav1.Time{})
 	template.SetDeletionTimestamp(nil)
 	template.SetAnnotations(annotations)
@@ -71,6 +71,8 @@ func templateForSourceObject(
 	template.SetFinalizers(nil)
 	template.SetManagedFields(nil)
 	unstructured.RemoveNestedField(template.Object, common.StatusField)
+	// NOTE: we intentionally do not set generation to 0 so the SourceGeneration annotation
+	// can be populated in target objects.
 	return template
 }
 
@@ -247,11 +249,12 @@ func updateFederatedObjectForSourceObject(
 var (
 	// List of annotations that should be copied to the federated object instead of the template from the source
 	federatedAnnotationSet = sets.New(
+		common.RetainReplicasAnnotation,
 		scheduler.SchedulingModeAnnotation,
 		scheduler.StickyClusterAnnotation,
 		nsautoprop.NoAutoPropagationAnnotation,
-		util.OrphanManagedResourcesAnnotation,
-		util.ConflictResolutionAnnotation,
+		orphaning.OrphanManagedResourcesAnnotation,
+		adoption.ConflictResolutionAnnotation,
 		scheduler.TolerationsAnnotations,
 		scheduler.PlacementsAnnotations,
 		scheduler.ClusterSelectorAnnotations,
@@ -260,15 +263,11 @@ var (
 		common.NoSchedulingAnnotation,
 		scheduler.FollowsObjectAnnotation,
 		common.FollowersAnnotation,
-		RetainReplicasAnnotation,
 	)
 
-	// TODO: Do we need to specify the internal annotations here?
 	// List of annotations that should be ignored on the source object
 	ignoredAnnotationSet = sets.New(
-		util.ConflictResolutionInternalAnnotation,
-		util.OrphanManagedResourcesInternalAnnotation,
-		common.EnableFollowerSchedulingAnnotation,
+		common.LatestReplicasetDigestsAnnotation,
 	)
 
 	federatedLabelSet = sets.New[string](
@@ -305,7 +304,6 @@ func classifyAnnotations(annotations map[string]string) (
 	templateAnnotations map[string]string,
 ) {
 	federatedAnnotations, templateAnnotations = classifyStringMap(annotations, classifyAnnotation)
-	federatedAnnotations[common.FederatedObjectAnnotation] = "1"
 	return federatedAnnotations, templateAnnotations
 }
 

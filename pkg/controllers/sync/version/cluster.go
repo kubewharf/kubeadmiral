@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2018 The Kubernetes Authors.
 
@@ -22,10 +21,13 @@ are Copyright 2023 The KubeAdmiral Authors.
 package version
 
 import (
+	"context"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	fedcorev1a1client "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
@@ -35,12 +37,44 @@ func (*clusterVersionAdapter) TypeName() string {
 	return "ClusterPropagatedVersion"
 }
 
-func (*clusterVersionAdapter) NewListObject() client.ObjectList {
-	return &fedcorev1a1.ClusterPropagatedVersionList{}
+func (*clusterVersionAdapter) Get(
+	ctx context.Context,
+	client fedcorev1a1client.CoreV1alpha1Interface,
+	namespace, name string,
+	opts metav1.GetOptions,
+) (client.Object, error) {
+	return client.ClusterPropagatedVersions().Get(ctx, name, opts)
 }
 
-func (*clusterVersionAdapter) NewObject() client.Object {
-	return &fedcorev1a1.ClusterPropagatedVersion{}
+func (*clusterVersionAdapter) List(
+	ctx context.Context,
+	client fedcorev1a1client.CoreV1alpha1Interface,
+	namespace string,
+	opts metav1.ListOptions,
+) (client.ObjectList, error) {
+	return client.ClusterPropagatedVersions().List(ctx, opts)
+}
+
+func (*clusterVersionAdapter) Create(
+	ctx context.Context,
+	client fedcorev1a1client.CoreV1alpha1Interface,
+	obj client.Object,
+	opts metav1.CreateOptions,
+) (client.Object, error) {
+	return client.ClusterPropagatedVersions().Create(
+		ctx, obj.(*fedcorev1a1.ClusterPropagatedVersion), opts,
+	)
+}
+
+func (*clusterVersionAdapter) UpdateStatus(
+	ctx context.Context,
+	client fedcorev1a1client.CoreV1alpha1Interface,
+	obj client.Object,
+	opts metav1.UpdateOptions,
+) (client.Object, error) {
+	return client.ClusterPropagatedVersions().UpdateStatus(
+		ctx, obj.(*fedcorev1a1.ClusterPropagatedVersion), opts,
+	)
 }
 
 func (*clusterVersionAdapter) NewVersion(

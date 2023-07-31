@@ -68,24 +68,6 @@ spec:
                       description: Path to a numeric field that reflects the number of replicas that the object currently has. E.g. `status.replicas` for Deployment and ReplicaSet.
                       type: string
                   type: object
-                revisionHistory:
-                  description: Configuration for RevisionHistory. If left empty, the RevisionHistory feature will be disabled.
-                  properties:
-                    enabled:
-                      description: Whether or not preserve a RevisionHistory for the federated object during updates.
-                      type: boolean
-                  required:
-                    - enabled
-                  type: object
-                rolloutPlan:
-                  description: Configuration for RolloutPlan. If left empty, the RolloutPlan feature will be disabled.
-                  properties:
-                    enabled:
-                      description: Whether or not to synchronize the rollout process across clusters.
-                      type: boolean
-                  required:
-                    - enabled
-                  type: object
                 sourceType:
                   description: The API resource type to be federated.
                   properties:

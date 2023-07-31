@@ -19,7 +19,7 @@ spec:
     - name: v1alpha1
       schema:
         openAPIV3Schema:
-          description: ClusterPropagatedVersion holds version information about the state propagated from KubeFed APIs (configured by FederatedTypeConfig resources) to member clusters. The name of a ClusterPropagatedVersion encodes the kind and name of the resource it stores information for (i.e. <lower-case kind>-<resource name>). If a target resource has a populated metadata.Generation field, the generation will be stored with a prefix of `gen:` as the version for the cluster.  If metadata.Generation is not available, metadata.ResourceVersion will be stored with a prefix of `rv:` as the version for the cluster.
+          description: ClusterPropagatedVersion holds version information about the state propagated from ClusterFederatedObject to member clusters. The name of a ClusterPropagatedVersion is the same as its ClusterFederatedObject. If a target resource has a populated metadata.Generation field, the generation will be stored with a prefix of `gen:` as the version for the cluster.  If metadata.Generation is not available, metadata.ResourceVersion will be stored with a prefix of `rv:` as the version for the cluster.
           properties:
             apiVersion:
               description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
@@ -40,7 +40,7 @@ spec:
                         description: The name of the cluster the version is for.
                         type: string
                       version:
-                        description: The last version produced for the resource by a KubeFed operation.
+                        description: The last version produced for the resource by a KubeAdmiral operation.
                         type: string
                     required:
                       - clusterName

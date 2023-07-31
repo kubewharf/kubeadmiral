@@ -30,15 +30,13 @@ import (
 // +kubebuilder:resource:path=propagatedversions
 // +kubebuilder:subresource:status
 
-// PropagatedVersion holds version information about the state
-// propagated from KubeFed APIs (configured by FederatedTypeConfig
-// resources) to member clusters. The name of a PropagatedVersion
-// encodes the kind and name of the resource it stores information for
-// (i.e. <lower-case kind>-<resource name>). If a target resource has
-// a populated metadata.Generation field, the generation will be
-// stored with a prefix of `gen:` as the version for the cluster.  If
-// metadata.Generation is not available, metadata.ResourceVersion will
-// be stored with a prefix of `rv:` as the version for the cluster.
+// PropagatedVersion holds version information about the state propagated from
+// FederatedObject to member clusters. The name of a PropagatedVersion is the
+// same as its FederatedObject. If a target resource has a populated
+// metadata.Generation field, the generation will be stored with a prefix of
+// `gen:` as the version for the cluster.  If metadata.Generation is not
+// available, metadata.ResourceVersion will be stored with a prefix of `rv:` as
+// the version for the cluster.
 type PropagatedVersion struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -71,7 +69,7 @@ type PropagatedVersionStatus struct {
 type ClusterObjectVersion struct {
 	// The name of the cluster the version is for.
 	ClusterName string `json:"clusterName"`
-	// The last version produced for the resource by a KubeFed
+	// The last version produced for the resource by a KubeAdmiral
 	// operation.
 	Version string `json:"version"`
 }
@@ -83,15 +81,13 @@ type ClusterObjectVersion struct {
 // +kubebuilder:resource:path=clusterpropagatedversions,scope=Cluster
 // +kubebuilder:subresource:status
 
-// ClusterPropagatedVersion holds version information about the state
-// propagated from KubeFed APIs (configured by FederatedTypeConfig
-// resources) to member clusters. The name of a ClusterPropagatedVersion
-// encodes the kind and name of the resource it stores information for
-// (i.e. <lower-case kind>-<resource name>). If a target resource has
-// a populated metadata.Generation field, the generation will be
-// stored with a prefix of `gen:` as the version for the cluster.  If
-// metadata.Generation is not available, metadata.ResourceVersion will
-// be stored with a prefix of `rv:` as the version for the cluster.
+// ClusterPropagatedVersion holds version information about the state propagated
+// from ClusterFederatedObject to member clusters. The name of a
+// ClusterPropagatedVersion is the same as its ClusterFederatedObject. If a
+// target resource has a populated metadata.Generation field, the generation
+// will be stored with a prefix of `gen:` as the version for the cluster.  If
+// metadata.Generation is not available, metadata.ResourceVersion will be stored
+// with a prefix of `rv:` as the version for the cluster.
 type ClusterPropagatedVersion struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2019 The Kubernetes Authors.
 
@@ -30,15 +29,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/klog/v2"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
+	"github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
+	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
 
 const (
@@ -58,7 +55,7 @@ type UnmanagedDispatcher interface {
 type unmanagedDispatcherImpl struct {
 	dispatcher *operationDispatcherImpl
 
-	targetGVK  schema.GroupVersionKind
+	targetGVR  schema.GroupVersionResource
 	targetName common.QualifiedName
 
 	recorder dispatchRecorder
@@ -66,22 +63,22 @@ type unmanagedDispatcherImpl struct {
 
 func NewUnmanagedDispatcher(
 	clientAccessor clientAccessorFunc,
-	targetGVK schema.GroupVersionKind,
+	targetGVR schema.GroupVersionResource,
 	targetName common.QualifiedName,
 ) UnmanagedDispatcher {
 	dispatcher := newOperationDispatcher(clientAccessor, nil)
-	return newUnmanagedDispatcher(dispatcher, nil, targetGVK, targetName)
+	return newUnmanagedDispatcher(dispatcher, nil, targetGVR, targetName)
 }
 
 func newUnmanagedDispatcher(
 	dispatcher *operationDispatcherImpl,
 	recorder dispatchRecorder,
-	targetGVK schema.GroupVersionKind,
+	targetGVR schema.GroupVersionResource,
 	targetName common.QualifiedName,
 ) *unmanagedDispatcherImpl {
 	return &unmanagedDispatcherImpl{
 		dispatcher: dispatcher,
-		targetGVK:  targetGVK,
+		targetGVR:  targetGVR,
 		targetName: targetName,
 		recorder:   recorder,
 	}
@@ -95,9 +92,9 @@ func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "delete"
 	const opContinuous = "Deleting"
-	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
+	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client dynamic.Interface) bool {
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
-		targetName := d.targetNameForCluster(clusterName)
+		targetName := d.targetName
 		keyedLogger.V(1).Info("Deleting target object in cluster")
 		if d.recorder != nil {
 			d.recorder.recordEvent(clusterName, op, opContinuous)
@@ -112,14 +109,15 @@ func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
 				keyedLogger.Error(wrappedErr, "Failed to delete target object in cluster")
 			} else {
-				d.recorder.recordOperationError(ctx, fedtypesv1a1.DeletionFailed, clusterName, op, err)
+				d.recorder.recordOperationError(ctx, fedcorev1a1.DeletionFailed, clusterName, op, err)
 			}
 			return false
 		}
 		if needUpdate {
-			err := client.Update(
+			clusterObj, err = client.Resource(d.targetGVR).Namespace(targetName.Namespace).Update(
 				ctx,
 				clusterObj,
+				metav1.UpdateOptions{},
 			)
 			if apierrors.IsNotFound(err) {
 				err = nil
@@ -129,7 +127,7 @@ func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string
 					wrappedErr := d.wrapOperationError(err, clusterName, op)
 					keyedLogger.Error(wrappedErr, "Failed to delete target object in cluster")
 				} else {
-					d.recorder.recordOperationError(ctx, fedtypesv1a1.DeletionFailed, clusterName, op, err)
+					d.recorder.recordOperationError(ctx, fedcorev1a1.DeletionFailed, clusterName, op, err)
 				}
 				return false
 			}
@@ -140,21 +138,18 @@ func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string
 			return true
 		}
 
-		obj := &unstructured.Unstructured{}
-		obj.SetGroupVersionKind(d.targetGVK)
-		err = client.Delete(
+		// When deleting some resources (e.g. batch/v1.Job, batch/v1beta1.CronJob) without setting PropagationPolicy in DeleteOptions,
+		// kube-apiserver defaults to Orphan for backward compatibility.
+		// This would leak the dependents after the main propagated resource has been deleted.
+		// Ref: https://github.com/kubernetes/kubernetes/pull/71792
+		//
+		// To avoid this, we explicitly set the PropagationPolicy to Background like `kubectl delete` does by default.
+		// Ref: https://github.com/kubernetes/kubernetes/pull/65908
+		deletionPropagation := metav1.DeletePropagationBackground
+		err = client.Resource(d.targetGVR).Namespace(targetName.Namespace).Delete(
 			ctx,
-			obj,
-			targetName.Namespace,
 			targetName.Name,
-			// When deleting some resources (e.g. batch/v1.Job, batch/v1beta1.CronJob) without setting PropagationPolicy in DeleteOptions,
-			// kube-apiserver defaults to Orphan for backward compatibility.
-			// This would leak the dependents after the main propagated resource has been deleted.
-			// Ref: https://github.com/kubernetes/kubernetes/pull/71792
-			//
-			// To avoid this, we explicitly set the PropagationPolicy to Background like `kubectl delete` does by default.
-			// Ref: https://github.com/kubernetes/kubernetes/pull/65908
-			runtimeclient.PropagationPolicy(metav1.DeletePropagationBackground),
+			metav1.DeleteOptions{PropagationPolicy: &deletionPropagation},
 		)
 		if apierrors.IsNotFound(err) {
 			err = nil
@@ -164,7 +159,7 @@ func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
 				keyedLogger.Error(wrappedErr, "Failed to delete target object in cluster")
 			} else {
-				d.recorder.recordOperationError(ctx, fedtypesv1a1.DeletionFailed, clusterName, op, err)
+				d.recorder.recordOperationError(ctx, fedcorev1a1.DeletionFailed, clusterName, op, err)
 			}
 			return false
 		}
@@ -176,7 +171,7 @@ func (d *unmanagedDispatcherImpl) RemoveManagedLabel(ctx context.Context, cluste
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "remove managed label from"
 	const opContinuous = "Removing managed label from"
-	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
+	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client dynamic.Interface) bool {
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		keyedLogger.V(1).Info("Removing managed label from target object in cluster")
 		if d.recorder != nil {
@@ -192,18 +187,21 @@ func (d *unmanagedDispatcherImpl) RemoveManagedLabel(ctx context.Context, cluste
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
 				keyedLogger.Error(wrappedErr, "Failed to remove managed label from target object in cluster")
 			} else {
-				d.recorder.recordOperationError(ctx, fedtypesv1a1.LabelRemovalFailed, clusterName, op, err)
+				d.recorder.recordOperationError(ctx, fedcorev1a1.LabelRemovalFailed, clusterName, op, err)
 			}
 			return false
 		}
 
-		err := client.Update(ctx, updateObj)
+		var err error
+		updateObj, err = client.Resource(d.targetGVR).Namespace(clusterObj.GetNamespace()).Update(
+			ctx, updateObj, metav1.UpdateOptions{},
+		)
 		if err != nil {
 			if d.recorder == nil {
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
 				keyedLogger.Error(wrappedErr, "Failed to remove managed label from target object in cluster")
 			} else {
-				d.recorder.recordOperationError(ctx, fedtypesv1a1.LabelRemovalFailed, clusterName, op, err)
+				d.recorder.recordOperationError(ctx, fedcorev1a1.LabelRemovalFailed, clusterName, op, err)
 			}
 			return false
 		}
@@ -215,18 +213,14 @@ func (d *unmanagedDispatcherImpl) wrapOperationError(err error, clusterName, ope
 	return wrapOperationError(
 		err,
 		operation,
-		d.targetGVK.Kind,
-		d.targetNameForCluster(clusterName).String(),
+		d.targetGVR.String(),
+		d.targetName.String(),
 		clusterName,
 	)
 }
 
-func (d *unmanagedDispatcherImpl) targetNameForCluster(clusterName string) common.QualifiedName {
-	return util.QualifiedNameForCluster(clusterName, d.targetName)
-}
-
-func wrapOperationError(err error, operation, targetKind, targetName, clusterName string) error {
-	return errors.Wrapf(err, "Failed to "+eventTemplate, operation, targetKind, targetName, clusterName)
+func wrapOperationError(err error, operation, targetGVR, targetName, clusterName string) error {
+	return errors.Wrapf(err, "Failed to "+eventTemplate, operation, targetGVR, targetName, clusterName)
 }
 
 func removeRetainObjectFinalizer(obj *unstructured.Unstructured) (bool, error) {

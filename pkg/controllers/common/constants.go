@@ -20,32 +20,17 @@ are Copyright 2023 The KubeAdmiral Authors.
 
 package common
 
-import "k8s.io/apimachinery/pkg/runtime/schema"
+import (
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+)
 
 const (
 	DefaultFedSystemNamespace = "kube-admiral-system"
 	DefaultPrefix             = "kubeadmiral.io/"
 	InternalPrefix            = "internal." + DefaultPrefix
 	FederateControllerPrefix  = "federate.controller." + DefaultPrefix
-)
-
-const (
-	NamespaceResource = "namespaces"
-
-	NamespaceKind             = "Namespace"
-	DeploymentKind            = "Deployment"
-	StatefulSetKind           = "StatefulSet"
-	DaemonSetKind             = "DaemonSet"
-	JobKind                   = "Job"
-	CronJobKind               = "CronJob"
-	ConfigMapKind             = "ConfigMap"
-	SecretKind                = "Secret"
-	ServiceKind               = "Service"
-	ServiceAccountKind        = "ServiceAccount"
-	IngressKind               = "Ingress"
-	PersistentVolumeKind      = "PersistentVolume"
-	PersistentVolumeClaimKind = "PersistentVolumeClaim"
-	PodKind                   = "Pod"
 )
 
 // The following consts are spec fields used to interact with unstructured resources
@@ -81,13 +66,6 @@ const (
 	OverridesField  = "overrides"
 	FollowsField    = "follows"
 
-	// Rolling Update
-
-	StrategyField       = "strategy"
-	RollingUpdateField  = "rollingUpdate"
-	MaxSurgeField       = "maxSurge"
-	MaxUnavailableField = "maxUnavailable"
-
 	// Status
 
 	AvailableReplicasField = "availableReplicas"
@@ -106,20 +84,14 @@ const (
 	AnnotationValueTrue  = "true"
 	AnnotationValueFalse = "false"
 
-	// The following annotations contain metadata.
-
-	LastRevisionAnnotation        = DefaultPrefix + "last-revision"
-	CurrentRevisionAnnotation     = DefaultPrefix + "current-revision"
-	LastReplicasetName            = DefaultPrefix + "last-replicaset-name"
-	SourceGenerationAnnotation    = DefaultPrefix + "source-generation"
-	FederatedGenerationAnnotation = DefaultPrefix + "federated-generation"
+	SourceGenerationAnnotation = DefaultPrefix + "source-generation"
 
 	// The following annotations control the behavior of Kubeadmiral controllers.
 
 	NoSchedulingAnnotation = DefaultPrefix + "no-scheduling"
 
-	// FederatedObjectAnnotation indicates that the object was created by the federate controller.
-	FederatedObjectAnnotation = DefaultPrefix + "federated-object"
+	// RetainReplicasAnnotation indicates that the replicas field of the cluster objects should be retained during propagation.
+	RetainReplicasAnnotation = DefaultPrefix + "retain-replicas"
 
 	// FollowersAnnotation indicates the additional followers of a leader.
 	FollowersAnnotation = DefaultPrefix + "followers"
@@ -140,6 +112,8 @@ const (
 	// TemplateGeneratorMergePatchAnnotation indicates the merge patch document capable of converting
 	// the source object to the template object.
 	TemplateGeneratorMergePatchAnnotation = FederateControllerPrefix + "template-generator-merge-patch"
+
+	LatestReplicasetDigestsAnnotation = DefaultPrefix + "latest-replicaset-digests"
 )
 
 // PropagatedAnnotationKeys and PropagatedLabelKeys are used to store the keys of annotations and labels that are present
@@ -160,29 +134,47 @@ const (
 	ClusterServiceAccountCAKey     = "service-account-ca-data"
 )
 
-var DeploymentGVR = schema.GroupVersionResource{
-	Group:    "apps",
-	Version:  "v1",
-	Resource: "deployments",
-}
+const (
+	NamespaceResource  = "namespaces"
+	DeploymentResource = "deployments"
+	DaemonSetResource  = "daemonsets"
+	ConfigMapResource  = "configmaps"
+	SecretResource     = "secrets"
 
-var ConfigMapGVR = schema.GroupVersionResource{
-	Group:    "",
-	Version:  "v1",
-	Resource: "configmaps",
-}
+	NamespaceKind             = "Namespace"
+	DeploymentKind            = "Deployment"
+	StatefulSetKind           = "StatefulSet"
+	DaemonSetKind             = "DaemonSet"
+	JobKind                   = "Job"
+	CronJobKind               = "CronJob"
+	ConfigMapKind             = "ConfigMap"
+	SecretKind                = "Secret"
+	ServiceKind               = "Service"
+	ServiceAccountKind        = "ServiceAccount"
+	IngressKind               = "Ingress"
+	PersistentVolumeKind      = "PersistentVolume"
+	PersistentVolumeClaimKind = "PersistentVolumeClaim"
+	PodKind                   = "Pod"
+)
 
-var SecretGVR = schema.GroupVersionResource{
-	Group:    "",
-	Version:  "v1",
-	Resource: "secrets",
-}
+var (
+	ServiceGVK               = corev1.SchemeGroupVersion.WithKind(ServiceKind)
+	ServiceAccountGVK        = corev1.SchemeGroupVersion.WithKind(ServiceAccountKind)
+	PersistentVolumeGVK      = corev1.SchemeGroupVersion.WithKind(PersistentVolumeKind)
+	PersistentVolumeClaimGVK = corev1.SchemeGroupVersion.WithKind(PersistentVolumeClaimKind)
+	PodGVK                   = corev1.SchemeGroupVersion.WithKind(PodKind)
 
-var DaemonSetGVR = schema.GroupVersionResource{
-	Group:    "apps",
-	Version:  "v1",
-	Resource: "daemonsets",
-}
+	JobGVK = batchv1.SchemeGroupVersion.WithKind(JobKind)
+)
+
+var (
+	NamespaceGVR = corev1.SchemeGroupVersion.WithResource(NamespaceResource)
+	ConfigMapGVR = corev1.SchemeGroupVersion.WithResource(ConfigMapResource)
+	SecretGVR    = corev1.SchemeGroupVersion.WithResource(SecretResource)
+
+	DeploymentGVR = appsv1.SchemeGroupVersion.WithResource(DeploymentResource)
+	DaemonSetGVR  = appsv1.SchemeGroupVersion.WithResource(DaemonSetResource)
+)
 
 // MaxFederatedObjectNameLength defines the max length of a federated object name.
 // A custom resource name must be a DNS subdomain as defined in RFC1123 with a maximum length of 253.

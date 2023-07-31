@@ -14,10 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package adoption
 
 import (
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
@@ -34,7 +34,7 @@ const (
 	ConflictResolutionAdopt ConflictResolution = "adopt"
 )
 
-func ShouldAdoptPreexistingResources(obj *unstructured.Unstructured) bool {
+func ShouldAdoptPreexistingResources(obj metav1.Object) bool {
 	annotations := obj.GetAnnotations()
 
 	value, exists := annotations[ConflictResolutionInternalAnnotation]

@@ -1,4 +1,3 @@
-//go:build exclude
 /*
 Copyright 2018 The Kubernetes Authors.
 
@@ -22,20 +21,44 @@ are Copyright 2023 The KubeAdmiral Authors.
 package version
 
 import (
+	"context"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	fedcorev1a1client "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
 type VersionAdapter interface {
 	TypeName() string
 
-	// Create an empty instance of the version type
-	NewObject() client.Object
-	// Create an empty instance of list version type
-	NewListObject() client.ObjectList
+	Get(
+		ctx context.Context,
+		client fedcorev1a1client.CoreV1alpha1Interface,
+		namespace, name string,
+		opts metav1.GetOptions,
+	) (client.Object, error)
+	List(
+		ctx context.Context,
+		client fedcorev1a1client.CoreV1alpha1Interface,
+		namespace string,
+		opts metav1.ListOptions,
+	) (client.ObjectList, error)
+	Create(
+		ctx context.Context,
+		client fedcorev1a1client.CoreV1alpha1Interface,
+		obj client.Object,
+		opts metav1.CreateOptions,
+	) (client.Object, error)
+	UpdateStatus(
+		ctx context.Context,
+		client fedcorev1a1client.CoreV1alpha1Interface,
+		obj client.Object,
+		opts metav1.UpdateOptions,
+	) (client.Object, error)
+
 	// Create a populated instance of the version type
 	NewVersion(
 		qualifiedName common.QualifiedName,

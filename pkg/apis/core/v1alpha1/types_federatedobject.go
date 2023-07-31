@@ -116,10 +116,6 @@ type GenericFederatedObjectStatus struct {
 	Conditions []GenericFederatedObjectCondition `json:"conditions,omitempty"`
 	// Clusters contains the propagation status of the Kubernetes object for individual member clusters.
 	Clusters []PropagationStatus `json:"clusters,omitempty"`
-
-	// CollisionCount can be used in conjunction with RevisionHistory to implement rollbacks.
-	// +optional
-	CollisionCount *int32 `json:"collisionCount,omitempty"`
 }
 
 // PlacementWithController describes the member clusters that a Kubernetes object should be propagated to.
@@ -211,12 +207,8 @@ type FederatedObjectConditionReason string
 
 const (
 	AggregateSuccess       FederatedObjectConditionReason = ""
-	SyncRevisionsFailed    FederatedObjectConditionReason = "SyncRevisionsFailed"
 	ClusterRetrievalFailed FederatedObjectConditionReason = "ClusterRetrievalFailed"
-	ComputePlacementFailed FederatedObjectConditionReason = "ComputePlacementFailed"
-	PlanRolloutFailed      FederatedObjectConditionReason = "PlanRolloutFailed"
 	CheckClusters          FederatedObjectConditionReason = "CheckClusters"
-	NamespaceNotFederated  FederatedObjectConditionReason = "NamespaceNotFederated"
 	EnsureDeletionFailed   FederatedObjectConditionReason = "EnsureDeletionFailed"
 )
 
