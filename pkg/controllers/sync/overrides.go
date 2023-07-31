@@ -18,7 +18,7 @@ This file may have been modified by The KubeAdmiral Authors
 are Copyright 2023 The KubeAdmiral Authors.
 */
 
-package overrides
+package sync
 
 import (
 	"encoding/json"
@@ -30,29 +30,25 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
-// Namespace and name may not be overridden since these fields are the
-// primary mechanism of association between a federated resource in
-// the host cluster and the target resources in the member clusters.
+// Namespace and name may not be overridden since these fields are the primary
+// mechanism of association between a federated resource in the host cluster and
+// the target resources in the member clusters.
 //
-// Kind should always be sourced from the FTC and not vary across
+// Kind should always be sourced from source object and should not vary across
 // member clusters.
 //
-// apiVersion can be overridden to support managing resources like
-// Ingress which can exist in different groups at different
-// versions. Users will need to take care not to abuse this
-// capability.
-var invalidPaths = sets.NewString(
+// apiVersion can be overridden to support managing resources like Ingress which
+// can exist in different groups at different versions. Users will need to take
+// care not to abuse this capability.
+var invalidOverridePaths = sets.New(
 	"/metadata/namespace",
 	"/metadata/name",
 	"/metadata/generateName",
 	"/kind",
 )
 
-// Mapping of clusterName to overrides for the cluster
-type OverridesMap map[string]fedcorev1a1.OverridePatches
-
-// ApplyJsonPatch applies the override on to the given unstructured object.
-func ApplyJsonPatch(obj *unstructured.Unstructured, overrides fedcorev1a1.OverridePatches) error {
+// ApplyJSONPatch applies the override on to the given unstructured object.
+func ApplyJSONPatch(obj *unstructured.Unstructured, overrides fedcorev1a1.OverridePatches) error {
 	// TODO: Do the defaulting of "op" field to "replace" in API defaulting
 	for i, overrideItem := range overrides {
 		if overrideItem.Op == "" {
