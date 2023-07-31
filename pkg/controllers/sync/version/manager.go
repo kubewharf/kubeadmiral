@@ -38,7 +38,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1client "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/util/propagatedversion"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/propagatedversion"
 )
 
 // VersionedResource defines the methods a federated resource must
