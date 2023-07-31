@@ -22,8 +22,6 @@ import (
 	"sync"
 	"time"
 
-	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -48,6 +46,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	podutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
@@ -66,14 +65,7 @@ var (
 	// TODO: think about whether PodTemplatePath/PodSpecPath should be specified in the FTC instead.
 	// Specifying in the FTC allows changing the path according to the api version.
 	// Other controllers should consider using the specified paths instead of hardcoded paths.
-	leaderPodTemplatePaths = map[schema.GroupKind]string{
-		{Group: appsv1.GroupName, Kind: common.DeploymentKind}:  "spec.template",
-		{Group: appsv1.GroupName, Kind: common.StatefulSetKind}: "spec.template",
-		{Group: appsv1.GroupName, Kind: common.DaemonSetKind}:   "spec.template",
-		{Group: batchv1.GroupName, Kind: common.JobKind}:        "spec.template",
-		{Group: batchv1.GroupName, Kind: common.CronJobKind}:    "spec.jobTemplate.spec.template",
-		{Group: "", Kind: common.PodKind}:                       "spec",
-	}
+	leaderPodTemplatePaths = podutil.PodTemplatePaths
 
 	supportedFollowerTypes = sets.New(
 		schema.GroupKind{Group: "", Kind: common.ConfigMapKind},

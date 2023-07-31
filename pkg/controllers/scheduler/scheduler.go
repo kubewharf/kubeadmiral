@@ -45,7 +45,6 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/core"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
-	"github.com/kubewharf/kubeadmiral/pkg/util/annotation"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
@@ -415,15 +414,15 @@ func (s *Scheduler) prepareToSchedule(
 		}
 	}
 
-	triggerHash, err := s.computeSchedulingTriggerHash(ftc, fedObject, policy, clusters)
+	trigger, err := computeSchedulingTrigger(ftc, fedObject, policy, clusters)
 	if err != nil {
-		logger.Error(err, "Failed to compute scheduling trigger hash")
+		logger.Error(err, "Failed to compute scheduling triggers")
 		return nil, nil, nil, &worker.StatusError
 	}
 
-	triggersChanged, err := annotation.AddAnnotation(fedObject, SchedulingTriggerHashAnnotation, triggerHash)
+	triggersChanged, annotationChanged, err := trigger.updateAnnotationsIfTriggersChanged(fedObject, policy)
 	if err != nil {
-		logger.Error(err, "Failed to update scheduling trigger hash")
+		logger.Error(err, "Failed to update scheduling triggers")
 		return nil, nil, nil, &worker.StatusError
 	}
 
@@ -448,7 +447,7 @@ func (s *Scheduler) prepareToSchedule(
 		if updated, err := s.updatePendingControllers(ftc, fedObject, false); err != nil {
 			logger.Error(err, "Failed to update pending controllers")
 			return nil, nil, nil, &worker.StatusError
-		} else if updated {
+		} else if updated || annotationChanged {
 			if _, err := fedobjectadapters.Update(
 				ctx,
 				s.fedClient.CoreV1alpha1(),

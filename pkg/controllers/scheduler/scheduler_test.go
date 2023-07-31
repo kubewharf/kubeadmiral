@@ -108,8 +108,10 @@ func TestGetSchedulingUnit(t *testing.T) {
 			AutoMigration: &fedcorev1a1.AutoMigration{
 				KeepUnschedulableReplicas: false,
 			},
-			ReplicaRescheduling: &fedcorev1a1.ReplicaRescheduling{
-				AvoidDisruption: false,
+			ReschedulePolicy: &fedcorev1a1.ReschedulePolicy{
+				ReplicaRescheduling: &fedcorev1a1.ReplicaRescheduling{
+					AvoidDisruption: false,
+				},
 			},
 		},
 	}
@@ -194,10 +196,10 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 			name: "sticky cluster override",
 			policy: &fedcorev1a1.PropagationPolicy{
 				Spec: fedcorev1a1.PropagationPolicySpec{
-					StickyCluster: true,
 					ClusterSelector: map[string]string{
 						"label": "value1",
 					},
+					ReschedulePolicy: &fedcorev1a1.ReschedulePolicy{DisableRescheduling: true},
 				},
 			},
 			annotations: map[string]string{
@@ -215,10 +217,10 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 			name: "Cluster selector override",
 			policy: &fedcorev1a1.PropagationPolicy{
 				Spec: fedcorev1a1.PropagationPolicySpec{
-					StickyCluster: true,
 					ClusterSelector: map[string]string{
 						"label": "value1",
 					},
+					ReschedulePolicy: &fedcorev1a1.ReschedulePolicy{DisableRescheduling: true},
 				},
 			},
 			annotations: map[string]string{
@@ -237,10 +239,10 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 			policy: &fedcorev1a1.PropagationPolicy{
 				Spec: fedcorev1a1.PropagationPolicySpec{
 					SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
-					StickyCluster:  true,
 					ClusterSelector: map[string]string{
 						"label": "value1",
 					},
+					ReschedulePolicy: &fedcorev1a1.ReschedulePolicy{DisableRescheduling: true},
 				},
 			},
 			annotations: map[string]string{
@@ -291,7 +293,6 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 			name: "Tolerations override",
 			policy: &fedcorev1a1.PropagationPolicy{
 				Spec: fedcorev1a1.PropagationPolicySpec{
-					StickyCluster: true,
 					ClusterSelector: map[string]string{
 						"label": "value1",
 					},
@@ -302,6 +303,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 							Effect:   corev1.TaintEffectNoExecute,
 						},
 					},
+					ReschedulePolicy: &fedcorev1a1.ReschedulePolicy{DisableRescheduling: true},
 				},
 			},
 			annotations: map[string]string{
