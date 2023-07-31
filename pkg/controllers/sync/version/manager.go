@@ -108,10 +108,7 @@ func (m *VersionManager) Sync(ctx context.Context) {
 	if !ok {
 		return
 	}
-	ok = m.load(ctx, versionList)
-	if !ok {
-		return
-	}
+	m.load(ctx, versionList)
 }
 
 // HasSynced indicates whether the manager's in-memory state has been
@@ -258,6 +255,7 @@ func (m *VersionManager) list(ctx context.Context) (runtimeclient.ObjectList, bo
 func (m *VersionManager) load(ctx context.Context, versionList runtimeclient.ObjectList) bool {
 	objs, err := meta.ExtractList(versionList)
 	if err != nil {
+		m.logger.Error(err, "Failed to extract version list")
 		return false
 	}
 	for _, obj := range objs {
