@@ -165,7 +165,6 @@ func NewSyncController(
 
 	s.worker = worker.NewReconcileWorker[common.QualifiedName](
 		SyncControllerName,
-		nil,
 		s.reconcile,
 		worker.RateLimiterOptions{},
 		workerCount,
@@ -174,7 +173,6 @@ func NewSyncController(
 
 	s.clusterCascadingDeletionWorker = worker.NewReconcileWorker[common.QualifiedName](
 		SyncControllerName+"-cluster-cascading-deletion-worker",
-		nil,
 		s.reconcileClusterForCascadingDeletion,
 		worker.RateLimiterOptions{},
 		1,
@@ -338,7 +336,7 @@ func (s *SyncController) IsControllerReady() bool {
 }
 
 func (s *SyncController) getClusterClient(clusterName string) (dynamic.Interface, error) {
-	if client, exists := s.fedInformerManager.GetClusterClient(clusterName); exists {
+	if client, exists := s.fedInformerManager.GetClusterDynamicClient(clusterName); exists {
 		return client, nil
 	}
 	return nil, fmt.Errorf("client does not exist for cluster")
@@ -990,7 +988,7 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(ctx context.Contex
 				remainingByGVK[gvk] = strconv.Itoa(len(objects))
 			}
 		} else {
-			client, exists := s.fedInformerManager.GetClusterClient(cluster.Name)
+			client, exists := s.fedInformerManager.GetClusterDynamicClient(cluster.Name)
 			if !exists {
 				remainingByGVK[gvk] = "Unknown (cluster client does not exist)"
 				continue

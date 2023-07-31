@@ -295,8 +295,9 @@ func (m *VersionManager) load(ctx context.Context, versionList runtimeclient.Obj
 		default:
 		}
 
+		obj := obj.(runtimeclient.Object)
 		qualifiedName := common.NewQualifiedName(obj)
-		m.versions[qualifiedName.String()] = obj.(runtimeclient.Object)
+		m.versions[qualifiedName.String()] = obj
 	}
 	m.Lock()
 	m.hasSynced = true
