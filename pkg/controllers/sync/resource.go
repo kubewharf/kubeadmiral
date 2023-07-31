@@ -52,10 +52,15 @@ type FederatedResource interface {
 	dispatch.FederatedResourceForDispatch
 	version.VersionedResource
 
+	// FederatedName returns the name of the underlying FederatedObject or ClusterFederatedObject.
 	FederatedName() common.QualifiedName
+	// UpdateVersions updates the recorded versions for the given clusters.
 	UpdateVersions(selectedClusters []string, versionMap map[string]string) error
+	// DeleteVersions deletes the recorded versions.
 	DeleteVersions()
+	// ComputePlacement computes the placement of the resource in the given clusters.
 	ComputePlacement(clusters []*fedcorev1a1.FederatedCluster) sets.Set[string]
+	// SetObject sets the underlying FederatedObject or ClusterFederatedObject.
 	SetObject(obj fedcorev1a1.GenericFederatedObject)
 }
 

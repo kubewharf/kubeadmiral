@@ -50,16 +50,26 @@ const IndexRolloutPlans = "federation_placement_rollout"
 // FederatedResourceForDispatch is the subset of the FederatedResource
 // interface required for dispatching operations to managed resources.
 type FederatedResourceForDispatch interface {
+	// TargetName returns the name of the resource's target object.
 	TargetName() common.QualifiedName
+	// TargetGVK returns the resource's target group/version/kind.
 	TargetGVK() schema.GroupVersionKind
+	// TargetGVR returns the resource's target group/version/resource.
 	TargetGVR() schema.GroupVersionResource
+	// TypeConfig returns the FederatedTypeConfig for the resource's target type.
 	TypeConfig() *fedcorev1a1.FederatedTypeConfig
-	// Object returns the federated object.
+	// Object returns the underlying FederatedObject or ClusterFederatedObject
+	// as a GenericFederatedObject.
 	Object() fedcorev1a1.GenericFederatedObject
+	// VersionForCluster returns the resource's last propagated version for the given cluster.
 	VersionForCluster(clusterName string) (string, error)
+	// ObjectForCluster returns the resource's desired object for the given cluster.
 	ObjectForCluster(clusterName string) (*unstructured.Unstructured, error)
+	// ApplyOverrides applies cluster-specific overrides to the given object.
 	ApplyOverrides(obj *unstructured.Unstructured, clusterName string) error
+	// RecordError records an error for the resource.
 	RecordError(errorCode string, err error)
+	// RecordEvent records an event for the resource.
 	RecordEvent(reason, messageFmt string, args ...interface{})
 }
 
