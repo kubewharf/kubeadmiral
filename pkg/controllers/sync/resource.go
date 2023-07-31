@@ -45,9 +45,9 @@ import (
 	overridesutil "github.com/kubewharf/kubeadmiral/pkg/util/overrides"
 )
 
-// FederatedResource encapsulates the behavior of a logical federated
-// resource which may be implemented by one or more kubernetes
-// resources in the cluster hosting the control plane.
+// FederatedResource is a wrapper for FederatedObjects and
+// ClusterFederatedObjects that provides necessary abstractions for the Sync
+// controller to propagate them to selected member clusters.
 type FederatedResource interface {
 	dispatch.FederatedResourceForDispatch
 
