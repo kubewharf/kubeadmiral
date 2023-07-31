@@ -42,7 +42,8 @@ import (
 )
 
 // FederatedResourceAccessor provides a way to retrieve and visit
-// logical federated resources (e.g. FederatedConfigMap)
+// FederatedResource representations of FederatedObject/ClusterFederatedObject
+// in the apiserver.
 type FederatedResourceAccessor interface {
 	Run(context.Context)
 	HasSynced() bool
