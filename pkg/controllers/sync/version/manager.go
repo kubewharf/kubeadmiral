@@ -51,6 +51,26 @@ type VersionedResource interface {
 	FederatedGVK() schema.GroupVersionKind
 }
 
+/*
+VersionManager is used by the Sync controller to record the last synced version
+of a FederatedObject along with the versions of the cluster objects that were
+created/updated in the process. This is important in preventing unnecessary
+update requests from being sent to member clusters in subsequent reconciles. The
+VersionManager persists this information in the apiserver in the form of
+PropagatedVersion/ClusterPropagatedVersions, see
+pkg/apis/types_propagatedversion.go.
+
+In the context of the Sync controller, we identify the "version" of a
+FederatedObject with the hash of its template and overrides and we identify the
+"version" of a cluster object to be either its Generation (if available) or its
+ResourceVersion.
+
+VersionManager is required because created/updated cluster objects might not
+match the template exactly due to various reasons such as default values,
+admission plugins or webhooks. Thus we have to store the version returned by the
+create/update request to avoid false-positives when determining if the cluster
+object has diverged from the template in subsequent reconciles.
+*/
 type VersionManager struct {
 	sync.RWMutex
 
