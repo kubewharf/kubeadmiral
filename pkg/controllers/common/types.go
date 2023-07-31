@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -40,15 +39,9 @@ type QualifiedName struct {
 }
 
 func NewQualifiedName(obj metav1.Object) QualifiedName {
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-		// This should never happen, but if it does, the
-		// resulting empty name.
-		return QualifiedName{}
-	}
 	return QualifiedName{
-		Namespace: accessor.GetNamespace(),
-		Name:      accessor.GetName(),
+		Namespace: obj.GetNamespace(),
+		Name:      obj.GetName(),
 	}
 }
 

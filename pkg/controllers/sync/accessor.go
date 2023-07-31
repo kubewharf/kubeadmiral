@@ -27,7 +27,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
-	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
@@ -92,9 +91,7 @@ func NewFederatedResourceAccessor(
 		logger:                   logger.WithValues("origin", "resource-accessor"),
 	}
 
-	handler := eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
-		enqueue(common.NewQualifiedName(o))
-	})
+	handler := eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, enqueue)
 	fedObjectInformer.Informer().AddEventHandler(handler)
 	clusterFedObjectInformer.Informer().AddEventHandler(handler)
 

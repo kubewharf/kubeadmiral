@@ -26,15 +26,12 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
 type ReconcileFunc[Key any] func(context.Context, Key) Result
-
-type KeyFunc[Key any] func(metav1.Object) Key
 
 type ReconcileWorker[Key any] interface {
 	Enqueue(key Key)
