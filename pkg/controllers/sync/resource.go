@@ -42,7 +42,6 @@ import (
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
-	overridesutil "github.com/kubewharf/kubeadmiral/pkg/util/overrides"
 )
 
 // FederatedResource is a wrapper for FederatedObjects and
@@ -75,9 +74,10 @@ type federatedResource struct {
 	federatedObject fedcorev1a1.GenericFederatedObject
 	template        *unstructured.Unstructured
 	versionManager  *version.VersionManager
-	overridesMap    overridesutil.OverridesMap
-	versionMap      map[string]string
-	eventRecorder   record.EventRecorder
+	// Overrides for each cluster.
+	overridesMap  map[string]fedcorev1a1.OverridePatches
+	versionMap    map[string]string
+	eventRecorder record.EventRecorder
 }
 
 func (r *federatedResource) FederatedName() common.QualifiedName {
@@ -247,8 +247,17 @@ func (r *federatedResource) ApplyOverrides(
 	if err != nil {
 		return err
 	}
+	invalidPathsFound := sets.New[string]()
+	for _, override := range overrides {
+		if invalidOverridePaths.Has(override.Path) {
+			invalidPathsFound.Insert(override.Path)
+		}
+	}
+	if invalidPathsFound.Len() > 0 {
+		return fmt.Errorf("invalid override path(s): %v", invalidPathsFound.UnsortedList())
+	}
 	if overrides != nil {
-		if err := overridesutil.ApplyJsonPatch(obj, overrides); err != nil {
+		if err := ApplyJSONPatch(obj, overrides); err != nil {
 			return err
 		}
 	}
@@ -305,7 +314,7 @@ func (r *federatedResource) overridesForCluster(clusterName string) (fedcorev1a1
 			return lhs < rhs
 		})
 
-		r.overridesMap = make(overridesutil.OverridesMap)
+		r.overridesMap = make(map[string]fedcorev1a1.OverridePatches)
 
 		// Merge overrides in the specified order
 		for _, controllerOverride := range overrides {
