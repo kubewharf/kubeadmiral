@@ -396,7 +396,7 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 	}()
 
 	if fedResource.Object().GetDeletionTimestamp() != nil {
-		return s.ensureDeletion(ctx, fedResource)
+		return s.handleTerminatingFederatedResource(ctx, fedResource)
 	}
 
 	pendingControllers, err := pendingcontrollers.GetPendingControllers(fedResource.Object())
@@ -507,7 +507,7 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 			}
 
 			// We only respect orphaning behavior during cascading deletion, but not while migrating between clusters.
-			s.deleteFromCluster(ctx, dispatcher, clusterName, fedResource, clusterObj, isCascadingDeletionTriggered)
+			s.removeFromCluster(ctx, dispatcher, clusterName, fedResource, clusterObj, isCascadingDeletionTriggered)
 			continue
 		}
 
@@ -631,7 +631,7 @@ func (s *SyncController) setFederatedStatus(
 	return worker.StatusAllOK
 }
 
-func (s *SyncController) ensureDeletion(ctx context.Context, fedResource FederatedResource) worker.Result {
+func (s *SyncController) handleTerminatingFederatedResource(ctx context.Context, fedResource FederatedResource) worker.Result {
 	fedResource.DeleteVersions()
 
 	keyedLogger := klog.FromContext(ctx)
@@ -646,7 +646,7 @@ func (s *SyncController) ensureDeletion(ctx context.Context, fedResource Federat
 	}
 
 	keyedLogger.V(2).Info("Deleting resources managed by this federated object from member clusters")
-	recheckRequired, err := s.deleteFromClusters(ctx, fedResource)
+	recheckRequired, err := s.ensureRemovalFromClusters(ctx, fedResource)
 	if err != nil {
 		fedResource.RecordError(string(fedcorev1a1.EnsureDeletionFailed), err)
 		keyedLogger.Error(err, "Failed to ensure deletion of member objects")
@@ -665,7 +665,7 @@ func (s *SyncController) ensureDeletion(ctx context.Context, fedResource Federat
 	return worker.StatusAllOK
 }
 
-func (s *SyncController) deleteFromCluster(
+func (s *SyncController) removeFromCluster(
 	ctx context.Context,
 	dispatcher dispatch.UnmanagedDispatcher,
 	clusterName string,
@@ -692,7 +692,7 @@ func (s *SyncController) deleteFromCluster(
 	}
 }
 
-func (s *SyncController) deleteFromClusters(ctx context.Context, fedResource FederatedResource) (bool, error) {
+func (s *SyncController) ensureRemovalFromClusters(ctx context.Context, fedResource FederatedResource) (bool, error) {
 	keyedLogger := klog.FromContext(ctx)
 
 	remainingClusters := []string{}
@@ -703,7 +703,7 @@ func (s *SyncController) deleteFromClusters(ctx context.Context, fedResource Fed
 		fedResource.TargetName(),
 		func(dispatcher dispatch.UnmanagedDispatcher, clusterName string, clusterObj *unstructured.Unstructured) {
 			remainingClusters = append(remainingClusters, clusterName)
-			s.deleteFromCluster(ctx, dispatcher, clusterName, fedResource, clusterObj, true)
+			s.removeFromCluster(ctx, dispatcher, clusterName, fedResource, clusterObj, true)
 		},
 	)
 	if err != nil {
@@ -717,7 +717,7 @@ func (s *SyncController) deleteFromClusters(ctx context.Context, fedResource Fed
 			V(2).Info("Waiting for resources managed by this federated object to be removed from some clusters")
 		return true, nil
 	}
-	err = s.ensureRemovedOrUnmanaged(ctx, fedResource)
+	err = s.checkObjectRemovedFromAllClusters(ctx, fedResource)
 	if err != nil {
 		return false, errors.Wrapf(err, "failed to verify that managed resources no longer exist in any cluster")
 	}
@@ -726,12 +726,12 @@ func (s *SyncController) deleteFromClusters(ctx context.Context, fedResource Fed
 	return false, nil
 }
 
-// ensureRemovedOrUnmanaged ensures that no resources in member
+// checkObjectRemovedFromAllClusters checks that no resources in member
 // clusters that could be managed by the given federated resources are
 // present or labeled as managed.  The checks are performed without
 // the informer to cover the possibility that the resources have not
 // yet been cached.
-func (s *SyncController) ensureRemovedOrUnmanaged(ctx context.Context, fedResource FederatedResource) error {
+func (s *SyncController) checkObjectRemovedFromAllClusters(ctx context.Context, fedResource FederatedResource) error {
 	clusters, err := s.fedInformerManager.GetJoinedClusters()
 	if err != nil {
 		return errors.Wrap(err, "failed to get a list of clusters")
