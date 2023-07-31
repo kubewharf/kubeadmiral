@@ -38,11 +38,11 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/propagatedversion"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/status"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
-	"github.com/kubewharf/kubeadmiral/pkg/util/propagatedversion"
 )
 
 const IndexRolloutPlans = "federation_placement_rollout"
