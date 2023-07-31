@@ -269,11 +269,12 @@ func (s *Scheduler) reconcile(ctx context.Context, key common.QualifiedName) (st
 
 	fedObject = fedObject.DeepCopyGenericFederatedObject()
 
-	sourceGVK, err := fedObject.GetSpec().GetTemplateGVK()
+	templateMetadata, err := fedObject.GetSpec().GetTemplateMetadata()
 	if err != nil {
 		logger.Error(err, "Failed to get source GVK from FederatedObject")
 		return worker.StatusError
 	}
+	sourceGVK := templateMetadata.GroupVersionKind()
 	ctx, logger = logging.InjectLoggerValues(ctx, "source-gvk", sourceGVK)
 
 	ftc, exists := s.informerManager.GetResourceFTC(sourceGVK)
@@ -834,12 +835,12 @@ func (s *Scheduler) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedType
 	}
 
 	for _, obj := range allObjects {
-		sourceGVK, err := obj.GetSpec().GetTemplateGVK()
+		templateMetadata, err := obj.GetSpec().GetTemplateMetadata()
 		if err != nil {
 			logger.Error(err, "Failed to get source GVK from FederatedObject, will not enqueue")
 			continue
 		}
-		if sourceGVK == ftc.GetSourceTypeGVK() {
+		if templateMetadata.GroupVersionKind() == ftc.GetSourceTypeGVK() {
 			s.worker.Enqueue(common.NewQualifiedName(obj))
 		}
 	}
