@@ -44,10 +44,18 @@ import (
 // VersionedResource defines the methods a federated resource must
 // implement to allow versions to be tracked by the VersionManager.
 type VersionedResource interface {
+	// FederatedName returns the qualified name of the underlying
+	// FederatedObject or ClusterFederatedObject.
 	FederatedName() common.QualifiedName
+	// Object returns the underlying FederatedObject or ClusterFederatedObject
+	// as a GenericFederatedObject.
 	Object() fedcorev1a1.GenericFederatedObject
+	// TemplateVersion returns the resource's current template version.
 	TemplateVersion() (string, error)
+	// OverrideVersion returns the resource's current override version.
 	OverrideVersion() (string, error)
+	// FederatedGVK returns the GroupVersionKind of the underlying
+	// FederatedObject or ClusterFederatedObject.
 	FederatedGVK() schema.GroupVersionKind
 }
 
