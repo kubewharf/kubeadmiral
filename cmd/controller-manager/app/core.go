@@ -26,6 +26,7 @@ import (
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/follower"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/policyrc"
@@ -236,4 +237,27 @@ func startSyncController(
 	go syncController.Run(ctx)
 
 	return syncController, nil
+}
+
+func startFollowerController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	followerController, err := follower.NewFollowerController(
+		controllerCtx.KubeClientset,
+		controllerCtx.FedClientset,
+		controllerCtx.InformerManager,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
+		controllerCtx.Metrics,
+		klog.Background(),
+		controllerCtx.WorkerCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating follower controller: %w", err)
+	}
+
+	go followerController.Run(ctx)
+
+	return followerController, nil
 }

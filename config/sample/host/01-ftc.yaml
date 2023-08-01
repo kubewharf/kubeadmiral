@@ -51,7 +51,6 @@ spec:
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
-    - - kubeadmiral.io/follower-controller
   pathDefinition:
     labelSelector: spec.selector
     replicasSpec: spec.replicas
@@ -264,7 +263,6 @@ spec:
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
-    - - kubeadmiral.io/follower-controller
   statusCollection:
     enabled: true
     fields:
@@ -288,7 +286,6 @@ spec:
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
-    - - kubeadmiral.io/follower-controller
   statusCollection:
     enabled: true
     fields:
@@ -309,7 +306,6 @@ spec:
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
-    - - kubeadmiral.io/follower-controller
   statusCollection:
     enabled: true
     fields:
@@ -330,7 +326,6 @@ spec:
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
-    - - kubeadmiral.io/follower-controller
   statusCollection:
     enabled: true
     fields:
