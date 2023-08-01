@@ -64,16 +64,16 @@ const (
 )
 
 var (
-	// Map from supported leader type to pod template path.
+	// Map from supported leader type to pod spec path.
 	// TODO: think about whether PodTemplatePath/PodSpecPath should be specified in the FTC instead.
 	// Specifying in the FTC allows changing the path according to the api version.
 	// Other controllers should consider using the specified paths instead of hardcoded paths.
-	leaderPodTemplatePaths = map[schema.GroupKind]string{
-		{Group: appsv1.GroupName, Kind: common.DeploymentKind}:  "spec.template",
-		{Group: appsv1.GroupName, Kind: common.StatefulSetKind}: "spec.template",
-		{Group: appsv1.GroupName, Kind: common.DaemonSetKind}:   "spec.template",
-		{Group: batchv1.GroupName, Kind: common.JobKind}:        "spec.template",
-		{Group: batchv1.GroupName, Kind: common.CronJobKind}:    "spec.jobTemplate.spec.template",
+	leaderPodSpecPaths = map[schema.GroupKind]string{
+		{Group: appsv1.GroupName, Kind: common.DeploymentKind}:  "spec.template.spec",
+		{Group: appsv1.GroupName, Kind: common.StatefulSetKind}: "spec.template.spec",
+		{Group: appsv1.GroupName, Kind: common.DaemonSetKind}:   "spec.template.spec",
+		{Group: batchv1.GroupName, Kind: common.JobKind}:        "spec.template.spec",
+		{Group: batchv1.GroupName, Kind: common.CronJobKind}:    "spec.jobTemplate.spec.template.spec",
 		{Group: "", Kind: common.PodKind}:                       "spec",
 	}
 
@@ -202,7 +202,7 @@ func NewFollowerController(
 		targetGK := schema.GroupKind{Group: targetType.Group, Kind: targetType.Kind}
 		federatedGK := schema.GroupKind{Group: federatedType.Group, Kind: federatedType.Kind}
 
-		if _, exists := leaderPodTemplatePaths[targetGK]; exists {
+		if _, exists := leaderPodSpecPaths[targetGK]; exists {
 			handles := getHandles(ftc, "leader", c.reconcileLeader)
 			c.sourceToFederatedGKMap[targetGK] = federatedGK
 			c.leaderTypeHandles[federatedGK] = handles
@@ -365,16 +365,16 @@ func (c *Controller) inferFollowers(
 		return nil, err
 	}
 
-	followersFromPodTemplate, err := getFollowersFromPodTemplate(
+	followersFromPodSpec, err := getFollowersFromPodSpec(
 		fedObj,
-		leaderPodTemplatePaths[handles.sourceGK],
+		leaderPodSpecPaths[handles.sourceGK],
 		c.sourceToFederatedGKMap,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return followersFromAnnotation.Union(followersFromPodTemplate), err
+	return followersFromAnnotation.Union(followersFromPodSpec), err
 }
 
 func (c *Controller) updateFollower(
