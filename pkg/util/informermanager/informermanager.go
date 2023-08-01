@@ -86,8 +86,10 @@ func NewInformerManager(
 		informerCancelFuncs:       map[string]context.CancelFunc{},
 		eventHandlerRegistrations: map[string]map[*EventHandlerGenerator]cache.ResourceEventHandlerRegistration{},
 		lastAppliedFTCsCache:      map[string]map[*EventHandlerGenerator]*fedcorev1a1.FederatedTypeConfig{},
-		queue:                     workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
-		initialFTCs:               sets.New[string](),
+		queue: workqueue.NewRateLimitingQueue(
+			workqueue.NewItemExponentialFailureRateLimiter(100*time.Millisecond, 10*time.Second),
+		),
+		initialFTCs: sets.New[string](),
 	}
 
 	ftcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -141,7 +143,7 @@ func (m *informerManager) worker(ctx context.Context) {
 		return
 	}
 
-	needReenqueue, delay, err := m.processFTC(ctx, ftc)
+	needReenqueue, err := m.processFTC(ctx, ftc)
 	if err != nil {
 		if needReenqueue {
 			logger.Error(err, "Failed to process FederatedTypeConfig, will retry")
@@ -153,16 +155,17 @@ func (m *informerManager) worker(ctx context.Context) {
 		return
 	}
 
-	m.queue.Forget(key)
 	if needReenqueue {
-		m.queue.AddAfter(key, delay)
+		m.queue.AddRateLimited(key)
+	} else {
+		m.queue.Forget(key)
 	}
 }
 
 func (m *informerManager) processFTC(
 	ctx context.Context,
 	ftc *fedcorev1a1.FederatedTypeConfig,
-) (needReenqueue bool, reenqueueDelay time.Duration, err error) {
+) (needReenqueue bool, err error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -183,17 +186,17 @@ func (m *informerManager) processFTC(
 			// time and we missed processing the deletion. We simply process the ftc deletion and reenqueue. Note:
 			// updating of ftc source types, however, is still not a supported use case.
 			err := m.processFTCDeletionUnlocked(ctx, ftcName)
-			return true, 0, err
+			return true, err
 		}
 
 		informer = m.informers[ftcName]
 	} else {
 		if err := m.gvkMapping.Add(ftcName, gvk); err != nil {
 			// There must be another ftc with the same source type GVK.
-			return false, 0, fmt.Errorf("source type is already referenced by another FederatedTypeConfig: %w", err)
+			return false, fmt.Errorf("source type is already referenced by another FederatedTypeConfig: %w", err)
 		}
 
-		logger.V(2).Info("Starting new informer for FederatedTypeConfig")
+		logger.V(2).Info("Starting new informer for FederatedTypeConfig's source type")
 
 		informer = dynamicinformer.NewFilteredDynamicInformer(
 			m.client,
@@ -219,14 +222,16 @@ func (m *informerManager) processFTC(
 	m.initialFTCs.Delete(ftcName)
 
 	if !informer.Informer().HasSynced() {
-		logger.V(3).Info("Informer for FederatedTypeConfig not synced, will not register event handlers yet")
-		return true, 100 * time.Millisecond, nil
+		logger.V(3).Info(
+			"Informer for FederatedTypeConfig's source type not synced, will not register event handlers yet",
+		)
+		return true, nil
 	}
 
 	registrations := m.eventHandlerRegistrations[ftcName]
 	lastAppliedFTCs := m.lastAppliedFTCsCache[ftcName]
 
-	logger.V(2).Info("Registering event handlers for FederatedTypeConfig")
+	logger.V(2).Info("Registering event handlers for FederatedTypeConfig's source type")
 
 	for _, generator := range m.eventHandlerGenerators {
 		lastApplied := lastAppliedFTCs[generator]
@@ -237,7 +242,7 @@ func (m *informerManager) processFTC(
 
 		if oldRegistration := registrations[generator]; oldRegistration != nil {
 			if err := informer.Informer().RemoveEventHandler(oldRegistration); err != nil {
-				return true, 0, fmt.Errorf("failed to unregister event handler: %w", err)
+				return true, fmt.Errorf("failed to unregister event handler: %w", err)
 			}
 			delete(registrations, generator)
 		}
@@ -246,7 +251,7 @@ func (m *informerManager) processFTC(
 		if handler := generator.Generator(ftc); handler != nil {
 			newRegistration, err := informer.Informer().AddEventHandler(handler)
 			if err != nil {
-				return true, 0, fmt.Errorf("failed to register event handler: %w", err)
+				return true, fmt.Errorf("failed to register event handler: %w", err)
 			}
 			registrations[generator] = newRegistration
 		}
@@ -254,7 +259,7 @@ func (m *informerManager) processFTC(
 		lastAppliedFTCs[generator] = ftc
 	}
 
-	return false, 0, nil
+	return false, nil
 }
 
 func (m *informerManager) processFTCDeletion(ctx context.Context, ftcName string) error {

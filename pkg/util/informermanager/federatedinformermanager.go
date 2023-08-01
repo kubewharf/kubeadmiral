@@ -102,7 +102,9 @@ func NewFederatedInformerManager(
 		clusterCancelFuncs:     map[string]context.CancelFunc{},
 		informerManagers:       map[string]InformerManager{},
 		informerFactories:      map[string]informers.SharedInformerFactory{},
-		queue:                  workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
+		queue: workqueue.NewRateLimitingQueue(
+			workqueue.NewItemExponentialFailureRateLimiter(100*time.Millisecond, 10*time.Second),
+		),
 		podListerSemaphore:     semaphore.NewWeighted(3), // TODO: make this configurable
 		initialClusters:        sets.New[string](),
 		podEventHandlers:       []*ResourceEventHandlerWithClusterFuncs{},
@@ -175,7 +177,7 @@ func (m *federatedInformerManager) worker(ctx context.Context) {
 		return
 	}
 
-	needReenqueue, delay, err := m.processCluster(ctx, cluster)
+	needReenqueue, err := m.processCluster(ctx, cluster)
 	if err != nil {
 		if needReenqueue {
 			logger.Error(err, "Failed to process FederatedCluster, will retry")
@@ -187,16 +189,17 @@ func (m *federatedInformerManager) worker(ctx context.Context) {
 		return
 	}
 
-	m.queue.Forget(key)
 	if needReenqueue {
-		m.queue.AddAfter(key, delay)
+		m.queue.AddRateLimited(key)
+	} else {
+		m.queue.Forget(key)
 	}
 }
 
 func (m *federatedInformerManager) processCluster(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
-) (needReenqueue bool, reenqueueDelay time.Duration, err error) {
+) (needReenqueue bool, err error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -204,7 +207,7 @@ func (m *federatedInformerManager) processCluster(
 
 	connectionHash, err := m.clientHelper.ConnectionHash(cluster)
 	if err != nil {
-		return true, 0, fmt.Errorf("failed to get connection hash for cluster %s: %w", clusterName, err)
+		return true, fmt.Errorf("failed to get connection hash for cluster %s: %w", clusterName, err)
 	}
 	if oldConnectionHash, exists := m.connectionMap[clusterName]; exists {
 		if !bytes.Equal(oldConnectionHash, connectionHash) {
@@ -213,22 +216,22 @@ func (m *federatedInformerManager) processCluster(
 			// reenqueue.
 			// Note: updating of cluster connection details, however, is still not a supported use case.
 			err := m.processClusterDeletionUnlocked(ctx, clusterName)
-			return true, 0, err
+			return true, err
 		}
 	} else {
 		clusterRestConfig, err := m.clientHelper.RestConfigGetter(cluster)
 		if err != nil {
-			return true, 0, fmt.Errorf("failed to get rest config for cluster %s: %w", clusterName, err)
+			return true, fmt.Errorf("failed to get rest config for cluster %s: %w", clusterName, err)
 		}
 
 		clusterDynamicClient, err := m.dynamicClientGetter(cluster, clusterRestConfig)
 		if err != nil {
-			return true, 0, fmt.Errorf("failed to get dynamic client for cluster %s: %w", clusterName, err)
+			return true, fmt.Errorf("failed to get dynamic client for cluster %s: %w", clusterName, err)
 		}
 
 		clusterKubeClient, err := m.kubeClientGetter(cluster, clusterRestConfig)
 		if err != nil {
-			return true, 0, fmt.Errorf("failed to get kubernetes client for cluster %s: %w", clusterName, err)
+			return true, fmt.Errorf("failed to get kubernetes client for cluster %s: %w", clusterName, err)
 		}
 
 		manager := NewInformerManager(
@@ -249,7 +252,7 @@ func (m *federatedInformerManager) processCluster(
 		for _, generator := range m.eventHandlerGenerators {
 			if err := manager.AddEventHandlerGenerator(generator); err != nil {
 				cancel()
-				return true, 0, fmt.Errorf("failed to initialized InformerManager for cluster %s: %w", clusterName, err)
+				return true, fmt.Errorf("failed to initialized InformerManager for cluster %s: %w", clusterName, err)
 			}
 		}
 
@@ -278,7 +281,7 @@ func (m *federatedInformerManager) processCluster(
 			m.initialClusters.Delete(cluster.Name)
 		} else {
 			klog.FromContext(ctx).V(3).Info("Waiting for InformerManager sync")
-			return true, 100 * time.Millisecond, nil
+			return true, nil
 		}
 	}
 
@@ -293,7 +296,7 @@ func (m *federatedInformerManager) processCluster(
 		}
 	}
 
-	return false, 0, nil
+	return false, nil
 }
 
 func (m *federatedInformerManager) processClusterDeletion(ctx context.Context, clusterName string) error {
