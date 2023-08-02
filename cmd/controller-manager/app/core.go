@@ -33,6 +33,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/policyrc"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/status"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/statusaggregator"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync"
 )
 
@@ -286,4 +287,31 @@ func startAutoMigrationController(
 	go autoMigrationController.Run(ctx)
 
 	return autoMigrationController, nil
+}
+
+func startStatusAggregatorController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	statusAggregatorController, err := statusaggregator.NewStatusAggregatorController(
+		controllerCtx.KubeClientset,
+		controllerCtx.DynamicClientset,
+		controllerCtx.FedClientset,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
+		controllerCtx.FederatedInformerManager,
+		controllerCtx.InformerManager,
+		controllerCtx.Metrics,
+		klog.Background(),
+		controllerCtx.WorkerCount,
+		controllerCtx.ClusterAvailableDelay,
+		controllerCtx.ClusterUnavailableDelay,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating status-aggregator controller: %w", err)
+	}
+
+	go statusAggregatorController.Run(ctx)
+
+	return statusAggregatorController, nil
 }
