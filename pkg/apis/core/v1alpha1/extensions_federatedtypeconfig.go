@@ -72,6 +72,10 @@ func (f *FederatedTypeConfig) GetStatusAggregationEnabled() bool {
 	return f.Spec.StatusAggregation != nil && f.Spec.StatusAggregation.Enabled
 }
 
+func (f *FederatedTypeConfig) GetAutoMigrationEnabled() bool {
+	return f.Spec.AutoMigration != nil && f.Spec.AutoMigration.Enabled
+}
+
 func (f *FederatedTypeConfig) GetPolicyRcEnabled() bool {
 	return true // TODO: should this be configurable?
 }

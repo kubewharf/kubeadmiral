@@ -120,3 +120,71 @@ func newPod(terminating bool, schedulable bool, lastTransitionTimestamp time.Tim
 	}
 	return pod
 }
+
+func Test_podScheduledConditionChanged(t *testing.T) {
+	now := time.Now()
+	podWithEmptyCond := newPod(false, false, now)
+	podWithEmptyCond.Status.Conditions = nil
+
+	tests := []struct {
+		name   string
+		oldPod *corev1.Pod
+		newPod *corev1.Pod
+		want   bool
+	}{
+		{
+			name:   "both nil",
+			oldPod: podWithEmptyCond,
+			newPod: podWithEmptyCond,
+			want:   false,
+		},
+		{
+			name:   "oldPod condition is nil",
+			oldPod: podWithEmptyCond,
+			newPod: newPod(false, false, now),
+			want:   true,
+		},
+		{
+			name:   "newPod condition is nil",
+			oldPod: newPod(false, false, now),
+			newPod: podWithEmptyCond,
+			want:   true,
+		},
+		{
+			name:   "unschedulable condition equal",
+			oldPod: newPod(false, false, now),
+			newPod: newPod(false, false, now),
+			want:   false,
+		},
+		{
+			name:   "unschedulable condition not equal",
+			oldPod: newPod(false, false, now.Add(10*time.Second)),
+			newPod: newPod(false, false, now),
+			want:   true,
+		},
+		{
+			name:   "schedulable condition equal",
+			oldPod: newPod(false, true, now),
+			newPod: newPod(false, true, now),
+			want:   false,
+		},
+		{
+			name:   "schedulable condition not equal",
+			oldPod: newPod(false, true, now.Add(10*time.Second)),
+			newPod: newPod(false, true, now),
+			want:   true,
+		},
+		{
+			name:   "schedulable and unschedulable conditions",
+			oldPod: newPod(false, true, now),
+			newPod: newPod(false, false, now),
+			want:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, podScheduledConditionChanged(tt.oldPod, tt.newPod),
+				"podScheduledConditionChanged(%v, %v)", tt.oldPod, tt.newPod)
+		})
+	}
+}

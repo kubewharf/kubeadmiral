@@ -23,6 +23,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/automigration"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
@@ -260,4 +261,29 @@ func startFollowerController(
 	go followerController.Run(ctx)
 
 	return followerController, nil
+}
+
+func startAutoMigrationController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	autoMigrationController, err := automigration.NewAutoMigrationController(
+		ctx,
+		controllerCtx.KubeClientset,
+		controllerCtx.FedClientset,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
+		controllerCtx.FederatedInformerManager,
+		controllerCtx.InformerManager,
+		controllerCtx.Metrics,
+		klog.Background(),
+		controllerCtx.WorkerCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating auto-migration controller: %w", err)
+	}
+
+	go autoMigrationController.Run(ctx)
+
+	return autoMigrationController, nil
 }

@@ -44,6 +44,7 @@ const (
 	StatusControllerName                   = "status"
 	SchedulerName                          = "scheduler"
 	SyncControllerName                     = "sync"
+	AutoMigrationControllerName            = "auto-migration"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
@@ -56,6 +57,7 @@ var knownControllers = map[string]controllermanager.StartControllerFunc{
 	SchedulerName:                          startScheduler,
 	SyncControllerName:                     startSyncController,
 	FollowerControllerName:                 startFollowerController,
+	AutoMigrationControllerName:            startAutoMigrationController,
 }
 
 var controllersDisabledByDefault = sets.New[string]()
