@@ -382,9 +382,11 @@ func (s *StatusController) reconcile(
 		keyedLogger.Error(err, "Failed to get status from cache")
 		return worker.StatusError
 	}
-
 	if apierrors.IsNotFound(err) {
 		existingStatus = nil
+	}
+	if existingStatus != nil {
+		existingStatus = existingStatus.DeepCopyGenericCollectedStatusObject()
 	}
 
 	var rsDigestsAnnotation string

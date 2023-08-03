@@ -55,4 +55,5 @@ type GenericCollectedStatusObject interface {
 	pkgruntime.Object
 	GetGenericCollectedStatus() *GenericCollectedStatus
 	GetLastUpdateTime() *metav1.Time
+	DeepCopyGenericCollectedStatusObject() GenericCollectedStatusObject
 }
