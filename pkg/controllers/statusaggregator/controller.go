@@ -39,7 +39,7 @@ import (
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/statusaggregator/plugins"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/propagationstatus"
+	"github.com/kubewharf/kubeadmiral/pkg/util/propagationstatus"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"

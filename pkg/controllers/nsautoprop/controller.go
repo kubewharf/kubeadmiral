@@ -39,7 +39,6 @@ import (
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
@@ -150,7 +149,7 @@ func NewNamespaceAutoPropagationController(
 				}
 				c.worker.Enqueue(common.QualifiedName{Name: obj.GetName()})
 			},
-		), util.NoResyncPeriod); err != nil {
+		), 0); err != nil {
 		return nil, err
 	}
 
@@ -179,7 +178,7 @@ func NewNamespaceAutoPropagationController(
 		DeleteFunc: func(obj interface{}) {
 			reconcileAll()
 		},
-	}, util.NoResyncPeriod); err != nil {
+	}, 0); err != nil {
 		return nil, err
 	}
 
