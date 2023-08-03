@@ -202,10 +202,10 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		keyedLogger.Error(err, "Failed to get federated namespace")
 		return worker.StatusError
 	}
-
 	if apierrors.IsNotFound(err) || fedNamespace.GetDeletionTimestamp() != nil {
 		return worker.StatusAllOK
 	}
+	fedNamespace = fedNamespace.DeepCopy()
 
 	if ok, err := pendingcontrollers.ControllerDependenciesFulfilled(
 		fedNamespace,
