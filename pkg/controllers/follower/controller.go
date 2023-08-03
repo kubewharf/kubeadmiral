@@ -40,7 +40,6 @@ import (
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
@@ -136,14 +135,14 @@ func NewFollowerController(
 
 	if _, err := c.fedObjectInformer.Informer().AddEventHandlerWithResyncPeriod(
 		eventhandlers.NewTriggerOnAllChanges(c.enqueueSupportedType),
-		util.NoResyncPeriod,
+		0,
 	); err != nil {
 		return nil, err
 	}
 
 	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandlerWithResyncPeriod(
 		eventhandlers.NewTriggerOnAllChanges(c.enqueueSupportedType),
-		util.NoResyncPeriod,
+		0,
 	); err != nil {
 		return nil, err
 	}
