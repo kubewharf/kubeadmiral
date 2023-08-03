@@ -39,7 +39,6 @@ const (
 // Service account keys
 const (
 	ServiceAccountTokenKey = "service-account-token-data"
-	ServiceAccountCAKey    = "service-account-ca-data"
 )
 
 func BuildClusterConfig(
@@ -133,9 +132,9 @@ func PopulateAuthDetailsFromSecret(
 		if insecure {
 			clusterConfig.Insecure = true
 		} else {
-			clusterConfig.CAData, exists = secret.Data[ServiceAccountCAKey]
+			clusterConfig.CAData, exists = secret.Data[CertificateAuthorityKey]
 			if !exists {
-				return fmt.Errorf("%q data is missing from secret and insecure is false", ServiceAccountCAKey)
+				return fmt.Errorf("%q data is missing from secret and insecure is false", CertificateAuthorityKey)
 			}
 		}
 	} else {
@@ -161,4 +160,3 @@ func PopulateAuthDetailsFromSecret(
 
 	return nil
 }
-

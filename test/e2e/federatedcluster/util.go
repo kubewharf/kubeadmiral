@@ -30,7 +30,7 @@ var invalidClusterEndpointPatchData = []byte("[{\"op\": \"replace\", \"path\": \
 
 func getServiceAccountInfo(secret *corev1.Secret) (token, ca []byte) {
 	token = secret.Data[common.ClusterServiceAccountTokenKey]
-	ca = secret.Data[common.ClusterServiceAccountCAKey]
+	ca = secret.Data[common.ClusterCertificateAuthorityKey]
 	return
 }
 
