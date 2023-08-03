@@ -299,11 +299,11 @@ func (a *StatusAggregator) reconcile(ctx context.Context, key reconcileKey) (sta
 		logger.Error(err, "Failed to get source object from cache")
 		return worker.StatusError
 	}
-
 	if sourceObject == nil || sourceObject.GetDeletionTimestamp() != nil {
 		logger.V(3).Info("No source type found")
 		return worker.StatusAllOK
 	}
+	sourceObject = sourceObject.DeepCopy()
 
 	federatedName := naming.GenerateFederatedObjectName(key.name, ftc.Name)
 	logger = logger.WithValues("federated-object", federatedName)

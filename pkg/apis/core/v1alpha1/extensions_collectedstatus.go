@@ -30,10 +30,18 @@ func (cs *CollectedStatus) GetLastUpdateTime() *metav1.Time {
 	return &cs.LastUpdateTime
 }
 
+func (cs *CollectedStatus) DeepCopyGenericCollectedStatusObject() GenericCollectedStatusObject {
+	return cs.DeepCopy()
+}
+
 func (ccs *ClusterCollectedStatus) GetGenericCollectedStatus() *GenericCollectedStatus {
 	return &ccs.GenericCollectedStatus
 }
 
 func (ccs *ClusterCollectedStatus) GetLastUpdateTime() *metav1.Time {
 	return &ccs.LastUpdateTime
+}
+
+func (css *ClusterCollectedStatus) DeepCopyGenericCollectedStatusObject() GenericCollectedStatusObject {
+	return css.DeepCopy()
 }
