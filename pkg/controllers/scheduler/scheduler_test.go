@@ -26,10 +26,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/utils/pointer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
@@ -37,25 +37,19 @@ import (
 func TestGetSchedulingUnit(t *testing.T) {
 	g := gomega.NewWithT(t)
 
-	fedObj := fedtypesv1a1.GenericObjectWithPlacements{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: fedtypesv1a1.SchemeGroupVersion.String(),
-			Kind:       "FederatedDeployment",
-		},
+	fedObj := fedcorev1a1.FederatedObject{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
 			Namespace: "default",
 		},
-		Spec: fedtypesv1a1.GenericSpecWithPlacements{
-			Placements: []fedtypesv1a1.PlacementWithController{
+		Spec: fedcorev1a1.GenericFederatedObjectSpec{
+			Placements: []fedcorev1a1.PlacementWithController{
 				{
 					Controller: "test-controller",
-					Placement: fedtypesv1a1.Placement{
-						Clusters: []fedtypesv1a1.GenericClusterReference{
-							{Name: "cluster-1"},
-							{Name: "cluster-2"},
-							{Name: "cluster-3"},
-						},
+					Placement: []fedcorev1a1.ClusterReference{
+						{Cluster: "cluster-1"},
+						{Cluster: "cluster-2"},
+						{Cluster: "cluster-3"},
 					},
 				},
 			},
@@ -114,16 +108,13 @@ func TestGetSchedulingUnit(t *testing.T) {
 		},
 	}
 
-	fedObjUns, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&fedObj)
+	rawJSON, err := json.Marshal(&template)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
-	templateUns, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&template)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
-	err = unstructured.SetNestedMap(fedObjUns, templateUns, common.TemplatePath...)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
+	fedObj.Spec.Template.Raw = rawJSON
 
 	typeConfig := &fedcorev1a1.FederatedTypeConfig{
 		Spec: fedcorev1a1.FederatedTypeConfigSpec{
-			TargetType: fedcorev1a1.APIResource{
+			SourceType: fedcorev1a1.APIResource{
 				Group:      "apps",
 				Version:    "v1",
 				Kind:       "Deployment",
@@ -136,7 +127,7 @@ func TestGetSchedulingUnit(t *testing.T) {
 		},
 	}
 
-	su, err := schedulingUnitForFedObject(typeConfig, &unstructured.Unstructured{Object: fedObjUns}, &policy)
+	su, err := schedulingUnitForFedObject(typeConfig, &fedObj, &policy)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	g.Expect(su).To(gomega.Equal(&framework.SchedulingUnit{
@@ -351,7 +342,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 						"label": "value1",
 					},
 					MaxClusters: pointer.Int64(5),
-					Placements: []fedcorev1a1.ClusterReference{
+					Placements: []fedcorev1a1.DesiredPlacement{
 						{
 							Cluster: "cluster1",
 						},
@@ -407,10 +398,18 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 
 			var err error
 
-			obj := &unstructured.Unstructured{Object: make(map[string]interface{})}
+			testObj := &appsv1.Deployment{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Deployment",
+					APIVersion: "apps/v1",
+				},
+			}
+			rawJSON, err := json.Marshal(testObj)
+			g.Expect(err).ToNot(gomega.HaveOccurred())
+
+			obj := &fedcorev1a1.FederatedObject{}
 			obj.SetAnnotations(test.annotations)
-			err = unstructured.SetNestedMap(obj.Object, make(map[string]interface{}), common.TemplatePath...)
-			g.Expect(err).NotTo(gomega.HaveOccurred())
+			obj.Spec.Template.Raw = rawJSON
 
 			typeConfig := &fedcorev1a1.FederatedTypeConfig{
 				Spec: fedcorev1a1.FederatedTypeConfigSpec{
@@ -442,6 +441,10 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 
 func TestSchedulingMode(t *testing.T) {
 	deploymentObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "deployment",
 			Namespace: "default",
@@ -456,6 +459,10 @@ func TestSchedulingMode(t *testing.T) {
 	deploymentUns := &unstructured.Unstructured{Object: deploymentObj}
 
 	statefulSetObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&appsv1.StatefulSet{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "StatefulSet",
+			APIVersion: "apps/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "statefulset",
 			Namespace: "default",
@@ -519,7 +526,7 @@ func TestSchedulingMode(t *testing.T) {
 					Name: "<ftc-name>",
 				},
 				Spec: fedcorev1a1.FederatedTypeConfigSpec{
-					TargetType: fedcorev1a1.APIResource{
+					SourceType: fedcorev1a1.APIResource{
 						Group:   test.gvk.Group,
 						Version: test.gvk.Version,
 						Kind:    test.gvk.Kind,
@@ -529,9 +536,11 @@ func TestSchedulingMode(t *testing.T) {
 					},
 				},
 			}
-			obj := &unstructured.Unstructured{Object: make(map[string]interface{})}
-			err := unstructured.SetNestedMap(obj.Object, test.obj.Object, common.TemplatePath...)
+			obj := &fedcorev1a1.FederatedObject{}
+			rawJSON, err := json.Marshal(test.obj)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
+			obj.Spec.Template.Raw = rawJSON
+
 			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 			g.Expect(su.SchedulingMode).To(gomega.Equal(test.expectedResult))

@@ -35,27 +35,29 @@ import (
 	"time"
 
 	"github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	jsonutil "k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	dynamicFake "k8s.io/client-go/dynamic/fake"
 	kubeFake "k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2/ktesting"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	schedwebhookv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/schedulerwebhook/v1alpha1"
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	fedFake "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/fake"
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/pendingcontrollers"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 )
 
 // Generate a self-signed certificate and key pair.
@@ -227,72 +229,84 @@ func doTest(t *testing.T, clientTLS *fedcorev1a1.WebhookTLSConfig, serverTLS *tl
 		},
 	}
 
-	typeConfig := &fedcorev1a1.FederatedTypeConfig{
-		Spec: fedcorev1a1.FederatedTypeConfigSpec{
-			FederatedType: fedcorev1a1.APIResource{
-				Group:      fedtypesv1a1.SchemeGroupVersion.Group,
-				Version:    fedcorev1a1.SchemeGroupVersion.Version,
-				Kind:       "FederatedDeployment",
-				PluralName: "federateddeployments",
-				Scope:      "Namespaced",
-			},
-			TargetType: fedcorev1a1.APIResource{
-				Group:      "apps",
-				Version:    "v1",
-				Kind:       "Deployment",
-				PluralName: "deployments",
-				Scope:      "Namespaced",
-			},
-			PathDefinition: fedcorev1a1.PathDefinition{
-				ReplicasSpec: "spec.replicas",
-			},
-		},
-	}
-
 	clusters := []runtime.Object{
 		getCluster("accept"),
 		getCluster("reject"),
 	}
 
+	ftc := fedcorev1a1.FederatedTypeConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "deployment.apps",
+		},
+		Spec: fedcorev1a1.FederatedTypeConfigSpec{
+			SourceType: fedcorev1a1.APIResource{
+				Group:      "apps",
+				Version:    "v1",
+				Kind:       "Deployment",
+				PluralName: "deployments",
+				Scope:      v1beta1.NamespaceScoped,
+			},
+		},
+	}
+
 	kubeClient := kubeFake.NewSimpleClientset()
 
 	scheme := runtime.NewScheme()
-	scheme.AddKnownTypeWithName(
-		fedtypesv1a1.SchemeGroupVersion.WithKind(typeConfig.Spec.FederatedType.Kind+"List"),
-		&unstructured.UnstructuredList{},
-	)
+	err := corev1.AddToScheme(scheme)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	err = appsv1.AddToScheme(scheme)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+
+	dynamicClient := dynamicFake.NewSimpleDynamicClient(scheme)
+	dynInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(dynamicClient, 0)
+
+	testObjs := []runtime.Object{}
+	testObjs = append(testObjs, &webhookConfig, &profile, &policy, &ftc)
+	testObjs = append(testObjs, clusters...)
 
 	// Ensure watcher is started before creating objects to avoid missing events occurred after LIST and before WATCH
 	// ref: https://github.com/kubernetes/client-go/blob/master/examples/fake-client/main_test.go
 	watcherStarted := make(chan struct{})
-	dynamicClient := dynamicFake.NewSimpleDynamicClient(scheme)
-	dynamicClient.PrependWatchReactor("*", func(action clienttesting.Action) (handled bool, ret watch.Interface, err error) {
-		gvr := action.GetResource()
-		ns := action.GetNamespace()
-		watch, err := dynamicClient.Tracker().Watch(gvr, ns)
-		if err != nil {
-			return false, nil, err
-		}
-		close(watcherStarted)
-		return true, watch, nil
-	})
-	dynInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(dynamicClient, 0)
-
-	fedClient := fedFake.NewSimpleClientset(append(clusters, &webhookConfig, &profile, &policy)...)
+	fedClient := fedFake.NewSimpleClientset(testObjs...)
+	fedClient.PrependWatchReactor(
+		"*",
+		func(action clienttesting.Action) (handled bool, ret watch.Interface, err error) {
+			gvr := action.GetResource()
+			ns := action.GetNamespace()
+			watch, err := fedClient.Tracker().Watch(gvr, ns)
+			if err != nil {
+				return false, nil, err
+			}
+			select {
+			case <-watcherStarted:
+			default:
+				close(watcherStarted)
+			}
+			return true, watch, nil
+		},
+	)
 	fedInformerFactory := fedinformers.NewSharedInformerFactory(fedClient, 0)
 
-	federatedType := typeConfig.GetFederatedType()
-	gvr := schemautil.APIResourceToGVR(&federatedType)
+	manager := informermanager.NewInformerManager(
+		dynamicClient,
+		fedInformerFactory.Core().V1alpha1().FederatedTypeConfigs(),
+		nil,
+	)
+
 	scheduler, err := NewScheduler(
-		ktesting.NewLogger(t, ktesting.NewConfig(ktesting.Verbosity(3))),
-		typeConfig, kubeClient, fedClient, dynamicClient,
-		dynInformerFactory.ForResource(gvr),
+		kubeClient,
+		fedClient,
+		dynamicClient,
+		fedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		fedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
 		fedInformerFactory.Core().V1alpha1().PropagationPolicies(),
 		fedInformerFactory.Core().V1alpha1().ClusterPropagationPolicies(),
 		fedInformerFactory.Core().V1alpha1().FederatedClusters(),
 		fedInformerFactory.Core().V1alpha1().SchedulingProfiles(),
+		manager,
 		fedInformerFactory.Core().V1alpha1().SchedulerPluginWebhookConfigurations(),
 		stats.NewMock("test", "kube-admiral", false),
+		ktesting.NewLogger(t, ktesting.NewConfig(ktesting.Verbosity(3))),
 		1,
 	)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -300,12 +314,11 @@ func doTest(t *testing.T, clientTLS *fedcorev1a1.WebhookTLSConfig, serverTLS *tl
 	ctx := context.Background()
 	dynInformerFactory.Start(ctx.Done())
 	fedInformerFactory.Start(ctx.Done())
+	manager.Start(ctx)
 
 	go scheduler.Run(ctx)
 
-	dynInformerFactory.WaitForCacheSync(ctx.Done())
-	fedInformerFactory.WaitForCacheSync(ctx.Done())
-
+	cache.WaitForCacheSync(ctx.Done(), scheduler.HasSynced)
 	<-watcherStarted
 
 	// Wait for the plugin to be initialized
@@ -315,11 +328,7 @@ func doTest(t *testing.T, clientTLS *fedcorev1a1.WebhookTLSConfig, serverTLS *tl
 		g.Expect(plugin.(framework.Plugin).Name()).To(gomega.Equal(webhookConfig.Name))
 	}).WithContext(ctx).WithTimeout(3 * time.Second).WithPolling(100 * time.Millisecond).Should(gomega.Succeed())
 
-	fedObj := metav1.PartialObjectMetadata{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: fedtypesv1a1.SchemeGroupVersion.String(),
-			Kind:       "FederatedDeployment",
-		},
+	fedObj := &fedcorev1a1.FederatedObject{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
 			Namespace: "default",
@@ -331,23 +340,31 @@ func doTest(t *testing.T, clientTLS *fedcorev1a1.WebhookTLSConfig, serverTLS *tl
 			},
 		},
 	}
-
-	fedObjUns := &unstructured.Unstructured{}
-	fedObjUns.Object, err = runtime.DefaultUnstructuredConverter.ToUnstructured(&fedObj)
+	deployment := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+		},
+	}
+	rawBytes, err := jsonutil.Marshal(deployment)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
-	err = unstructured.SetNestedMap(fedObjUns.Object, map[string]interface{}{}, common.TemplatePath...)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
+	fedObj.Spec.Template.Raw = rawBytes
 
-	fedObjUns, err = dynamicClient.Resource(gvr).Namespace(fedObj.Namespace).Create(ctx, fedObjUns, metav1.CreateOptions{})
+	fedObj, err = fedClient.CoreV1alpha1().
+		FederatedObjects(fedObj.Namespace).
+		Create(ctx, fedObj, metav1.CreateOptions{})
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	g.Eventually(func(g gomega.Gomega) {
-		fedObjUns, err = dynamicClient.Resource(gvr).Namespace(fedObj.Namespace).Get(ctx, fedObj.Name, metav1.GetOptions{})
+		res, err := fedClient.CoreV1alpha1().
+			FederatedObjects(fedObj.Namespace).
+			Get(ctx, fedObj.Name, metav1.GetOptions{})
 		g.Expect(err).NotTo(gomega.HaveOccurred())
-		fedObj := fedtypesv1a1.GenericObjectWithPlacements{}
-		err = runtime.DefaultUnstructuredConverter.FromUnstructured(fedObjUns.Object, &fedObj)
-		g.Expect(err).NotTo(gomega.HaveOccurred())
-		g.Expect(fedObj.ClusterNameUnion()).To(gomega.Equal(map[string]struct{}{"accept": {}}))
+		g.Expect(res.GetSpec().GetPlacementUnion()).To(gomega.Equal(sets.New("accept")))
 	}).WithContext(ctx).WithTimeout(3 * time.Second).WithPolling(100 * time.Millisecond).Should(gomega.Succeed())
 
 	g.Expect(filterCalled.Load()).To(gomega.Equal(int32(len(clusters))))
