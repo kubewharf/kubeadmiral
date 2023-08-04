@@ -403,10 +403,8 @@ func (c *FederatedClusterController) handleTerminatingCluster(
 			var err error
 
 			_, tokenKeyExists := clusterSecret.Data[common.ClusterServiceAccountTokenKey]
-			_, caExists := clusterSecret.Data[common.ClusterServiceAccountCAKey]
-			if tokenKeyExists || caExists {
+			if tokenKeyExists {
 				delete(clusterSecret.Data, common.ClusterServiceAccountTokenKey)
-				delete(clusterSecret.Data, common.ClusterServiceAccountCAKey)
 
 				if _, err = c.kubeClient.CoreV1().Secrets(c.fedSystemNamespace).Update(
 					ctx,

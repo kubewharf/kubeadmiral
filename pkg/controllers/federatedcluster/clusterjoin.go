@@ -47,7 +47,6 @@ const (
 	FederatedClusterUID      = common.DefaultPrefix + "federated-cluster-uid"
 
 	ServiceAccountTokenKey = "service-account-token-data"
-	ServiceAccountCAKey    = "service-account-ca-data"
 
 	serviceAccountSecretTimeout = 30 * time.Second
 )
@@ -252,7 +251,7 @@ func (c *FederatedClusterController) getAndSaveClusterToken(
 	}
 
 	logger.V(1).Info("Updating cluster secret")
-	token, ca, err := getServiceAccountToken(ctx, clusterKubeClient, memberSystemNamespace.Name, saTokenSecretName)
+	token, err := getServiceAccountToken(ctx, clusterKubeClient, memberSystemNamespace.Name, saTokenSecretName)
 	if err != nil {
 		return fmt.Errorf("error getting service account token from joining cluster: %w", err)
 	}
@@ -267,7 +266,6 @@ func (c *FederatedClusterController) getAndSaveClusterToken(
 			return err
 		}
 		secret.Data[ServiceAccountTokenKey] = token
-		secret.Data[ServiceAccountCAKey] = ca
 		_, err = c.kubeClient.CoreV1().Secrets(c.fedSystemNamespace).Update(ctx, secret, metav1.UpdateOptions{})
 		return err
 	})
@@ -570,10 +568,9 @@ func getServiceAccountToken(
 	ctx context.Context,
 	clusterClientset kubernetes.Interface,
 	memberSystemNamespace, secretName string,
-) ([]byte, []byte, error) {
+) ([]byte, error) {
 	// Get the secret from the joining cluster.
 	var token []byte
-	var ca []byte
 
 	err := wait.PollImmediate(1*time.Second, serviceAccountSecretTimeout, func() (bool, error) {
 		joiningClusterSASecret, err := clusterClientset.CoreV1().
@@ -587,13 +584,12 @@ func getServiceAccountToken(
 		if token, ok = joiningClusterSASecret.Data["token"]; !ok {
 			return false, nil
 		}
-		ca = joiningClusterSASecret.Data["ca.crt"]
 
 		return true, nil
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not get service account token secret from joining cluster: %w", err)
+		return nil, fmt.Errorf("could not get service account token secret from joining cluster: %w", err)
 	}
 
-	return token, ca, nil
+	return token, nil
 }
