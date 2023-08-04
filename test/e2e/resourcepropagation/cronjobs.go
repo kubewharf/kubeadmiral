@@ -25,7 +25,6 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework/resources"
 )

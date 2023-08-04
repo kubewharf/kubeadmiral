@@ -272,11 +272,11 @@ func (c *Controller) reconcileOnClusterChange(cluster *fedcorev1a1.FederatedClus
 func (c *Controller) reconcile(ctx context.Context, qualifiedName common.QualifiedName) (status worker.Result) {
 	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "federated-name", qualifiedName.String())
 
-	c.metrics.Rate(fmt.Sprintf("%v.throughput", ControllerName), 1)
+	c.metrics.Counter("override_policy_controller_throughput", 1)
 	keyedLogger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("%s.latency", ControllerName), startTime)
+		c.metrics.Duration("override_policy_controller_latency", startTime)
 		keyedLogger.WithValues("duration", time.Since(startTime), "status", status).V(3).Info("Finished reconciling")
 	}()
 

@@ -385,11 +385,11 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 		"gvk", fedResource.TargetGVK().String(),
 	)
 
-	s.metrics.Rate("sync.throughput", 1)
+	s.metrics.Counter("sync_throughput", 1)
 	keyedLogger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		s.metrics.Duration("sync.latency", startTime)
+		s.metrics.Duration("sync_latency", startTime)
 		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconciling")
 	}()
 

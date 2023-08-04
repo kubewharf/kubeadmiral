@@ -230,14 +230,14 @@ func (c *FederateController) HasSynced() bool {
 }
 
 func (c *FederateController) reconcile(ctx context.Context, key workerKey) (status worker.Result) {
-	_ = c.metrics.Rate("federate.throughput", 1)
+	c.metrics.Counter("federate_controller_throughput", 1)
 	ctx, logger := logging.InjectLoggerValues(ctx, "source-object", key.QualifiedName().String(), "gvk", key.gvk)
 
 	startTime := time.Now()
 
 	logger.V(3).Info("Start reconcile")
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("%s.latency", FederateControllerName), startTime)
+		c.metrics.Duration("federate_controller_latency", startTime)
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()
 

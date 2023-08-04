@@ -188,11 +188,11 @@ func NewNamespaceAutoPropagationController(
 func (c *Controller) reconcile(ctx context.Context, qualifiedName common.QualifiedName) worker.Result {
 	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "federated-name", qualifiedName.String())
 
-	c.metrics.Rate("namespace-auto-propagation-controller.throughput", 1)
+	c.metrics.Counter("namespace_auto_propagation_controller_throughput", 1)
 	keyedLogger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration("namespace-auto-propagation-controller.latency", startTime)
+		c.metrics.Duration("namespace_auto_propagation_controller_latency", startTime)
 		keyedLogger.WithValues("duration", time.Since(startTime)).V(3).Info("Finished reconciling")
 	}()
 

@@ -39,7 +39,6 @@ import (
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/statusaggregator/plugins"
-	"github.com/kubewharf/kubeadmiral/pkg/util/propagationstatus"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
@@ -48,6 +47,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	"github.com/kubewharf/kubeadmiral/pkg/util/propagationstatus"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
@@ -285,11 +285,11 @@ func (a *StatusAggregator) reconcile(ctx context.Context, key reconcileKey) (sta
 		return worker.StatusAllOK
 	}
 
-	a.metrics.Rate("status-aggregator.throughput", 1)
+	a.metrics.Counter("status_aggregator_throughput", 1)
 	logger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		a.metrics.Duration("status-aggregator.latency", startTime)
+		a.metrics.Duration("status_aggregator_latency", startTime)
 		logger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).
 			Info("Finished reconciling")
 	}()

@@ -350,7 +350,7 @@ func (d *managedDispatcherImpl) recordError(ctx context.Context, clusterName, op
 	logger := klog.FromContext(ctx)
 	logger.Error(eventErr, "event", eventType, "Operation failed with error")
 	d.fedResource.RecordError(eventType, eventErr)
-	d.metrics.Rate("member_operation_error", 1, []stats.Tag{
+	d.metrics.Counter("member_operation_error", 1, []stats.Tag{
 		{Name: "cluster", Value: clusterName},
 		{Name: "operation", Value: operation},
 		{Name: "reason", Value: string(apierrors.ReasonForError(err))},

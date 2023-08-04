@@ -18,7 +18,6 @@ package policyrc
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -139,7 +138,6 @@ func NewPolicyRCController(
 		return nil, err
 	}
 
-
 	if _, err := c.propagationPolicyInformer.Informer().AddEventHandler(
 		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistPpWorker.Enqueue),
 	); err != nil {
@@ -213,11 +211,11 @@ func (c *Controller) IsControllerReady() bool {
 func (c *Controller) reconcileCount(ctx context.Context, qualifiedName common.QualifiedName) (status worker.Result) {
 	ctx, logger := logging.InjectLoggerValues(ctx, "object", qualifiedName.String())
 
-	c.metrics.Rate("policyrc-count-controller.throughput", 1)
+	c.metrics.Counter("policyrc_count_controller_throughput", 1)
 	logger.V(3).Info("Policyrc count controller starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration("policyrc-count-controller.latency", startTime)
+		c.metrics.Duration("policyrc_count_latency", startTime)
 		logger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).
 			Info("Policyrc count controller finished reconciling")
 	}()
@@ -269,11 +267,11 @@ func (c *Controller) reconcilePersist(
 ) worker.Result {
 	ctx, logger := logging.InjectLoggerValues(ctx, "object", qualifiedName.String())
 
-	c.metrics.Rate(fmt.Sprintf("policyrc-persist-%s-controller.throughput", metricName), 1)
+	c.metrics.Counter("policyrc_persist_throughput", 1)
 	logger.V(3).Info("Policyrc persist controller starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("policyrc-persist-%s-controller.latency", metricName), startTime)
+		c.metrics.Duration("policyrc_persist_latency", startTime)
 		logger.V(3).
 			WithValues("duration", time.Since(startTime)).
 			Info("Policyrc persist controller finished reconciling")

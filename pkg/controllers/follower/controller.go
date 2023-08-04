@@ -234,13 +234,18 @@ func (c *Controller) reconcileLeader(
 	ctx context.Context,
 	key objectGroupKindKey,
 ) (status worker.Result) {
-	c.metrics.Rate(fmt.Sprintf("follower-controller-%s.throughput", key.sourceGK.String()), 1)
+	c.metrics.Counter("follower_controller_throughput", 1)
 	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "origin", "reconcileLeader", "type", key.sourceGK.String(), "key", key.ObjectSourceKey())
 	startTime := time.Now()
 
 	keyedLogger.V(3).Info("Starting reconcileLeader")
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("follower-controller-%s.latency", key.sourceGK.String()), startTime)
+		c.metrics.Duration(
+			"follower_controller_latency",
+			startTime,
+			stats.Tag{Name: "name", Value: key.sourceGK.String()},
+			stats.Tag{Name: "source", Value: "leader"},
+		)
 		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcileLeader")
 	}()
 
@@ -374,14 +379,19 @@ func (c *Controller) reconcileFollower(
 	ctx context.Context,
 	key objectGroupKindKey,
 ) (status worker.Result) {
-	c.metrics.Rate(fmt.Sprintf("follower-controller-%s.throughput", key.sourceGK.String()), 1)
+	c.metrics.Counter("follower_controller_throughput", 1)
 	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "origin", "reconcileFollower", "type", key.sourceGK.String(), "key", key.ObjectSourceKey())
 
 	startTime := time.Now()
 
 	keyedLogger.V(3).Info("Starting reconcileFollower")
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("follower-controller-%s.latency", key.sourceGK.String()), startTime)
+		c.metrics.Duration(
+			"follower_controller_latency",
+			startTime,
+			stats.Tag{Name: "name", Value: key.sourceGK.String()},
+			stats.Tag{Name: "source", Value: "follower"},
+		)
 		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcileFollower")
 	}()
 

@@ -241,14 +241,14 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) reconcile(ctx context.Context, key common.QualifiedName) (status worker.Result) {
-	_ = s.metrics.Rate("scheduler.throughput", 1)
+	s.metrics.Counter("scheduler_throughput", 1)
 	ctx, logger := logging.InjectLoggerValues(ctx, "key", key.String())
 
 	startTime := time.Now()
 
 	logger.V(3).Info("Start reconcile")
 	defer func() {
-		s.metrics.Duration(fmt.Sprintf("%s.latency", SchedulerName), startTime)
+		s.metrics.Duration("scheduler_latency", startTime)
 		logger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcile")
 	}()
 
