@@ -256,10 +256,10 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "control-loop", "reconcile", "object", key)
 
 	startTime := time.Now()
-	c.metrics.Rate("auto-migration.throughput", 1)
+	c.metrics.Counter("auto_migration_throughput", 1)
 	keyedLogger.V(3).Info("Start reconcile")
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("%s.latency", c.name), startTime)
+		c.metrics.Duration("auto_migration_latency", startTime)
 		keyedLogger.V(3).Info("Finished reconcile", "duration", time.Since(startTime), "status", status)
 	}()
 

@@ -56,6 +56,11 @@ type Options struct {
 
 	MaxPodListers    int64
 	EnablePodPruning bool
+
+	PrometheusMetrics   bool
+	PrometheusAddr      string
+	PrometheusPort      uint16
+	PrometheusQuantiles map[string]string
 }
 
 func NewOptions() *Options {
@@ -123,6 +128,16 @@ func (o *Options) AddFlags(flags *pflag.FlagSet, allControllers []string, disabl
 	flags.BoolVar(&o.EnablePodPruning, "enable-pod-pruning", false, "Enable pod pruning for pod informer. "+
 		"Enabling this can reduce memory usage of the pod informer, but will disable pod propagation.")
 	o.addKlogFlags(flags)
+
+	flags.BoolVar(&o.PrometheusMetrics, "export-prometheus", true, "Whether to expose metrics through a prometheus endpoint")
+	flags.StringVar(&o.PrometheusAddr, "prometheus-addr", "", "Prometheus collector address")
+	flags.Uint16Var(&o.PrometheusPort, "prometheus-port", 9090, "Prometheus collector port")
+	flags.StringToStringVar(
+		&o.PrometheusQuantiles,
+		"prometheus-quantiles",
+		map[string]string{"0.5": "0.01", "0.95": "0.01", "0.99": "0.002"},
+		"prometheus summary objective quantiles",
+	)
 }
 
 func (o *Options) addKlogFlags(flags *pflag.FlagSet) {

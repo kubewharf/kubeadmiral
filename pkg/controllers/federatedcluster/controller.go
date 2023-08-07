@@ -196,14 +196,14 @@ func (c *FederatedClusterController) reconcile(
 	ctx context.Context,
 	key common.QualifiedName,
 ) (status worker.Result) {
-	_ = c.metrics.Rate("federated-cluster-controller.throughput", 1)
+	c.metrics.Counter("federated_cluster_controller_throughput", 1)
 	ctx, logger := logging.InjectLoggerValues(ctx, "cluster", key.String())
 
 	startTime := time.Now()
 
 	logger.V(3).Info("Starting reconcile")
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("%s.latency", FederatedClusterControllerName), startTime)
+		c.metrics.Duration("federated_cluster_controller_latency", startTime)
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()
 
@@ -307,7 +307,7 @@ func (c *FederatedClusterController) collectClusterStatus(
 
 	logger.V(3).Info("Starting to collect cluster status")
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("%s.status-collect.latency", FederatedClusterControllerName), startTime)
+		c.metrics.Duration("federated_cluster_controller_collect_status_latency", startTime)
 		logger.WithValues(
 			"duration",
 			time.Since(startTime),

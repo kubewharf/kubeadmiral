@@ -19,6 +19,7 @@ package app
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,6 +38,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	prometheusstats "github.com/kubewharf/kubeadmiral/pkg/stats/prometheus"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
@@ -90,7 +92,26 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 		return nil, fmt.Errorf("failed to create component config: %w", err)
 	}
 
-	metrics := stats.NewMock("", "kube-federation-manager", false)
+	var metrics stats.Metrics
+	if opts.PrometheusMetrics {
+		quantiles := map[float64]float64{}
+		for qStr, eStr := range opts.PrometheusQuantiles {
+			q, err := strconv.ParseFloat(qStr, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid float %q: %w", qStr, err)
+			}
+
+			e, err := strconv.ParseFloat(eStr, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid float %q: %w", eStr, err)
+			}
+
+			quantiles[q] = e
+		}
+		metrics = prometheusstats.New("kubeadmiral_controller_manager", opts.PrometheusAddr, opts.PrometheusPort, quantiles)
+	} else {
+		metrics = stats.NewMock("", "kubeadmiral_controller_manager", true)
+	}
 
 	kubeClientset, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {

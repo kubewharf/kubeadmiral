@@ -306,11 +306,11 @@ func (s *StatusController) reconcile(
 	keyedLogger := s.logger.WithValues("federated-name", qualifiedName.String())
 	ctx = klog.NewContext(ctx, keyedLogger)
 
-	s.metrics.Rate("status.throughput", 1)
+	s.metrics.Counter("status_throughput", 1)
 	keyedLogger.V(3).Info("Starting reconcile")
 	startTime := time.Now()
 	defer func() {
-		s.metrics.Duration("status.latency", startTime)
+		s.metrics.Duration("status_latency", startTime)
 		keyedLogger.WithValues("duration", time.Since(startTime), "status", reconcileStatus.String()).
 			V(3).Info("Finished reconcile")
 	}()

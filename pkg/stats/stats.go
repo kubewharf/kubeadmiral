@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"k8s.io/klog/v2"
 )
 
 // Tag keeps tag value for a stats point
@@ -31,11 +31,10 @@ type Tag struct {
 
 // Metrics declares common methods provided by metrics client
 type Metrics interface {
-	Store(name string, val interface{}, tags ...Tag) error
-	Counter(name string, val interface{}, tags ...Tag) error
-	Rate(name string, val interface{}, tags ...Tag) error
-	Timer(name string, val interface{}, tags ...Tag) error
-	Duration(name string, start time.Time, tags ...Tag) error
+	Store(name string, val interface{}, tags ...Tag)
+	Counter(name string, val interface{}, tags ...Tag)
+	Summary(name string, val interface{}, tags ...Tag)
+	Duration(name string, start time.Time, tags ...Tag)
 }
 
 // NewMock creates a mock metrics client which outputs stats via default logger.
@@ -44,60 +43,51 @@ func NewMock(env, component string, logMetrics bool) Metrics {
 	return &mockMetrics{
 		prefix:     prefix,
 		logMetrics: logMetrics,
+		logger:     klog.Background(),
 	}
 }
 
 type mockMetrics struct {
 	prefix     string
 	logMetrics bool
+	logger     klog.Logger
 }
 
-func convertTToFields(tags []Tag) log.Fields {
-	fields := make(map[string]interface{}, len(tags))
-	for _, v := range tags {
-		fields[v.Name] = v.Value
+func convertTToKeysAndValues(tags []Tag) []interface{} {
+	pairs := make([]interface{}, 0)
+	for index := range tags {
+		pairs = append(pairs, tags[index].Name)
+		pairs = append(pairs, tags[index].Value)
 	}
-	return log.Fields(fields)
+	return pairs
 }
 
-func (s *mockMetrics) Store(name string, val interface{}, tags ...Tag) error {
+func (s *mockMetrics) Store(name string, val interface{}, tags ...Tag) {
 	if s.logMetrics {
-		fields := convertTToFields(tags)
-		msg := fmt.Sprintf("store %s.%s = %v", s.prefix, name, val)
-		log.WithFields(fields).Infoln(msg)
+		fields := convertTToKeysAndValues(tags)
+		msg := fmt.Sprintf("store %s_%s = %v", s.prefix, name, val)
+		s.logger.WithValues(fields...).Info(msg)
 	}
-	return nil
 }
 
-func (s *mockMetrics) Counter(name string, val interface{}, tags ...Tag) error {
+func (s *mockMetrics) Counter(name string, val interface{}, tags ...Tag) {
 	if s.logMetrics {
-		fields := convertTToFields(tags)
-		msg := fmt.Sprintf("counter %s.%s + %v", s.prefix, name, val)
-		log.WithFields(fields).Infoln(msg)
+		fields := convertTToKeysAndValues(tags)
+		msg := fmt.Sprintf("rate %s_%s + %v", s.prefix, name, val)
+		s.logger.WithValues(fields...).Info(msg)
 	}
-	return nil
 }
 
-func (s *mockMetrics) Rate(name string, val interface{}, tags ...Tag) error {
+func (s *mockMetrics) Summary(name string, val interface{}, tags ...Tag) {
 	if s.logMetrics {
-		fields := convertTToFields(tags)
-		msg := fmt.Sprintf("rate %s.%s + %v", s.prefix, name, val)
-		log.WithFields(fields).Infoln(msg)
+		fields := convertTToKeysAndValues(tags)
+		msg := fmt.Sprintf("duration %s_%s <- %v", s.prefix, name, val)
+		s.logger.WithValues(fields...).Info(msg)
 	}
-	return nil
 }
 
-func (s *mockMetrics) Timer(name string, val interface{}, tags ...Tag) error {
-	if s.logMetrics {
-		fields := convertTToFields(tags)
-		msg := fmt.Sprintf("duration %s.%s <- %v", s.prefix, name, val)
-		log.WithFields(fields).Infoln(msg)
-	}
-	return nil
-}
-
-func (s *mockMetrics) Duration(name string, start time.Time, tags ...Tag) error {
-	duration := time.Since(start).Nanoseconds() / 1000 / 1000
-	key := fmt.Sprintf("%s.ms", name)
-	return s.Timer(key, duration, tags...)
+func (s *mockMetrics) Duration(name string, start time.Time, tags ...Tag) {
+	duration := time.Since(start).Seconds()
+	key := fmt.Sprintf("%s_seconds", name)
+	s.Summary(key, duration, tags...)
 }
