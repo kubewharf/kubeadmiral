@@ -25,12 +25,14 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
 type ClusterHandle struct {
-	Client dynamic.Interface
+	DynamicClient dynamic.Interface
+	KubeClient    kubernetes.Interface
 }
 
 type Plugin interface {

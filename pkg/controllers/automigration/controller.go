@@ -495,13 +495,18 @@ func (c *Controller) getPodsFromCluster(
 		return nil, false, fmt.Errorf("failed to get plugin for FTC: %w", err)
 	}
 
-	client, exist := c.federatedInformer.GetClusterDynamicClient(clusterName)
+	dynamicClient, exist := c.federatedInformer.GetClusterDynamicClient(clusterName)
 	if !exist {
-		return nil, true, fmt.Errorf("failed to get client for cluster: %w", err)
+		return nil, true, fmt.Errorf("failed to get dynamic client for cluster %s", clusterName)
+	}
+	kubeClient, exist := c.federatedInformer.GetClusterKubeClient(clusterName)
+	if !exist {
+		return nil, true, fmt.Errorf("failed to get kube client for cluster: %s", clusterName)
 	}
 
 	pods, err := plugin.GetPodsForClusterObject(ctx, unsClusterObj, plugins.ClusterHandle{
-		Client: client,
+		DynamicClient: dynamicClient,
+		KubeClient:    kubeClient,
 	})
 	if err != nil {
 		return nil, true, fmt.Errorf("failed to get pods for federated object: %w", err)
@@ -515,9 +520,13 @@ func (c *Controller) getPossibleSourceObjectsFromCluster(
 	pod *corev1.Pod,
 	clusterName string,
 ) (possibleQualifies []common.QualifiedName, err error) {
-	client, exist := c.federatedInformer.GetClusterDynamicClient(clusterName)
+	dynamicClient, exist := c.federatedInformer.GetClusterDynamicClient(clusterName)
 	if !exist {
-		return nil, fmt.Errorf("failed to get client for cluster %s", clusterName)
+		return nil, fmt.Errorf("failed to get dynamic client for cluster %s", clusterName)
+	}
+	kubeClient, exist := c.federatedInformer.GetClusterKubeClient(clusterName)
+	if !exist {
+		return nil, fmt.Errorf("failed to get kube client for cluster %s", clusterName)
 	}
 
 	for gvk, plugin := range plugins.NativePlugins {
@@ -527,7 +536,8 @@ func (c *Controller) getPossibleSourceObjectsFromCluster(
 			continue
 		}
 		object, found, err := plugin.GetTargetObjectFromPod(ctx, pod.DeepCopy(), plugins.ClusterHandle{
-			Client: client,
+			DynamicClient: dynamicClient,
+			KubeClient:    kubeClient,
 		})
 		if err != nil || !found {
 			logger.V(3).Info(

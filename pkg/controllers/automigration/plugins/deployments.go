@@ -42,17 +42,10 @@ func (*deploymentPlugin) GetPodsForClusterObject(
 	}
 
 	rsList, err := deploymentutil.ListReplicaSets(deployment, func(ns string, opts metav1.ListOptions) ([]*appsv1.ReplicaSet, error) {
-		rsList := &appsv1.ReplicaSetList{}
 		opts = *opts.DeepCopy()
 		opts.ResourceVersion = "0" // list from watch cache
-		unsRsList, err := handle.Client.
-			Resource(common.ReplicaSetGVR).
-			Namespace(ns).
-			List(ctx, opts)
+		rsList, err := handle.KubeClient.AppsV1().ReplicaSets(ns).List(ctx, opts)
 		if err != nil {
-			return nil, err
-		}
-		if err = runtime.DefaultUnstructuredConverter.FromUnstructured(unsRsList.Object, rsList); err != nil {
 			return nil, err
 		}
 		ret := []*appsv1.ReplicaSet{}
@@ -74,20 +67,13 @@ func (*deploymentPlugin) GetPodsForClusterObject(
 		deployment,
 		[]*appsv1.ReplicaSet{newRS},
 		func(ns string, opts metav1.ListOptions) (*corev1.PodList, error) {
-			podList := &corev1.PodList{}
 			opts = *opts.DeepCopy()
 			opts.ResourceVersion = "0" // list from watch cache
 			if err != nil {
 				return nil, err
 			}
-			unsPodList, err := handle.Client.
-				Resource(common.PodGVR).
-				Namespace(ns).
-				List(ctx, opts)
+			podList, err := handle.KubeClient.CoreV1().Pods(ns).List(ctx, opts)
 			if err != nil {
-				return nil, err
-			}
-			if err = runtime.DefaultUnstructuredConverter.FromUnstructured(unsPodList.Object, podList); err != nil {
 				return nil, err
 			}
 			return podList, nil
@@ -110,7 +96,7 @@ func (*deploymentPlugin) GetTargetObjectFromPod(
 	pod *corev1.Pod,
 	handle ClusterHandle,
 ) (obj *unstructured.Unstructured, found bool, err error) {
-	rs, found, err := GetSpecifiedOwnerFromObj(ctx, handle.Client, pod, metav1.APIResource{
+	rs, found, err := GetSpecifiedOwnerFromObj(ctx, handle.DynamicClient, pod, metav1.APIResource{
 		Name:    "replicasets",
 		Group:   appsv1.GroupName,
 		Version: "v1",
@@ -120,7 +106,7 @@ func (*deploymentPlugin) GetTargetObjectFromPod(
 		return nil, false, err
 	}
 
-	return GetSpecifiedOwnerFromObj(ctx, handle.Client, rs, metav1.APIResource{
+	return GetSpecifiedOwnerFromObj(ctx, handle.DynamicClient, rs, metav1.APIResource{
 		Name:    "deployments",
 		Group:   appsv1.GroupName,
 		Version: "v1",
