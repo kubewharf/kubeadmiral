@@ -320,7 +320,7 @@ func (c *FederatedClusterController) collectClusterStatus(qualifiedName common.Q
 
 	cluster = cluster.DeepCopy()
 	if shouldCollectClusterStatus(cluster, c.clusterHealthCheckConfig.Period) {
-		if err := collectIndividualClusterStatus(ctx, cluster, c.client, c.federatedClient); err != nil {
+		if err := c.collectIndividualClusterStatus(ctx, cluster, c.client, c.federatedClient); err != nil {
 			logger.Error(err, "Failed to collect cluster status")
 			return worker.StatusError
 		}

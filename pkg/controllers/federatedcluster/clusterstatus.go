@@ -61,7 +61,7 @@ const (
 	ClusterNotReachableMsg    = "Cluster is not reachable"
 )
 
-func collectIndividualClusterStatus(
+func (c *FederatedClusterController) collectIndividualClusterStatus(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
 	fedClient fedclient.Interface,
@@ -85,6 +85,7 @@ func collectIndividualClusterStatus(
 	}
 
 	discoveryClient := clusterKubeClient.Discovery()
+	oldClusterStatus := cluster.Status.DeepCopy()
 	cluster = cluster.DeepCopy()
 
 	conditionTime := metav1.Now()
@@ -135,7 +136,32 @@ func collectIndividualClusterStatus(
 		return fmt.Errorf("failed to update cluster status: %w", err)
 	}
 
+	if isReadyStatusChanged(oldClusterStatus, readyStatus) {
+		switch readyStatus {
+		case corev1.ConditionTrue:
+			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster is ready")
+		case corev1.ConditionFalse:
+			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster is not ready")
+		case corev1.ConditionUnknown:
+			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster ready state is unknown")
+		}
+	}
+
 	return nil
+}
+
+func isReadyStatusChanged(clusterStatus *fedcorev1a1.FederatedClusterStatus, readyStatus corev1.ConditionStatus) bool {
+	for _, condition := range clusterStatus.Conditions {
+		if condition.Type == fedcorev1a1.ClusterReady {
+			if condition.Status == readyStatus {
+				return false
+			} else {
+				return true
+			}
+		}
+	}
+
+	return true
 }
 
 func checkReadyByHealthz(
@@ -154,6 +180,7 @@ func checkReadyByHealthz(
 	if strings.EqualFold(string(body), "ok") {
 		clusterReadyStatus = corev1.ConditionTrue
 	} else {
+		logger.V(3).WithValues("body", body).Info("Cluster is not ready")
 		clusterReadyStatus = corev1.ConditionFalse
 	}
 	return corev1.ConditionFalse, clusterReadyStatus
