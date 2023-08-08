@@ -182,7 +182,9 @@ func NewStatusController(
 			if lastApplied == nil || latest == nil {
 				return true
 			}
-			return lastApplied.IsStatusCollectionEnabled() != latest.IsStatusCollectionEnabled()
+			return lastApplied.IsStatusCollectionEnabled() != latest.IsStatusCollectionEnabled() ||
+				(lastApplied.Spec.StatusCollection != nil && latest.Spec.StatusCollection != nil &&
+					!reflect.DeepEqual(lastApplied.Spec.StatusCollection.Fields, latest.Spec.StatusCollection.Fields))
 		},
 		Generator: func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler {
 			if !ftc.IsStatusCollectionEnabled() {

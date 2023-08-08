@@ -38,6 +38,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/statusaggregator/plugins"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
@@ -120,7 +121,7 @@ func NewStatusAggregatorController(
 		clusterQueue:            workqueue.NewNamedDelayingQueue(StatusAggregatorControllerName),
 		clusterAvailableDelay:   clusterAvailableDelay,
 		clusterUnavailableDelay: clusterUnavailableDelay,
-		objectEnqueueDelay:      10 * time.Second,
+		objectEnqueueDelay:      3 * time.Second,
 
 		eventRecorder: eventsink.NewDefederatingRecorderMux(kubeClient, StatusAggregatorControllerName, 4),
 		metrics:       metrics,
@@ -218,6 +219,14 @@ func NewStatusAggregatorController(
 			return eventhandlers.NewTriggerOnAllChanges(func(obj *unstructured.Unstructured) {
 				if !obj.GetDeletionTimestamp().IsZero() || !ftc.GetStatusAggregationEnabled() {
 					return
+				}
+				if anno := obj.GetAnnotations(); anno != nil {
+					if noFederatedResource, ok := anno[federate.NoFederatedResource]; ok {
+						if len(noFederatedResource) > 0 {
+							logger.V(3).Info("No-federated-resource annotation found, skip status aggregation")
+							return
+						}
+					}
 				}
 				a.worker.Enqueue(reconcileKey{
 					gvk:       ftc.GetSourceTypeGVK(),

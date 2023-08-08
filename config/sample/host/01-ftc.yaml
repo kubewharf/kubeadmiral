@@ -44,8 +44,6 @@ spec:
     version: v1
   statusAggregation:
     enabled: true
-  revisionHistory:
-    enabled: true
   autoMigration:
     enabled: true
   controllers:
@@ -258,8 +256,6 @@ spec:
     pluralName: statefulsets
     scope: Namespaced
     version: v1
-  revisionHistory:
-    enabled: true
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
@@ -281,8 +277,6 @@ spec:
     pluralName: daemonsets
     scope: Namespaced
     version: v1
-  revisionHistory:
-    enabled: true
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller

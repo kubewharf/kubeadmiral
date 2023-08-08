@@ -6,33 +6,18 @@ kind: FederatedTypeConfig
 metadata:
   name: pods
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedPod
-    pluralName: federatedpods
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    kind: Pod
-    pluralName: pods
-    scope: Namespaced
-    version: v1
   sourceType:
     kind: Pod
     pluralName: pods
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedPodStatus
-    pluralName: federatedpodstatuses
-    scope: Namespaced
-    version: v1alpha1
-  statusAggregation: Enabled
+  statusAggregation:
+    enabled: true
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - spec.nodeName
