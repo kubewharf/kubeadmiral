@@ -46,5 +46,6 @@ const (
 	EventReasonWebhookConfigurationError = "WebhookConfigurationError"
 	EventReasonWebhookRegistered         = "WebhookRegistered"
 
-	SchedulingTriggerHashAnnotation = common.DefaultPrefix + "scheduling-trigger-hash"
+	SchedulingTriggersAnnotation        = common.DefaultPrefix + "scheduling-triggers"
+	SchedulingDeferredReasonsAnnotation = common.DefaultPrefix + "scheduling-deferred-reasons"
 )

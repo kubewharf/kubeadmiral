@@ -47,6 +47,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	podutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
@@ -61,17 +62,14 @@ const (
 )
 
 var (
-	// Map from supported leader type to pod spec path.
-	// TODO: think about whether PodTemplatePath/PodSpecPath should be specified in the FTC instead.
-	// Specifying in the FTC allows changing the path according to the api version.
-	// Other controllers should consider using the specified paths instead of hardcoded paths.
+	// Map from supported leader type to pod spec path. These values will be initialized by podutil.PodSpecPaths
 	leaderPodSpecPaths = map[schema.GroupKind]string{
-		{Group: appsv1.GroupName, Kind: common.DeploymentKind}:  "spec.template.spec",
-		{Group: appsv1.GroupName, Kind: common.StatefulSetKind}: "spec.template.spec",
-		{Group: appsv1.GroupName, Kind: common.DaemonSetKind}:   "spec.template.spec",
-		{Group: batchv1.GroupName, Kind: common.JobKind}:        "spec.template.spec",
-		{Group: batchv1.GroupName, Kind: common.CronJobKind}:    "spec.jobTemplate.spec.template.spec",
-		{Group: "", Kind: common.PodKind}:                       "spec",
+		{Group: appsv1.GroupName, Kind: common.DeploymentKind}:  "",
+		{Group: appsv1.GroupName, Kind: common.StatefulSetKind}: "",
+		{Group: appsv1.GroupName, Kind: common.DaemonSetKind}:   "",
+		{Group: batchv1.GroupName, Kind: common.JobKind}:        "",
+		{Group: batchv1.GroupName, Kind: common.CronJobKind}:    "",
+		{Group: "", Kind: common.PodKind}:                       "",
 	}
 
 	supportedFollowerTypes = sets.New(
@@ -83,6 +81,12 @@ var (
 		schema.GroupKind{Group: networkingv1.GroupName, Kind: common.IngressKind},
 	)
 )
+
+func init() {
+	for k := range leaderPodSpecPaths {
+		leaderPodSpecPaths[k] = podutil.PodSpecPaths[k]
+	}
+}
 
 // TODO: limit max number of leaders per follower to prevent oversized follower objects?
 // TODO: support handles-object annotations in this controller?
@@ -219,7 +223,7 @@ func (c *Controller) reconcile(ctx context.Context, key objectGroupKindKey) (sta
 		return c.reconcileLeader(ctx, key)
 	}
 
-	if _, exists := supportedFollowerTypes[key.sourceGK]; exists {
+	if supportedFollowerTypes.Has(key.sourceGK) {
 		return c.reconcileFollower(ctx, key)
 	}
 
