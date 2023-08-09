@@ -28,6 +28,8 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
+	fedpodutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
+	resourceutil "github.com/kubewharf/kubeadmiral/pkg/util/resource"
 	unstructuredutil "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
 
@@ -150,6 +152,20 @@ func schedulingUnitForFedObject(
 	maxClustersOverride, exists := getMaxClustersFromObject(fedObject)
 	if exists {
 		schedulingUnit.MaxClusters = maxClustersOverride
+	}
+
+	gvk := schedulingUnit.GroupVersion.WithKind(schedulingUnit.Kind)
+	podSpec, err := fedpodutil.GetResourcePodSpec(fedObject, gvk)
+	// if we cannot recognize the type of resourceObj,
+	// do not return so that it will not block the entire scheduling process.
+	if err == nil {
+		resourceQuest := *framework.NewResource(resourceutil.GetPodResourceRequests(podSpec))
+		gpuResourceQuest := &framework.Resource{}
+		if resourceQuest.HasGivenResource(framework.ResourceGPU) {
+			gpuResourceQuest.SetScalar(framework.ResourceGPU, resourceQuest.ScalarResources[framework.ResourceGPU])
+		}
+		// now we only consider the resource quest of gpu
+		schedulingUnit.ResourceRequest = *gpuResourceQuest
 	}
 
 	return schedulingUnit, nil

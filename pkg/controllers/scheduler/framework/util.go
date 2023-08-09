@@ -33,6 +33,10 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
+const (
+	ResourceGPU = corev1.ResourceName("nvidia.com/gpu")
+)
+
 // For each of these resources, a pod that doesn't request the resource explicitly
 // will be treated as having requested the amount indicated below, for the purpose
 // of computing priority only. This ensures that when scheduling zero-request pods, such
@@ -59,7 +63,10 @@ const (
 
 // TODO(feature), make the RequestedRatioResources configable
 
-var DefaultRequestedRatioResources = ResourceToWeightMap{corev1.ResourceMemory: 1, corev1.ResourceCPU: 1}
+var (
+	DefaultRequestedRatioResources        = ResourceToWeightMap{corev1.ResourceMemory: 1, corev1.ResourceCPU: 1}
+	DefaultRequestedRatioResourcesWithGPU = ResourceToWeightMap{corev1.ResourceMemory: 1, corev1.ResourceCPU: 1, ResourceGPU: 4}
+)
 
 type (
 	ResourceToValueMap  map[corev1.ResourceName]int64
@@ -243,6 +250,18 @@ func (r *Resource) SetMaxResource(rl corev1.ResourceList) {
 			}
 		}
 	}
+}
+
+// HasGivenResource checks if Resource has the given scalar resource.
+func (r *Resource) HasGivenResource(name corev1.ResourceName) bool {
+	if r.ScalarResources == nil {
+		return false
+	}
+
+	if _, exists := r.ScalarResources[name]; exists {
+		return true
+	}
+	return false
 }
 
 // resourceRequest = max(sum(podSpec.Containers), podSpec.InitContainers) + overHead

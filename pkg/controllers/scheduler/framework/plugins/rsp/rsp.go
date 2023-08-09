@@ -72,12 +72,16 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 
 	var schedulingWeights map[string]int64
 	if dynamicSchedulingEnabled {
+		resourceName := corev1.ResourceCPU
+		if su.ResourceRequest.HasGivenResource(framework.ResourceGPU) {
+			resourceName = framework.ResourceGPU
+		}
 		clusterAvailables := QueryClusterResource(clusters, availableResource)
 		if len(clusters) != len(clusterAvailables) {
 			return clusterReplicasList, framework.NewResult(framework.Error)
 		}
 
-		weightLimit, err := CalcWeightLimit(clusters, supplyLimitProportion)
+		weightLimit, err := CalcWeightLimit(clusters, resourceName, supplyLimitProportion)
 		if err != nil {
 			return clusterReplicasList, framework.NewResult(
 				framework.Error,
@@ -85,7 +89,7 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 			)
 		}
 
-		schedulingWeights, err = AvailableToPercentage(clusterAvailables, weightLimit)
+		schedulingWeights, err = AvailableToPercentage(clusterAvailables, resourceName, weightLimit)
 		if err != nil {
 			return clusterReplicasList, framework.NewResult(
 				framework.Error,
@@ -182,6 +186,7 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 
 func CalcWeightLimit(
 	clusters []*fedcorev1a1.FederatedCluster,
+	resourceName corev1.ResourceName,
 	supplyLimitRatio float64,
 ) (weightLimit map[string]int64, err error) {
 	allocatables := QueryClusterResource(clusters, allocatableResource)
@@ -191,8 +196,8 @@ func CalcWeightLimit(
 	}
 	sum := 0.0
 	for _, resources := range allocatables {
-		cpu := resources[corev1.ResourceCPU]
-		sum += float64(cpu.Value())
+		resourceQuantity := resources[resourceName]
+		sum += float64(resourceQuantity.Value())
 	}
 	weightLimit = make(map[string]int64)
 	if sum == 0 {
@@ -202,25 +207,26 @@ func CalcWeightLimit(
 		return
 	}
 	for member, resources := range allocatables {
-		cpu, ok := resources[corev1.ResourceCPU]
+		resourceQuantity, ok := resources[resourceName]
 		if !ok {
 			err = ErrNoCPUResource
 			return
 		}
-		weightLimit[member] = int64(math.Round(float64(cpu.Value()) / sum * sumWeight * supplyLimitRatio))
+		weightLimit[member] = int64(math.Round(float64(resourceQuantity.Value()) / sum * sumWeight * supplyLimitRatio))
 	}
 	return
 }
 
 func AvailableToPercentage(
 	clusterAvailables map[string]corev1.ResourceList,
+	resourceName corev1.ResourceName,
 	weightLimit map[string]int64,
 ) (clusterWeights map[string]int64, err error) {
 	sumAvailable := 0.0
 	for _, resources := range clusterAvailables {
-		cpu := resources[corev1.ResourceCPU]
-		if cpu.Value() > 0.0 {
-			sumAvailable += float64(cpu.Value())
+		resourceQuantity := resources[resourceName]
+		if resourceQuantity.Value() > 0.0 {
+			sumAvailable += float64(resourceQuantity.Value())
 		}
 	}
 
@@ -236,18 +242,18 @@ func AvailableToPercentage(
 	sumTmpWeight := int64(0)
 
 	for member, resources := range clusterAvailables {
-		cpu, ok := resources[corev1.ResourceCPU]
+		resourceQuantity, ok := resources[resourceName]
 		if !ok {
 			err = ErrNoCPUResource
 			return
 		}
 
-		cpuValue := float64(cpu.Value())
-		if cpuValue < 0.0 {
-			cpuValue = 0.0
+		resourceValue := float64(resourceQuantity.Value())
+		if resourceValue < 0.0 {
+			resourceValue = 0.0
 		}
 
-		weight := int64(math.Round(cpuValue / sumAvailable * sumWeight))
+		weight := int64(math.Round(resourceValue / sumAvailable * sumWeight))
 		if weight > weightLimit[member] {
 			weight = weightLimit[member]
 		}
