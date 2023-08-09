@@ -49,11 +49,8 @@ func (pl *ClusterResourcesLeastAllocated) Score(
 		return 0, framework.NewResult(framework.Error, err.Error())
 	}
 
-	requested := make(framework.ResourceToValueMap, len(framework.DefaultRequestedRatioResources))
-	allocatable := make(framework.ResourceToValueMap, len(framework.DefaultRequestedRatioResources))
-	for resource := range framework.DefaultRequestedRatioResources {
-		allocatable[resource], requested[resource] = calculateResourceAllocatableRequest(su, cluster, resource)
-	}
+	resources := getRelevantResources(su)
+	allocatable, requested := getAllocatableAndRequested(su, cluster, resources)
 
 	var score, weightSum int64
 	// least allocated score favors cluster with fewer requested resources.
@@ -61,9 +58,15 @@ func (pl *ClusterResourcesLeastAllocated) Score(
 	// prioritizes based on the minimum of the average of the fraction of requested to capacity.
 	//
 	// Details:
-	// (cpu((capacity-sum(requested))*10/capacity) + memory((capacity-sum(requested))*10/capacity))/2
-	for resource, weight := range framework.DefaultRequestedRatioResources {
+	// (cpu((capacity-sum(requested))*100/capacity) * cpu_weight +
+	// memory((capacity-sum(requested))*100/capacity) * memory_weight) / (cpu_weight + memory_weight)
+	// Or with gpu
+	// (cpu((capacity-sum(requested))*100/capacity) * cpu_weight +
+	// memory((capacity-sum(requested))*100/capacity) * memory_weight +
+	// gpu((capacity-sum(requested))*100/capacity) * gpu_weight) / (cpu_weight + memory_weight + gpu_weight)
+	for _, resource := range resources {
 		resourceScore := leastRequestedScore(requested[resource], allocatable[resource])
+		weight := framework.DefaultRequestedRatioResources[resource]
 		score += resourceScore * weight
 		weightSum += weight
 	}
@@ -80,8 +83,8 @@ func (pl *ClusterResourcesLeastAllocated) ScoreExtensions() framework.ScoreExten
 	return nil
 }
 
-// The unused capacity is calculated on a scale of 0-10
-// 0 being the lowest priority and 10 being the highest.
+// The unused capacity is calculated on a scale of 0-100
+// 0 being the lowest priority and 100 being the highest.
 // The more unused resources the higher the score is.
 func leastRequestedScore(requested, capacity int64) int64 {
 	if capacity == 0 {

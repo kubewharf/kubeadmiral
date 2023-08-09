@@ -45,6 +45,15 @@ func GetPodResourceRequests(podSpec *corev1.PodSpec) corev1.ResourceList {
 	reqs := make(corev1.ResourceList)
 
 	for _, container := range podSpec.Containers {
+		// If you specify a limit for a resource, but do not specify any request,
+		// and no admission-time mechanism has applied a default request for that resource,
+		// then Kubernetes copies the limit you specified and uses it as the requested value for the resource.
+		for resourceName, resourceLimits := range container.Resources.Limits {
+			if _, ok := container.Resources.Requests[resourceName]; !ok {
+				AddResources(corev1.ResourceList{resourceName: resourceLimits}, reqs)
+			}
+		}
+
 		AddResources(container.Resources.Requests, reqs)
 	}
 

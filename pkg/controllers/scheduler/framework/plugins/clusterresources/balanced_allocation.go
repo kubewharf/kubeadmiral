@@ -24,8 +24,6 @@ import (
 	"context"
 	"math"
 
-	corev1 "k8s.io/api/core/v1"
-
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
@@ -47,32 +45,47 @@ func (pl *ClusterResourcesBalancedAllocation) Score(
 	su *framework.SchedulingUnit,
 	cluster *fedcorev1a1.FederatedCluster,
 ) (int64, *framework.Result) {
+	var totalFraction float64
+
 	err := framework.PreCheck(ctx, su, cluster)
 	if err != nil {
 		return 0, framework.NewResult(framework.Error, err.Error())
 	}
 
-	requested := make(framework.ResourceToValueMap, len(framework.DefaultRequestedRatioResources))
-	allocatable := make(framework.ResourceToValueMap, len(framework.DefaultRequestedRatioResources))
-	for resource := range framework.DefaultRequestedRatioResources {
-		allocatable[resource], requested[resource] = calculateResourceAllocatableRequest(su, cluster, resource)
+	resources := getRelevantResources(su)
+	allocatable, requested := getAllocatableAndRequested(su, cluster, resources)
+
+	fractions := make([]float64, 0, len(requested))
+	for i := range requested {
+		fraction := fractionOfCapacity(requested[i], allocatable[i])
+		// This to find a cluster which has most balanced resource usage.
+		if fraction >= 1 {
+			// if requested >= capacity, the corresponding host should never be preferred.
+			return 0, framework.NewResult(framework.Success)
+		}
+		totalFraction += fraction
+		fractions = append(fractions, fraction)
 	}
 
-	cpuFraction := fractionOfCapacity(requested[corev1.ResourceCPU], allocatable[corev1.ResourceCPU])
-	memoryFraction := fractionOfCapacity(requested[corev1.ResourceMemory], allocatable[corev1.ResourceMemory])
-	// This to find a node which has most balanced CPU, memory and volume usage.
-	if cpuFraction >= 1 || memoryFraction >= 1 {
-		// if requested >= capacity, the corresponding host should never be preferred.
-		return 0, framework.NewResult(framework.Success)
+	std := 0.0
+
+	// For most cases, resources are limited to cpu and memory, the std could be simplified to std := (fraction1-fraction2)/2
+	// len(fractions) > 2: calculate std based on the well-known formula - root square of Σ((fraction(i)-mean)^2)/len(fractions)
+	// Otherwise, set the std to zero is enough.
+	if len(fractions) == 2 {
+		std = math.Abs((fractions[0] - fractions[1]) / 2)
+	} else if len(fractions) > 2 {
+		mean := totalFraction / float64(len(fractions))
+		var sum float64
+		for _, fraction := range fractions {
+			sum += (fraction - mean) * (fraction - mean)
+		}
+		std = math.Sqrt(sum / float64(len(fractions)))
 	}
 
-	// Upper and lower boundary of difference between cpuFraction and memoryFraction are -1 and 1
-	// respectively. Multiplying the absolute value of the difference by 10 scales the value to
-	// 0-10 with 0 representing well balanced allocation and 10 poorly balanced. Subtracting it from
-	// 10 leads to the score which also scales from 0 to 10 while 10 representing well balanced.
-	diff := math.Abs(cpuFraction - memoryFraction)
-	score := int64((1 - diff) * float64(framework.MaxClusterScore))
-	return score, framework.NewResult(framework.Success)
+	// STD (standard deviation) is always a positive value. 1-deviation lets the score to be higher for cluster which has least deviation and
+	// multiplying it with `MaxClusterScore` provides the scaling factor needed.
+	return int64((1 - std) * float64(framework.MaxClusterScore)), framework.NewResult(framework.Success)
 }
 
 // ScoreExtensions of the Score plugin.

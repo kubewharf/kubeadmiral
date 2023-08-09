@@ -152,7 +152,7 @@ func TestCalcWeightLimit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotWeightLimit, err := CalcWeightLimit(tt.args.clusters, tt.args.supplyLimitRatio)
+			gotWeightLimit, err := CalcWeightLimit(tt.args.clusters, corev1.ResourceCPU, tt.args.supplyLimitRatio)
 			if !tt.wantErr(t, err, fmt.Sprintf("CalcWeightLimit(%v)", tt.args.clusters)) {
 				return
 			}
@@ -170,7 +170,7 @@ func TestAvailableToPercentage(t *testing.T) {
 		return args{
 			clusterAvailables: QueryAvailable(clusters),
 			weightLimit: func() map[string]int64 {
-				weightLimit, _ := CalcWeightLimit(clusters, 1.0)
+				weightLimit, _ := CalcWeightLimit(clusters, corev1.ResourceCPU, 1.0)
 				return weightLimit
 			}(),
 		}
@@ -247,7 +247,7 @@ func TestAvailableToPercentage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotClusterWeights, err := AvailableToPercentage(tt.args.clusterAvailables, tt.args.weightLimit)
+			gotClusterWeights, err := AvailableToPercentage(tt.args.clusterAvailables, corev1.ResourceCPU, tt.args.weightLimit)
 			if !tt.wantErr(
 				t,
 				err,

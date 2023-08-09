@@ -17,6 +17,7 @@ limitations under the License.
 package scheduler
 
 import (
+	"errors"
 	"fmt"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -25,6 +26,9 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
+	podutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
+	resourceutil "github.com/kubewharf/kubeadmiral/pkg/util/resource"
 	"github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
 
@@ -77,4 +81,20 @@ func UpdateReplicasOverride(
 
 	updated = fedObject.GetSpec().SetControllerOverrides(PrefixedGlobalSchedulerName, newOverrides)
 	return updated, nil
+}
+
+func getResourceRequest(
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	fedObject fedcorev1a1.GenericFederatedObject,
+) (framework.Resource, error) {
+	gvk := ftc.GetSourceTypeGVK()
+	podSpec, err := podutil.GetResourcePodSpec(fedObject, gvk)
+	if err != nil {
+		if errors.Is(err, podutil.ErrUnknownTypeToGetPodSpec) {
+			return framework.Resource{}, nil
+		}
+		return framework.Resource{}, err
+	}
+	resource := resourceutil.GetPodResourceRequests(podSpec)
+	return *framework.NewResource(resource), nil
 }

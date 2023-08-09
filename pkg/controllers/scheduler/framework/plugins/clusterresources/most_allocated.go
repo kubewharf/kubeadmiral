@@ -49,19 +49,23 @@ func (pl *ClusterResourcesMostAllocated) Score(
 		return 0, framework.NewResult(framework.Error, err.Error())
 	}
 
-	requested := make(framework.ResourceToValueMap, len(framework.DefaultRequestedRatioResources))
-	allocatable := make(framework.ResourceToValueMap, len(framework.DefaultRequestedRatioResources))
-	for resource := range framework.DefaultRequestedRatioResources {
-		allocatable[resource], requested[resource] = calculateResourceAllocatableRequest(su, cluster, resource)
-	}
+	resources := getRelevantResources(su)
+	allocatable, requested := getAllocatableAndRequested(su, cluster, resources)
 
 	var score, weightSum int64
 	// most allocated score favors nodes with most requested resources.
 	// It calculates the percentage of memory and CPU requested by pods scheduled on the node, and prioritizes
 	// based on the maximum of the average of the fraction of requested to capacity.
-	// Details: (cpu(10 * sum(requested) / capacity) + memory(10 * sum(requested) / capacity)) / 2
-	for resource, weight := range framework.DefaultRequestedRatioResources {
+	// Details:
+	// (cpu((capacity-sum(requested))*100/capacity) * cpu_weight +
+	// memory((capacity-sum(requested))*100/capacity) * memory_weight) / (cpu_weight + memory_weight)
+	// Or with gpu
+	// (cpu((capacity-sum(requested))*100/capacity) * cpu_weight +
+	// memory((capacity-sum(requested))*100/capacity) * memory_weight +
+	// gpu((capacity-sum(requested))*100/capacity) * gpu_weight) / (cpu_weight + memory_weight + gpu_weight)
+	for _, resource := range resources {
 		resourceScore := mostRequestedScore(requested[resource], allocatable[resource])
+		weight := framework.DefaultRequestedRatioResources[resource]
 		score += resourceScore * weight
 		weightSum += weight
 	}
@@ -78,11 +82,11 @@ func (pl *ClusterResourcesMostAllocated) ScoreExtensions() framework.ScoreExtens
 	return nil
 }
 
-// The used capacity is calculated on a scale of 0-10
-// 0 being the lowest priority and 10 being the highest.
+// The used capacity is calculated on a scale of 0-100
+// 0 being the lowest priority and 100 being the highest.
 // The more resources are used the higher the score is. This function
 // is almost a reversed version of least_requested_priority.calculateUnusedScore
-// (10 - calculateUnusedScore). The main difference is in rounding. It was added to
+// (100 - calculateUnusedScore). The main difference is in rounding. It was added to
 // keep the final formula clean and not to modify the widely used (by users
 // in their default scheduling policies) calculateUsedScore.
 func mostRequestedScore(requested, capacity int64) int64 {

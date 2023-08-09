@@ -73,14 +73,14 @@ func TestClusterResourcesBalancedAllocation(t *testing.T) {
 		expectedList framework.ClusterScoreList
 	}{
 		{
-			// Cluster1 scores (remaining resources) on 0-10 scale
+			// Cluster1 scores (remaining resources) on 0-100 scale
 			// CPU Fraction: 0 / 4000 = 0%
 			// Memory Fraction: 0 / 10000 = 0%
-			// Cluster1 Score: 10 - (0-0)*100 = 100
-			// Cluster2 scores (remaining resources) on 0-10 scale
+			// Cluster1 Score: (1 - 0/2) * 100 = 100
+			// Cluster2 scores (remaining resources) on 0-100 scale
 			// CPU Fraction: 0 / 4000 = 0 %
 			// Memory Fraction: 0 / 10000 = 0%
-			// Cluster2 Score: 10 - (0-0)*100 = 100
+			// Cluster2 Score: (1 - 0/2) * 100 = 100
 			su: makeSchedulingUnit("su1", 0, 0),
 			clusters: []*fedcorev1a1.FederatedCluster{
 				makeCluster("cluster1", 4000, 10000, 4000, 10000),
@@ -93,22 +93,44 @@ func TestClusterResourcesBalancedAllocation(t *testing.T) {
 			name: "nothing scheduled, nothing requested",
 		},
 		{
-			// Cluster1 scores on 0-10 scale
+			// Cluster1 scores on 0-100 scale
 			// CPU Fraction: 3000 / 4000= 75%
 			// Memory Fraction: 5000 / 10000 = 50%
-			// Cluster1 Score: 10 - (0.75-0.5)*100 = 75
-			// Cluster2 scores on 0-10 scale
+			// Cluster1 Score: 100 - (0.75-0.5)/2 *100 = 87
+			// Cluster2 scores on 0-100 scale
 			// CPU Fraction: 3000 / 6000= 50%
 			// Memory Fraction: 5000/10000 = 50%
-			// Cluster2 Score: 10 - (0.5-0.5)*100 = 100
+			// Cluster2 Score: 100 - (0.5-0.5)*100 = 100
 			su: makeSchedulingUnit("su2", 3000, 5000),
 			clusters: []*fedcorev1a1.FederatedCluster{
 				makeCluster("cluster1", 4000, 10000, 4000, 10000),
 				makeCluster("cluster2", 6000, 10000, 6000, 10000),
 			},
 			expectedList: []framework.ClusterScore{
-				{Cluster: makeCluster("cluster1", 4000, 10000, 4000, 10000), Score: 75},
+				{Cluster: makeCluster("cluster1", 4000, 10000, 4000, 10000), Score: 87},
 				{Cluster: makeCluster("cluster2", 6000, 10000, 6000, 10000), Score: framework.MaxClusterScore},
+			},
+			name: "nothing scheduled, resources requested, differently sized machines",
+		},
+		{
+			// Cluster1 scores on 0-100 scale
+			// CPU Fraction: 3000 / 4000 = 75%
+			// Memory Fraction: 5000 / 10000 = 50%
+			// GPU Fraction: 5000 / 20000 = 25%
+			// Cluster1 Score: (1 - sqrt((0.25 * 0.25 + 0.25 * 0.25)/3)) = 79
+			// Cluster2 scores on 0-100 scale
+			// CPU Fraction: 3000 / 6000= 50%
+			// Memory Fraction: 5000 / 10000 = 50%
+			// GPU Fraction: 5000 / 10000 = 50%
+			// Cluster2 Score: (1 - 0)*100 = 100
+			su: schedulingUnitWithGPU(makeSchedulingUnit("su3", 3000, 5000), 5000),
+			clusters: []*fedcorev1a1.FederatedCluster{
+				clusterWithGPU(makeCluster("cluster1", 4000, 10000, 4000, 10000), 20000, 20000),
+				clusterWithGPU(makeCluster("cluster2", 6000, 10000, 6000, 10000), 10000, 10000),
+			},
+			expectedList: []framework.ClusterScore{
+				{Cluster: clusterWithGPU(makeCluster("cluster1", 4000, 10000, 4000, 10000), 20000, 20000), Score: 79},
+				{Cluster: clusterWithGPU(makeCluster("cluster2", 6000, 10000, 6000, 10000), 10000, 10000), Score: framework.MaxClusterScore},
 			},
 			name: "nothing scheduled, resources requested, differently sized machines",
 		},
