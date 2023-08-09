@@ -160,6 +160,9 @@ func NewFollowerController(
 	)
 
 	if err := c.informerManager.AddFTCUpdateHandler(func(_, latest *fedcorev1a1.FederatedTypeConfig) {
+		if latest == nil {
+			return
+		}
 		targetType := latest.Spec.SourceType
 		targetGK := schema.GroupKind{Group: targetType.Group, Kind: targetType.Kind}
 
