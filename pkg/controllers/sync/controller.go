@@ -465,18 +465,15 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 		{
 			// TODO: updating the sync status may thrash the host apiserver if the host caches are synced but member caches are not synced.
 			// Find out if this is ok.
-			lister, hasSynced, exists := s.fedInformerManager.GetResourceLister(fedResource.TargetGVK(), clusterName)
-			if !exists || !hasSynced() {
-				shouldRecheckAfterDispatch = true
-				wrappedErr := fmt.Errorf("cluster cache is not synced")
-				dispatcher.RecordClusterError(fedcorev1a1.CachedRetrievalFailed, clusterName, wrappedErr)
-				continue
-			}
-
-			clusterObjAny, err := lister.Get(fedResource.TargetName().String())
-			if err == nil {
-				clusterObj = clusterObjAny.(*unstructured.Unstructured)
-			} else if !apierrors.IsNotFound(err) {
+			clusterObj, _, err = informermanager.GetClusterObject(
+				ctx,
+				s.ftcManager,
+				s.fedInformerManager,
+				clusterName,
+				fedResource.TargetName(),
+				fedResource.TargetGVK(),
+			)
+			if err != nil {
 				wrappedErr := fmt.Errorf("failed to get cluster object: %w", err)
 				dispatcher.RecordClusterError(fedcorev1a1.CachedRetrievalFailed, clusterName, wrappedErr)
 				continue
