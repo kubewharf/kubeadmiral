@@ -474,6 +474,7 @@ func (c *Controller) getLeaderObj(
 	}
 
 	c.gkToFTCLock.RLock()
+	defer c.gkToFTCLock.RUnlock()
 	ftcName, exists := c.gkToFTCName[leaderGK]
 	if !exists {
 		return nil, fmt.Errorf("unknown leader gk %v", leaderGK)
