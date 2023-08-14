@@ -34,6 +34,10 @@ func HasAdoptedAnnotation(obj metav1.Object) bool {
 
 func AddAdoptedAnnotation(obj metav1.Object) bool {
 	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string, 1)
+	}
+
 	if annotations[AdoptedAnnotation] == common.AnnotationValueTrue {
 		return false
 	}
