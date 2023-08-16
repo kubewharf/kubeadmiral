@@ -43,3 +43,14 @@ func IsClusterJoined(clusterStatus *fedcorev1a1.FederatedClusterStatus) bool {
 	}
 	return false
 }
+
+func IsClusterOffline(clusterStatus *fedcorev1a1.FederatedClusterStatus) bool {
+	for _, condition := range clusterStatus.Conditions {
+		if condition.Type == fedcorev1a1.ClusterOffline {
+			if condition.Status == corev1.ConditionTrue {
+				return true
+			}
+		}
+	}
+	return false
+}
