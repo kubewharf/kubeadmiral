@@ -254,6 +254,8 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		return worker.StatusAllOK
 	}
 
+	c.recordNamespacePropagationFailedMetric(fedNamespace)
+
 	needsUpdate := false
 
 	// Set placement to propagate to all clusters
@@ -394,4 +396,18 @@ func (c *Controller) HasSynced() bool {
 		c.clusterFedObjectInformer.Informer().HasSynced() &&
 		c.namespaceInformer.Informer().HasSynced() &&
 		c.informerManager.HasSynced()
+}
+
+func (c *Controller) recordNamespacePropagationFailedMetric(fedNamespace *fedcorev1a1.ClusterFederatedObject) {
+	errorClusterCount := 0
+
+	for _, clusterStatus := range fedNamespace.Status.Clusters {
+		if clusterStatus.Status != fedcorev1a1.ClusterPropagationOK && clusterStatus.Status != fedcorev1a1.WaitingForRemoval {
+			errorClusterCount++
+		}
+	}
+
+	if errorClusterCount != 0 {
+		c.metrics.Store("namespace_propagate_failed_total", errorClusterCount, stats.Tag{Name: "namespace", Value: fedNamespace.Name})
+	}
 }

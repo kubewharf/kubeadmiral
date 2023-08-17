@@ -555,6 +555,7 @@ func (s *StatusController) clusterStatuses(
 	var errList []string
 
 	for _, clusterName := range clusterNames {
+		startTime := time.Now()
 		resourceClusterStatus := fedcorev1a1.CollectedFieldsWithCluster{Cluster: clusterName}
 
 		clusterObj, exist, err := informermanager.GetClusterObject(
@@ -571,6 +572,7 @@ func (s *StatusController) clusterStatuses(
 			resourceClusterStatus.Error = errMsg
 			clusterStatus = append(clusterStatus, resourceClusterStatus)
 			errList = append(errList, fmt.Sprintf("cluster-name: %s, error-info: %s", clusterName, errMsg))
+			s.recordStatusCollectionError(targetQualifiedName.Name, targetQualifiedName.Namespace, targetGVK.String(), clusterName)
 			continue
 		}
 		if !exist {
@@ -609,6 +611,7 @@ func (s *StatusController) clusterStatuses(
 		if err != nil {
 			keyedLogger.WithValues("cluster-name", clusterName).
 				Error(err, "Failed to marshal collected fields")
+			s.recordStatusCollectionError(targetQualifiedName.Name, targetQualifiedName.Namespace, targetGVK.String(), clusterName)
 			continue
 		}
 
@@ -627,6 +630,12 @@ func (s *StatusController) clusterStatuses(
 			)
 		}
 		clusterStatus = append(clusterStatus, resourceClusterStatus)
+		s.metrics.Duration("status_collection_duration_seconds", startTime, []stats.Tag{
+			{Name: "name", Value: targetQualifiedName.Name},
+			{Name: "namespace", Value: targetQualifiedName.Namespace},
+			{Name: "resource", Value: targetGVK.String()},
+			{Name: "cluster", Value: clusterName},
+		}...)
 	}
 
 	if len(errList) != 0 {
@@ -641,6 +650,15 @@ func (s *StatusController) clusterStatuses(
 		return clusterStatus[i].Cluster < clusterStatus[j].Cluster
 	})
 	return clusterStatus
+}
+
+func (s *StatusController) recordStatusCollectionError(name, namespace, resourceGvk, cluster string) {
+	s.metrics.Counter("status_collection_error_total", 1, []stats.Tag{
+		{Name: "name", Value: name},
+		{Name: "namespace", Value: namespace},
+		{Name: "resource", Value: resourceGvk},
+		{Name: "cluster", Value: cluster},
+	}...)
 }
 
 // latestReplicasetDigests returns digests of latest replicaSets in member cluster
