@@ -290,6 +290,11 @@ func (c *Controller) reconcileLeader(
 			}
 			return worker.StatusError
 		}
+
+		c.metrics.Store("followers_total", len(desiredFollowers),
+			stats.Tag{Name: "namespace", Value: key.namespace},
+			stats.Tag{Name: "name", Value: key.sourceName},
+			stats.Tag{Name: "resource", Value: key.sourceGK.String()})
 	}
 
 	c.cacheObservedFromLeaders.update(leader, desiredFollowers)
@@ -458,6 +463,10 @@ func (c *Controller) reconcileFollower(
 		)
 		return worker.StatusError
 	} else if updated {
+		c.metrics.Store("leaders_total", len(desiredLeaders),
+			stats.Tag{Name: "namespace", Value: key.namespace},
+			stats.Tag{Name: "name", Value: key.sourceName},
+			stats.Tag{Name: "resource", Value: key.sourceGK.String()})
 		keyedLogger.V(1).Info("Updated follower to sync with leaders")
 	}
 
