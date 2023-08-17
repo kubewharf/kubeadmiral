@@ -138,4 +138,3 @@ func Delete(
 		return fedv1a1Client.FederatedObjects(namespace).Delete(ctx, name, opts)
 	}
 }
-

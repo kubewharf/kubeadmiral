@@ -55,6 +55,12 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
+var (
+	ScheduledResult     = "scheduled"
+	UnschedulableResult = "unschedulable"
+	ErrorResult         = "error"
+)
+
 const (
 	SchedulerName                     = "scheduler"
 	PropagationPolicyNameLabel        = common.DefaultPrefix + "propagation-policy-name"
@@ -138,11 +144,19 @@ func NewScheduler(
 
 	fedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
 		common.NewQualifiedName,
-		s.worker.Enqueue,
+		func(name common.QualifiedName) {
+			s.worker.Enqueue(name)
+			s.metrics.Counter("queue_incoming_federated_object_total", 1,
+				stats.Tag{Name: "event", Value: FedObjChanged})
+		},
 	))
 	clusterFedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
 		common.NewQualifiedName,
-		s.worker.Enqueue,
+		func(name common.QualifiedName) {
+			s.worker.Enqueue(name)
+			s.metrics.Counter("queue_incoming_federated_object_total", 1,
+				stats.Tag{Name: "event", Value: FedObjChanged})
+		},
 	))
 
 	propagationPolicyInformer.Informer().AddEventHandler(
@@ -300,7 +314,7 @@ func (s *Scheduler) reconcile(ctx context.Context, key common.QualifiedName) (st
 	}
 
 	result, earlyReturnWorkerResult := s.schedule(ctx, ftc, fedObject, policy, schedulingProfile, clusters)
-	if earlyReturnWorkerResult != nil {
+	if earlyReturnWorkerResult != nil && !earlyReturnWorkerResult.Success {
 		return *earlyReturnWorkerResult
 	}
 
@@ -480,7 +494,7 @@ func (s *Scheduler) schedule(
 	policy fedcorev1a1.GenericPropagationPolicy,
 	schedulingProfile *fedcorev1a1.SchedulingProfile,
 	clusters []*fedcorev1a1.FederatedCluster,
-) (*core.ScheduleResult, *worker.Result) {
+) (scheduleResult *core.ScheduleResult, workerResult *worker.Result) {
 	logger := klog.FromContext(ctx)
 
 	if policy == nil {
@@ -495,6 +509,11 @@ func (s *Scheduler) schedule(
 
 		return &core.ScheduleResult{SuggestedClusters: make(map[string]*int64)}, nil
 	}
+
+	startTime := time.Now()
+	defer func() {
+		s.federatedObjectSchedule(workerResult, schedulingProfile.ProfileName(), startTime)
+	}()
 
 	// schedule according to matched policy
 	logger.V(2).Info("Matched policy found, start scheduling")
@@ -547,7 +566,7 @@ func (s *Scheduler) schedule(
 		return nil, &worker.StatusError
 	}
 
-	return &result, nil
+	return &result, &worker.StatusAllOK
 }
 
 func (s *Scheduler) persistSchedulingResult(
@@ -769,6 +788,8 @@ func (s *Scheduler) enqueueFederatedObjectsForPolicy(policy metav1.Object) {
 			continue
 		} else if policyKey.Name == policyAccessor.GetName() && policyKey.Namespace == policyAccessor.GetNamespace() {
 			s.worker.Enqueue(common.NewQualifiedName(obj))
+			s.metrics.Counter("queue_incoming_federated_object_total", 1,
+				stats.Tag{Name: "event", Value: PolicyChanged})
 		}
 	}
 }
@@ -812,6 +833,8 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 
 	for obj := range allObjects {
 		s.worker.Enqueue(obj)
+		s.metrics.Counter("queue_incoming_federated_object_total", 1,
+			stats.Tag{Name: "event", Value: ClusterChanged})
 	}
 }
 
@@ -846,6 +869,8 @@ func (s *Scheduler) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedType
 		}
 		if templateMetadata.GroupVersionKind() == ftc.GetSourceTypeGVK() {
 			s.worker.Enqueue(common.NewQualifiedName(obj))
+			s.metrics.Counter("queue_incoming_federated_object_total", 1,
+				stats.Tag{Name: "event", Value: FTCChanged})
 		}
 	}
 }
@@ -856,4 +881,21 @@ func (s *Scheduler) policyFromStore(qualifiedName common.QualifiedName) (fedcore
 		return s.propagationPolicyInformer.Lister().PropagationPolicies(qualifiedName.Namespace).Get(qualifiedName.Name)
 	}
 	return s.clusterPropagationPolicyInformer.Lister().Get(qualifiedName.Name)
+}
+
+func (s *Scheduler) federatedObjectSchedule(result *worker.Result, profileName string, startTime time.Time) {
+	if result.Success {
+		s.observeScheduleAttemptAndLatency(ScheduledResult, profileName, startTime)
+	} else {
+		s.observeScheduleAttemptAndLatency(ErrorResult, profileName, startTime)
+	}
+}
+
+func (s *Scheduler) observeScheduleAttemptAndLatency(result, profileName string, startTime time.Time) {
+	s.metrics.Counter("schedule_attempts_total", 1,
+		stats.Tag{Name: "profile", Value: profileName},
+		stats.Tag{Name: "result", Value: result})
+	s.metrics.Duration("scheduling_attempt_duration", startTime,
+		stats.Tag{Name: "profile", Value: profileName},
+		stats.Tag{Name: "result", Value: result})
 }

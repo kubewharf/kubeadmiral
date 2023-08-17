@@ -25,6 +25,7 @@ import (
 	fedcore "github.com/kubewharf/kubeadmiral/pkg/apis/core"
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
+	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
 type naiveFilterPlugin struct {
@@ -197,7 +198,8 @@ func TestRunFilterPlugins(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fwk, err := NewFramework(test.plugins, nil, test.enabledPlugins)
+			metrics := stats.NewMock("test", "kubeadmiral_controller_manager", false)
+			fwk, err := NewFramework(test.plugins, nil, test.enabledPlugins, "", metrics)
 			if err != nil {
 				t.Fatalf("unexpected error when creating framework: %v", err)
 			}
@@ -295,6 +297,8 @@ func TestNewFramework(t *testing.T) {
 				scorePlugins:    []framework.ScorePlugin{scorePlugin},
 				selectPlugins:   []framework.SelectPlugin{scoreAndSelectPlugin},
 				replicasPlugins: []framework.ReplicasPlugin{replicasPlugin},
+				profileName:     "",
+				metrics:         stats.NewMock("test", "kubeadmiral_controller_manager", false),
 			},
 			false,
 		},
@@ -309,6 +313,8 @@ func TestNewFramework(t *testing.T) {
 				filterPlugins: []framework.FilterPlugin{filterPlugin, filterAndScorePlugin},
 				scorePlugins:  []framework.ScorePlugin{scorePlugin, scoreAndSelectPlugin},
 				selectPlugins: []framework.SelectPlugin{scoreAndSelectPlugin, selectPlugin},
+				profileName:   "",
+				metrics:       stats.NewMock("test", "kubeadmiral_controller_manager", false),
 			},
 			false,
 		},
@@ -349,7 +355,8 @@ func TestNewFramework(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fwk, err := NewFramework(newRegistry(), nil, &test.enabledPlugins)
+			metrics := stats.NewMock("test", "kubeadmiral_controller_manager", false)
+			fwk, err := NewFramework(newRegistry(), nil, &test.enabledPlugins, "", metrics)
 			if test.shouldError {
 				if err == nil {
 					t.Fatal("expected error when creating framework but got nil")

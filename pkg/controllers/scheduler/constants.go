@@ -49,3 +49,14 @@ const (
 	SchedulingTriggersAnnotation        = common.DefaultPrefix + "scheduling-triggers"
 	SchedulingDeferredReasonsAnnotation = common.DefaultPrefix + "scheduling-deferred-reasons"
 )
+
+const (
+	// FedObjChanged is the event when FederatedObject/ClusterFederatedObject changes.
+	FedObjChanged = "FedObjChanged"
+	// PolicyChanged is the event when PropagationPolicy/ClusterPropagationPolicy changes.
+	PolicyChanged = "PolicyChanged"
+	// ClusterChanged is the event when cluster changes.
+	ClusterChanged = "ClusterChanged"
+	// FTCChanged is the event when FTC changes.
+	FTCChanged = "FTCChanged"
+)

@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
@@ -31,6 +32,14 @@ import (
 	fedcore "github.com/kubewharf/kubeadmiral/pkg/apis/core"
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
+	"github.com/kubewharf/kubeadmiral/pkg/stats"
+)
+
+const (
+	filter         = "Filter"
+	score          = "Score"
+	selectClusters = "SelectClusters"
+	replicas       = "Replicas"
 )
 
 type frameworkImpl struct {
@@ -38,11 +47,16 @@ type frameworkImpl struct {
 	scorePlugins    []framework.ScorePlugin
 	selectPlugins   []framework.SelectPlugin
 	replicasPlugins []framework.ReplicasPlugin
+
+	profileName string
+	metrics     stats.Metrics
 }
 
 var _ framework.Framework = &frameworkImpl{}
 
-func NewFramework(registry Registry, handle framework.Handle, enabledPlugins *fedcore.EnabledPlugins) (framework.Framework, error) {
+func NewFramework(registry Registry, handle framework.Handle, enabledPlugins *fedcore.EnabledPlugins,
+	profileName string, metrics stats.Metrics,
+) (framework.Framework, error) {
 	fwk := &frameworkImpl{}
 
 	pluginsMap := make(map[string]framework.Plugin)
@@ -64,6 +78,8 @@ func NewFramework(registry Registry, handle framework.Handle, enabledPlugins *fe
 		}
 	}
 
+	fwk.profileName = profileName
+	fwk.metrics = metrics
 	return fwk, nil
 }
 
@@ -115,7 +131,14 @@ func (f *frameworkImpl) RunFilterPlugins(
 	ctx context.Context,
 	schedulingUnit *framework.SchedulingUnit,
 	cluster *fedcorev1a1.FederatedCluster,
-) *framework.Result {
+) (result *framework.Result) {
+	startTime := time.Now()
+	defer func() {
+		f.metrics.Duration("scheduler_framework_extension_point_duration", startTime,
+			stats.Tag{Name: "extension_point", Value: filter},
+			stats.Tag{Name: "profile", Value: f.profileName},
+			stats.Tag{Name: "status", Value: result.Code().String()})
+	}()
 	for _, pl := range f.filterPlugins {
 		pluginResult := f.runFilterPlugin(ctx, pl, schedulingUnit, cluster)
 		if !pluginResult.IsSuccess() {
@@ -130,9 +153,15 @@ func (f *frameworkImpl) runFilterPlugin(
 	pl framework.FilterPlugin,
 	schedulingUnit *framework.SchedulingUnit,
 	cluster *fedcorev1a1.FederatedCluster,
-) *framework.Result {
-	// TODO: add some metrics here
-	result := pl.Filter(ctx, schedulingUnit, cluster)
+) (result *framework.Result) {
+	startTime := time.Now()
+	defer func() {
+		f.metrics.Duration("scheduler_plugin_execution_duration", startTime,
+			stats.Tag{Name: "extension_point", Value: filter},
+			stats.Tag{Name: "plugin", Value: pl.Name()},
+			stats.Tag{Name: "status", Value: result.Code().String()})
+	}()
+	result = pl.Filter(ctx, schedulingUnit, cluster)
 	return result
 }
 
@@ -140,8 +169,15 @@ func (f *frameworkImpl) RunScorePlugins(
 	ctx context.Context,
 	schedulingUnit *framework.SchedulingUnit,
 	clusters []*fedcorev1a1.FederatedCluster,
-) (framework.PluginToClusterScore, *framework.Result) {
-	result := make(framework.PluginToClusterScore)
+) (pluginToClusterScore framework.PluginToClusterScore, result *framework.Result) {
+	startTime := time.Now()
+	defer func() {
+		f.metrics.Duration("scheduler_framework_extension_point_duration", startTime,
+			stats.Tag{Name: "extension_point", Value: score},
+			stats.Tag{Name: "profile", Value: f.profileName},
+			stats.Tag{Name: "status", Value: result.Code().String()})
+	}()
+	pluginToClusterScore = make(framework.PluginToClusterScore)
 
 	for _, plugin := range f.scorePlugins {
 		scoreList := make(framework.ClusterScoreList, len(clusters))
@@ -174,10 +210,10 @@ func (f *frameworkImpl) RunScorePlugins(
 			}
 		}
 
-		result[plugin.Name()] = scoreList
+		pluginToClusterScore[plugin.Name()] = scoreList
 	}
 
-	return result, nil
+	return pluginToClusterScore, nil
 }
 
 func (f *frameworkImpl) RunSelectClustersPlugin(
@@ -185,6 +221,13 @@ func (f *frameworkImpl) RunSelectClustersPlugin(
 	schedulingUnit *framework.SchedulingUnit,
 	clusterScores framework.ClusterScoreList,
 ) (clusters []*fedcorev1a1.FederatedCluster, result *framework.Result) {
+	startTime := time.Now()
+	defer func() {
+		f.metrics.Duration("scheduler_framework_extension_point_duration", startTime,
+			stats.Tag{Name: "extension_point", Value: selectClusters},
+			stats.Tag{Name: "profile", Value: f.profileName},
+			stats.Tag{Name: "status", Value: result.Code().String()})
+	}()
 	if len(f.selectPlugins) == 0 {
 		for _, clusterScore := range clusterScores {
 			clusters = append(clusters, clusterScore.Cluster)
@@ -213,6 +256,13 @@ func (f *frameworkImpl) RunReplicasPlugin(
 	schedulingUnit *framework.SchedulingUnit,
 	clusters []*fedcorev1a1.FederatedCluster,
 ) (clusterReplicasList framework.ClusterReplicasList, result *framework.Result) {
+	startTime := time.Now()
+	defer func() {
+		f.metrics.Duration("scheduler_framework_extension_point_duration", startTime,
+			stats.Tag{Name: "extension_point", Value: replicas},
+			stats.Tag{Name: "profile", Value: f.profileName},
+			stats.Tag{Name: "status", Value: result.Code().String()})
+	}()
 	if len(clusters) == 0 {
 		return clusterReplicasList, framework.NewResult(
 			framework.Success,

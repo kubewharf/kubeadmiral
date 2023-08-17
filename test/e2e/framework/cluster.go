@@ -22,7 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/util/cascadingdeletion"
 )
 
 const (
@@ -51,7 +51,7 @@ func WithCascadingDelete(c *fedcorev1a1.FederatedCluster) {
 	if c.Annotations == nil {
 		c.Annotations = map[string]string{}
 	}
-	c.Annotations[util.AnnotationCascadingDelete] = "true"
+	c.Annotations[cascadingdeletion.AnnotationCascadingDelete] = "true"
 }
 
 func WithTaints(c *fedcorev1a1.FederatedCluster) {
