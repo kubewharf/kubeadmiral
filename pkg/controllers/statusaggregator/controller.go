@@ -324,7 +324,7 @@ func (a *StatusAggregator) reconcile(ctx context.Context, key reconcileKey) (sta
 		key.namespace,
 		federatedName,
 	)
-	if err != nil {
+	if err != nil && !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to get object from store")
 		return worker.StatusError
 	}

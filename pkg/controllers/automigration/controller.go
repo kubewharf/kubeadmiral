@@ -269,7 +269,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		qualifiedName.Namespace,
 		qualifiedName.Name,
 	)
-	if err != nil {
+	if err != nil && !apierrors.IsNotFound(err) {
 		keyedLogger.Error(err, "Failed to get federated object from store")
 		return worker.StatusError
 	}
