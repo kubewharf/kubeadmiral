@@ -307,10 +307,10 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 
 	if fedObject != nil {
 		var owner *metav1.OwnerReference
-		for _, ref := range fedObject.GetOwnerReferences() {
+		ownerRefs := fedObject.GetOwnerReferences()
+		for i, ref := range ownerRefs {
 			if ref.Controller != nil && *ref.Controller {
-				ref := ref
-				owner = &ref
+				owner = &ownerRefs[i]
 				break
 			}
 		}
