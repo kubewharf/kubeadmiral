@@ -105,10 +105,10 @@ func NewFederatedInformerManager(
 		queue: workqueue.NewRateLimitingQueue(
 			workqueue.NewItemExponentialFailureRateLimiter(100*time.Millisecond, 10*time.Second),
 		),
-		podListerSemaphore:     semaphore.NewWeighted(3), // TODO: make this configurable
-		initialClusters:        sets.New[string](),
-		podEventHandlers:       []*ResourceEventHandlerWithClusterFuncs{},
-		podEventRegistrations:  map[string]map[*ResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{},
+		podListerSemaphore:    semaphore.NewWeighted(3), // TODO: make this configurable
+		initialClusters:       sets.New[string](),
+		podEventHandlers:      []*ResourceEventHandlerWithClusterFuncs{},
+		podEventRegistrations: map[string]map[*ResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{},
 	}
 
 	clusterInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{

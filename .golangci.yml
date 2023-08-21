@@ -256,7 +256,9 @@ linters-settings:
           Copyright {{ YEAR }} The KubeAdmiral Authors\.
 
           {{ MAIN }}
-        BOILERPLATE: "^({{ KUBERNETES_BOILERPLATE }}|{{ KUBEADMIRAL_BOILERPLATE }})$"
+        CREDIT_BOILERPLATE: |-
+          The design of (the )?[a-zA-z0-9 ]*is inspired by [a-zA-z0-9 '-]*\. Kudos!
+        BOILERPLATE: "^({{ KUBERNETES_BOILERPLATE }}|{{ KUBEADMIRAL_BOILERPLATE }}|{{ CREDIT_BOILERPLATE }})$"
     template: "{{ BOILERPLATE }}"
   forbidigo:
     # Forbid the following identifiers (list of regexp).
