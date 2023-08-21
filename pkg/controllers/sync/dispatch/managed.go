@@ -84,6 +84,7 @@ type ManagedDispatcher interface {
 	CollectedStatus() status.CollectedPropagationStatus
 	RecordClusterError(propStatus fedcorev1a1.PropagationStatusType, clusterName string, err error)
 	RecordStatus(clusterName string, propStatus fedcorev1a1.PropagationStatusType)
+	RecordSyncOK(clusterName string)
 }
 
 type managedDispatcherImpl struct {
@@ -94,6 +95,7 @@ type managedDispatcherImpl struct {
 	fedResource           FederatedResourceForDispatch
 	versionMap            map[string]string
 	statusMap             status.PropagationStatusMap
+	syncOKClusters        sets.Set[string]
 	skipAdoptingResources bool
 
 	// Track when resource updates are performed to allow indicating
@@ -113,6 +115,7 @@ func NewManagedDispatcher(
 		fedResource:           fedResource,
 		versionMap:            make(map[string]string),
 		statusMap:             make(status.PropagationStatusMap),
+		syncOKClusters:        sets.Set[string]{},
 		skipAdoptingResources: skipAdoptingResources,
 		metrics:               metrics,
 	}
@@ -140,6 +143,7 @@ func (d *managedDispatcherImpl) Wait() (bool, error) {
 		propStatus := string(value)
 		if okTimedOut.Has(propStatus) {
 			d.statusMap[key] = fedcorev1a1.ClusterPropagationOK
+			d.syncOKClusters.Insert(key)
 		} else if propStatus == string(fedcorev1a1.DeletionTimedOut) {
 			// If deletion was successful, then assume the resource is
 			// pending garbage collection.
@@ -331,6 +335,12 @@ func (d *managedDispatcherImpl) RecordStatus(clusterName string, propStatus fedc
 	d.statusMap[clusterName] = propStatus
 }
 
+func (d *managedDispatcherImpl) RecordSyncOK(clusterName string) {
+	d.Lock()
+	defer d.Unlock()
+	d.syncOKClusters.Insert(clusterName)
+}
+
 func (d *managedDispatcherImpl) recordOperationError(
 	ctx context.Context,
 	propStatus fedcorev1a1.PropagationStatusType,
@@ -397,5 +407,6 @@ func (d *managedDispatcherImpl) CollectedStatus() status.CollectedPropagationSta
 		StatusMap:        statusMap,
 		GenerationMap:    propagatedversion.ConvertVersionMapToGenerationMap(d.versionMap),
 		ResourcesUpdated: d.resourcesUpdated,
+		SyncOKClusters:   sets.List(d.syncOKClusters),
 	}
 }

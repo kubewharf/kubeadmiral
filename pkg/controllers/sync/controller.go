@@ -22,6 +22,7 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -424,7 +425,7 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 func (s *SyncController) syncToClusters(ctx context.Context, fedResource FederatedResource) worker.Result {
 	keyedLogger := klog.FromContext(ctx)
 
-	clusters, err := s.fedInformerManager.GetJoinedClusters()
+	joinedClusters, err := s.fedInformerManager.GetJoinedClusters()
 	if err != nil {
 		fedResource.RecordError(
 			string(fedcorev1a1.ClusterRetrievalFailed),
@@ -432,9 +433,42 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 		)
 		return s.setFederatedStatus(ctx, fedResource, fedcorev1a1.ClusterRetrievalFailed, nil)
 	}
+	joined := make(map[string]*fedcorev1a1.FederatedCluster, len(joinedClusters))
+	for _, cluster := range joinedClusters {
+		joined[cluster.Name] = cluster
+	}
 
-	selectedClusterNames := fedResource.ComputePlacement(clusters)
+	selectedClusterNames := fedResource.ComputePlacement(joinedClusters)
 	keyedLogger.V(2).Info("Ensuring target object in clusters", "clusters", strings.Join(sets.List(selectedClusterNames), ","))
+
+	anno := fedResource.Object().GetAnnotations()
+	clusters := make([]*fedcorev1a1.FederatedCluster, 0, len(joinedClusters))
+	if len(anno) != 0 {
+		var clusterNames []string
+		if pendingSync := anno[common.PendingSyncClustersAnnotation]; len(pendingSync) == 0 {
+			pendingSyncClusters := selectedClusterNames.Clone()
+			for _, cluster := range fedResource.Object().GetStatus().Clusters {
+				pendingSyncClusters.Insert(cluster.Cluster)
+			}
+			clusterNames = sets.List(pendingSyncClusters)
+		} else {
+			err = json.Unmarshal([]byte(pendingSync), &clusterNames)
+			if err != nil {
+				keyedLogger.Error(err,
+					"Failed to unmarshal pending sync clusters annotation, use joined clusters",
+					"pending-sync-clusters", pendingSync)
+			}
+		}
+
+		for _, name := range clusterNames {
+			if cluster, exists := joined[name]; exists {
+				clusters = append(clusters, cluster)
+			}
+		}
+	}
+	if len(clusters) == 0 {
+		clusters = joinedClusters
+	}
 
 	skipAdoptingPreexistingResources := !adoption.ShouldAdoptPreexistingResources(fedResource.Object())
 	dispatcher := dispatch.NewManagedDispatcher(
@@ -484,6 +518,7 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 		if shouldBeDeleted {
 			if clusterObj == nil {
 				// Resource does not exist in the cluster
+				dispatcher.RecordSyncOK(clusterName)
 				continue
 			}
 			if clusterObj.GetDeletionTimestamp() != nil {
@@ -568,6 +603,13 @@ func (s *SyncController) syncToClusters(ctx context.Context, fedResource Federat
 	); reconcileStatus != worker.StatusAllOK {
 		return reconcileStatus
 	}
+	if reconcileStatus := s.updatePendingSyncClusters(
+		ctx,
+		fedResource,
+		&collectedStatus,
+	); reconcileStatus != worker.StatusAllOK {
+		return reconcileStatus
+	}
 
 	if !dispatchOk {
 		return worker.StatusError
@@ -620,6 +662,87 @@ func (s *SyncController) setFederatedStatus(
 	})
 	if err != nil {
 		keyedLogger.Error(err, "Failed to set propagation status")
+		return worker.StatusError
+	}
+
+	return worker.StatusAllOK
+}
+
+func (s *SyncController) updatePendingSyncClusters(
+	ctx context.Context,
+	fedResource FederatedResource,
+	collectedStatus *status.CollectedPropagationStatus,
+) worker.Result {
+	keyedLogger := klog.FromContext(ctx)
+	if collectedStatus == nil {
+		return worker.StatusError
+	}
+	if len(collectedStatus.SyncOKClusters) == 0 {
+		keyedLogger.V(4).Info("No pending sync clusters update necessary")
+		return worker.StatusAllOK
+	}
+
+	obj := fedResource.Object()
+	objNamespace := obj.GetNamespace()
+	objName := obj.GetName()
+
+	// If the underlying resource has changed, attempt to retrieve and
+	// update it repeatedly.
+	err := wait.PollImmediateWithContext(ctx, 1*time.Second, 5*time.Second, func(ctx context.Context) (bool, error) {
+		var err error
+		obj, err = fedobjectadapters.Get(ctx, s.fedClient.CoreV1alpha1(), objNamespace, objName, metav1.GetOptions{})
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return false, errors.Wrapf(err, "failed to retrieve resource")
+			}
+			return true, nil
+		}
+
+		anno := obj.GetAnnotations()
+		if len(anno) == 0 || anno[common.PendingSyncClustersAnnotation] == "" {
+			fedResource.SetObject(obj)
+			return true, nil
+		}
+		var clusterNames []string
+		err = json.Unmarshal([]byte(anno[common.PendingSyncClustersAnnotation]), &clusterNames)
+		if err != nil {
+			keyedLogger.Error(err,
+				"Failed to unmarshal pending sync clusters annotation",
+				"pending-sync-clusters", anno[common.PendingSyncClustersAnnotation])
+			return false, nil
+		}
+		clusters := sets.New(clusterNames...)
+		clusters.Delete(collectedStatus.SyncOKClusters...)
+		if len(clusters) != 0 {
+			data, err := json.Marshal(sets.List(clusters))
+			if err != nil {
+				keyedLogger.Error(err,
+					"Failed to marshal pending sync clusters annotation",
+					"pending-sync-clusters", strings.Join(sets.List(clusters), ","))
+				return false, nil
+			}
+			anno[common.PendingSyncClustersAnnotation] = string(data)
+		} else {
+			delete(anno, common.PendingSyncClustersAnnotation)
+		}
+
+		obj.SetAnnotations(anno)
+		obj, err = fedobjectadapters.Update(ctx, s.fedClient.CoreV1alpha1(), obj, metav1.UpdateOptions{})
+		if err == nil {
+			fedResource.SetObject(obj)
+			keyedLogger.V(4).Info(
+				"Pending sync clusters changed",
+				"pending-sync-clusters", anno[common.PendingSyncClustersAnnotation],
+			)
+			return true, nil
+		}
+		if apierrors.IsConflict(err) {
+			return false, nil
+		}
+		return false, err
+	})
+	if err != nil {
+		keyedLogger.Error(err, "Failed to update pending sync clusters annotation")
 		return worker.StatusError
 	}
 

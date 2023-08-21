@@ -17,10 +17,14 @@ limitations under the License.
 package scheduler
 
 import (
+	"reflect"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/utils/pointer"
+
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
 func TestMatchedPolicyKey(t *testing.T) {
@@ -108,6 +112,124 @@ func TestMatchedPolicyKey(t *testing.T) {
 			}
 			if policy.Namespace != testCase.expectedPolicyNamespace {
 				t.Fatalf("policyNamespace = %v, but expectedPolicyNamespace = %v", policy.Namespace, testCase.expectedPolicyNamespace)
+			}
+		})
+	}
+}
+
+func TestUpdatePendingSyncClusters(t *testing.T) {
+	type args struct {
+		fedObject   fedcorev1a1.GenericFederatedObject
+		result      map[string]*int64
+		annotations map[string]string
+	}
+	tests := []struct {
+		name            string
+		args            args
+		want            bool
+		wantErr         bool
+		wantAnnotations map[string]string
+	}{
+		{
+			name: "no cluster, no annotation",
+			args: args{
+				fedObject:   &fedcorev1a1.FederatedObject{},
+				result:      nil,
+				annotations: map[string]string{},
+			},
+			want:            false,
+			wantErr:         false,
+			wantAnnotations: map[string]string{},
+		},
+		{
+			name: "1 old cluster, no annotation",
+			args: args{
+				fedObject: &fedcorev1a1.FederatedObject{Status: fedcorev1a1.GenericFederatedObjectStatus{
+					Clusters: []fedcorev1a1.PropagationStatus{
+						{
+							Cluster:                "1",
+							Status:                 fedcorev1a1.ClusterPropagationOK,
+							LastObservedGeneration: 1,
+						},
+					},
+				}},
+				result:      map[string]*int64{"1": new(int64)},
+				annotations: map[string]string{},
+			},
+			want:            true,
+			wantErr:         false,
+			wantAnnotations: map[string]string{common.PendingSyncClustersAnnotation: `["1"]`},
+		},
+		{
+			name: "1 old cluster, no update on annotation",
+			args: args{
+				fedObject: &fedcorev1a1.FederatedObject{Status: fedcorev1a1.GenericFederatedObjectStatus{
+					Clusters: []fedcorev1a1.PropagationStatus{
+						{
+							Cluster:                "1",
+							Status:                 fedcorev1a1.ClusterPropagationOK,
+							LastObservedGeneration: 1,
+						},
+					},
+				}},
+				result:      map[string]*int64{"1": new(int64)},
+				annotations: map[string]string{common.PendingSyncClustersAnnotation: `["1"]`},
+			},
+			want:            false,
+			wantErr:         false,
+			wantAnnotations: map[string]string{common.PendingSyncClustersAnnotation: `["1"]`},
+		},
+		{
+			name: "1 old cluster, replace cluster",
+			args: args{
+				fedObject: &fedcorev1a1.FederatedObject{Status: fedcorev1a1.GenericFederatedObjectStatus{
+					Clusters: []fedcorev1a1.PropagationStatus{
+						{
+							Cluster:                "1",
+							Status:                 fedcorev1a1.ClusterPropagationOK,
+							LastObservedGeneration: 1,
+						},
+					},
+				}},
+				result:      map[string]*int64{"2": new(int64)},
+				annotations: map[string]string{common.PendingSyncClustersAnnotation: `["1"]`},
+			},
+			want:            true,
+			wantErr:         false,
+			wantAnnotations: map[string]string{common.PendingSyncClustersAnnotation: `["1","2"]`},
+		},
+		{
+			name: "1 old cluster, add 1 cluster",
+			args: args{
+				fedObject: &fedcorev1a1.FederatedObject{Status: fedcorev1a1.GenericFederatedObjectStatus{
+					Clusters: []fedcorev1a1.PropagationStatus{
+						{
+							Cluster:                "1",
+							Status:                 fedcorev1a1.ClusterPropagationOK,
+							LastObservedGeneration: 1,
+						},
+					},
+				}},
+				result:      map[string]*int64{"1": new(int64), "0": new(int64)},
+				annotations: map[string]string{common.PendingSyncClustersAnnotation: `["1"]`},
+			},
+			want:            true,
+			wantErr:         false,
+			wantAnnotations: map[string]string{common.PendingSyncClustersAnnotation: `["0","1"]`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := UpdatePendingSyncClusters(tt.args.fedObject, tt.args.result, tt.args.annotations)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("UpdatePendingSyncClusters() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Fatalf("UpdatePendingSyncClusters() got = %v, want %v", got, tt.want)
+			}
+			if !reflect.DeepEqual(tt.args.annotations, tt.wantAnnotations) {
+				t.Fatalf("UpdatePendingSyncClusters() got = %v, want %v", tt.args.annotations, tt.wantAnnotations)
 			}
 		})
 	}

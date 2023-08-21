@@ -35,6 +35,7 @@ type CollectedPropagationStatus struct {
 	StatusMap        PropagationStatusMap
 	GenerationMap    map[string]int64
 	ResourcesUpdated bool
+	SyncOKClusters   []string
 }
 
 // SetFederatedStatus sets the conditions and clusters fields of the

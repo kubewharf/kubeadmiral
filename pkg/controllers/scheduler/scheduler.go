@@ -559,7 +559,7 @@ func (s *Scheduler) persistSchedulingResult(
 ) worker.Result {
 	logger := klog.FromContext(ctx)
 
-	schedulingResultsChanged, err := s.applySchedulingResult(ftc, fedObject, result, auxInfo)
+	schedulingResultsChanged, err := s.applySchedulingResult(ctx, ftc, fedObject, result, auxInfo)
 	if err != nil {
 		logger.Error(err, "Failed to apply scheduling result")
 		s.eventRecorder.Eventf(
@@ -643,11 +643,13 @@ type auxiliarySchedulingInformation struct {
 // applySchedulingResult updates the federated object with the scheduling result and the enableFollowerScheduling
 // annotation, it returns a bool indicating if the scheduling result has changed.
 func (s *Scheduler) applySchedulingResult(
+	ctx context.Context,
 	ftc *fedcorev1a1.FederatedTypeConfig,
 	fedObject fedcorev1a1.GenericFederatedObject,
 	result core.ScheduleResult,
 	auxInfo *auxiliarySchedulingInformation,
 ) (bool, error) {
+	logger := klog.FromContext(ctx)
 	objectModified := false
 	clusterSet := result.ClusterSet()
 
@@ -674,9 +676,22 @@ func (s *Scheduler) applySchedulingResult(
 
 	annotations := fedObject.GetAnnotations()
 	if annotations == nil {
-		annotations = make(map[string]string, 2)
+		annotations = make(map[string]string, 3)
 	}
 	annotationsModified := false
+	if objectModified {
+		updated, err := UpdatePendingSyncClusters(fedObject, result.SuggestedClusters, annotations)
+		if err != nil {
+			return false, err
+		}
+		if updated {
+			annotationsModified = true
+			logger.V(4).Info(
+				"Pending sync clusters changed",
+				"pending-sync-clusters", annotations[common.PendingSyncClustersAnnotation],
+			)
+		}
+	}
 
 	enableFollowerSchedulingAnnotationValue := common.AnnotationValueTrue
 	if !auxInfo.enableFollowerScheduling {

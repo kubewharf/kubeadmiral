@@ -18,10 +18,12 @@ package scheduler
 
 import (
 	"fmt"
+	"sort"
 
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
@@ -77,4 +79,43 @@ func UpdateReplicasOverride(
 
 	updated = fedObject.GetSpec().SetControllerOverrides(PrefixedGlobalSchedulerName, newOverrides)
 	return updated, nil
+}
+
+func UpdatePendingSyncClusters(
+	fedObject fedcorev1a1.GenericFederatedObject,
+	result map[string]*int64,
+	annotations map[string]string,
+) (bool, error) {
+	clusters := sets.Set[string]{}
+	for _, cluster := range fedObject.GetStatus().Clusters {
+		clusters.Insert(cluster.Cluster)
+	}
+	for cluster := range result {
+		clusters.Insert(cluster)
+	}
+	if value := annotations[common.PendingSyncClustersAnnotation]; len(value) > 0 {
+		var existingClusterNames []string
+		if err := json.Unmarshal([]byte(value), &existingClusterNames); err != nil {
+			return false, fmt.Errorf("failed to unmarshal %q to pending sync clusters: %w",
+				annotations[common.PendingSyncClustersAnnotation], err)
+		}
+		clusters.Insert(existingClusterNames...)
+	}
+	if clusters.Len() == 0 {
+		return false, nil
+	}
+
+	newClusters := sets.List(clusters)
+	sort.Slice(newClusters, func(i, j int) bool {
+		return newClusters[i] < newClusters[j]
+	})
+	data, err := json.Marshal(newClusters)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal %q to pending sync clusters annotation: %w", newClusters, err)
+	}
+	if value := string(data); annotations[common.PendingSyncClustersAnnotation] != value {
+		annotations[common.PendingSyncClustersAnnotation] = value
+		return true, nil
+	}
+	return false, nil
 }

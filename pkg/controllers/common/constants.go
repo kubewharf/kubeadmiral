@@ -100,6 +100,9 @@ const (
 	// DisableFollowingAnnotation indicates whether follower scheduling should be disabled for the follower object.
 	DisableFollowingAnnotation = DefaultPrefix + "disable-following"
 
+	// PendingSyncClustersAnnotation indicates clusters to be sync.
+	PendingSyncClustersAnnotation = InternalPrefix + "pending-sync-clusters"
+
 	// When a pod remains unschedulable beyond this threshold, it becomes eligible for automatic migration.
 	PodUnschedulableThresholdAnnotation = InternalPrefix + "pod-unschedulable-threshold"
 	// AutoMigrationInfoAnnotation contains auto migration information.
