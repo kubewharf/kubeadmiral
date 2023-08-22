@@ -26,6 +26,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
+	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
 type FrameworkOptions struct {
@@ -37,6 +38,7 @@ type Framework interface {
 	HostFedClient() fedclient.Interface
 	HostDynamicClient() dynamic.Interface
 	HostDiscoveryClient() discovery.DiscoveryInterface
+	FTCManager() informermanager.FederatedTypeConfigManager
 
 	Name() string
 	TestNamespace() *corev1.Namespace

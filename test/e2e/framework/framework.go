@@ -38,11 +38,14 @@ import (
 	"k8s.io/client-go/dynamic"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
+	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework/clusterprovider"
 )
 
@@ -83,6 +86,7 @@ var (
 	hostFedClient         fedclient.Interface
 	hostDynamicClient     dynamic.Interface
 	hostDiscoveryClient   discovery.DiscoveryInterface
+	ftcManager            informermanager.FederatedTypeConfigManager
 	clusterKubeClients    sync.Map
 	clusterFedClients     sync.Map
 	clusterDynamicClients sync.Map
@@ -93,7 +97,12 @@ func init() {
 	flag.StringVar(&master, "master", "", "The address of the host Kubernetes cluster.")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "The path of the kubeconfig for the host Kubernetes cluster.")
 	flag.Float64Var(&kubeAPIQPS, "kube-api-qps", 500, "The maximum QPS from each Kubernetes client.")
-	flag.IntVar(&kubeAPIBurst, "kube-api-burst", 1000, "The maximum burst for throttling requests from each Kubernetes client.")
+	flag.IntVar(
+		&kubeAPIBurst,
+		"kube-api-burst",
+		1000,
+		"The maximum burst for throttling requests from each Kubernetes client.",
+	)
 
 	flag.StringVar(&clusterProvider, "cluster-provider", "kwok", "The cluster provider [kwok,kind] to use.")
 	flag.StringVar(
@@ -102,11 +111,26 @@ func init() {
 		"kindest/node:v1.20.15@sha256:a32bf55309294120616886b5338f95dd98a2f7231519c7dedcec32ba29699394",
 		"The node image to use for creating kind test clusters, it should include the image digest.",
 	)
-	flag.StringVar(&kwokImagePrefix, "kwok-image-prefix", "registry.k8s.io", "The image prefix used by kwok to pull kubernetes images.")
-	flag.StringVar(&kwokKubeVersion, "kwok-kube-version", "v1.20.15", "The kubernetes version to be used for kwok member clusters")
+	flag.StringVar(
+		&kwokImagePrefix,
+		"kwok-image-prefix",
+		"registry.k8s.io",
+		"The image prefix used by kwok to pull kubernetes images.",
+	)
+	flag.StringVar(
+		&kwokKubeVersion,
+		"kwok-kube-version",
+		"v1.20.15",
+		"The kubernetes version to be used for kwok member clusters",
+	)
 
 	flag.BoolVar(&preserveClusters, "preserve-clusters", false, "If set, clusters created during testing are preserved")
-	flag.BoolVar(&preserveNamespace, "preserve-namespaces", false, "If set, namespaces created during testing are preserved")
+	flag.BoolVar(
+		&preserveNamespace,
+		"preserve-namespaces",
+		false,
+		"If set, namespaces created during testing are preserved",
+	)
 }
 
 var _ = ginkgo.SynchronizedBeforeSuite(
@@ -125,7 +149,7 @@ var _ = ginkgo.SynchronizedBeforeSuite(
 
 		return bytes
 	},
-	func(data []byte) {
+	func(ctx context.Context, data []byte) {
 		params := []string{}
 		err := json.Unmarshal(data, &params)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
@@ -150,6 +174,21 @@ var _ = ginkgo.SynchronizedBeforeSuite(
 		hostDiscoveryClient, err = discovery.NewDiscoveryClientForConfig(restConfig)
 		gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
 
+		fedInformerFactory := fedinformers.NewSharedInformerFactory(hostFedClient, 0)
+		manager := informermanager.NewInformerManager(
+			hostDynamicClient,
+			fedInformerFactory.Core().V1alpha1().FederatedTypeConfigs(),
+			nil,
+		)
+		ftcManager = manager
+
+		fedInformerFactory.Start(ctx.Done())
+		manager.Start(ctx)
+
+		if !cache.WaitForNamedCacheSync("host-informer-manager", ctx.Done(), ftcManager.HasSynced) {
+			ginkgo.Fail("failed to wait for host informer manager cache sync")
+		}
+
 		clusterKubeClients = sync.Map{}
 		clusterFedClients = sync.Map{}
 		clusterDynamicClients = sync.Map{}
@@ -170,7 +209,9 @@ var _ = ginkgo.SynchronizedBeforeSuite(
 				defaultClusterWaitTimeout,
 			)
 		default:
-			ginkgo.Fail(fmt.Sprintf("invalid cluster provider, %s or %s accepted", KwokClusterProvider, KindClusterProvider))
+			ginkgo.Fail(
+				fmt.Sprintf("invalid cluster provider, %s or %s accepted", KwokClusterProvider, KindClusterProvider),
+			)
 		}
 	},
 )
@@ -231,12 +272,19 @@ func (*framework) HostDiscoveryClient() discovery.DiscoveryInterface {
 	return hostDiscoveryClient
 }
 
+func (*framework) FTCManager() informermanager.FederatedTypeConfigManager {
+	return ftcManager
+}
+
 func (f *framework) TestNamespace() *corev1.Namespace {
 	gomega.Expect(f.namespace).ToNot(gomega.BeNil(), MessageUnexpectedError)
 	return f.namespace
 }
 
-func (f *framework) NewCluster(ctx context.Context, clusterModifiers ...ClusterModifier) (*fedcorev1a1.FederatedCluster, *corev1.Secret) {
+func (f *framework) NewCluster(
+	ctx context.Context,
+	clusterModifiers ...ClusterModifier,
+) (*fedcorev1a1.FederatedCluster, *corev1.Secret) {
 	clusterName := strings.ToLower(fmt.Sprintf("%s-%s", f.name, rand.String(12)))
 	cluster, secret := f.clusterProvider.NewCluster(ctx, clusterName)
 

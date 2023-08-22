@@ -52,7 +52,7 @@ var (
 	assertNoAutoMigrationDuration = 20 * time.Second
 )
 
-var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
+var _ = ginkgo.Describe("Auto Migration", autoMigrationTestLabel, func() {
 	f := framework.NewFramework("auto-migration", framework.FrameworkOptions{CreateNamespace: true})
 
 	var clusters []*fedcorev1a1.FederatedCluster
