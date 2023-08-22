@@ -148,11 +148,9 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	if isReadyStatusChanged(oldClusterStatus, readyStatus) {
 		switch readyStatus {
 		case corev1.ConditionTrue:
-			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster is ready")
-		case corev1.ConditionFalse:
-			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster is not ready")
-		case corev1.ConditionUnknown:
-			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster ready state is unknown")
+			c.eventRecorder.Eventf(cluster, corev1.EventTypeNormal, readyReason, readyMessage)
+		case corev1.ConditionFalse, corev1.ConditionUnknown:
+			c.eventRecorder.Eventf(cluster, corev1.EventTypeWarning, readyReason, readyMessage)
 		}
 	}
 
