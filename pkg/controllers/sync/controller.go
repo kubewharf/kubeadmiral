@@ -415,20 +415,28 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 		fedResource.RecordError("EnsureFinalizerError", errors.Wrap(err, "Failed to ensure finalizer"))
 		return worker.StatusError
 	}
-	syncClusters, selectedClusters, reconcileStatus := s.ensureSyncClusters(ctx, fedResource)
-	if reconcileStatus != worker.StatusAllOK {
-		return reconcileStatus
+	clustersToSync, selectedClusters, err := s.prepareToSync(ctx, fedResource)
+	if err != nil {
+		fedResource.RecordError("PrepareToSyncError", errors.Wrap(err, "Failed to prepare to sync"))
+		return worker.StatusError
 	}
-	return s.syncToClusters(ctx, fedResource, syncClusters, selectedClusters)
+	return s.syncToClusters(ctx, fedResource, clustersToSync, selectedClusters)
 }
 
-func (s *SyncController) ensureSyncClusters(
+// prepareToSync performs the following preprocessing steps required to sync federated objects to selected member clusters:
+//  1. Compute the list of selected member clusters from the placement field.
+//  2. Compute the list of member clusters that requires an operation to be dispatched.
+//  3. For newly selected clusters, update the PropagationStatus for these clusters to PendingCreate.
+//
+// The PendingCreate status allows us to safely skip checking of clusters during object deletion when PropagationStatus is
+// empty. If not, it might be that the object was created but we failed to update the federated object's status previously.
+func (s *SyncController) prepareToSync(
 	ctx context.Context,
 	fedResource FederatedResource,
 ) (
-	syncClusters []*fedcorev1a1.FederatedCluster,
+	requireSync []*fedcorev1a1.FederatedCluster,
 	selectedClusters sets.Set[string],
-	result worker.Result,
+	err error,
 ) {
 	keyedLogger := klog.FromContext(ctx)
 
@@ -438,38 +446,42 @@ func (s *SyncController) ensureSyncClusters(
 			string(fedcorev1a1.ClusterRetrievalFailed),
 			errors.Wrap(err, "Failed to retrieve list of clusters"),
 		)
-		return nil, nil, s.setFederatedStatus(ctx, fedResource, fedcorev1a1.ClusterRetrievalFailed, nil)
+		result := s.setFederatedStatus(ctx, fedResource, fedcorev1a1.ClusterRetrievalFailed, nil)
+		if result != worker.StatusAllOK {
+			keyedLogger.Error(nil, "Failed to set federated status", "result", result.String())
+		}
+		return nil, nil, err
 	}
-	joined := make(map[string]*fedcorev1a1.FederatedCluster, len(clusters))
+	clusterMap := make(map[string]*fedcorev1a1.FederatedCluster, len(clusters))
 	for _, cluster := range clusters {
-		joined[cluster.Name] = cluster
+		clusterMap[cluster.Name] = cluster
 	}
+
 	selectedClusterNames := fedResource.ComputePlacement(clusters)
 	pendingCreateClusters := selectedClusterNames.Clone()
 	status := fedResource.Object().GetStatus()
 	for _, cluster := range status.Clusters {
 		pendingCreateClusters.Delete(cluster.Cluster)
-		if cluster, exist := joined[cluster.Cluster]; exist {
-			syncClusters = append(syncClusters, cluster)
+		if cluster, exist := clusterMap[cluster.Cluster]; exist {
+			requireSync = append(requireSync, cluster)
 		}
 	}
 
 	if pendingCreateClusters.Len() == 0 {
-		keyedLogger.V(4).Info("No pending create necessary")
-		return syncClusters, selectedClusterNames, worker.StatusAllOK
+		return requireSync, selectedClusterNames, nil
 	}
 	for cluster := range pendingCreateClusters {
-		if cluster, exist := joined[cluster]; exist {
+		if cluster, exist := clusterMap[cluster]; exist && cluster.GetDeletionTimestamp().IsZero() {
 			status.Clusters = append(status.Clusters, fedcorev1a1.PropagationStatus{
 				Cluster: cluster.Name,
 				Status:  fedcorev1a1.PendingCreate,
 			})
-			syncClusters = append(syncClusters, cluster)
+			requireSync = append(requireSync, cluster)
 		}
 	}
 
-	keyedLogger.V(4).Info("Update pending create clusters",
-		"pending-create-clusters", strings.Join(sets.List(pendingCreateClusters), ","))
+	keyedLogger.V(1).Info("Update clusters pending object creation",
+		"clusters", strings.Join(sets.List(pendingCreateClusters), ","))
 	obj := fedResource.Object()
 	objNamespace := obj.GetNamespace()
 	objName := obj.GetName()
@@ -494,9 +506,9 @@ func (s *SyncController) ensureSyncClusters(
 	})
 	if err != nil {
 		keyedLogger.Error(err, "Failed to set propagation status")
-		return nil, nil, worker.StatusError
+		return nil, nil, err
 	}
-	return syncClusters, selectedClusterNames, worker.StatusAllOK
+	return requireSync, selectedClusterNames, nil
 }
 
 // syncToClusters ensures that the state of the given object is
@@ -801,19 +813,19 @@ func (s *SyncController) ensureRemovalFromClusters(ctx context.Context, fedResou
 // yet been cached.
 func (s *SyncController) checkObjectRemovedFromAllClusters(ctx context.Context, fedResource FederatedResource) error {
 	keyedLogger := klog.FromContext(ctx)
-	syncClusters, syncClusterNames, err := s.getSyncClusters(fedResource)
+	syncedClusters, syncedClusterNames, err := s.getSyncedClusters(fedResource)
 	if err != nil {
 		return err
 	}
 
-	keyedLogger.V(4).Info("Check object removed from clusters", "sync-clusters", strings.Join(syncClusterNames, ","))
+	keyedLogger.V(4).Info("Check object removed from clusters", "clusters", strings.Join(syncedClusterNames, ","))
 	dispatcher := dispatch.NewCheckUnmanagedDispatcher(
 		s.getClusterClient,
 		fedResource.TargetGVR(),
 		fedResource.TargetName(),
 	)
 	unreadyClusters := []string{}
-	for _, cluster := range syncClusters {
+	for _, cluster := range syncedClusters {
 		if !clusterutil.IsClusterReady(&cluster.Status) {
 			unreadyClusters = append(unreadyClusters, cluster.Name)
 			continue
@@ -845,16 +857,16 @@ func (s *SyncController) handleDeletionInClusters(
 	targetGVR := fedResource.TargetGVR()
 	targetQualifiedName := fedResource.TargetName()
 
-	syncClusters, syncClusterNames, err := s.getSyncClusters(fedResource)
+	syncedClusters, syncedClusterNames, err := s.getSyncedClusters(fedResource)
 	if err != nil {
 		return false, err
 	}
 
-	keyedLogger.V(4).Info("Handle deletion in clusters", "sync-clusters", strings.Join(syncClusterNames, ","))
+	keyedLogger.V(4).Info("Handle deletion in clusters", "clusters", strings.Join(syncedClusterNames, ","))
 	dispatcher := dispatch.NewUnmanagedDispatcher(s.getClusterClient, targetGVR, targetQualifiedName)
 	retrievalFailureClusters := []string{}
 	unreadyClusters := []string{}
-	for _, cluster := range syncClusters {
+	for _, cluster := range syncedClusters {
 		clusterName := cluster.Name
 
 		if !clusterutil.IsClusterReady(&cluster.Status) {
@@ -898,28 +910,28 @@ func (s *SyncController) handleDeletionInClusters(
 	return ok, nil
 }
 
-func (s *SyncController) getSyncClusters(
+func (s *SyncController) getSyncedClusters(
 	fedResource FederatedResource,
 ) ([]*fedcorev1a1.FederatedCluster, []string, error) {
 	clusters, err := s.fedInformerManager.GetJoinedClusters()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get a list of clusters: %w", err)
+		return nil, nil, fmt.Errorf("failed to get the list of joined clusters: %w", err)
 	}
-	joined := make(map[string]*fedcorev1a1.FederatedCluster, len(clusters))
+	clusterMap := make(map[string]*fedcorev1a1.FederatedCluster, len(clusters))
 	for _, cluster := range clusters {
-		joined[cluster.Name] = cluster
+		clusterMap[cluster.Name] = cluster
 	}
 
 	status := fedResource.Object().GetStatus()
-	syncClusters := make([]*fedcorev1a1.FederatedCluster, 0, len(status.Clusters))
-	syncClusterNames := make([]string, 0, len(status.Clusters))
+	syncedClusters := make([]*fedcorev1a1.FederatedCluster, 0, len(status.Clusters))
+	syncedClusterNames := make([]string, 0, len(status.Clusters))
 	for _, cluster := range status.Clusters {
-		if cluster, exists := joined[cluster.Cluster]; exists {
-			syncClusters = append(syncClusters, cluster)
-			syncClusterNames = append(syncClusterNames, cluster.Name)
+		if cluster, exists := clusterMap[cluster.Cluster]; exists {
+			syncedClusters = append(syncedClusters, cluster)
+			syncedClusterNames = append(syncedClusterNames, cluster.Name)
 		}
 	}
-	return syncClusters, syncClusterNames, nil
+	return syncedClusters, syncedClusterNames, nil
 }
 
 func (s *SyncController) ensureFinalizer(ctx context.Context, fedResource FederatedResource) error {
