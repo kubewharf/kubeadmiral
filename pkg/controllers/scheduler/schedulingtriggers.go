@@ -372,7 +372,6 @@ func getResourceRequest(
 
 func getPolicySchedulingContentHash(policySpec *fedcorev1a1.PropagationPolicySpec) (string, error) {
 	policySpec = policySpec.DeepCopy()
-	policySpec.DisableFollowerScheduling = false
 	policySpec.AutoMigration = nil
 	return hashResult(policySpec)
 }
