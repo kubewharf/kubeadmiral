@@ -161,6 +161,7 @@ var _ = ginkgo.Describe("Auto Migration", autoMigrationTestLabel, func() {
 						ctx, dp.Name, metav1.GetOptions{},
 					)
 					gomega.Expect(err).NotTo(gomega.HaveOccurred())
+					g.Expect(clusterDp.Status).ToNot(gomega.BeNil())
 					g.Expect(clusterDp.Status.ReadyReplicas).To(gomega.Equal(replicasPerCluster))
 				}).WithPolling(defaultPollingInterval).Should(gomega.Succeed())
 			})
