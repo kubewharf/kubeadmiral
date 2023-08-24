@@ -863,7 +863,7 @@ func (s *SyncController) handleDeletionInClusters(
 	}
 
 	keyedLogger.V(4).Info("Handle deletion in clusters", "clusters", strings.Join(syncedClusterNames, ","))
-	dispatcher := dispatch.NewUnmanagedDispatcher(s.getClusterClient, targetGVR, targetQualifiedName)
+	dispatcher := dispatch.NewUnmanagedDispatcher(s.getClusterClient, targetGVR, targetQualifiedName, s.metrics)
 	retrievalFailureClusters := []string{}
 	unreadyClusters := []string{}
 	for _, cluster := range syncedClusters {

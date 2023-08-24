@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -45,7 +46,11 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
 
-const IndexRolloutPlans = "federation_placement_rollout"
+const (
+	IndexRolloutPlans    = "federation_placement_rollout"
+	clusterOperationOk   = "ok"
+	clusterOperationFail = "fail"
+)
 
 // FederatedResourceForDispatch is the subset of the FederatedResource
 // interface required for dispatching operations to managed resources.
@@ -117,7 +122,7 @@ func NewManagedDispatcher(
 		metrics:               metrics,
 	}
 	d.dispatcher = newOperationDispatcher(clientAccessor, d)
-	d.unmanagedDispatcher = newUnmanagedDispatcher(d.dispatcher, d, fedResource.TargetGVR(), fedResource.TargetName())
+	d.unmanagedDispatcher = newUnmanagedDispatcher(d.dispatcher, d, fedResource.TargetGVR(), fedResource.TargetName(), metrics)
 	return d
 }
 
@@ -164,17 +169,35 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "create"
 	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client dynamic.Interface) bool {
+		startTime := time.Now()
+		result := true
+		defer func() {
+			metricResult := clusterOperationOk
+			if !result {
+				metricResult = clusterOperationFail
+			}
+			d.metrics.Duration("dispatch_operation_duration_seconds", startTime,
+				stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
+				stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
+				stats.Tag{Name: "resource", Value: d.fedResource.TargetGVK().String()},
+				stats.Tag{Name: "operation", Value: op},
+				stats.Tag{Name: "cluster", Value: clusterName},
+				stats.Tag{Name: "result", Value: metricResult},
+			)
+		}()
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		d.recordEvent(clusterName, op, "Creating")
 
 		obj, err := d.fedResource.ObjectForCluster(clusterName)
 		if err != nil {
-			return d.recordOperationError(ctx, fedcorev1a1.ComputeResourceFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.ComputeResourceFailed, clusterName, op, err)
+			return result
 		}
 
 		err = d.fedResource.ApplyOverrides(obj, clusterName)
 		if err != nil {
-			return d.recordOperationError(ctx, fedcorev1a1.ApplyOverridesFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.ApplyOverridesFailed, clusterName, op, err)
+			return result
 		}
 
 		recordPropagatedLabelsAndAnnotations(obj)
@@ -189,7 +212,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		if err == nil {
 			version := propagatedversion.ObjectVersion(createdObj)
 			d.recordVersion(clusterName, version)
-			return true
+			return result
 		}
 
 		// TODO Figure out why attempting to create a namespace that
@@ -197,7 +220,8 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		alreadyExists := apierrors.IsAlreadyExists(err) ||
 			d.fedResource.TargetGVK() == corev1.SchemeGroupVersion.WithKind(common.NamespaceKind) && apierrors.IsServerTimeout(err)
 		if !alreadyExists {
-			return d.recordOperationError(ctxWithTimeout, fedcorev1a1.CreationFailed, clusterName, op, err)
+			result = d.recordOperationError(ctxWithTimeout, fedcorev1a1.CreationFailed, clusterName, op, err)
+			return result
 		}
 
 		// Attempt to update the existing resource to ensure that it
@@ -207,17 +231,19 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retrieve object potentially requiring adoption")
-			return d.recordOperationError(ctxWithTimeout, fedcorev1a1.RetrievalFailed, clusterName, op, wrappedErr)
+			result = d.recordOperationError(ctxWithTimeout, fedcorev1a1.RetrievalFailed, clusterName, op, wrappedErr)
+			return result
 		}
 
 		if d.skipAdoptingResources {
-			return d.recordOperationError(
+			result = d.recordOperationError(
 				ctxWithTimeout,
 				fedcorev1a1.AlreadyExists,
 				clusterName,
 				op,
 				errors.Errorf("Resource pre-exist in cluster"),
 			)
+			return result
 		}
 
 		d.recordError(
@@ -231,7 +257,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 			adoption.AddAdoptedAnnotation(obj)
 		}
 		d.Update(ctx, clusterName, obj)
-		return true
+		return result
 	})
 }
 
@@ -241,6 +267,22 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "update"
 	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client dynamic.Interface) bool {
+		startTime := time.Now()
+		result := true
+		defer func() {
+			metricResult := clusterOperationOk
+			if !result {
+				metricResult = clusterOperationFail
+			}
+			d.metrics.Duration("dispatch_operation_duration_seconds", startTime,
+				stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
+				stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
+				stats.Tag{Name: "resource", Value: d.fedResource.TargetGVK().String()},
+				stats.Tag{Name: "operation", Value: op},
+				stats.Tag{Name: "cluster", Value: clusterName},
+				stats.Tag{Name: "result", Value: metricResult},
+			)
+		}()
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		if managedlabel.IsExplicitlyUnmanaged(clusterObj) {
 			err := errors.Errorf(
@@ -248,17 +290,20 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 				managedlabel.ManagedByKubeAdmiralLabelKey,
 				managedlabel.UnmanagedByKubeAdmiralLabelValue,
 			)
-			return d.recordOperationError(ctx, fedcorev1a1.ManagedLabelFalse, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.ManagedLabelFalse, clusterName, op, err)
+			return result
 		}
 
 		obj, err := d.fedResource.ObjectForCluster(clusterName)
 		if err != nil {
-			return d.recordOperationError(ctx, fedcorev1a1.ComputeResourceFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.ComputeResourceFailed, clusterName, op, err)
+			return result
 		}
 
 		err = d.fedResource.ApplyOverrides(obj, clusterName)
 		if err != nil {
-			return d.recordOperationError(ctx, fedcorev1a1.ApplyOverridesFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.ApplyOverridesFailed, clusterName, op, err)
+			return result
 		}
 
 		recordPropagatedLabelsAndAnnotations(obj)
@@ -266,25 +311,28 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 		err = RetainOrMergeClusterFields(d.fedResource.TargetGVK(), obj, clusterObj)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain fields")
-			return d.recordOperationError(ctx, fedcorev1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+			result = d.recordOperationError(ctx, fedcorev1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+			return result
 		}
 
 		err = retainReplicas(obj, clusterObj, d.fedResource.Object(), d.fedResource.TypeConfig().Spec.PathDefinition.ReplicasSpec)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain replicas")
-			return d.recordOperationError(ctx, fedcorev1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+			result = d.recordOperationError(ctx, fedcorev1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+			return result
 		}
 
 		version, err := d.fedResource.VersionForCluster(clusterName)
 		if err != nil {
-			return d.recordOperationError(ctx, fedcorev1a1.VersionRetrievalFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.VersionRetrievalFailed, clusterName, op, err)
+			return result
 		}
 
 		if !propagatedversion.ObjectNeedsUpdate(obj, clusterObj, version, d.fedResource.TypeConfig()) {
 			// Resource is current, we still record version in dispatcher
 			// so that federated status can be set with cluster resource generation
 			d.recordVersion(clusterName, version)
-			return true
+			return result
 		}
 
 		// Only record an event if the resource is not current
@@ -295,12 +343,13 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			ctx, obj, metav1.UpdateOptions{},
 		)
 		if err != nil {
-			return d.recordOperationError(ctx, fedcorev1a1.UpdateFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.UpdateFailed, clusterName, op, err)
+			return result
 		}
 		d.setResourcesUpdated()
 		version = propagatedversion.ObjectVersion(obj)
 		d.recordVersion(clusterName, version)
-		return true
+		return result
 	})
 }
 
@@ -339,6 +388,14 @@ func (d *managedDispatcherImpl) recordOperationError(
 ) bool {
 	d.recordError(ctx, clusterName, operation, err)
 	d.RecordStatus(clusterName, propStatus)
+	d.metrics.Counter("dispatch_operation_error_total", 1,
+		stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
+		stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
+		stats.Tag{Name: "resource", Value: d.fedResource.TargetGVK().String()},
+		stats.Tag{Name: "operation", Value: operation},
+		stats.Tag{Name: "cluster", Value: clusterName},
+		stats.Tag{Name: "error_type", Value: string(propStatus)},
+	)
 	return false
 }
 
