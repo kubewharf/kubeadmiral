@@ -22,6 +22,7 @@ package dispatch
 
 import (
 	"context"
+	"time"
 
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -34,6 +35,7 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
@@ -59,15 +61,17 @@ type unmanagedDispatcherImpl struct {
 	targetName common.QualifiedName
 
 	recorder dispatchRecorder
+	metrics  stats.Metrics
 }
 
 func NewUnmanagedDispatcher(
 	clientAccessor clientAccessorFunc,
 	targetGVR schema.GroupVersionResource,
 	targetName common.QualifiedName,
+	metrics stats.Metrics,
 ) UnmanagedDispatcher {
 	dispatcher := newOperationDispatcher(clientAccessor, nil)
-	return newUnmanagedDispatcher(dispatcher, nil, targetGVR, targetName)
+	return newUnmanagedDispatcher(dispatcher, nil, targetGVR, targetName, metrics)
 }
 
 func newUnmanagedDispatcher(
@@ -75,12 +79,14 @@ func newUnmanagedDispatcher(
 	recorder dispatchRecorder,
 	targetGVR schema.GroupVersionResource,
 	targetName common.QualifiedName,
+	metrics stats.Metrics,
 ) *unmanagedDispatcherImpl {
 	return &unmanagedDispatcherImpl{
 		dispatcher: dispatcher,
 		targetGVR:  targetGVR,
 		targetName: targetName,
 		recorder:   recorder,
+		metrics:    metrics,
 	}
 }
 
@@ -93,6 +99,24 @@ func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string
 	const op = "delete"
 	const opContinuous = "Deleting"
 	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client dynamic.Interface) bool {
+		startTime := time.Now()
+		result := true
+		defer func() {
+			if clusterObj != nil {
+				metricResult := clusterOperationOk
+				if !result {
+					metricResult = clusterOperationFail
+				}
+				d.metrics.Duration("dispatch_operation_duration_seconds", startTime,
+					stats.Tag{Name: "namespace", Value: clusterObj.GetName()},
+					stats.Tag{Name: "name", Value: clusterObj.GetNamespace()},
+					stats.Tag{Name: "resource", Value: clusterObj.GroupVersionKind().String()},
+					stats.Tag{Name: "operation", Value: op},
+					stats.Tag{Name: "cluster", Value: clusterName},
+					stats.Tag{Name: "result", Value: metricResult},
+				)
+			}
+		}()
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		targetName := d.targetName
 		keyedLogger.V(1).Info("Deleting target object in cluster")
@@ -111,7 +135,8 @@ func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string
 			} else {
 				d.recorder.recordOperationError(ctx, fedcorev1a1.DeletionFailed, clusterName, op, err)
 			}
-			return false
+			result = false
+			return result
 		}
 		if needUpdate {
 			clusterObj, err = client.Resource(d.targetGVR).Namespace(targetName.Namespace).Update(
@@ -129,13 +154,14 @@ func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string
 				} else {
 					d.recorder.recordOperationError(ctx, fedcorev1a1.DeletionFailed, clusterName, op, err)
 				}
-				return false
+				result = false
+				return result
 			}
 		}
 
 		// Avoid deleting a deleted resource again.
 		if clusterObj.GetDeletionTimestamp() != nil {
-			return true
+			return result
 		}
 
 		// When deleting some resources (e.g. batch/v1.Job, batch/v1beta1.CronJob) without setting PropagationPolicy in DeleteOptions,
@@ -161,9 +187,10 @@ func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string
 			} else {
 				d.recorder.recordOperationError(ctx, fedcorev1a1.DeletionFailed, clusterName, op, err)
 			}
-			return false
+			result = false
+			return result
 		}
-		return true
+		return result
 	})
 }
 
