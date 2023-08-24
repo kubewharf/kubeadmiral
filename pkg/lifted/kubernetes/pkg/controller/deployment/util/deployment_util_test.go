@@ -267,8 +267,6 @@ func TestFindNewReplicaSet(t *testing.T) {
 	}
 }
 
-
-
 func newString(s string) *string {
 	return &s
 }

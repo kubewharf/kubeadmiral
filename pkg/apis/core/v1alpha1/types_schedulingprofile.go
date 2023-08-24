@@ -108,6 +108,11 @@ const (
 	WebhookPlugin PluginType = "Webhook"
 )
 
+const (
+	// DefaultSchedulerName defines the name of default scheduler.
+	DefaultSchedulerName = "default-scheduler"
+)
+
 // PluginConfig specifies arguments that should be passed to a plugin at the time of initialization.
 // A plugin that is invoked at multiple extension points is initialized once. Args can have arbitrary structure.
 // It is up to the plugin to process these Args.
@@ -117,4 +122,11 @@ type PluginConfig struct {
 	// Args defines the arguments passed to the plugins at the time of initialization. Args can have arbitrary structure.
 	// +optional
 	Args apiextensionsv1.JSON `json:"args"`
+}
+
+func (s *SchedulingProfile) ProfileName() string {
+	if s == nil {
+		return DefaultSchedulerName
+	}
+	return s.Name
 }

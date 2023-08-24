@@ -111,5 +111,7 @@ func (s *Scheduler) createFramework(
 		registry,
 		handle,
 		enabledPlugins,
+		profile.ProfileName(),
+		s.metrics,
 	)
 }
