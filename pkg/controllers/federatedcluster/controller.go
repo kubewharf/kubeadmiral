@@ -220,6 +220,12 @@ func (c *FederatedClusterController) reconcile(
 	cluster = cluster.DeepCopy()
 
 	if cluster.GetDeletionTimestamp() != nil {
+		c.metrics.Store("cluster_deletion_state", 1,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name},
+			stats.Tag{Name: "status", Value: "deleting"})
+		c.metrics.Store("cluster_deletion_state", 0,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name},
+			stats.Tag{Name: "status", Value: "deleted"})
 		logger.V(2).Info("Handle terminating cluster")
 		if err := c.handleTerminatingCluster(ctx, cluster); err != nil {
 			if apierrors.IsConflict(err) {
@@ -446,6 +452,12 @@ func (c *FederatedClusterController) handleTerminatingCluster(
 		return fmt.Errorf("failed to update cluster for finalizer removal: %w", err)
 	}
 
+	c.metrics.Store("cluster_deletion_state", 0,
+		stats.Tag{Name: "cluster_name", Value: cluster.Name},
+		stats.Tag{Name: "status", Value: "deleting"})
+	c.metrics.Store("cluster_deletion_state", 1,
+		stats.Tag{Name: "cluster_name", Value: cluster.Name},
+		stats.Tag{Name: "status", Value: "deleted"})
 	return nil
 }
 

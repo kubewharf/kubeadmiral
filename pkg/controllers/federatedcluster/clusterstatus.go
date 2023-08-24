@@ -38,6 +38,8 @@ import (
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 )
 
 const (
@@ -63,6 +65,10 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
 ) (retryAfter time.Duration, err error) {
+	startTime := time.Now()
+	defer func() {
+		c.recordClusterStatus(cluster, startTime)
+	}()
 	logger := klog.FromContext(ctx)
 
 	clusterKubeClient, exists := c.federatedInformerManager.GetClusterKubeClient(cluster.Name)
@@ -307,4 +313,58 @@ func shouldCollectClusterStatus(cluster *fedcorev1a1.FederatedCluster, collectIn
 
 	nextCollectTime := readyCond.LastProbeTime.Time.Add(collectInterval)
 	return time.Now().After(nextCollectTime)
+}
+
+func (c *FederatedClusterController) recordClusterStatus(cluster *fedcorev1a1.FederatedCluster, startTime time.Time) {
+	if clusterutil.IsClusterReady(&cluster.Status) {
+		c.metrics.Store("cluster_ready_state",
+			1,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	} else {
+		c.metrics.Store("cluster_ready_state",
+			0,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
+	if clusterutil.IsClusterOffline(&cluster.Status) {
+		c.metrics.Store("cluster_offline_state",
+			1,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	} else {
+		c.metrics.Store("cluster_offline_state",
+			0,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
+	if clusterutil.IsClusterJoined(&cluster.Status) {
+		c.metrics.Store("cluster_joined_state",
+			1,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	} else {
+		c.metrics.Store("cluster_joined_state",
+			0,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
+	c.metrics.Duration("cluster_sync_status_duration",
+		startTime,
+		stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	if cluster.Status.Resources.Allocatable != nil {
+		c.metrics.Store("cluster_memory_allocatable_bytes",
+			cluster.Status.Resources.Allocatable.Memory().AsApproximateFloat64(),
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+		c.metrics.Store("cluster_cpu_allocatable_number",
+			cluster.Status.Resources.Allocatable.Cpu().AsApproximateFloat64(),
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
+	if cluster.Status.Resources.Available != nil {
+		c.metrics.Store("cluster_memory_available_bytes",
+			cluster.Status.Resources.Available.Memory().AsApproximateFloat64(),
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+		c.metrics.Store("cluster_cpu_available_number",
+			cluster.Status.Resources.Available.Cpu().AsApproximateFloat64(),
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
+	if cluster.Status.Resources.SchedulableNodes != nil {
+		c.metrics.Store("cluster_schedulable_nodes_total",
+			*cluster.Status.Resources.SchedulableNodes,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
 }
