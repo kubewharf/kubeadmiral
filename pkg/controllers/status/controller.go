@@ -572,7 +572,7 @@ func (s *StatusController) clusterStatuses(
 			resourceClusterStatus.Error = errMsg
 			clusterStatus = append(clusterStatus, resourceClusterStatus)
 			errList = append(errList, fmt.Sprintf("cluster-name: %s, error-info: %s", clusterName, errMsg))
-			s.recordStatusCollectionError(targetQualifiedName.Name, targetQualifiedName.Namespace, targetGVK.String(), clusterName)
+			s.recordStatusCollectionError(targetQualifiedName.Name, targetQualifiedName.Namespace, clusterName, targetGVK)
 			continue
 		}
 		if !exist {
@@ -611,7 +611,7 @@ func (s *StatusController) clusterStatuses(
 		if err != nil {
 			keyedLogger.WithValues("cluster-name", clusterName).
 				Error(err, "Failed to marshal collected fields")
-			s.recordStatusCollectionError(targetQualifiedName.Name, targetQualifiedName.Namespace, targetGVK.String(), clusterName)
+			s.recordStatusCollectionError(targetQualifiedName.Name, targetQualifiedName.Namespace, clusterName, targetGVK)
 			continue
 		}
 
@@ -633,8 +633,10 @@ func (s *StatusController) clusterStatuses(
 		s.metrics.Duration("status_collection_duration_seconds", startTime, []stats.Tag{
 			{Name: "name", Value: targetQualifiedName.Name},
 			{Name: "namespace", Value: targetQualifiedName.Namespace},
-			{Name: "resource", Value: targetGVK.String()},
 			{Name: "cluster", Value: clusterName},
+			{Name: "group", Value: targetGVK.Group},
+			{Name: "version", Value: targetGVK.Version},
+			{Name: "kind", Value: targetGVK.Kind},
 		}...)
 	}
 
@@ -652,12 +654,14 @@ func (s *StatusController) clusterStatuses(
 	return clusterStatus
 }
 
-func (s *StatusController) recordStatusCollectionError(name, namespace, resourceGvk, cluster string) {
+func (s *StatusController) recordStatusCollectionError(name, namespace, cluster string, targetGVK schema.GroupVersionKind) {
 	s.metrics.Counter("status_collection_error_total", 1, []stats.Tag{
 		{Name: "name", Value: name},
 		{Name: "namespace", Value: namespace},
-		{Name: "resource", Value: resourceGvk},
 		{Name: "cluster", Value: cluster},
+		{Name: "group", Value: targetGVK.Group},
+		{Name: "version", Value: targetGVK.Version},
+		{Name: "kind", Value: targetGVK.Kind},
 	}...)
 }
 
