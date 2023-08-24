@@ -219,6 +219,7 @@ type PropagationStatusType string
 const (
 	ClusterPropagationOK PropagationStatusType = "OK"
 	WaitingForRemoval    PropagationStatusType = "WaitingForRemoval"
+	PendingCreate        PropagationStatusType = "PendingCreate"
 
 	// Cluster-specific errors
 

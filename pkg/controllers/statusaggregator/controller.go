@@ -159,11 +159,11 @@ func NewStatusAggregatorController(
 			return
 		}
 
-		a.worker.Enqueue(reconcileKey{
+		a.worker.EnqueueWithDelay(reconcileKey{
 			gvk:       gvk,
 			namespace: unsObj.GetNamespace(),
 			name:      unsObj.GetName(),
-		})
+		}, a.objectEnqueueDelay)
 	})
 	if _, err := a.fedObjectInformer.Informer().AddEventHandler(genericFederatedObjectHandler); err != nil {
 		return nil, fmt.Errorf("failed to create federated informer: %w", err)
@@ -324,7 +324,7 @@ func (a *StatusAggregator) reconcile(ctx context.Context, key reconcileKey) (sta
 		key.namespace,
 		federatedName,
 	)
-	if err != nil {
+	if err != nil && !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to get object from store")
 		return worker.StatusError
 	}
@@ -384,6 +384,9 @@ func (a *StatusAggregator) clusterObjs(ctx context.Context, key reconcileKey) (m
 	for _, cluster := range clusters {
 		clusterObj, err := a.getObjectFromStore(key, cluster.Name)
 		if err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
 			logger.Error(err, "Failed to get object from cluster", "cluster", cluster.Name)
 			return nil, fmt.Errorf("failed to get object from cluster: %w", err)
 		}

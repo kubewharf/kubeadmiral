@@ -306,18 +306,19 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 	}
 
 	if fedObject != nil {
-		// To account for the very small chance of name collision, we verify the owner reference before proceeding.
-		ownedbySource := false
-
-		for _, ref := range fedObject.GetOwnerReferences() {
-			if schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind) == key.gvk &&
-				sourceObject.GetName() == ref.Name {
-				ownedbySource = true
+		var owner *metav1.OwnerReference
+		ownerRefs := fedObject.GetOwnerReferences()
+		for i, ref := range ownerRefs {
+			if ref.Controller != nil && *ref.Controller {
+				owner = &ownerRefs[i]
 				break
 			}
 		}
 
-		if !ownedbySource {
+		// To account for the very small chance of name collision, we verify the owner reference before proceeding.
+		// Note that we allow the adoption of orphaned federated objects.
+		if owner != nil &&
+			(schema.FromAPIVersionAndKind(owner.APIVersion, owner.Kind) != key.gvk || owner.Name != sourceObject.GetName()) {
 			logger.Error(nil, "Federated object not owned by source object, possible name collision detected")
 			return worker.StatusErrorNoRetry
 		}

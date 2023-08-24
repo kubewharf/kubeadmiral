@@ -176,8 +176,8 @@ func getCurrentReplicasFromObject(
 		}
 
 		for _, patch := range override.Patches {
-			if patch.Op == replicasPath && (patch.Op == overridePatchOpReplace || patch.Op == "") {
-				var replicas *int64
+			if patch.Path == replicasPath && (patch.Op == overridePatchOpReplace || patch.Op == "") {
+				replicas := new(int64)
 				if err := json.Unmarshal(patch.Value.Raw, replicas); err != nil {
 					continue
 				}

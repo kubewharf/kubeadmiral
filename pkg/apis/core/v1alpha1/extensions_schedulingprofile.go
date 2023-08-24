@@ -28,6 +28,7 @@ func GetDefaultEnabledPlugins() *fedcore.EnabledPlugins {
 		names.ClusterResourcesFit,
 		names.PlacementFilter,
 		names.ClusterAffinity,
+		names.ClusterReady,
 	}
 
 	scorePlugins := []string{

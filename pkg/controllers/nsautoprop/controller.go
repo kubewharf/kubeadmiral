@@ -28,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	corev1informers "k8s.io/client-go/informers/core/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -282,7 +281,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		string(adoption.ConflictResolutionAdopt),
 	)
 	if err != nil {
-		utilruntime.HandleError(err)
+		keyedLogger.Error(err, "Failed to ensure annotation")
 		return worker.StatusError
 	}
 	needsUpdate = needsUpdate || isDirty
@@ -294,7 +293,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		string(orphaning.OrphanManagedResourcesAdopted),
 	)
 	if err != nil {
-		utilruntime.HandleError(err)
+		keyedLogger.Error(err, "Failed to ensure annotation")
 		return worker.StatusError
 	}
 	needsUpdate = needsUpdate || isDirty
@@ -307,7 +306,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		typeConfig.GetControllers(),
 	)
 	if err != nil {
-		utilruntime.HandleError(err)
+		keyedLogger.Error(err, "Failed to update pending controllers")
 		return worker.StatusError
 	}
 	needsUpdate = needsUpdate || isDirty

@@ -19,6 +19,7 @@ package names
 const (
 	APIResources                       = "APIResources"
 	TaintToleration                    = "TaintToleration"
+	ClusterReady                       = "ClusterReady"
 	ClusterResourcesFit                = "ClusterResourcesFit"
 	PlacementFilter                    = "PlacementFilter"
 	ClusterAffinity                    = "ClusterAffinity"
