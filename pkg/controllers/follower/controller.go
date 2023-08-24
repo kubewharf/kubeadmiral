@@ -294,7 +294,8 @@ func (c *Controller) reconcileLeader(
 		c.metrics.Store("followers_total", len(desiredFollowers),
 			stats.Tag{Name: "namespace", Value: key.namespace},
 			stats.Tag{Name: "name", Value: key.sourceName},
-			stats.Tag{Name: "resource", Value: key.sourceGK.String()})
+			stats.Tag{Name: "group", Value: key.sourceGK.Group},
+			stats.Tag{Name: "kind", Value: key.sourceGK.Kind})
 	}
 
 	c.cacheObservedFromLeaders.update(leader, desiredFollowers)
@@ -466,7 +467,8 @@ func (c *Controller) reconcileFollower(
 		c.metrics.Store("leaders_total", len(desiredLeaders),
 			stats.Tag{Name: "namespace", Value: key.namespace},
 			stats.Tag{Name: "name", Value: key.sourceName},
-			stats.Tag{Name: "resource", Value: key.sourceGK.String()})
+			stats.Tag{Name: "group", Value: key.sourceGK.Group},
+			stats.Tag{Name: "kind", Value: key.sourceGK.Kind})
 		keyedLogger.V(1).Info("Updated follower to sync with leaders")
 	}
 

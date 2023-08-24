@@ -95,7 +95,7 @@ func NewPolicyRCController(
 		func(ctx context.Context, qualifiedName common.QualifiedName) worker.Result {
 			return c.reconcilePersist(
 				ctx,
-				"propagation-policy",
+				"propagation_policy_reference_count",
 				qualifiedName,
 				c.propagationPolicyInformer.Informer().GetStore(),
 				c.clusterPropagationPolicyInformer.Informer().GetStore(),
@@ -112,7 +112,7 @@ func NewPolicyRCController(
 		func(ctx context.Context, qualifiedName common.QualifiedName) worker.Result {
 			return c.reconcilePersist(
 				ctx,
-				"override-policy",
+				"override_policy_reference_count",
 				qualifiedName,
 				c.overridePolicyInformer.Informer().GetStore(),
 				c.clusterOverridePolicyInformer.Informer().GetStore(),
@@ -316,6 +316,11 @@ func (c *Controller) reconcilePersist(
 			return worker.StatusError
 		}
 	}
+
+	c.metrics.Store(metricName, newRefCount, []stats.Tag{
+		{Name: "name", Value: qualifiedName.Name},
+		{Name: "namespace", Value: qualifiedName.Namespace},
+	}...)
 
 	return worker.StatusAllOK
 }
