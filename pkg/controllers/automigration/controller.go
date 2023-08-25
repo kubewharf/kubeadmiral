@@ -45,6 +45,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
+	"github.com/kubewharf/kubeadmiral/pkg/util/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
@@ -256,10 +257,10 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "control-loop", "reconcile", "object", key)
 
 	startTime := time.Now()
-	c.metrics.Counter("auto_migration_throughput", 1)
+	c.metrics.Counter(metrics.AutoMigrationThroughput, 1)
 	keyedLogger.V(3).Info("Start reconcile")
 	defer func() {
-		c.metrics.Duration("auto_migration_latency", startTime)
+		c.metrics.Duration(metrics.AutoMigrationLatency, startTime)
 		keyedLogger.V(3).Info("Finished reconcile", "duration", time.Since(startTime), "status", status)
 	}()
 

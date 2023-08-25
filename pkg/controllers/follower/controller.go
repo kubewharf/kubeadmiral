@@ -46,6 +46,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	podutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
@@ -241,7 +242,7 @@ func (c *Controller) reconcileLeader(
 	ctx context.Context,
 	key objectGroupKindKey,
 ) (status worker.Result) {
-	c.metrics.Counter("follower_controller_throughput", 1)
+	c.metrics.Counter(metrics.FollowerControllerThroughput, 1)
 	//nolint:staticcheck
 	ctx, keyedLogger := logging.InjectLoggerValues(
 		ctx,
@@ -252,12 +253,12 @@ func (c *Controller) reconcileLeader(
 		"key",
 		key.ObjectSourceKey(),
 	)
-	startTime := time.Now()
 
+	startTime := time.Now()
 	keyedLogger.V(3).Info("Starting reconcileLeader")
 	defer func() {
 		c.metrics.Duration(
-			"follower_controller_latency",
+			metrics.FollowerControllerLatency,
 			startTime,
 			stats.Tag{Name: "name", Value: key.sourceGK.String()},
 			stats.Tag{Name: "source", Value: "leader"},
@@ -310,7 +311,7 @@ func (c *Controller) reconcileLeader(
 			return worker.StatusError
 		}
 
-		c.metrics.Store("followers_total", len(desiredFollowers),
+		c.metrics.Store(metrics.FollowersTotal, len(desiredFollowers),
 			stats.Tag{Name: "namespace", Value: key.namespace},
 			stats.Tag{Name: "name", Value: key.sourceName},
 			stats.Tag{Name: "group", Value: key.sourceGK.Group},
@@ -411,7 +412,7 @@ func (c *Controller) reconcileFollower(
 	ctx context.Context,
 	key objectGroupKindKey,
 ) (status worker.Result) {
-	c.metrics.Counter("follower_controller_throughput", 1)
+	c.metrics.Counter(metrics.FollowerControllerThroughput, 1)
 	ctx, keyedLogger := logging.InjectLoggerValues(
 		ctx,
 		"origin",
@@ -423,7 +424,6 @@ func (c *Controller) reconcileFollower(
 	)
 
 	startTime := time.Now()
-
 	keyedLogger.V(3).Info("Starting reconcileFollower")
 	defer func() {
 		c.metrics.Duration(
@@ -493,7 +493,7 @@ func (c *Controller) reconcileFollower(
 		)
 		return worker.StatusError
 	} else if updated {
-		c.metrics.Store("leaders_total", len(desiredLeaders),
+		c.metrics.Store(metrics.LeadersTotal, len(desiredLeaders),
 			stats.Tag{Name: "namespace", Value: key.namespace},
 			stats.Tag{Name: "name", Value: key.sourceName},
 			stats.Tag{Name: "group", Value: key.sourceGK.Group},

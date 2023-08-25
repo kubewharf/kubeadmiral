@@ -46,6 +46,7 @@ import (
 	finalizersutil "github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
@@ -230,14 +231,14 @@ func (c *FederateController) HasSynced() bool {
 }
 
 func (c *FederateController) reconcile(ctx context.Context, key workerKey) (status worker.Result) {
-	c.metrics.Counter("federate_controller_throughput", 1)
+	c.metrics.Counter(metrics.FederateControllerThroughput, 1)
 	ctx, logger := logging.InjectLoggerValues(ctx, "source-object", key.QualifiedName().String(), "gvk", key.gvk)
 
 	startTime := time.Now()
 
 	logger.V(3).Info("Start reconcile")
 	defer func() {
-		c.metrics.Duration("federate_controller_latency", startTime)
+		c.metrics.Duration(metrics.FederateControllerLatency, startTime)
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()
 

@@ -57,6 +57,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/util/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
@@ -308,11 +309,11 @@ func (s *StatusController) reconcile(
 	keyedLogger := s.logger.WithValues("federated-name", qualifiedName.String())
 	ctx = klog.NewContext(ctx, keyedLogger)
 
-	s.metrics.Counter("status_throughput", 1)
+	s.metrics.Counter(metrics.StatusThroughput, 1)
 	keyedLogger.V(3).Info("Starting reconcile")
 	startTime := time.Now()
 	defer func() {
-		s.metrics.Duration("status_latency", startTime)
+		s.metrics.Duration(metrics.StatusLatency, startTime)
 		keyedLogger.WithValues("duration", time.Since(startTime), "status", reconcileStatus.String()).
 			V(3).Info("Finished reconcile")
 	}()
@@ -630,7 +631,7 @@ func (s *StatusController) clusterStatuses(
 			)
 		}
 		clusterStatus = append(clusterStatus, resourceClusterStatus)
-		s.metrics.Duration("status_collection_duration_seconds", startTime, []stats.Tag{
+		s.metrics.Duration(metrics.StatusCollectionDuration, startTime, []stats.Tag{
 			{Name: "name", Value: targetQualifiedName.Name},
 			{Name: "namespace", Value: targetQualifiedName.Namespace},
 			{Name: "cluster", Value: clusterName},
@@ -655,7 +656,7 @@ func (s *StatusController) clusterStatuses(
 }
 
 func (s *StatusController) recordStatusCollectionError(name, namespace, cluster string, targetGVK schema.GroupVersionKind) {
-	s.metrics.Counter("status_collection_error_total", 1, []stats.Tag{
+	s.metrics.Counter(metrics.StatusCollectionErrorTotal, 1, []stats.Tag{
 		{Name: "name", Value: name},
 		{Name: "namespace", Value: namespace},
 		{Name: "cluster", Value: cluster},

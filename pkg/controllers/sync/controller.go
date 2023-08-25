@@ -63,6 +63,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
+	"github.com/kubewharf/kubeadmiral/pkg/util/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	"github.com/kubewharf/kubeadmiral/pkg/util/orphaning"
 	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
@@ -388,11 +389,11 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 		"gvk", fedResource.TargetGVK().String(),
 	)
 
-	s.metrics.Counter("sync_throughput", 1)
+	s.metrics.Counter(metrics.SyncThroughput, 1)
 	keyedLogger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		s.metrics.Duration("sync_latency", startTime)
+		s.metrics.Duration(metrics.SyncLatency, startTime)
 		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).
 			V(3).
 			Info("Finished reconciling")

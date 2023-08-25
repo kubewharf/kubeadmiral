@@ -47,6 +47,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	"github.com/kubewharf/kubeadmiral/pkg/util/propagationstatus"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
@@ -294,11 +295,11 @@ func (a *StatusAggregator) reconcile(ctx context.Context, key reconcileKey) (sta
 		return worker.StatusAllOK
 	}
 
-	a.metrics.Counter("status_aggregator_throughput", 1)
+	a.metrics.Counter(metrics.StatusAggregatorThroughput, 1)
 	logger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		a.metrics.Duration("status_aggregator_latency", startTime)
+		a.metrics.Duration(metrics.StatusAggregatorLatency, startTime)
 		logger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).
 			Info("Finished reconciling")
 	}()

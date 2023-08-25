@@ -38,6 +38,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
+	"github.com/kubewharf/kubeadmiral/pkg/util/metrics"
 )
 
 const (
@@ -111,7 +112,7 @@ func (d *unmanagedDispatcherImpl) Delete(
 				if !result {
 					metricResult = clusterOperationFail
 				}
-				d.metrics.Duration("dispatch_operation_duration_seconds", startTime,
+				d.metrics.Duration(metrics.DispatchOperationDuration, startTime,
 					stats.Tag{Name: "namespace", Value: clusterObj.GetName()},
 					stats.Tag{Name: "name", Value: clusterObj.GetNamespace()},
 					stats.Tag{Name: "group", Value: clusterObj.GroupVersionKind().Group},
