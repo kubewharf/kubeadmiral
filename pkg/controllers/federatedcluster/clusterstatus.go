@@ -316,32 +316,39 @@ func shouldCollectClusterStatus(cluster *fedcorev1a1.FederatedCluster, collectIn
 }
 
 func (c *FederatedClusterController) recordClusterStatus(cluster *fedcorev1a1.FederatedCluster, startTime time.Time) {
+	readyReason, joinedReason, offlineReason := clusterutil.GetClusterConditionReason(&cluster.Status)
 	if clusterutil.IsClusterReady(&cluster.Status) {
 		c.metrics.Store("cluster_ready_state",
 			1,
-			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+			stats.Tag{Name: "cluster_name", Value: cluster.Name},
+			stats.Tag{Name: "reason", Value: readyReason})
 	} else {
 		c.metrics.Store("cluster_ready_state",
 			0,
-			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+			stats.Tag{Name: "cluster_name", Value: cluster.Name},
+			stats.Tag{Name: "reason", Value: readyReason})
 	}
 	if clusterutil.IsClusterOffline(&cluster.Status) {
 		c.metrics.Store("cluster_offline_state",
 			1,
-			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+			stats.Tag{Name: "cluster_name", Value: cluster.Name},
+			stats.Tag{Name: "reason", Value: offlineReason})
 	} else {
 		c.metrics.Store("cluster_offline_state",
 			0,
-			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+			stats.Tag{Name: "cluster_name", Value: cluster.Name},
+			stats.Tag{Name: "reason", Value: offlineReason})
 	}
 	if clusterutil.IsClusterJoined(&cluster.Status) {
 		c.metrics.Store("cluster_joined_state",
 			1,
-			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+			stats.Tag{Name: "cluster_name", Value: cluster.Name},
+			stats.Tag{Name: "reason", Value: joinedReason})
 	} else {
 		c.metrics.Store("cluster_joined_state",
 			0,
-			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+			stats.Tag{Name: "cluster_name", Value: cluster.Name},
+			stats.Tag{Name: "reason", Value: joinedReason})
 	}
 	c.metrics.Duration("cluster_sync_status_duration",
 		startTime,
