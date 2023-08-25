@@ -25,11 +25,10 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"sort"
-	"strings"
 	"sync"
 
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -37,113 +36,105 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/dispatch"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/version"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/finalizers"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
-	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
+	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
+	"github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
+	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
 
-// FederatedResource encapsulates the behavior of a logical federated
-// resource which may be implemented by one or more kubernetes
-// resources in the cluster hosting the KubeFed control plane.
+// FederatedResource is a wrapper for FederatedObjects and
+// ClusterFederatedObjects that provides necessary abstractions for the Sync
+// controller to propagate them to selected member clusters.
 type FederatedResource interface {
 	dispatch.FederatedResourceForDispatch
+	version.VersionedResource
 
+	// FederatedName returns the name of the underlying FederatedObject or ClusterFederatedObject.
 	FederatedName() common.QualifiedName
-	FederatedKind() string
-	FederatedGVK() schema.GroupVersionKind
-	CollisionCount() *int32
-	RevisionHistoryLimit() int64
+	// UpdateVersions updates the recorded versions for the given clusters.
 	UpdateVersions(selectedClusters []string, versionMap map[string]string) error
+	// DeleteVersions deletes the recorded versions.
 	DeleteVersions()
-	ComputePlacement(clusters []*fedcorev1a1.FederatedCluster) (selectedClusters sets.String, err error)
-	NamespaceNotFederated() bool
+	// ComputePlacement computes the placement of the resource in the given clusters.
+	ComputePlacement(clusters []*fedcorev1a1.FederatedCluster) sets.Set[string]
+	// SetObject sets the underlying FederatedObject or ClusterFederatedObject.
+	SetObject(obj fedcorev1a1.GenericFederatedObject)
 }
+
+var _ FederatedResource = &federatedResource{}
 
 type federatedResource struct {
 	sync.RWMutex
 
-	limitedScope      bool
-	typeConfig        *fedcorev1a1.FederatedTypeConfig
-	targetName        common.QualifiedName
-	federatedKind     string
-	federatedName     common.QualifiedName
-	federatedResource *unstructured.Unstructured
-	versionManager    *version.VersionManager
-	overridesMap      util.OverridesMap
-	versionMap        map[string]string
-	fedNamespace      *unstructured.Unstructured
-	eventRecorder     record.EventRecorder
+	typeConfig      *fedcorev1a1.FederatedTypeConfig
+	federatedName   common.QualifiedName
+	targetName      common.QualifiedName
+	federatedObject fedcorev1a1.GenericFederatedObject
+	template        *unstructured.Unstructured
+	versionManager  *version.VersionManager
+	// Overrides for each cluster.
+	overridesMap  map[string]fedcorev1a1.OverridePatches
+	versionMap    map[string]string
+	eventRecorder record.EventRecorder
 }
 
 func (r *federatedResource) FederatedName() common.QualifiedName {
 	return r.federatedName
 }
 
-func (r *federatedResource) FederatedKind() string {
-	return r.typeConfig.GetFederatedType().Kind
-}
-
-func (r *federatedResource) FederatedGVK() schema.GroupVersionKind {
-	apiResource := r.typeConfig.GetFederatedType()
-	return schemautil.APIResourceToGVK(&apiResource)
-}
-
 func (r *federatedResource) TargetName() common.QualifiedName {
 	return r.targetName
 }
 
-func (r *federatedResource) TargetKind() string {
-	return r.typeConfig.GetTargetType().Kind
+func (r *federatedResource) TargetGVK() schema.GroupVersionKind {
+	return r.typeConfig.GetSourceTypeGVK()
 }
 
-func (r *federatedResource) TargetGVK() schema.GroupVersionKind {
-	apiResource := r.typeConfig.GetTargetType()
-	return schemautil.APIResourceToGVK(&apiResource)
+func (r *federatedResource) TargetGVR() schema.GroupVersionResource {
+	return r.typeConfig.GetSourceTypeGVR()
+}
+
+func (r *federatedResource) FederatedGVK() schema.GroupVersionKind {
+	// NOTE: remember to update this method when we switch to a different apiVersion.
+	return fedcorev1a1.SchemeGroupVersion.WithKind(reflect.TypeOf(r.federatedObject).Elem().Name())
 }
 
 func (r *federatedResource) TypeConfig() *fedcorev1a1.FederatedTypeConfig {
 	return r.typeConfig
 }
 
-func (r *federatedResource) Replicas() (*int64, error) {
-	return utilunstructured.GetInt64FromPath(
-		r.federatedResource,
-		r.typeConfig.Spec.PathDefinition.ReplicasSpec,
-		common.TemplatePath,
-	)
+func (r *federatedResource) Object() fedcorev1a1.GenericFederatedObject {
+	return r.federatedObject
 }
 
-func (r *federatedResource) Object() *unstructured.Unstructured {
-	return r.federatedResource
-}
-
-func (r *federatedResource) CollisionCount() *int32 {
-	val, _, _ := unstructured.NestedInt64(r.Object().Object, "status", "collisionCount")
-	v := int32(val)
-	return &v
-}
-
-func (r *federatedResource) RevisionHistoryLimit() int64 {
-	val, _, _ := unstructured.NestedInt64(r.Object().Object, "spec", "revisionHistoryLimit")
-	return val
+func (r *federatedResource) SetObject(obj fedcorev1a1.GenericFederatedObject) {
+	r.federatedObject = obj
 }
 
 func (r *federatedResource) TemplateVersion() (string, error) {
-	obj := r.federatedResource
-	return GetTemplateHash(obj.Object)
+	if hash, err := hashUnstructured(r.template); err != nil {
+		return "", fmt.Errorf("failed to hash template: %w", err)
+	} else {
+		return hash, nil
+	}
 }
 
 func (r *federatedResource) OverrideVersion() (string, error) {
 	// TODO Consider hashing overrides per cluster to minimize
 	// unnecessary updates.
-	return GetOverrideHash(r.federatedResource)
+	obj := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"overrides": r.federatedObject.GetSpec().Overrides,
+		},
+	}
+
+	if hash, err := hashUnstructured(obj); err != nil {
+		return "", fmt.Errorf("failed to hash overrides: %w", err)
+	} else {
+		return hash, nil
+	}
 }
 
 func (r *federatedResource) VersionForCluster(clusterName string) (string, error) {
@@ -167,71 +158,21 @@ func (r *federatedResource) DeleteVersions() {
 	r.versionManager.Delete(r.federatedName)
 }
 
-func (r *federatedResource) ComputePlacement(clusters []*fedcorev1a1.FederatedCluster) (sets.String, error) {
-	if r.typeConfig.GetNamespaced() {
-		return computeNamespacedPlacement(r.federatedResource, r.fedNamespace, clusters, r.limitedScope)
-	}
-	return computePlacement(r.federatedResource, clusters)
+func (r *federatedResource) ComputePlacement(clusters []*fedcorev1a1.FederatedCluster) sets.Set[string] {
+	return computePlacement(r.federatedObject, clusters)
 }
 
-func (r *federatedResource) NamespaceNotFederated() bool {
-	return r.typeConfig.GetNamespaced() && r.fedNamespace == nil
-}
-
-// TODO Marshall the template once per reconcile, not per-cluster
 func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.Unstructured, error) {
-	templateBody, ok, err := unstructured.NestedMap(r.federatedResource.Object, common.SpecField, common.TemplateField)
-	if err != nil {
-		return nil, errors.Wrap(err, "Error retrieving template body")
-	}
-	if !ok {
-		// Some resources (like namespaces) can be created from an
-		// empty template.
-		templateBody = make(map[string]interface{})
-	}
-	obj := &unstructured.Unstructured{Object: templateBody}
+	obj := r.template.DeepCopy()
 
-	notSupportedTemplate := "metadata.%s cannot be set via template to avoid conflicting with controllers " +
-		"in member clusters. Consider using an override to add or remove elements from this collection."
-	if len(obj.GetFinalizers()) > 0 {
-		r.RecordError("FinalizersNotSupported", errors.Errorf(notSupportedTemplate, "finalizers"))
-		obj.SetFinalizers(nil)
-	}
-
-	// Avoid having to duplicate these details in the template or have
-	// the name/namespace vary between host and member clusters.
-	// TODO: consider omitting these fields in the template created by federate controller
-	obj.SetName(r.federatedResource.GetName())
-	namespace := util.NamespaceForCluster(clusterName, r.federatedResource.GetNamespace())
-	obj.SetNamespace(namespace)
-	targetAPIResource := r.typeConfig.GetTargetType()
-	obj.SetKind(targetAPIResource.Kind)
-
-	// deprecated: federated generation is currently unused and might increase the dispatcher load
-	// if _, err = annotationutil.AddAnnotation(
-	//	  obj, common.FederatedGenerationAnnotation, fmt.Sprintf("%d", r.Object().GetGeneration())); err != nil {
-	//    return nil, err
-	// }
-
-	if _, err = annotationutil.AddAnnotation(obj, common.SourceGenerationAnnotation, fmt.Sprintf("%d", obj.GetGeneration())); err != nil {
-		return nil, err
-	}
-
-	// If the template does not specify an api version, default it to
-	// the one configured for the target type in the FTC.
-	if len(obj.GetAPIVersion()) == 0 {
-		obj.SetAPIVersion(schema.GroupVersion{Group: targetAPIResource.Group, Version: targetAPIResource.Version}.String())
-	}
-
-	// set current revision
-	revision, ok := r.Object().GetAnnotations()[common.CurrentRevisionAnnotation]
-	if ok {
-		if _, err := annotationutil.AddAnnotation(obj, common.CurrentRevisionAnnotation, revision); err != nil {
+	if obj.GetGeneration() != 0 {
+		if _, err := annotationutil.AddAnnotation(obj, common.SourceGenerationAnnotation, fmt.Sprintf("%d", obj.GetGeneration())); err != nil {
 			return nil, err
 		}
 	}
 
-	if schemautil.IsJobGvk(r.TargetGVK()) {
+	switch r.TargetGVK() {
+	case common.JobGVK:
 		if err := dropJobFields(obj); err != nil {
 			return nil, err
 		}
@@ -239,15 +180,11 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 		if err := addRetainObjectFinalizer(obj); err != nil {
 			return nil, err
 		}
-	}
-
-	if schemautil.IsServiceGvk(r.TargetGVK()) {
+	case common.ServiceGVK:
 		if err := dropServiceFields(obj); err != nil {
 			return nil, err
 		}
-	}
-
-	if schemautil.IsPodGvk(r.TargetGVK()) {
+	case common.PodGVK:
 		if err := dropPodFields(obj); err != nil {
 			return nil, err
 		}
@@ -305,26 +242,29 @@ func dropPodFields(obj *unstructured.Unstructured) error {
 func (r *federatedResource) ApplyOverrides(
 	obj *unstructured.Unstructured,
 	clusterName string,
-	otherOverrides fedtypesv1a1.OverridePatches,
 ) error {
 	overrides, err := r.overridesForCluster(clusterName)
 	if err != nil {
 		return err
 	}
-	if overrides != nil {
-		if err := util.ApplyJsonPatch(obj, overrides); err != nil {
-			return err
+	invalidPathsFound := sets.New[string]()
+	for _, override := range overrides {
+		if invalidOverridePaths.Has(override.Path) {
+			invalidPathsFound.Insert(override.Path)
 		}
 	}
-	if len(otherOverrides) != 0 {
-		if err := util.ApplyJsonPatch(obj, otherOverrides); err != nil {
+	if invalidPathsFound.Len() > 0 {
+		return fmt.Errorf("invalid override path(s): %v", invalidPathsFound.UnsortedList())
+	}
+	if overrides != nil {
+		if err := ApplyJSONPatch(obj, overrides); err != nil {
 			return err
 		}
 	}
 
-	// Ensure that resources managed by KubeFed always have the
+	// Ensure that resources managed by us always have the
 	// managed label.  The label is intended to be targeted by all the
-	// KubeFed controllers.
+	// KubeAdmiral controllers.
 	managedlabel.AddManagedLabel(obj)
 
 	return nil
@@ -339,16 +279,14 @@ func (r *federatedResource) RecordEvent(reason, messageFmt string, args ...inter
 	r.eventRecorder.Eventf(r.Object(), corev1.EventTypeNormal, reason, messageFmt, args...)
 }
 
-func (r *federatedResource) overridesForCluster(clusterName string) (fedtypesv1a1.OverridePatches, error) {
+func (r *federatedResource) overridesForCluster(clusterName string) (fedcorev1a1.OverridePatches, error) {
 	r.Lock()
 	defer r.Unlock()
 	if r.overridesMap == nil {
-		obj, err := util.UnmarshalGenericOverrides(r.federatedResource)
-		if err != nil {
-			return nil, fmt.Errorf("unmarshal cluster overrides: %w", err)
+		overrides := make([]fedcorev1a1.OverrideWithController, 0, len(r.federatedObject.GetSpec().Overrides))
+		for _, o := range r.federatedObject.GetSpec().Overrides {
+			overrides = append(overrides, *o.DeepCopy())
 		}
-
-		r.overridesMap = make(util.OverridesMap)
 
 		// Order overrides based on the controller name specified in the FTC
 		// Put overrides from unknown sources at the end, but preserve their relative orders
@@ -358,15 +296,16 @@ func (r *federatedResource) overridesForCluster(clusterName string) (fedtypesv1a
 				controllerOrder[controller] = len(controllerOrder)
 			}
 		}
-		sort.SliceStable(obj.Spec.Overrides, func(i, j int) bool {
-			lhs, isKnown := controllerOrder[obj.Spec.Overrides[i].Controller]
+
+		sort.SliceStable(overrides, func(i, j int) bool {
+			lhs, isKnown := controllerOrder[overrides[i].Controller]
 			if !isKnown {
 				// lhs is unknown
 				// if rhs is known, return false so rhs can precede lhs
 				// if rhs is unknown, return false to preserve the relative order
 				return false
 			}
-			rhs, isKnown := controllerOrder[obj.Spec.Overrides[j].Controller]
+			rhs, isKnown := controllerOrder[overrides[j].Controller]
 			if !isKnown {
 				// lhs controller is known and rhs controller is unknown
 				// lhs should precede rhs
@@ -375,11 +314,13 @@ func (r *federatedResource) overridesForCluster(clusterName string) (fedtypesv1a
 			return lhs < rhs
 		})
 
+		r.overridesMap = make(map[string]fedcorev1a1.OverridePatches)
+
 		// Merge overrides in the specified order
-		for _, controllerOverride := range obj.Spec.Overrides {
-			for _, clusterOverride := range controllerOverride.Clusters {
-				r.overridesMap[clusterOverride.ClusterName] = append(
-					r.overridesMap[clusterOverride.ClusterName], clusterOverride.Patches...,
+		for _, controllerOverride := range overrides {
+			for _, clusterOverride := range controllerOverride.Override {
+				r.overridesMap[clusterOverride.Cluster] = append(
+					r.overridesMap[clusterOverride.Cluster], clusterOverride.Patches...,
 				)
 			}
 		}
@@ -387,83 +328,11 @@ func (r *federatedResource) overridesForCluster(clusterName string) (fedtypesv1a
 	return r.overridesMap[clusterName], nil
 }
 
-// FIXME: Since override operator is not limited to "replace" and there can be multiple patches affecting the same key,
-// we can only determine the correct replicas overrides after all overrides have ben applied.
-func (r *federatedResource) ReplicasOverrideForCluster(clusterName string) (int32, bool, error) {
-	overrides, err := r.overridesForCluster(clusterName)
-	if err != nil {
-		return 0, false, err
-	}
-	for _, o := range overrides {
-		if o.Path == "/spec/replicas" && o.Value != nil {
-			r, ok := o.Value.(float64)
-			if !ok {
-				return 0, false, errors.Errorf("failed to retrieve replicas override for %s", clusterName)
-			}
-			return int32(r), true, nil
-		}
-	}
-
-	defaultReplicas, err := r.Replicas()
-	if err != nil {
-		return 0, false, err
-	}
-	if defaultReplicas == nil {
-		return 0, false, errors.Errorf("failed to retrieve replicas override for %s", clusterName)
-	}
-	return int32(*defaultReplicas), false, nil
-}
-
-func (r *federatedResource) TotalReplicas(clusterNames sets.String) (int32, error) {
-	var replicas int32
-	for clusterName := range clusterNames {
-		val, _, err := r.ReplicasOverrideForCluster(clusterName)
-		if err != nil {
-			return 0, err
-		}
-		replicas += val
-	}
-	return replicas, nil
-}
-
-func GetTemplateHash(fieldMap map[string]interface{}) (string, error) {
-	fields := []string{common.SpecField, common.TemplateField}
-	fieldMap, ok, err := unstructured.NestedMap(fieldMap, fields...)
-	if err != nil {
-		return "", errors.Wrapf(err, "Error retrieving %q", strings.Join(fields, "."))
-	}
-	if !ok {
-		return "", nil
-	}
-	obj := &unstructured.Unstructured{Object: fieldMap}
-	description := strings.Join(fields, ".")
-	return hashUnstructured(obj, description)
-}
-
-func GetOverrideHash(rawObj *unstructured.Unstructured) (string, error) {
-	override := fedtypesv1a1.GenericObjectWithOverrides{}
-	err := util.UnstructuredToInterface(rawObj, &override)
-	if err != nil {
-		return "", errors.Wrap(err, "Error retrieving overrides")
-	}
-	if override.Spec == nil {
-		return "", nil
-	}
-	// Only hash the overrides
-	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"overrides": override.Spec.Overrides,
-		},
-	}
-
-	return hashUnstructured(obj, "overrides")
-}
-
 // TODO Investigate alternate ways of computing the hash of a field map.
-func hashUnstructured(obj *unstructured.Unstructured, description string) (string, error) {
+func hashUnstructured(obj *unstructured.Unstructured) (string, error) {
 	jsonBytes, err := obj.MarshalJSON()
 	if err != nil {
-		return "", errors.Wrapf(err, "Failed to marshal %q to json", description)
+		return "", fmt.Errorf("failed to marshal to json: %w", err)
 	}
 	//nolint:gosec
 	hash := md5.New()

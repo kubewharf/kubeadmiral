@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/davecgh/go-spew/spew"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
@@ -52,10 +53,10 @@ type ScheduleResult struct {
 	SuggestedClusters map[string]*int64
 }
 
-func (result ScheduleResult) ClusterSet() map[string]struct{} {
-	clusterSet := make(map[string]struct{}, len(result.SuggestedClusters))
+func (result ScheduleResult) ClusterSet() sets.Set[string] {
+	clusterSet := sets.New[string]()
 	for cluster := range result.SuggestedClusters {
-		clusterSet[cluster] = struct{}{}
+		clusterSet.Insert(cluster)
 	}
 	return clusterSet
 }

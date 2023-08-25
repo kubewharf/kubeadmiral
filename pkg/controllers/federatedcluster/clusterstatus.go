@@ -32,14 +32,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/informers"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
+	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 )
 
 const (
@@ -64,30 +64,30 @@ const (
 func (c *FederatedClusterController) collectIndividualClusterStatus(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
-	fedClient fedclient.Interface,
-	federatedClient federatedclient.FederatedClientFactory,
-) error {
+) (retryAfter time.Duration, err error) {
+	startTime := time.Now()
+	defer func() {
+		c.recordClusterStatus(cluster, startTime)
+	}()
 	logger := klog.FromContext(ctx)
 
-	clusterKubeClient, exists, err := federatedClient.KubeClientsetForCluster(cluster.Name)
+	clusterKubeClient, exists := c.federatedInformerManager.GetClusterKubeClient(cluster.Name)
 	if !exists {
-		return fmt.Errorf("federated client is not yet up to date")
+		return 0, fmt.Errorf("failed to get cluster client: FederatedInformerManager not yet up-to-date")
 	}
-	if err != nil {
-		return fmt.Errorf("failed to get federated kube client: %w", err)
-	}
-	clusterKubeInformer, exists, err := federatedClient.KubeSharedInformerFactoryForCluster(cluster.Name)
+	podLister, podsSynced, exists := c.federatedInformerManager.GetPodLister(cluster.Name)
 	if !exists {
-		return fmt.Errorf("federated client is not yet up to date")
+		return 0, fmt.Errorf("failed to get pod lister: FederatedInformerManager not yet up-to-date")
 	}
-	if err != nil {
-		return fmt.Errorf("failed to get federated kube informer factory: %w", err)
+	nodeLister, nodesSynced, exists := c.federatedInformerManager.GetNodeLister(cluster.Name)
+	if !exists {
+		return 0, fmt.Errorf("failed to get node lister: FederatedInformerManager not yet up-to-date")
 	}
 
 	discoveryClient := clusterKubeClient.Discovery()
+
 	oldClusterStatus := cluster.Status.DeepCopy()
 	cluster = cluster.DeepCopy()
-
 	conditionTime := metav1.Now()
 
 	offlineStatus, readyStatus := checkReadyByHealthz(ctx, discoveryClient)
@@ -104,9 +104,16 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 		readyMessage = ClusterNotReachableMsg
 	}
 
-	// we skip updating cluster resources and api resources if cluster is not ready
+	// We skip updating cluster resources and api resources if cluster is not ready
 	if readyStatus == corev1.ConditionTrue {
-		if err := updateClusterResources(ctx, &cluster.Status, clusterKubeInformer); err != nil {
+		if err := updateClusterResources(
+			ctx,
+			&cluster.Status,
+			podLister,
+			podsSynced,
+			nodeLister,
+			nodesSynced,
+		); err != nil {
 			logger.Error(err, "Failed to update cluster resources")
 			readyStatus = corev1.ConditionFalse
 			readyReason = ClusterResourceCollectionFailedReason
@@ -125,29 +132,35 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	setClusterCondition(&cluster.Status, &readyCondition)
 
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		latestCluster, err := fedClient.CoreV1alpha1().FederatedClusters().Get(context.TODO(), cluster.Name, metav1.GetOptions{})
+		latestCluster, err := c.fedClient.CoreV1alpha1().FederatedClusters().Get(
+			context.TODO(),
+			cluster.Name,
+			metav1.GetOptions{},
+		)
 		if err != nil {
 			return err
 		}
 		cluster.Status.DeepCopyInto(&latestCluster.Status)
-		_, err = fedClient.CoreV1alpha1().FederatedClusters().UpdateStatus(context.TODO(), latestCluster, metav1.UpdateOptions{})
+		_, err = c.fedClient.CoreV1alpha1().FederatedClusters().UpdateStatus(
+			context.TODO(),
+			latestCluster,
+			metav1.UpdateOptions{},
+		)
 		return err
 	}); err != nil {
-		return fmt.Errorf("failed to update cluster status: %w", err)
+		return 0, fmt.Errorf("failed to update cluster status: %w", err)
 	}
 
 	if isReadyStatusChanged(oldClusterStatus, readyStatus) {
 		switch readyStatus {
 		case corev1.ConditionTrue:
-			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster is ready")
-		case corev1.ConditionFalse:
-			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster is not ready")
-		case corev1.ConditionUnknown:
-			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster ready state is unknown")
+			c.eventRecorder.Eventf(cluster, corev1.EventTypeNormal, readyReason, readyMessage)
+		case corev1.ConditionFalse, corev1.ConditionUnknown:
+			c.eventRecorder.Eventf(cluster, corev1.EventTypeWarning, readyReason, readyMessage)
 		}
 	}
 
-	return nil
+	return 0, nil
 }
 
 func isReadyStatusChanged(clusterStatus *fedcorev1a1.FederatedClusterStatus, readyStatus corev1.ConditionStatus) bool {
@@ -189,16 +202,14 @@ func checkReadyByHealthz(
 func updateClusterResources(
 	ctx context.Context,
 	clusterStatus *fedcorev1a1.FederatedClusterStatus,
-	clusterKubeInformer informers.SharedInformerFactory,
+	podLister corev1listers.PodLister,
+	podsSynced cache.InformerSynced,
+	nodeLister corev1listers.NodeLister,
+	nodesSynced cache.InformerSynced,
 ) error {
-	podLister := clusterKubeInformer.Core().V1().Pods().Lister()
-	podsSynced := clusterKubeInformer.Core().V1().Pods().Informer().HasSynced
-	nodeLister := clusterKubeInformer.Core().V1().Nodes().Lister()
-	nodesSynced := clusterKubeInformer.Core().V1().Nodes().Informer().HasSynced
-
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if !cache.WaitForNamedCacheSync("federated-cluster-controller-status-collect", ctx.Done(), podsSynced, nodesSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), podsSynced, nodesSynced) {
 		return fmt.Errorf("timeout waiting for node and pod informer sync")
 	}
 
@@ -302,4 +313,58 @@ func shouldCollectClusterStatus(cluster *fedcorev1a1.FederatedCluster, collectIn
 
 	nextCollectTime := readyCond.LastProbeTime.Time.Add(collectInterval)
 	return time.Now().After(nextCollectTime)
+}
+
+func (c *FederatedClusterController) recordClusterStatus(cluster *fedcorev1a1.FederatedCluster, startTime time.Time) {
+	if clusterutil.IsClusterReady(&cluster.Status) {
+		c.metrics.Store("cluster_ready_state",
+			1,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	} else {
+		c.metrics.Store("cluster_ready_state",
+			0,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
+	if clusterutil.IsClusterOffline(&cluster.Status) {
+		c.metrics.Store("cluster_offline_state",
+			1,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	} else {
+		c.metrics.Store("cluster_offline_state",
+			0,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
+	if clusterutil.IsClusterJoined(&cluster.Status) {
+		c.metrics.Store("cluster_joined_state",
+			1,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	} else {
+		c.metrics.Store("cluster_joined_state",
+			0,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
+	c.metrics.Duration("cluster_sync_status_duration",
+		startTime,
+		stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	if cluster.Status.Resources.Allocatable != nil {
+		c.metrics.Store("cluster_memory_allocatable_bytes",
+			cluster.Status.Resources.Allocatable.Memory().AsApproximateFloat64(),
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+		c.metrics.Store("cluster_cpu_allocatable_number",
+			cluster.Status.Resources.Allocatable.Cpu().AsApproximateFloat64(),
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
+	if cluster.Status.Resources.Available != nil {
+		c.metrics.Store("cluster_memory_available_bytes",
+			cluster.Status.Resources.Available.Memory().AsApproximateFloat64(),
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+		c.metrics.Store("cluster_cpu_available_number",
+			cluster.Status.Resources.Available.Cpu().AsApproximateFloat64(),
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
+	if cluster.Status.Resources.SchedulableNodes != nil {
+		c.metrics.Store("cluster_schedulable_nodes_total",
+			*cluster.Status.Resources.SchedulableNodes,
+			stats.Tag{Name: "cluster_name", Value: cluster.Name})
+	}
 }

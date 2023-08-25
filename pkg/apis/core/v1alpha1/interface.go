@@ -41,3 +41,19 @@ type GenericPropagationPolicy interface {
 	GetSpec() *PropagationPolicySpec
 	GenericRefCountedPolicy
 }
+
+type GenericFederatedObject interface {
+	metav1.Object
+	pkgruntime.Object
+	GetSpec() *GenericFederatedObjectSpec
+	GetStatus() *GenericFederatedObjectStatus
+	DeepCopyGenericFederatedObject() GenericFederatedObject
+}
+
+type GenericCollectedStatusObject interface {
+	metav1.Object
+	pkgruntime.Object
+	GetGenericCollectedStatus() *GenericCollectedStatus
+	GetLastUpdateTime() *metav1.Time
+	DeepCopyGenericCollectedStatusObject() GenericCollectedStatusObject
+}

@@ -25,16 +25,13 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
-	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
+	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
 
 const (
@@ -48,7 +45,7 @@ const (
 // from the cluster object.
 func RetainOrMergeClusterFields(
 	targetGvk schema.GroupVersionKind,
-	desiredObj, clusterObj, fedObj *unstructured.Unstructured,
+	desiredObj, clusterObj *unstructured.Unstructured,
 ) error {
 	// Pass the same ResourceVersion as in the cluster object for update operation, otherwise operation will fail.
 	desiredObj.SetResourceVersion(clusterObj.GetResourceVersion())
@@ -60,32 +57,32 @@ func RetainOrMergeClusterFields(
 	mergeAnnotations(desiredObj, clusterObj)
 	mergeLabels(desiredObj, clusterObj)
 
-	switch {
-	case schemautil.IsServiceGvk(targetGvk):
+	switch targetGvk {
+	case common.ServiceGVK:
 		if err := retainServiceFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case schemautil.IsServiceAccountGvk(targetGvk):
+	case common.ServiceAccountGVK:
 		if err := retainServiceAccountFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case schemautil.IsJobGvk(targetGvk):
+	case common.JobGVK:
 		if err := retainJobFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case schemautil.IsPersistentVolumeGvk(targetGvk):
+	case common.PersistentVolumeGVK:
 		if err := retainPersistentVolumeFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case schemautil.IsPersistentVolumeClaimGvk(targetGvk):
+	case common.PersistentVolumeClaimGVK:
 		if err := retainPersistentVolumeClaimFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case schemautil.IsPodGvk(targetGvk):
+	case common.PodGVK:
 		if err := retainPodFields(desiredObj, clusterObj); err != nil {
 			return err
 		}
-	case targetGvk == schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"}:
+	case schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"}:
 		// TODO: this is a temporary hack to support Argo Workflow.
 		// We should come up with an extensible framework to support CRDs in the future.
 		if err := retainArgoWorkflow(desiredObj, clusterObj); err != nil {
@@ -524,100 +521,28 @@ func findServiceAccountVolumeMount(container map[string]interface{}) (volumeMoun
 	return nil, 0, false
 }
 
-func checkRetainReplicas(fedObj *unstructured.Unstructured) (bool, error) {
-	retainReplicas, ok, err := unstructured.NestedBool(fedObj.Object, common.SpecField, common.RetainReplicasField)
-	if err != nil {
-		return false, err
-	}
-	return ok && retainReplicas, nil
+func checkRetainReplicas(fedObj metav1.Object) bool {
+	return fedObj.GetAnnotations()[common.RetainReplicasAnnotation] == common.AnnotationValueTrue
 }
 
-func retainReplicas(desiredObj, clusterObj, fedObj *unstructured.Unstructured, typeConfig *fedcorev1a1.FederatedTypeConfig) error {
+func retainReplicas(desiredObj, clusterObj *unstructured.Unstructured, fedObj metav1.Object, replicasPath string) error {
 	// Retain the replicas field if the federated object has been
 	// configured to do so.  If the replicas field is intended to be
 	// set by the in-cluster HPA controller, not retaining it will
 	// thrash the scheduler.
-	retain, err := checkRetainReplicas(fedObj)
-	if err != nil {
-		return err
-	}
+	retain := checkRetainReplicas(fedObj)
 	if retain {
-		replicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
+		replicas, err := utilunstructured.GetInt64FromPath(clusterObj, replicasPath, nil)
 		if err != nil {
 			return err
 		}
 
 		if replicas != nil {
-			if err := utilunstructured.SetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, replicas, nil); err != nil {
+			if err := utilunstructured.SetInt64FromPath(desiredObj, replicasPath, replicas, nil); err != nil {
 				return err
 			}
 		}
 	}
-	return nil
-}
-
-func setLastReplicasetName(desiredObj, clusterObj *unstructured.Unstructured) error {
-	if clusterObj == nil {
-		return nil
-	}
-	revision, ok := desiredObj.GetAnnotations()[common.CurrentRevisionAnnotation]
-	if !ok {
-		return nil
-	}
-	lastDispatchedRevision, ok := clusterObj.GetAnnotations()[common.CurrentRevisionAnnotation]
-	if ok && revision != lastDispatchedRevision {
-		// update LastReplicasetName only when the revision must have been changed
-		rsName, ok := clusterObj.GetAnnotations()[util.LatestReplicasetNameAnnotation]
-		if !ok {
-			// don't block the dispatch if the annotation is missing, validate the existence during plan initiation
-			return nil
-		}
-		if _, err := annotationutil.AddAnnotation(desiredObj, common.LastReplicasetName, rsName); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func retainTemplate(
-	desiredObj, clusterObj *unstructured.Unstructured,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	keepRolloutSettings bool,
-) error {
-	tpl, ok, err := unstructured.NestedMap(clusterObj.Object, common.SpecField, common.TemplateField)
-	if err != nil {
-		return err
-	}
-	if ok {
-		if err := unstructured.SetNestedMap(desiredObj.Object, tpl, common.SpecField, common.TemplateField); err != nil {
-			return err
-		}
-	} else {
-		unstructured.RemoveNestedField(desiredObj.Object, common.SpecField, common.TemplateField)
-	}
-
-	revision, ok := clusterObj.GetAnnotations()[common.CurrentRevisionAnnotation]
-	if ok {
-		if _, err := annotationutil.AddAnnotation(desiredObj, common.CurrentRevisionAnnotation, revision); err != nil {
-			return err
-		}
-	} else {
-		if _, err := annotationutil.RemoveAnnotation(desiredObj, common.CurrentRevisionAnnotation); err != nil {
-			return err
-		}
-	}
-
-	if keepRolloutSettings {
-		replicas, err := utilunstructured.GetInt64FromPath(clusterObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
-		if err != nil {
-			return err
-		}
-
-		if err := utilunstructured.SetInt64FromPath(desiredObj, typeConfig.Spec.PathDefinition.ReplicasSpec, replicas, nil); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 

@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"strconv"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
@@ -39,27 +38,6 @@ const (
 	LatestReplicasetObservedGenerationAnnotation = "latestreplicaset.kubeadmiral.io/observed-generation"
 )
 
-const (
-	// annotations for federatedDeploymentStatus
-	LatestReplicasetDigestsAnnotation = common.DefaultPrefix + "latest-replicaset-digests"
-	AggregatedUpdatedReplicas         = common.DefaultPrefix + "aggregated-updated-replicas"
-)
-
-// FederatedResource is a generic representation of a federated type
-type FederatedResource struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	ClusterStatus []ResourceClusterStatus `json:"clusterStatus,omitempty"`
-}
-
-// ResourceClusterStatus defines the status of federated resource within a cluster
-type ResourceClusterStatus struct {
-	ClusterName     string                 `json:"clusterName,omitempty"`
-	Error           string                 `json:"error,omitempty"`
-	CollectedFields map[string]interface{} `json:"collectedFields,omitempty"`
-}
-
 type LatestReplicasetDigest struct {
 	ClusterName        string `json:"clusterName,omitempty"`
 	ReplicasetName     string `json:"replicasetName,omitempty"`
@@ -68,13 +46,6 @@ type LatestReplicasetDigest struct {
 	ReadyReplicas      int64  `json:"readyReplicas,omitempty"`
 	ObservedGeneration int64  `json:"observedGeneration,omitempty"`
 	SourceGeneration   int64  `json:"sourceGeneration,omitempty"`
-}
-
-type ReplicaSetDigest struct {
-	CurrentRevision    string
-	UpdatedReplicas    int64
-	Generation         int64
-	ObservedGeneration int64
 }
 
 func LatestReplicasetDigestFromObject(clusterName string, object *unstructured.Unstructured) (LatestReplicasetDigest, []error) {
@@ -128,21 +99,4 @@ func intEntry(m map[string]string, key string, errs *[]error) int64 {
 	} else {
 		return 0
 	}
-}
-
-func ReplicaSetDigestFromObject(utd *unstructured.Unstructured) (*ReplicaSetDigest, error) {
-	observedGeneration, found, err := unstructured.NestedInt64(utd.Object, "status", "observedGeneration")
-	if err != nil || !found {
-		return nil, fmt.Errorf("failed to retrieve observedGeneration: %t, %v", found, err)
-	}
-	updatedReplicas, found, err := unstructured.NestedInt64(utd.Object, "status", "updatedReplicas")
-	if err != nil || !found {
-		return nil, fmt.Errorf("failed to retrieve updatedReplicas: %t, %v", found, err)
-	}
-	return &ReplicaSetDigest{
-		CurrentRevision:    utd.GetAnnotations()[common.CurrentRevisionAnnotation],
-		UpdatedReplicas:    updatedReplicas,
-		Generation:         utd.GetGeneration(),
-		ObservedGeneration: observedGeneration,
-	}, nil
 }

@@ -21,21 +21,15 @@ are Copyright 2023 The KubeAdmiral Authors.
 package status
 
 import (
-	"encoding/json"
-	"reflect"
 	"sort"
-	"time"
 
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
-type PropagationStatusMap map[string]fedtypesv1a1.PropagationStatus
+type PropagationStatusMap map[string]fedcorev1a1.PropagationStatusType
 
 type CollectedPropagationStatus struct {
 	StatusMap        PropagationStatusMap
@@ -47,69 +41,25 @@ type CollectedPropagationStatus struct {
 // federated resource's object map. Returns a boolean indication of
 // whether status should be written to the API.
 func SetFederatedStatus(
-	fedObject *unstructured.Unstructured,
-	collisionCount *int32,
-	reason fedtypesv1a1.AggregateReason,
+	fedObject fedcorev1a1.GenericFederatedObject,
+	reason fedcorev1a1.FederatedObjectConditionReason,
 	collectedStatus CollectedPropagationStatus,
-) (bool, error) {
-	resource := &fedtypesv1a1.GenericObjectWithStatus{}
-	err := util.UnstructuredToInterface(fedObject, resource)
-	if err != nil {
-		return false, errors.Wrapf(err, "Failed to unmarshall to generic resource")
-	}
-	if resource.Status == nil {
-		resource.Status = &fedtypesv1a1.GenericFederatedStatus{}
-	}
-
-	changed := update(resource.Status, fedObject.GetGeneration(), collisionCount, reason, collectedStatus)
-
-	if !changed {
-		return false, nil
-	}
-
-	resourceJSON, err := json.Marshal(resource)
-	if err != nil {
-		return false, errors.Wrapf(err, "Failed to marshall generic status to json")
-	}
-	resourceObj := &unstructured.Unstructured{}
-	err = resourceObj.UnmarshalJSON(resourceJSON)
-	if err != nil {
-		return false, errors.Wrapf(err, "Failed to marshall generic resource json to unstructured")
-	}
-	fedObject.Object[common.StatusField] = resourceObj.Object[common.StatusField]
-
-	return true, nil
+) bool {
+	return update(fedObject.GetStatus(), fedObject.GetGeneration(), reason, collectedStatus)
 }
 
 // update ensures that the status reflects the given generation, reason
 // and collected status. Returns a boolean indication of whether the
 // status has been changed.
 func update(
-	s *fedtypesv1a1.GenericFederatedStatus,
+	s *fedcorev1a1.GenericFederatedObjectStatus,
 	generation int64,
-	collisionCount *int32,
-	reason fedtypesv1a1.AggregateReason,
+	reason fedcorev1a1.FederatedObjectConditionReason,
 	collectedStatus CollectedPropagationStatus,
 ) bool {
 	generationUpdated := s.SyncedGeneration != generation
 	if generationUpdated {
 		s.SyncedGeneration = generation
-	}
-
-	collisionCountUpdated := !reflect.DeepEqual(s.CollisionCount, collisionCount)
-	if collisionCountUpdated {
-		s.CollisionCount = collisionCount
-	}
-
-	// Identify whether one or more clusters could not be reconciled
-	// successfully.
-	if reason == fedtypesv1a1.AggregateSuccess {
-		for _, value := range collectedStatus.StatusMap {
-			if value != fedtypesv1a1.ClusterPropagationOK {
-				reason = fedtypesv1a1.CheckClusters
-				break
-			}
-		}
 	}
 
 	clustersChanged := setClusters(s, collectedStatus.StatusMap, collectedStatus.GenerationMap)
@@ -119,9 +69,20 @@ func update(
 	// occur even if status.clusters was unchanged).
 	changesPropagated := clustersChanged || len(collectedStatus.StatusMap) > 0 && collectedStatus.ResourcesUpdated
 
+	// Identify whether one or more clusters could not be reconciled
+	// successfully.
+	if reason == fedcorev1a1.AggregateSuccess {
+		for _, value := range collectedStatus.StatusMap {
+			if value != fedcorev1a1.ClusterPropagationOK {
+				reason = fedcorev1a1.CheckClusters
+				break
+			}
+		}
+	}
+
 	propStatusUpdated := setPropagationCondition(s, reason, changesPropagated)
 
-	statusUpdated := generationUpdated || collisionCountUpdated || propStatusUpdated
+	statusUpdated := generationUpdated || propStatusUpdated
 	return statusUpdated
 }
 
@@ -129,14 +90,14 @@ func update(
 // map and generation map. Returns a boolean indication of whether the
 // status.clusters was modified.
 func setClusters(
-	s *fedtypesv1a1.GenericFederatedStatus,
+	s *fedcorev1a1.GenericFederatedObjectStatus,
 	statusMap PropagationStatusMap,
 	generationMap map[string]int64,
 ) bool {
 	if !clustersDiffers(s, statusMap, generationMap) {
 		return false
 	}
-	s.Clusters = []fedtypesv1a1.GenericClusterStatus{}
+	s.Clusters = []fedcorev1a1.PropagationStatus{}
 	// Write status in ascending order of cluster names for better readability
 	clusterNames := make([]string, 0, len(statusMap))
 	for clusterName := range statusMap {
@@ -145,10 +106,10 @@ func setClusters(
 	sort.Strings(clusterNames)
 	for _, clusterName := range clusterNames {
 		status := statusMap[clusterName]
-		s.Clusters = append(s.Clusters, fedtypesv1a1.GenericClusterStatus{
-			Name:       clusterName,
-			Status:     status,
-			Generation: generationMap[clusterName],
+		s.Clusters = append(s.Clusters, fedcorev1a1.PropagationStatus{
+			Cluster:                clusterName,
+			Status:                 status,
+			LastObservedGeneration: generationMap[clusterName],
 		})
 	}
 	return true
@@ -157,7 +118,7 @@ func setClusters(
 // clustersDiffers checks whether `status.clusters` differs from the
 // given status map and generation map.
 func clustersDiffers(
-	s *fedtypesv1a1.GenericFederatedStatus,
+	s *fedcorev1a1.GenericFederatedObjectStatus,
 	statusMap PropagationStatusMap,
 	generationMap map[string]int64,
 ) bool {
@@ -168,10 +129,10 @@ func clustersDiffers(
 		return true
 	}
 	for _, status := range s.Clusters {
-		if statusMap[status.Name] != status.Status {
+		if statusMap[status.Cluster] != status.Status {
 			return true
 		}
-		if generationMap[status.Name] != status.Generation {
+		if generationMap[status.Cluster] != status.LastObservedGeneration {
 			return true
 		}
 	}
@@ -181,23 +142,26 @@ func clustersDiffers(
 // setPropagationCondition ensures that the Propagation condition is
 // updated to reflect the given reason.  The type of the condition is
 // derived from the reason (empty -> True, not empty -> False).
-func setPropagationCondition(s *fedtypesv1a1.GenericFederatedStatus, reason fedtypesv1a1.AggregateReason,
+func setPropagationCondition(
+	s *fedcorev1a1.GenericFederatedObjectStatus,
+	reason fedcorev1a1.FederatedObjectConditionReason,
 	changesPropagated bool,
 ) bool {
 	// Determine the appropriate status from the reason.
 	var newStatus corev1.ConditionStatus
-	if reason == fedtypesv1a1.AggregateSuccess {
+	if reason == fedcorev1a1.AggregateSuccess {
 		newStatus = corev1.ConditionTrue
 	} else {
 		newStatus = corev1.ConditionFalse
 	}
 
 	if s.Conditions == nil {
-		s.Conditions = []*fedtypesv1a1.GenericCondition{}
+		s.Conditions = []fedcorev1a1.GenericFederatedObjectCondition{}
 	}
-	var propCondition *fedtypesv1a1.GenericCondition
-	for _, condition := range s.Conditions {
-		if condition.Type == fedtypesv1a1.PropagationConditionType {
+	var propCondition *fedcorev1a1.GenericFederatedObjectCondition
+	for i := range s.Conditions {
+		condition := &s.Conditions[i]
+		if condition.Type == fedcorev1a1.PropagationConditionType {
 			propCondition = condition
 			break
 		}
@@ -205,13 +169,13 @@ func setPropagationCondition(s *fedtypesv1a1.GenericFederatedStatus, reason fedt
 
 	newCondition := propCondition == nil
 	if newCondition {
-		propCondition = &fedtypesv1a1.GenericCondition{
-			Type: fedtypesv1a1.PropagationConditionType,
-		}
-		s.Conditions = append(s.Conditions, propCondition)
+		s.Conditions = append(s.Conditions, fedcorev1a1.GenericFederatedObjectCondition{
+			Type: fedcorev1a1.PropagationConditionType,
+		})
+		propCondition = &s.Conditions[len(s.Conditions)-1]
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := metav1.Now()
 
 	transition := newCondition || !(propCondition.Status == newStatus && propCondition.Reason == reason)
 	if transition {

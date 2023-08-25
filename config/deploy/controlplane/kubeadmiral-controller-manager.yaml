@@ -19,7 +19,6 @@ spec:
         - name: kubeadmiral-controller-manager
           command:
             - /kubeadmiral-controller-manager
-            - --create-crds-for-ftcs=true
             - --kubeconfig=/etc/kubeconfig
             - --klog-v=4
           livenessProbe:

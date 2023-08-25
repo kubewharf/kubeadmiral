@@ -20,16 +20,16 @@ import (
 	"encoding/json"
 	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/tools/cache"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/clusterselector"
+	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/util/clusterselector"
 )
+
+type overridesMap map[string]fedcorev1a1.OverridePatches
 
 /*
 lookForMatchedPolicies looks for OverridePolicy and/or ClusterOverridePolicy
@@ -43,10 +43,10 @@ that match the obj in the stores.
 Returns the policy if found, whether a recheck is needed on error, and encountered error if any.
 */
 func lookForMatchedPolicies(
-	obj *unstructured.Unstructured,
+	obj fedcorev1a1.GenericFederatedObject,
 	isNamespaced bool,
-	overridePolicyStore cache.Store,
-	clusterOverridePolicyStore cache.Store,
+	overridePolicyLister fedcorev1a1listers.OverridePolicyLister,
+	clusterOverridePolicyLister fedcorev1a1listers.ClusterOverridePolicyLister,
 ) ([]fedcorev1a1.GenericOverridePolicy, bool, error) {
 	policies := make([]fedcorev1a1.GenericOverridePolicy, 0)
 
@@ -58,17 +58,14 @@ func lookForMatchedPolicies(
 			return nil, false, fmt.Errorf("policy name cannot be empty")
 		}
 
-		matchedPolicyObj, exists, err := clusterOverridePolicyStore.GetByKey(clusterPolicyName)
-		if err != nil {
+		matchedPolicy, err := clusterOverridePolicyLister.Get(clusterPolicyName)
+		if err != nil && !apierrors.IsNotFound(err) {
 			return nil, true, err
 		}
-		if !exists {
+		if apierrors.IsNotFound(err) {
 			return nil, false, fmt.Errorf("ClusterOverridePolicy %s not found", clusterPolicyName)
 		}
-		matchedPolicy, ok := matchedPolicyObj.(*fedcorev1a1.ClusterOverridePolicy)
-		if !ok {
-			return nil, false, fmt.Errorf("object retrieved from store is not a ClusterOverridePolicy")
-		}
+
 		policies = append(policies, matchedPolicy)
 	}
 
@@ -78,17 +75,12 @@ func lookForMatchedPolicies(
 			return nil, false, fmt.Errorf("policy name cannot be empty")
 		}
 
-		key := obj.GetNamespace() + "/" + policyName
-		matchedPolicyObj, exists, err := overridePolicyStore.GetByKey(key)
-		if err != nil {
+		matchedPolicy, err := overridePolicyLister.OverridePolicies(obj.GetNamespace()).Get(policyName)
+		if err != nil && !apierrors.IsNotFound(err) {
 			return nil, true, err
 		}
-		if !exists {
-			return nil, false, fmt.Errorf("OverridePolicy %s not found", key)
-		}
-		matchedPolicy, ok := matchedPolicyObj.(*fedcorev1a1.OverridePolicy)
-		if !ok {
-			return nil, false, fmt.Errorf("object retrieved from store is not an OverridePolicy")
+		if apierrors.IsNotFound(err) {
+			return nil, false, fmt.Errorf("OverridePolicy %s/%s not found", obj.GetNamespace(), policyName)
 		}
 		policies = append(policies, matchedPolicy)
 	}
@@ -99,11 +91,11 @@ func lookForMatchedPolicies(
 func parseOverrides(
 	policy fedcorev1a1.GenericOverridePolicy,
 	clusters []*fedcorev1a1.FederatedCluster,
-) (util.OverridesMap, error) {
-	overridesMap := make(util.OverridesMap)
+) (overridesMap, error) {
+	overridesMap := make(overridesMap)
 
 	for _, cluster := range clusters {
-		patches := make(fedtypesv1a1.OverridePatches, 0)
+		patches := make(fedcorev1a1.OverridePatches, 0)
 
 		spec := policy.GetSpec()
 		for i, rule := range spec.OverrideRules {
@@ -139,9 +131,9 @@ func parseOverrides(
 	return overridesMap, nil
 }
 
-func mergeOverrides(dest, src util.OverridesMap) util.OverridesMap {
+func mergeOverrides(dest, src overridesMap) overridesMap {
 	if dest == nil {
-		dest = make(util.OverridesMap)
+		dest = make(overridesMap)
 	}
 
 	for clusterName, srcOverrides := range src {
@@ -222,8 +214,8 @@ func isClusterMatchedByClusterAffinity(
 
 func policyJsonPatchOverriderToOverridePatch(
 	overrider *fedcorev1a1.JsonPatchOverrider,
-) (*fedtypesv1a1.OverridePatch, error) {
-	overridePatch := &fedtypesv1a1.OverridePatch{
+) (*fedcorev1a1.OverridePatch, error) {
+	overridePatch := &fedcorev1a1.OverridePatch{
 		Op:   overrider.Operator,
 		Path: overrider.Path,
 	}
@@ -237,4 +229,30 @@ func policyJsonPatchOverriderToOverridePatch(
 	}
 
 	return overridePatch, nil
+}
+
+func setOverrides(federatedObj fedcorev1a1.GenericFederatedObject, overridesMap overridesMap) error {
+	for clusterName, clusterOverrides := range overridesMap {
+		if len(clusterOverrides) == 0 {
+			delete(overridesMap, clusterName)
+		}
+	}
+
+	if len(overridesMap) == 0 {
+		federatedObj.GetSpec().DeleteControllerOverrides(PrefixedControllerName)
+		return nil
+	}
+
+	overrides := []fedcorev1a1.ClusterReferenceWithPatches{}
+
+	for clusterName, clusterOverrides := range overridesMap {
+		overrides = append(overrides, fedcorev1a1.ClusterReferenceWithPatches{
+			Cluster: clusterName,
+			Patches: clusterOverrides,
+		})
+	}
+
+	federatedObj.GetSpec().SetControllerOverrides(PrefixedControllerName, overrides)
+
+	return nil
 }

@@ -23,21 +23,15 @@ package generic
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic/scheme"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/history"
 )
 
 type Client interface {
@@ -48,7 +42,6 @@ type Client interface {
 	List(ctx context.Context, obj client.ObjectList, namespace string) error
 	UpdateStatus(ctx context.Context, obj client.Object) error
 	Patch(ctx context.Context, obj client.Object, patch client.Patch) error
-	Rollback(ctx context.Context, obj client.Object, toRevision int64) error
 	DeleteHistory(ctx context.Context, obj client.Object) error
 
 	ListWithOptions(ctx context.Context, obj client.ObjectList, opts ...client.ListOption) error
@@ -121,91 +114,6 @@ func (c *genericClient) Patch(ctx context.Context, obj client.Object, patch clie
 	return c.client.Patch(ctx, obj, patch)
 }
 
-// Rollback rollbacks federated Object such as FederatedDeployment
-func (c *genericClient) Rollback(ctx context.Context, obj client.Object, toRevision int64) error {
-	if toRevision < 0 {
-		return fmt.Errorf("unable to find specified revision %v in history", toRevision)
-	}
-	if toRevision == 0 {
-		// try to get last revision from annotations, fallback to list all revisions on error
-		if err := c.rollbackToLastRevision(ctx, obj); err == nil {
-			return nil
-		}
-	}
-
-	history, err := c.controlledHistory(ctx, obj)
-	if err != nil {
-		return fmt.Errorf("failed to list history: %s", err)
-	}
-	if toRevision == 0 && len(history) <= 1 {
-		return fmt.Errorf("no last revision to roll back to")
-	}
-
-	toHistory := findHistory(toRevision, history)
-	if toHistory == nil {
-		return fmt.Errorf("unable to find specified revision %v in history", toHistory)
-	}
-
-	// Restore revision
-	if err := c.Patch(ctx, obj, client.RawPatch(types.JSONPatchType, toHistory.Data.Raw)); err != nil {
-		return fmt.Errorf("failed restoring revision %d: %v", toRevision, err)
-	}
-	return nil
-}
-
-func (c *genericClient) rollbackToLastRevision(ctx context.Context, obj client.Object) error {
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-		return err
-	}
-	lastRevisionNameWithHash := accessor.GetAnnotations()[common.LastRevisionAnnotation]
-	if len(lastRevisionNameWithHash) == 0 {
-		return fmt.Errorf("annotation: %s not found", common.LastRevisionAnnotation)
-	}
-
-	lastRevisionName, err := c.checkLastRevisionNameWithHash(lastRevisionNameWithHash, obj)
-	if err != nil {
-		return fmt.Errorf("failed to check last revision name, err: %v", err)
-	}
-
-	latestRevision := &appsv1.ControllerRevision{}
-	if err := c.Get(ctx, latestRevision, accessor.GetNamespace(), lastRevisionName); err != nil {
-		return err
-	}
-
-	// restore latest revision
-	if err := c.Patch(ctx, obj, client.RawPatch(types.JSONPatchType, latestRevision.Data.Raw)); err != nil {
-		return fmt.Errorf("failed restoring latest revision: %v", err)
-	}
-	return nil
-}
-
-func (c *genericClient) checkLastRevisionNameWithHash(lastRevisionNameWithHash string, obj client.Object) (string, error) {
-	parts := strings.Split(lastRevisionNameWithHash, "|")
-	if len(parts) != 2 {
-		return "", fmt.Errorf("invalid lastRevisionNameWithHash: %s", lastRevisionNameWithHash)
-	}
-	lastRevisionName, hash := parts[0], parts[1]
-
-	utdObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
-	if err != nil {
-		return "", err
-	}
-
-	template, ok, err := unstructured.NestedMap(utdObj, "spec", "template", "spec", "template")
-	if err != nil {
-		return "", err
-	}
-	if !ok {
-		return "", fmt.Errorf("spec.template.spec.template is not found, fedResource: %+v", obj)
-	}
-
-	if templateHash := history.HashObject(template); templateHash != hash {
-		return "", fmt.Errorf("pod template hash: %s, last revision name suffix: %s, they should be equal", templateHash, hash)
-	}
-	return lastRevisionName, nil
-}
-
 // controlledHistories returns all ControllerRevisions in namespace that selected by selector and owned by accessor
 func (c *genericClient) controlledHistory(ctx context.Context, obj client.Object) ([]*appsv1.ControllerRevision, error) {
 	accessor, err := meta.Accessor(obj)
@@ -245,29 +153,4 @@ func (c *genericClient) DeleteHistory(ctx context.Context, obj client.Object) er
 		}
 	}
 	return nil
-}
-
-// findHistory returns a controllerrevision of a specific revision from the given controllerrevisions.
-// It returns nil if no such controllerrevision exists.
-// If toRevision is 0, the last previously used history is returned.
-func findHistory(toRevision int64, allHistory []*appsv1.ControllerRevision) *appsv1.ControllerRevision {
-	if toRevision == 0 && len(allHistory) <= 1 {
-		return nil
-	}
-
-	// Find the history to rollback to
-	var toHistory *appsv1.ControllerRevision
-	if toRevision == 0 {
-		// If toRevision == 0, find the latest revision (2nd max)
-		history.SortControllerRevisions(allHistory)
-		toHistory = allHistory[len(allHistory)-2]
-	} else {
-		for _, h := range allHistory {
-			if h.Revision == toRevision {
-				// If toRevision != 0, find the history with matching revision
-				return h
-			}
-		}
-	}
-	return toHistory
 }

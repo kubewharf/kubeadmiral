@@ -50,12 +50,17 @@ type Options struct {
 	LogVerbosity    int
 	KlogVerbosity   int
 
-	NSAutoPropExcludeRegexp string
-	CreateCRDsForFTCs       bool
-	ClusterJoinTimeout      time.Duration
+	NSAutoPropExcludeRegexp  string
+	ClusterJoinTimeout       time.Duration
+	MemberObjectEnqueueDelay time.Duration
 
 	MaxPodListers    int64
 	EnablePodPruning bool
+
+	PrometheusMetrics   bool
+	PrometheusAddr      string
+	PrometheusPort      uint16
+	PrometheusQuantiles map[string]string
 }
 
 func NewOptions() *Options {
@@ -104,7 +109,6 @@ func (o *Options) AddFlags(flags *pflag.FlagSet, allControllers []string, disabl
 		"",
 		"If non-empty, namespaces that match this go regular expression will be excluded from auto propagation.",
 	)
-	flags.BoolVar(&o.CreateCRDsForFTCs, "create-crds-for-ftcs", false, "Generate CRDs for federated types automatically.")
 	flags.DurationVar(
 		&o.ClusterJoinTimeout,
 		"cluster-join-timeout",
@@ -112,11 +116,28 @@ func (o *Options) AddFlags(flags *pflag.FlagSet, allControllers []string, disabl
 		"The maximum amount of time to wait for a new cluster to join the federation before timing out.",
 	)
 
+	flags.DurationVar(
+		&o.MemberObjectEnqueueDelay,
+		"member-object-enqueue-delay",
+		time.Second*5,
+		"The time to wait before enqueuing the object from member cluster.",
+	)
+
 	flags.Int64Var(&o.MaxPodListers, "max-pod-listers", 0, "The maximum number of concurrent pod listing requests to member clusters. "+
 		"A non-positive number means unlimited, but may increase the instantaneous memory usage.")
 	flags.BoolVar(&o.EnablePodPruning, "enable-pod-pruning", false, "Enable pod pruning for pod informer. "+
 		"Enabling this can reduce memory usage of the pod informer, but will disable pod propagation.")
 	o.addKlogFlags(flags)
+
+	flags.BoolVar(&o.PrometheusMetrics, "export-prometheus", true, "Whether to expose metrics through a prometheus endpoint")
+	flags.StringVar(&o.PrometheusAddr, "prometheus-addr", "", "Prometheus collector address")
+	flags.Uint16Var(&o.PrometheusPort, "prometheus-port", 9090, "Prometheus collector port")
+	flags.StringToStringVar(
+		&o.PrometheusQuantiles,
+		"prometheus-quantiles",
+		map[string]string{"0.5": "0.01", "0.95": "0.01", "0.99": "0.002"},
+		"prometheus summary objective quantiles",
+	)
 }
 
 func (o *Options) addKlogFlags(flags *pflag.FlagSet) {

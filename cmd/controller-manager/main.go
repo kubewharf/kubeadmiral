@@ -22,6 +22,7 @@ import (
 	"os"
 
 	"github.com/spf13/pflag"
+	_ "k8s.io/component-base/metrics/prometheus/clientgo"
 	"k8s.io/klog/v2"
 
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app"

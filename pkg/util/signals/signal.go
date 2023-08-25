@@ -25,9 +25,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var (
-	gracefulShutdownSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
-)
+var gracefulShutdownSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
 
 // SetupSignalHandler configures the cancel func to be called when one of the gracefulShutdownSignals is received. A
 // subsequent gracefulShutdownSignal would trigger a forceful termination of the program.

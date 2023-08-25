@@ -29,6 +29,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/runtime"
+	"github.com/kubewharf/kubeadmiral/pkg/stats"
 )
 
 type naiveReplicasPlugin struct{}
@@ -57,7 +58,8 @@ func getFramework() framework.Framework {
 	DefaultRegistry := runtime.Registry{
 		"NaiveReplicas": newNaiveReplicas,
 	}
-	f, _ := runtime.NewFramework(DefaultRegistry, nil, &fedcore.EnabledPlugins{ReplicasPlugins: []string{"NaiveReplicas"}})
+	metrics := stats.NewMock("test", "kubeadmiral_controller_manager", false)
+	f, _ := runtime.NewFramework(DefaultRegistry, nil, &fedcore.EnabledPlugins{ReplicasPlugins: []string{"NaiveReplicas"}}, "", metrics)
 	return f
 }
 

@@ -13,7 +13,7 @@ linters:
     - errcheck
     - gosimple
     - govet
-    - ineffassign
+    # - ineffassign # favour staticcheck
     - staticcheck
     - typecheck
     - unused
@@ -99,7 +99,7 @@ linters:
     # - unparam # too many false-positives
     - usestdlibvars
     # - varnamelen # too demanding
-    - wastedassign
+    # - wastedassign # favour staticcheck
     - whitespace
     # - wrapcheck # too demanding
     # - wsl # too demanding
@@ -256,7 +256,9 @@ linters-settings:
           Copyright {{ YEAR }} The KubeAdmiral Authors\.
 
           {{ MAIN }}
-        BOILERPLATE: "^({{ KUBERNETES_BOILERPLATE }}|{{ KUBEADMIRAL_BOILERPLATE }})$"
+        CREDIT_BOILERPLATE: |-
+          The design of (the )?[a-zA-z0-9 ]*is inspired by [a-zA-z0-9 '-]*\. Kudos!
+        BOILERPLATE: "^({{ KUBERNETES_BOILERPLATE }}|{{ KUBEADMIRAL_BOILERPLATE }}|{{ CREDIT_BOILERPLATE }})$"
     template: "{{ BOILERPLATE }}"
   forbidigo:
     # Forbid the following identifiers (list of regexp).

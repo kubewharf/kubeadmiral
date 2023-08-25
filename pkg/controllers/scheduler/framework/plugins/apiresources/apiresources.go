@@ -1,4 +1,4 @@
-// The design of this plugin is heavily inspired by karmada-scheduler. Kudos!
+// The design of this plugin is inspired by karmada-scheduler. Kudos!
 
 package apiresources
 

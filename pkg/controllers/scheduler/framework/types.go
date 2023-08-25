@@ -167,6 +167,13 @@ const (
 	Error
 )
 
+// This list should be exactly the same as the codes iota defined above in the same order.
+var codes = []string{"Success", "Unschedulable", "Error"}
+
+func (c Code) String() string {
+	return codes[c]
+}
+
 // NewResult makes a result out of the given arguments and returns its pointer.
 func NewResult(code Code, reasons ...string) *Result {
 	s := &Result{
@@ -177,6 +184,14 @@ func NewResult(code Code, reasons ...string) *Result {
 		s.err = errors.New(strings.Join(reasons, ","))
 	}
 	return s
+}
+
+// Code returns code of the Result.
+func (s *Result) Code() Code {
+	if s == nil {
+		return Success
+	}
+	return s.code
 }
 
 // IsSuccess returns true if and only if "Result" is nil or Code is "Success".

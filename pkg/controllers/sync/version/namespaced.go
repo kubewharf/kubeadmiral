@@ -21,10 +21,13 @@ are Copyright 2023 The KubeAdmiral Authors.
 package version
 
 import (
+	"context"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	fedcorev1a1client "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
@@ -34,12 +37,44 @@ func (*namespacedVersionAdapter) TypeName() string {
 	return "PropagatedVersion"
 }
 
-func (*namespacedVersionAdapter) NewListObject() client.ObjectList {
-	return &fedcorev1a1.PropagatedVersionList{}
+func (*namespacedVersionAdapter) Get(
+	ctx context.Context,
+	client fedcorev1a1client.CoreV1alpha1Interface,
+	namespace, name string,
+	opts metav1.GetOptions,
+) (client.Object, error) {
+	return client.PropagatedVersions(namespace).Get(ctx, name, opts)
 }
 
-func (*namespacedVersionAdapter) NewObject() client.Object {
-	return &fedcorev1a1.PropagatedVersion{}
+func (*namespacedVersionAdapter) List(
+	ctx context.Context,
+	client fedcorev1a1client.CoreV1alpha1Interface,
+	namespace string,
+	opts metav1.ListOptions,
+) (client.ObjectList, error) {
+	return client.PropagatedVersions(namespace).List(ctx, opts)
+}
+
+func (*namespacedVersionAdapter) Create(
+	ctx context.Context,
+	client fedcorev1a1client.CoreV1alpha1Interface,
+	obj client.Object,
+	opts metav1.CreateOptions,
+) (client.Object, error) {
+	return client.PropagatedVersions(obj.GetNamespace()).Create(
+		ctx, obj.(*fedcorev1a1.PropagatedVersion), opts,
+	)
+}
+
+func (*namespacedVersionAdapter) UpdateStatus(
+	ctx context.Context,
+	client fedcorev1a1client.CoreV1alpha1Interface,
+	obj client.Object,
+	opts metav1.UpdateOptions,
+) (client.Object, error) {
+	return client.PropagatedVersions(obj.GetNamespace()).UpdateStatus(
+		ctx, obj.(*fedcorev1a1.PropagatedVersion), opts,
+	)
 }
 
 func (*namespacedVersionAdapter) NewVersion(

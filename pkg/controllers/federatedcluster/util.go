@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/util/resource"
 )
 
 func getClusterCondition(
@@ -131,47 +132,6 @@ func isNodeSchedulable(node *corev1.Node) bool {
 	return true
 }
 
-func addResources(src, dest corev1.ResourceList) {
-	for k, v := range src {
-		if prevVal, ok := dest[k]; ok {
-			prevVal.Add(v)
-			dest[k] = prevVal
-		} else {
-			dest[k] = v.DeepCopy()
-		}
-	}
-}
-
-// maxResources sets dst to the greater of dst/src for every resource in src
-func maxResources(src, dst corev1.ResourceList) {
-	for name, srcQuantity := range src {
-		if dstQuantity, ok := dst[name]; !ok || srcQuantity.Cmp(dstQuantity) > 0 {
-			dst[name] = srcQuantity.DeepCopy()
-		}
-	}
-}
-
-// podResourceRequest = max(sum(podSpec.Containers), podSpec.InitContainers...) + overHead
-func getPodResourceRequests(pod *corev1.Pod) corev1.ResourceList {
-	reqs := make(corev1.ResourceList)
-
-	for _, container := range pod.Spec.Containers {
-		addResources(container.Resources.Requests, reqs)
-	}
-
-	for _, container := range pod.Spec.InitContainers {
-		maxResources(container.Resources.Requests, reqs)
-	}
-
-	// if PodOverhead feature is supported, add overhead for running a pod
-	// to the sum of requests and to non-zero limits:
-	if pod.Spec.Overhead != nil {
-		addResources(pod.Spec.Overhead, reqs)
-	}
-
-	return reqs
-}
-
 // aggregateResources returns
 //   - allocatable resources from the nodes and,
 //   - available resources after considering allocations to the given pods.
@@ -185,7 +145,7 @@ func aggregateResources(
 			continue
 		}
 
-		addResources(node.Status.Allocatable, allocatable)
+		resource.AddResources(node.Status.Allocatable, allocatable)
 	}
 
 	// Don't consider pod resource for now
@@ -201,7 +161,7 @@ func aggregateResources(
 			continue
 		}
 
-		podRequests := getPodResourceRequests(pod)
+		podRequests := resource.GetPodResourceRequests(&pod.Spec)
 		for name, requestedQuantity := range podRequests {
 			if availableQuantity, ok := available[name]; ok {
 				availableQuantity.Sub(requestedQuantity)

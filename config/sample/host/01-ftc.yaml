@@ -4,18 +4,7 @@ kind: FederatedTypeConfig
 metadata:
   name: namespaces
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedNamespace
-    pluralName: federatednamespaces
-    scope: Cluster
-    version: v1alpha1
   sourceType:
-    kind: Namespace
-    pluralName: namespaces
-    scope: Cluster
-    version: v1
-  targetType:
     kind: Namespace
     pluralName: namespaces
     scope: Cluster
@@ -29,32 +18,16 @@ kind: FederatedTypeConfig
 metadata:
   name: configmaps
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedConfigMap
-    pluralName: federatedconfigmaps
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    kind: ConfigMap
-    pluralName: configmaps
-    scope: Namespaced
-    version: v1
   sourceType:
     kind: ConfigMap
     pluralName: configmaps
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedConfigMapStatus
-    pluralName: federatedconfigmapstatuses
-    scope: Namespaced
-    version: v1alpha1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
 ---
@@ -63,38 +36,19 @@ kind: FederatedTypeConfig
 metadata:
   name: deployments.apps
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedDeployment
-    pluralName: federateddeployments
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    group: apps
-    kind: Deployment
-    pluralName: deployments
-    scope: Namespaced
-    version: v1
   sourceType:
     group: apps
     kind: Deployment
     pluralName: deployments
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedDeploymentStatus
-    pluralName: federateddeploymentstatuses
-    scope: Namespaced
-    version: v1alpha1
-  statusAggregation: Enabled
-  revisionHistory: Enabled
+  statusAggregation:
+    enabled: true
   autoMigration:
     enabled: true
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
-    - - kubeadmiral.io/follower-controller
   pathDefinition:
     labelSelector: spec.selector
     replicasSpec: spec.replicas
@@ -102,6 +56,7 @@ spec:
     availableReplicasStatus: status.availableReplicas
     readyReplicasStatus: status.readyReplicas
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - spec.replicas
@@ -112,32 +67,16 @@ kind: FederatedTypeConfig
 metadata:
   name: serviceaccounts
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedServiceAccount
-    pluralName: federatedserviceaccounts
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    kind: ServiceAccount
-    pluralName: serviceaccounts
-    scope: Namespaced
-    version: v1
   sourceType:
     kind: ServiceAccount
     pluralName: serviceaccounts
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedServiceAccountStatus
-    pluralName: federatedserviceaccountstatuses
-    scope: Namespaced
-    version: v1alpha1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
 ---
@@ -146,32 +85,16 @@ kind: FederatedTypeConfig
 metadata:
   name: secrets
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedSecret
-    pluralName: federatedsecrets
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    kind: Secret
-    pluralName: secrets
-    scope: Namespaced
-    version: v1
   sourceType:
     kind: Secret
     pluralName: secrets
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedSecretStatus
-    pluralName: federatedsecretstatuses
-    scope: Namespaced
-    version: v1alpha1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
 ---
@@ -180,32 +103,16 @@ kind: FederatedTypeConfig
 metadata:
   name: services
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedService
-    pluralName: federatedservices
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    kind: Service
-    pluralName: services
-    scope: Namespaced
-    version: v1
   sourceType:
     kind: Service
     pluralName: services
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedServiceStatus
-    pluralName: federatedservicestatuses
-    scope: Namespaced
-    version: v1alpha1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - spec.clusterIP
@@ -218,34 +125,17 @@ kind: FederatedTypeConfig
 metadata:
   name: storageclasses
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedStorageClass
-    pluralName: federatedstorageclasses
-    scope: Cluster
-    version: v1alpha1
-  targetType:
-    group: storage.k8s.io
-    kind: StorageClass
-    pluralName: storageclasses
-    scope: Cluster
-    version: v1
   sourceType:
     group: storage.k8s.io
     kind: StorageClass
     pluralName: storageclasses
     scope: Cluster
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedStorageClassStatus
-    pluralName: federatedstorageclassstatuses
-    scope: Cluster
-    version: v1alpha1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - provisioner
@@ -256,32 +146,16 @@ kind: FederatedTypeConfig
 metadata:
   name: persistentvolumes
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedPersistentVolume
-    pluralName: federatedpersistentvolumes
-    scope: Cluster
-    version: v1alpha1
-  targetType:
-    kind: PersistentVolume
-    pluralName: persistentvolumes
-    scope: Cluster
-    version: v1
   sourceType:
     kind: PersistentVolume
     pluralName: persistentvolumes
     scope: Cluster
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedPersistentVolumeStatus
-    pluralName: federatedpersistentvolumestatuses
-    scope: Cluster
-    version: v1alpha1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - spec.accessModes
@@ -295,32 +169,16 @@ kind: FederatedTypeConfig
 metadata:
   name: persistentvolumeclaims
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedPersistentVolumeClaim
-    pluralName: federatedpersistentvolumeclaims
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    kind: PersistentVolumeClaim
-    pluralName: persistentvolumeclaims
-    scope: Namespaced
-    version: v1
   sourceType:
     kind: PersistentVolumeClaim
     pluralName: persistentvolumeclaims
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedPersistentVolumeClaimStatus
-    pluralName: federatedpersistentvolumeclaimstatuses
-    scope: Namespaced
-    version: v1alpha1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - spec.resources.requests
@@ -332,18 +190,6 @@ kind: FederatedTypeConfig
 metadata:
   name: clusterrolebindings.rbac.authorization.k8s.io
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedClusterRoleBinding
-    pluralName: federatedclusterrolebindings
-    scope: Cluster
-    version: v1alpha1
-  targetType:
-    group: rbac.authorization.k8s.io
-    kind: ClusterRoleBinding
-    pluralName: clusterrolebindings
-    scope: Cluster
-    version: v1
   sourceType:
     group: rbac.authorization.k8s.io
     kind: ClusterRoleBinding
@@ -359,18 +205,6 @@ kind: FederatedTypeConfig
 metadata:
   name: clusterroles.rbac.authorization.k8s.io
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedClusterRole
-    pluralName: federatedclusterroles
-    scope: Cluster
-    version: v1alpha1
-  targetType:
-    group: rbac.authorization.k8s.io
-    kind: ClusterRole
-    pluralName: clusterroles
-    scope: Cluster
-    version: v1
   sourceType:
     group: rbac.authorization.k8s.io
     kind: ClusterRole
@@ -386,18 +220,6 @@ kind: FederatedTypeConfig
 metadata:
   name: rolebindings.rbac.authorization.k8s.io
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedRoleBinding
-    pluralName: federatedrolebindings
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    group: rbac.authorization.k8s.io
-    kind: RoleBinding
-    pluralName: rolebindings
-    scope: Namespaced
-    version: v1
   sourceType:
     group: rbac.authorization.k8s.io
     kind: RoleBinding
@@ -413,18 +235,6 @@ kind: FederatedTypeConfig
 metadata:
   name: roles.rbac.authorization.k8s.io
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedRole
-    pluralName: federatedroles
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    group: rbac.authorization.k8s.io
-    kind: Role
-    pluralName: roles
-    scope: Namespaced
-    version: v1
   sourceType:
     group: rbac.authorization.k8s.io
     kind: Role
@@ -440,36 +250,17 @@ kind: FederatedTypeConfig
 metadata:
   name: statefulsets.apps
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedStatefulSet
-    pluralName: federatedstatefulsets
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    group: apps
-    kind: StatefulSet
-    pluralName: statefulsets
-    scope: Namespaced
-    version: v1
   sourceType:
     group: apps
     kind: StatefulSet
     pluralName: statefulsets
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedStatefulSetStatus
-    pluralName: federatedstatefulsetstatuses
-    scope: Namespaced
-    version: v1alpha1
-  revisionHistory: Enabled
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
-    - - kubeadmiral.io/follower-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - spec.replicas
@@ -480,36 +271,17 @@ kind: FederatedTypeConfig
 metadata:
   name: daemonsets.apps
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedDaemonSet
-    pluralName: federateddaemonsets
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    group: apps
-    kind: DaemonSet
-    pluralName: daemonsets
-    scope: Namespaced
-    version: v1
   sourceType:
     group: apps
     kind: DaemonSet
     pluralName: daemonsets
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedDaemonSetStatus
-    pluralName: federateddaemonsetstatuses
-    scope: Namespaced
-    version: v1alpha1
-  revisionHistory: Enabled
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
-    - - kubeadmiral.io/follower-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - status
@@ -519,36 +291,19 @@ kind: FederatedTypeConfig
 metadata:
   name: jobs.batch
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedJob
-    pluralName: federatedjobs
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    group: batch
-    kind: Job
-    pluralName: jobs
-    scope: Namespaced
-    version: v1
   sourceType:
     group: batch
     kind: Job
     pluralName: jobs
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedJobStatus
-    pluralName: federatedjobstatuses
-    scope: Namespaced
-    version: v1alpha1
-  statusAggregation: Enabled
+  statusAggregation:
+    enabled: true
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
-    - - kubeadmiral.io/follower-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - status
@@ -558,35 +313,17 @@ kind: FederatedTypeConfig
 metadata:
   name: cronjobs.batch
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedCronJob
-    pluralName: federatedcronjobs
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    group: batch
-    kind: CronJob
-    pluralName: cronjobs
-    scope: Namespaced
-    version: v1beta1
   sourceType:
     group: batch
     kind: CronJob
     pluralName: cronjobs
     scope: Namespaced
     version: v1beta1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedCronJobStatus
-    pluralName: federatedcronjobstatuses
-    scope: Namespaced
-    version: v1alpha1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
-    - - kubeadmiral.io/follower-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - status
@@ -596,34 +333,17 @@ kind: FederatedTypeConfig
 metadata:
   name: ingresses.networking.k8s.io
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedIngress
-    pluralName: federatedingresses
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    group: networking.k8s.io
-    kind: Ingress
-    pluralName: ingresses
-    scope: Namespaced
-    version: v1
   sourceType:
     group: networking.k8s.io
     kind: Ingress
     pluralName: ingresses
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedIngressStatus
-    pluralName: federatedingressstatuses
-    scope: Namespaced
-    version: v1alpha1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - spec.rules
@@ -634,17 +354,6 @@ kind: FederatedTypeConfig
 metadata:
   name: limitranges
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedLimitRange
-    pluralName: federatedlimitranges
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    kind: LimitRange
-    pluralName: limitranges
-    scope: Namespaced
-    version: v1
   sourceType:
     kind: LimitRange
     pluralName: limitranges
@@ -659,32 +368,16 @@ kind: FederatedTypeConfig
 metadata:
   name: resourcequotas
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedResourceQuota
-    pluralName: federatedresourcequotas
-    scope: Namespaced
-    version: v1alpha1
-  targetType:
-    kind: ResourceQuota
-    pluralName: resourcequotas
-    scope: Namespaced
-    version: v1
   sourceType:
     kind: ResourceQuota
     pluralName: resourcequotas
     scope: Namespaced
     version: v1
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedResourceQuotaStatus
-    pluralName: federatedresourcequotastatuses
-    scope: Namespaced
-    version: v1alpha1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - status
@@ -694,34 +387,17 @@ kind: FederatedTypeConfig
 metadata:
   name: customresourcedefinitions.apiextensions.k8s.io
 spec:
-  federatedType:
-    group: types.kubeadmiral.io
-    kind: FederatedCustomResourceDefinition
-    pluralName: federatedcustomresourcedefinitions
-    scope: Cluster
-    version: v1alpha1
-  targetType:
-    kind: CustomResourceDefinition
-    pluralName: customresourcedefinitions
-    scope: Cluster
-    version: v1
-    group: apiextensions.k8s.io
   sourceType:
     kind: CustomResourceDefinition
     pluralName: customresourcedefinitions
     scope: Cluster
     version: v1
     group: apiextensions.k8s.io
-  statusType:
-    group: types.kubeadmiral.io
-    kind: FederatedCustomResourceDefinitionStatus
-    pluralName: federatedcustomresourcedefinitionstatuses
-    scope: Cluster
-    version: v1alpha1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
   statusCollection:
+    enabled: true
     fields:
       - metadata.creationTimestamp
       - status

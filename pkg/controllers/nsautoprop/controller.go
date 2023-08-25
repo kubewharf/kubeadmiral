@@ -28,37 +28,36 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/dynamic/dynamicinformer"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
+	corev1informers "k8s.io/client-go/informers/core/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
+	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	annotationutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/pendingcontrollers"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
+	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
+	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	"github.com/kubewharf/kubeadmiral/pkg/util/orphaning"
+	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
+	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
 const (
 	NamespaceAutoPropagationControllerName         = "nsautoprop-controller"
 	PrefixedNamespaceAutoPropagationControllerName = common.DefaultPrefix + NamespaceAutoPropagationControllerName
 	EventReasonNamespaceAutoPropagation            = "NamespaceAutoPropagation"
-	NoAutoPropagationAnnotation                    = common.DefaultPrefix + "no-auto-propagation"
 )
+
+var namespaceGVK = corev1.SchemeGroupVersion.WithKind("Namespace")
 
 /*
 NamespacesAutoPropagationController automatically propagates namespaces to all
@@ -73,190 +72,206 @@ Note that since both NamespaceAutoPropagationController and global-scheduler set
 if both are enabled, they will conflict with each other and reconcile indefinitely.
 */
 type Controller struct {
-	// name of controller
-	name string
+	fedClient fedclient.Interface
 
-	// FederatedTypeConfig for namespaces
-	typeConfig *fedcorev1a1.FederatedTypeConfig
+	informerManager          informermanager.InformerManager
+	namespaceInformer        corev1informers.NamespaceInformer
+	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer
+	clusterInformer          fedcorev1a1informers.FederatedClusterInformer
 
-	dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory
-	fedInformerFactory     fedinformers.SharedInformerFactory
-
-	// Informer for FederatedCluster
-	clusterInformer fedcorev1a1informers.FederatedClusterInformer
-	// Informer for FederatedNamespace
-	fedNamespaceInformer informers.GenericInformer
-	// Client for FederatedNamespace
-	fedNamespaceClient dynamic.NamespaceableResourceInterface
-
-	worker        worker.ReconcileWorker
+	worker        worker.ReconcileWorker[common.QualifiedName]
 	eventRecorder record.EventRecorder
 
-	fedSystemNamespace string
 	excludeRegexp      *regexp.Regexp
+	fedSystemNamespace string
 
+	logger  klog.Logger
 	metrics stats.Metrics
 }
 
-func StartController(
-	controllerConfig *util.ControllerConfig,
-	stopChan <-chan struct{},
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	kubeClient kubernetes.Interface,
-	dynamicClient dynamic.Interface,
-	dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory,
-	fedInformerFactory fedinformers.SharedInformerFactory,
-) error {
-	controller, err := newController(
-		controllerConfig,
-		typeConfig,
-		kubeClient,
-		dynamicClient,
-		fedInformerFactory,
-		dynamicInformerFactory,
-	)
-	if err != nil {
-		return err
-	}
-	klog.V(4).Infof("Starting namespace auto propagation controller")
-	go controller.Run(stopChan)
-	return nil
+func (c *Controller) IsControllerReady() bool {
+	return c.HasSynced()
 }
 
-func newController(
-	controllerConfig *util.ControllerConfig,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
+func NewNamespaceAutoPropagationController(
 	kubeClient kubeclient.Interface,
-	dynamicClient dynamic.Interface,
-	fedInformerFactory fedinformers.SharedInformerFactory,
-	dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory,
+	informerManager informermanager.InformerManager,
+	fedClient fedclient.Interface,
+	clusterInformer fedcorev1a1informers.FederatedClusterInformer,
+	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer,
+	namespaceInformer corev1informers.NamespaceInformer,
+	nsExcludeRegexp *regexp.Regexp,
+	fedSystemNamespace string,
+	metrics stats.Metrics,
+	logger klog.Logger,
+	workerCount int,
 ) (*Controller, error) {
-	userAgent := NamespaceAutoPropagationControllerName
-	if !typeConfig.IsNamespace() {
-		return nil, fmt.Errorf("%s expects a FederatedTypeConfig for namespaces", userAgent)
-	}
-
-	federatedNamespaceApiResource := typeConfig.GetFederatedType()
-	fedNamespaceGVR := schemautil.APIResourceToGVR(&federatedNamespaceApiResource)
 	c := &Controller{
-		name:                   userAgent,
-		typeConfig:             typeConfig,
-		eventRecorder:          eventsink.NewDefederatingRecorderMux(kubeClient, userAgent, 4),
-		dynamicInformerFactory: dynamicInformerFactory,
-		fedInformerFactory:     fedInformerFactory,
-		fedSystemNamespace:     controllerConfig.FedSystemNamespace,
-		excludeRegexp:          controllerConfig.NamespaceAutoPropagationExcludeRegexp,
-		metrics:                controllerConfig.Metrics,
-		fedNamespaceClient:     dynamicClient.Resource(fedNamespaceGVR),
-		clusterInformer:        fedInformerFactory.Core().V1alpha1().FederatedClusters(),
-		fedNamespaceInformer:   dynamicInformerFactory.ForResource(fedNamespaceGVR),
+		fedClient: fedClient,
+
+		informerManager:          informerManager,
+		clusterFedObjectInformer: clusterFedObjectInformer,
+		clusterInformer:          clusterInformer,
+		namespaceInformer:        namespaceInformer,
+
+		excludeRegexp:      nsExcludeRegexp,
+		fedSystemNamespace: fedSystemNamespace,
+
+		eventRecorder: eventsink.NewDefederatingRecorderMux(kubeClient, NamespaceAutoPropagationControllerName, 4),
+		metrics:       metrics,
+		logger:        logger.WithValues("controller", NamespaceAutoPropagationControllerName),
 	}
 
-	c.worker = worker.NewReconcileWorker(
+	c.worker = worker.NewReconcileWorker[common.QualifiedName](
+		NamespaceAutoPropagationControllerName,
 		c.reconcile,
-		worker.WorkerTiming{},
-		controllerConfig.WorkerCount,
-		controllerConfig.Metrics,
-		delayingdeliver.NewMetricTags(userAgent, federatedNamespaceApiResource.Kind),
+		worker.RateLimiterOptions{},
+		workerCount,
+		metrics,
 	)
-	enqueueObj := c.worker.EnqueueObject
-	c.fedNamespaceInformer.Informer().
-		AddEventHandlerWithResyncPeriod(util.NewTriggerOnAllChanges(enqueueObj), util.NoResyncPeriod)
+
+	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandlerWithResyncPeriod(
+		eventhandlers.NewTriggerOnAllChanges(
+			func(obj *fedcorev1a1.ClusterFederatedObject) {
+				srcMeta, err := obj.Spec.GetTemplateAsUnstructured()
+				if err != nil {
+					c.logger.Error(
+						err,
+						"Failed to get source object's metadata from ClusterFederatedObject",
+						"object",
+						common.NewQualifiedName(obj),
+					)
+					return
+				}
+				if srcMeta.GetKind() != common.NamespaceKind || !c.shouldBeAutoPropagated(srcMeta) {
+					return
+				}
+				c.worker.Enqueue(common.QualifiedName{Name: obj.GetName()})
+			},
+		), 0); err != nil {
+		return nil, err
+	}
 
 	reconcileAll := func() {
-		for _, fns := range c.fedNamespaceInformer.Informer().GetStore().List() {
-			enqueueObj(fns.(runtime.Object))
+		typeConfig, exists := c.informerManager.GetResourceFTC(namespaceGVK)
+		if !exists {
+			c.logger.Error(nil, "Namespace ftc does not exist")
+			return
+		}
+
+		allNamespaces, err := c.namespaceInformer.Lister().List(labels.Everything())
+		if err != nil {
+			c.logger.Error(err, "Failed to list all namespaces")
+			return
+		}
+
+		for _, ns := range allNamespaces {
+			c.worker.Enqueue(common.QualifiedName{Name: naming.GenerateFederatedObjectName(ns.Name, typeConfig.Name)})
 		}
 	}
-	c.clusterInformer.Informer().AddEventHandlerWithResyncPeriod(cache.ResourceEventHandlerFuncs{
+
+	if _, err := c.clusterInformer.Informer().AddEventHandlerWithResyncPeriod(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			reconcileAll()
 		},
 		DeleteFunc: func(obj interface{}) {
 			reconcileAll()
 		},
-	}, util.NoResyncPeriod)
+	}, 0); err != nil {
+		return nil, err
+	}
+
 	return c, nil
 }
 
-func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result {
-	key := qualifiedName.String()
+func (c *Controller) reconcile(ctx context.Context, qualifiedName common.QualifiedName) worker.Result {
+	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "federated-name", qualifiedName.String())
 
-	c.metrics.Rate("namespace-auto-propagation-controller.throughput", 1)
-	klog.V(4).Infof("namespace auto propagation controller starting to reconcile %v", key)
+	c.metrics.Counter("namespace_auto_propagation_controller_throughput", 1)
+	keyedLogger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration("namespace-auto-propagation-controller.latency", startTime)
-		klog.V(4).
-			Infof("namespace auto propagation controller finished reconciling %v (duration: %v)", key, time.Since(startTime))
+		c.metrics.Duration("namespace_auto_propagation_controller_latency", startTime)
+		keyedLogger.WithValues("duration", time.Since(startTime)).V(3).Info("Finished reconciling")
 	}()
 
-	fedNamespace, err := c.getFederatedObject(qualifiedName)
-	if err != nil {
-		utilruntime.HandleError(err)
+	fedNamespace, err := c.clusterFedObjectInformer.Lister().Get(qualifiedName.Name)
+	if err != nil && !apierrors.IsNotFound(err) {
+		keyedLogger.Error(err, "Failed to get federated namespace")
 		return worker.StatusError
 	}
-	if fedNamespace == nil || fedNamespace.GetDeletionTimestamp() != nil {
+	if apierrors.IsNotFound(err) || fedNamespace.GetDeletionTimestamp() != nil {
 		return worker.StatusAllOK
 	}
+	fedNamespace = fedNamespace.DeepCopy()
 
 	if ok, err := pendingcontrollers.ControllerDependenciesFulfilled(
 		fedNamespace,
 		PrefixedNamespaceAutoPropagationControllerName,
 	); err != nil {
-		utilruntime.HandleError(fmt.Errorf("failed to check controller dependencies for %q: %w", key, err))
+		keyedLogger.Error(err, "Failed to get pending controllers")
 		return worker.StatusError
 	} else if !ok {
 		return worker.StatusAllOK
 	}
 
-	if !c.shouldBeAutoPropagated(fedNamespace) {
+	typeConfig, exists := c.informerManager.GetResourceFTC(namespaceGVK)
+	if !exists {
+		keyedLogger.Error(nil, "Namespace ftc does not exist")
+		return worker.StatusError
+	}
+
+	srcMeta, err := fedNamespace.Spec.GetTemplateAsUnstructured()
+	if err != nil {
+		keyedLogger.Error(err, "Failed to get source object's metadata from ClusterFederatedObject")
+		return worker.StatusError
+	}
+
+	if !c.shouldBeAutoPropagated(srcMeta) {
 		updated, err := pendingcontrollers.UpdatePendingControllers(
 			fedNamespace,
 			PrefixedNamespaceAutoPropagationControllerName,
 			false,
-			c.typeConfig.GetControllers(),
+			typeConfig.GetControllers(),
 		)
 		if err != nil {
-			utilruntime.HandleError(err)
+			keyedLogger.Error(err, "Failed to set pending controllers")
 			return worker.StatusError
 		}
 
 		if updated {
-			_, err = c.fedNamespaceClient.Update(context.TODO(), fedNamespace, metav1.UpdateOptions{})
+			_, err = c.fedClient.CoreV1alpha1().
+				ClusterFederatedObjects().
+				Update(ctx, fedNamespace, metav1.UpdateOptions{})
 			if err != nil {
 				if apierrors.IsConflict(err) {
 					return worker.StatusConflict
 				}
-				utilruntime.HandleError(err)
+				keyedLogger.Error(err, "Failed to update cluster federated object")
 				return worker.StatusError
 			}
 		}
 		return worker.StatusAllOK
 	}
 
+	c.recordNamespacePropagationFailedMetric(fedNamespace)
+
 	needsUpdate := false
 
 	// Set placement to propagate to all clusters
 	clusters, err := c.clusterInformer.Lister().List(labels.Everything())
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("failed to list from cluster store: %w", err))
+		keyedLogger.Error(err, "Failed to list federated clusters")
 		return worker.StatusError
-	}
-	clusterNames := make(map[string]struct{}, len(clusters))
-	for _, cluster := range clusters {
-		clusterNames[cluster.Name] = struct{}{}
 	}
 
-	isDirty, err := util.SetPlacementClusterNames(
-		fedNamespace,
-		PrefixedNamespaceAutoPropagationControllerName,
-		clusterNames,
-	)
-	if err != nil {
-		utilruntime.HandleError(err)
-		return worker.StatusError
+	clusterNames := make([]string, 0, len(clusters))
+	for _, clusterName := range clusters {
+		clusterNames = append(clusterNames, clusterName.Name)
 	}
+
+	isDirty := fedNamespace.Spec.SetControllerPlacement(PrefixedNamespaceAutoPropagationControllerName, clusterNames)
+
 	needsUpdate = needsUpdate || isDirty
 
 	// Set internal versions of the annotations so they do not get overridden by federate controller
@@ -264,11 +279,11 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 	// Ensure we adopt pre-existing namespaces in member clusters
 	isDirty, err = c.ensureAnnotation(
 		fedNamespace,
-		util.ConflictResolutionInternalAnnotation,
-		string(util.ConflictResolutionAdopt),
+		adoption.ConflictResolutionInternalAnnotation,
+		string(adoption.ConflictResolutionAdopt),
 	)
 	if err != nil {
-		utilruntime.HandleError(err)
+		keyedLogger.Error(err, "Failed to ensure annotation")
 		return worker.StatusError
 	}
 	needsUpdate = needsUpdate || isDirty
@@ -276,11 +291,11 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 	// Ensure we don't delete adopted member namespaces when the federated namespace is deleted
 	isDirty, err = c.ensureAnnotation(
 		fedNamespace,
-		util.OrphanManagedResourcesInternalAnnotation,
-		string(util.OrphanManagedResourcesAdopted),
+		orphaning.OrphanManagedResourcesInternalAnnotation,
+		string(orphaning.OrphanManagedResourcesAdopted),
 	)
 	if err != nil {
-		utilruntime.HandleError(err)
+		keyedLogger.Error(err, "Failed to ensure annotation")
 		return worker.StatusError
 	}
 	needsUpdate = needsUpdate || isDirty
@@ -290,10 +305,10 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 		fedNamespace,
 		PrefixedNamespaceAutoPropagationControllerName,
 		needsUpdate,
-		c.typeConfig.GetControllers(),
+		typeConfig.GetControllers(),
 	)
 	if err != nil {
-		utilruntime.HandleError(err)
+		keyedLogger.Error(err, "Failed to update pending controllers")
 		return worker.StatusError
 	}
 	needsUpdate = needsUpdate || isDirty
@@ -302,19 +317,19 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 		return worker.StatusAllOK
 	}
 
-	_, err = c.fedNamespaceClient.Update(context.TODO(), fedNamespace, metav1.UpdateOptions{})
+	_, err = c.fedClient.CoreV1alpha1().ClusterFederatedObjects().Update(ctx, fedNamespace, metav1.UpdateOptions{})
 	if err != nil {
 		if apierrors.IsConflict(err) {
 			return worker.StatusConflict
 		}
 		c.eventRecorder.Eventf(fedNamespace, corev1.EventTypeWarning, EventReasonNamespaceAutoPropagation,
-			"failed to update %s %q for auto propagation, err: %v",
-			fedNamespace.GetKind(), fedNamespace.GetName(), err)
+			"failed to update %s for auto propagation, err: %v",
+			fedNamespace.GetName(), err)
 		return worker.StatusError
 	}
 
 	c.eventRecorder.Eventf(fedNamespace, corev1.EventTypeNormal, EventReasonNamespaceAutoPropagation,
-		"updated %s %q for auto propagation", fedNamespace.GetKind(), fedNamespace.GetName())
+		"updated %s for auto propagation", fedNamespace.GetName())
 
 	return worker.StatusAllOK
 }
@@ -344,38 +359,55 @@ func (c *Controller) shouldBeAutoPropagated(fedNamespace *unstructured.Unstructu
 	return true
 }
 
-func (c *Controller) ensureAnnotation(fedNamespace *unstructured.Unstructured, key, value string) (bool, error) {
+func (c *Controller) ensureAnnotation(
+	fedNamespace *fedcorev1a1.ClusterFederatedObject,
+	key, value string,
+) (bool, error) {
 	needsUpdate, err := annotationutil.AddAnnotation(fedNamespace, key, value)
 	if err != nil {
 		return false, fmt.Errorf(
-			"failed to add %s annotation to %s %q, err: %w",
-			key, fedNamespace.GetKind(), fedNamespace.GetName(), err)
+			"failed to add %s annotation to %s, err: %w",
+			key, fedNamespace.GetName(), err)
 	}
 
 	return needsUpdate, nil
 }
 
-func (c *Controller) Run(stopChan <-chan struct{}) {
-	c.dynamicInformerFactory.Start(stopChan)
-	c.fedInformerFactory.Start(stopChan)
-	if !cache.WaitForNamedCacheSync(c.name, stopChan, c.HasSynced) {
+func (c *Controller) Run(ctx context.Context) {
+	ctx, logger := logging.InjectLogger(ctx, c.logger)
+
+	logger.Info("Starting controller")
+	defer logger.Info("Stopping controller")
+
+	go c.namespaceInformer.Informer().Run(ctx.Done())
+
+	if !cache.WaitForNamedCacheSync(NamespaceAutoPropagationControllerName, ctx.Done(), c.HasSynced) {
+		logger.Error(nil, "Timed out waiting for caches to sync")
 		return
 	}
-	c.worker.Run(stopChan)
+
+	logger.Info("Caches are synced")
+	c.worker.Run(ctx)
+	<-ctx.Done()
 }
 
 func (c *Controller) HasSynced() bool {
 	return c.clusterInformer.Informer().HasSynced() &&
-		c.fedNamespaceInformer.Informer().HasSynced()
+		c.clusterFedObjectInformer.Informer().HasSynced() &&
+		c.namespaceInformer.Informer().HasSynced() &&
+		c.informerManager.HasSynced()
 }
 
-func (c *Controller) getFederatedObject(qualifiedName common.QualifiedName) (*unstructured.Unstructured, error) {
-	cachedObj, err := c.fedNamespaceInformer.Lister().Get(qualifiedName.String())
-	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, err
+func (c *Controller) recordNamespacePropagationFailedMetric(fedNamespace *fedcorev1a1.ClusterFederatedObject) {
+	errorClusterCount := 0
+
+	for _, clusterStatus := range fedNamespace.Status.Clusters {
+		if clusterStatus.Status != fedcorev1a1.ClusterPropagationOK && clusterStatus.Status != fedcorev1a1.WaitingForRemoval {
+			errorClusterCount++
+		}
 	}
-	if err != nil {
-		return nil, nil
+
+	if errorClusterCount != 0 {
+		c.metrics.Store("namespace_propagate_failed_total", errorClusterCount, stats.Tag{Name: "namespace", Value: fedNamespace.Name})
 	}
-	return cachedObj.(*unstructured.Unstructured).DeepCopy(), nil
 }

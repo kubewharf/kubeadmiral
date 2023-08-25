@@ -20,18 +20,19 @@ import (
 	"context"
 	"fmt"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 
-	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	schemautil "github.com/kubewharf/kubeadmiral/pkg/controllers/util/schema"
 )
 
 type ClusterHandle struct {
-	Client generic.Client
+	DynamicClient dynamic.Interface
+	KubeClient    kubernetes.Interface
 }
 
 type Plugin interface {
@@ -40,19 +41,22 @@ type Plugin interface {
 		obj *unstructured.Unstructured,
 		handle ClusterHandle,
 	) ([]*corev1.Pod, error)
+
+	GetTargetObjectFromPod(
+		ctx context.Context,
+		pod *corev1.Pod,
+		handle ClusterHandle,
+	) (obj *unstructured.Unstructured, found bool, err error)
 }
 
-var nativePlugins = map[schema.GroupVersionResource]Plugin{
-	common.DeploymentGVR: &deploymentPlugin{},
+var NativePlugins = map[schema.GroupVersionKind]Plugin{
+	appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind): &deploymentPlugin{},
 }
 
-func ResolvePlugin(typeConfig *fedcorev1a1.FederatedTypeConfig) (Plugin, error) {
-	targetAPIResource := typeConfig.GetTargetType()
-	targetGVR := schemautil.APIResourceToGVR(&targetAPIResource)
-
-	if plugin, exists := nativePlugins[targetGVR]; exists {
+func ResolvePlugin(gvk schema.GroupVersionKind) (Plugin, error) {
+	if plugin, exists := NativePlugins[gvk]; exists {
 		return plugin, nil
 	}
 
-	return nil, fmt.Errorf("unsupported type %s", targetGVR.String())
+	return nil, fmt.Errorf("unsupported type %s", gvk.String())
 }

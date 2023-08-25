@@ -31,13 +31,13 @@ all: build
 #   make build BUILD_PLATFORMS=linux/amd64,darwin/amd64
 .PHONY: build
 build:
-	BUILD_FLAGS=$(BUILD_FLAGS) TARGET_NAME=$(TARGET_NAME) GOPROXY=$(GOPROXY) bash hack/make-rules/build.sh
+	BUILD_FLAGS="$(BUILD_FLAGS)" TARGET_NAME="$(TARGET_NAME)" GOPROXY="$(GOPROXY)" bash hack/make-rules/build.sh
 
 # Start a local kubeadmiral cluster for developers.
 #
 # It will directly start the kubeadmiral control-plane cluster(excluding the kubeadmiral-controller-manager) and three member-clusters.
 # Users can run the kubeadmiral-controller-manager component through binary for easy debugging, e.g.:
-# ./output/bin/darwin/amd64/kubeadmiral-controller-manager_debug --create-crds-for-ftcs \
+# ./output/bin/darwin/amd64/kubeadmiral-controller-manager_debug \
 #    --klog-logtostderr=false \
 #    --klog-log-file "./kubeadmiral.log" \
 #    --kubeconfig "$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml" \

@@ -42,12 +42,12 @@ jobs:
 
       - uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.52.2
+          version: v1.53.3
           only-new-issues: true
           args: >
-            --timeout=5m
-            --max-issues-per-linter=0
-            --max-same-issues=0
+            --timeout=8m
+            --max-issues-per-linter=10
+            --max-same-issues=10
             --uniq-by-line=false
 
   verify-codegen:

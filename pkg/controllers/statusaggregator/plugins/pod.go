@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
@@ -40,7 +41,8 @@ func NewPodPlugin() *PodPlugin {
 
 func (receiver *PodPlugin) AggregateStatuses(
 	ctx context.Context,
-	sourceObject, fedObject *unstructured.Unstructured,
+	sourceObject *unstructured.Unstructured,
+	fedObject fedcorev1a1.GenericFederatedObject,
 	clusterObjs map[string]interface{},
 	clusterObjsUpToDate bool,
 ) (*unstructured.Unstructured, bool, error) {

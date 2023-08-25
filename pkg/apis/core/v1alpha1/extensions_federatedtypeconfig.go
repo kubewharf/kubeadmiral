@@ -23,6 +23,7 @@ package v1alpha1
 import (
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 const (
@@ -33,63 +34,50 @@ func (f *FederatedTypeConfig) GetObjectMeta() metav1.ObjectMeta {
 	return f.ObjectMeta
 }
 
-func (f *FederatedTypeConfig) GetTargetType() metav1.APIResource {
-	return apiResourceToMeta(f.Spec.TargetType)
-}
-
 func (f *FederatedTypeConfig) GetNamespaced() bool {
-	return f.Spec.TargetType.Namespaced()
+	return f.Spec.SourceType.Namespaced()
 }
 
 func (f *FederatedTypeConfig) GetPropagationEnabled() bool {
 	return true
 }
 
-func (f *FederatedTypeConfig) GetFederatedType() metav1.APIResource {
-	return apiResourceToMeta(f.Spec.FederatedType)
+func (f *FederatedTypeConfig) GetSourceType() metav1.APIResource {
+	return apiResourceToMeta(f.Spec.SourceType)
 }
 
-func (f *FederatedTypeConfig) GetStatusType() *metav1.APIResource {
-	if f.Spec.StatusType == nil {
-		return nil
+func (f *FederatedTypeConfig) GetSourceTypeGVR() schema.GroupVersionResource {
+	apiResource := f.GetSourceType()
+	return schema.GroupVersionResource{
+		Group:    apiResource.Group,
+		Version:  apiResource.Version,
+		Resource: apiResource.Name,
 	}
-	metaAPIResource := apiResourceToMeta(*f.Spec.StatusType)
-	return &metaAPIResource
 }
 
-func (f *FederatedTypeConfig) GetSourceType() *metav1.APIResource {
-	if f.Spec.SourceType == nil {
-		return nil
+func (f *FederatedTypeConfig) GetSourceTypeGVK() schema.GroupVersionKind {
+	apiResource := f.GetSourceType()
+	return schema.GroupVersionKind{
+		Group:   apiResource.Group,
+		Version: apiResource.Version,
+		Kind:    apiResource.Kind,
 	}
-	meta := apiResourceToMeta(*f.Spec.SourceType)
-	return &meta
 }
 
-func (f *FederatedTypeConfig) GetStatusEnabled() bool {
+func (f *FederatedTypeConfig) GetStatusCollectionEnabled() bool {
 	return f.Spec.StatusCollection != nil
 }
 
 func (f *FederatedTypeConfig) GetStatusAggregationEnabled() bool {
-	return f.Spec.StatusAggregation != nil &&
-		*f.Spec.StatusAggregation == StatusAggregationEnabled
+	return f.Spec.StatusAggregation != nil && f.Spec.StatusAggregation.Enabled
+}
+
+func (f *FederatedTypeConfig) GetAutoMigrationEnabled() bool {
+	return f.Spec.AutoMigration != nil && f.Spec.AutoMigration.Enabled
 }
 
 func (f *FederatedTypeConfig) GetPolicyRcEnabled() bool {
 	return true // TODO: should this be configurable?
-}
-
-func (f *FederatedTypeConfig) GetFederateEnabled() bool {
-	return f.Spec.SourceType != nil
-}
-
-func (f *FederatedTypeConfig) GetRevisionHistoryEnabled() bool {
-	return f.Spec.RevisionHistory != nil &&
-		*f.Spec.RevisionHistory == RevisionHistoryEnabled
-}
-
-func (f *FederatedTypeConfig) GetRolloutPlanEnabled() bool {
-	return f.Spec.RolloutPlan != nil &&
-		*f.Spec.RolloutPlan == RolloutPlanEnabled
 }
 
 func (f *FederatedTypeConfig) GetControllers() [][]string {
@@ -98,6 +86,10 @@ func (f *FederatedTypeConfig) GetControllers() [][]string {
 
 func (f *FederatedTypeConfig) IsNamespace() bool {
 	return f.Name == NamespaceName
+}
+
+func (f *FederatedTypeConfig) IsStatusCollectionEnabled() bool {
+	return f.Spec.StatusCollection != nil && f.Spec.StatusCollection.Enabled
 }
 
 func (a *APIResource) Namespaced() bool {

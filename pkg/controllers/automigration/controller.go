@@ -27,29 +27,32 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	pkgruntime "k8s.io/apimachinery/pkg/runtime"
-	dynamicclient "k8s.io/client-go/dynamic"
-	"k8s.io/client-go/informers"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
+	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/automigration/plugins"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
-	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
+	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
+	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
+	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
+	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
 const (
 	EventReasonAutoMigrationInfoUpdated = "AutoMigrationInfoUpdated"
+	AutoMigrationControllerName         = "auto-migration"
 )
 
 /*
@@ -64,15 +67,16 @@ One way to prevent both is:
 */
 
 type Controller struct {
-	typeConfig *fedcorev1a1.FederatedTypeConfig
-	name       string
+	name string
 
-	federatedObjectClient   dynamicclient.NamespaceableResourceInterface
-	federatedObjectInformer informers.GenericInformer
+	fedObjectInformer        fedcorev1a1informers.FederatedObjectInformer
+	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer
+	federatedInformer        informermanager.FederatedInformerManager
+	ftcManager               informermanager.FederatedTypeConfigManager
 
-	federatedInformer util.FederatedInformer
+	fedClient fedclient.Interface
 
-	worker worker.ReconcileWorker
+	worker worker.ReconcileWorker[common.QualifiedName]
 
 	eventRecorder record.EventRecorder
 
@@ -86,85 +90,157 @@ func (c *Controller) IsControllerReady() bool {
 }
 
 func NewAutoMigrationController(
-	controllerConfig *util.ControllerConfig,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-	genericFedClient generic.Client,
+	ctx context.Context,
 	kubeClient kubeclient.Interface,
-	federatedObjectClient dynamicclient.NamespaceableResourceInterface,
-	federatedObjectInformer informers.GenericInformer,
+	fedClient fedclient.Interface,
+	fedObjectInformer fedcorev1a1informers.FederatedObjectInformer,
+	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer,
+	federatedInformer informermanager.FederatedInformerManager,
+	ftcManager informermanager.FederatedTypeConfigManager,
+	metrics stats.Metrics,
+	logger klog.Logger,
+	workerCount int,
 ) (*Controller, error) {
-	controllerName := fmt.Sprintf("%s-auto-migration", typeConfig.Name)
-
 	c := &Controller{
-		typeConfig: typeConfig,
-		name:       controllerName,
+		name: AutoMigrationControllerName,
 
-		federatedObjectClient:   federatedObjectClient,
-		federatedObjectInformer: federatedObjectInformer,
+		fedObjectInformer:        fedObjectInformer,
+		clusterFedObjectInformer: clusterFedObjectInformer,
+		federatedInformer:        federatedInformer,
+		ftcManager:               ftcManager,
 
-		metrics:       controllerConfig.Metrics,
-		logger:        klog.NewKlogr().WithValues("controller", "auto-migration", "ftc", typeConfig.Name),
-		eventRecorder: eventsink.NewDefederatingRecorderMux(kubeClient, controllerName, 6),
+		fedClient: fedClient,
+
+		metrics:       metrics,
+		logger:        logger.WithValues("controller", AutoMigrationControllerName),
+		eventRecorder: eventsink.NewDefederatingRecorderMux(kubeClient, AutoMigrationControllerName, 6),
 	}
 
-	c.worker = worker.NewReconcileWorker(
+	c.worker = worker.NewReconcileWorker[common.QualifiedName](
+		AutoMigrationControllerName,
 		c.reconcile,
-		worker.WorkerTiming{},
-		controllerConfig.WorkerCount,
-		controllerConfig.Metrics,
-		delayingdeliver.NewMetricTags("auto-migration-worker", c.typeConfig.GetFederatedType().Kind),
+		worker.RateLimiterOptions{},
+		workerCount,
+		metrics,
 	)
 
-	federatedObjectInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	federatedObjectHandler := cache.ResourceEventHandlerFuncs{
 		// Only need to handle UnschedulableThreshold updates
 		// Addition and deletion will be triggered by the target resources.
-		UpdateFunc: func(oldUntyped, newUntyped interface{}) {
-			oldObj, newObj := oldUntyped.(*unstructured.Unstructured), newUntyped.(*unstructured.Unstructured)
+		UpdateFunc: func(oldFedObj, newFedObj interface{}) {
+			oldObj, newObj := oldFedObj.(fedcorev1a1.GenericFederatedObject), newFedObj.(fedcorev1a1.GenericFederatedObject)
 			oldThreshold := oldObj.GetAnnotations()[common.PodUnschedulableThresholdAnnotation]
 			newThreshold := newObj.GetAnnotations()[common.PodUnschedulableThresholdAnnotation]
 			if oldThreshold != newThreshold {
 				c.worker.Enqueue(common.NewQualifiedName(newObj))
 			}
 		},
+	}
+	if _, err := c.fedObjectInformer.Informer().AddEventHandler(federatedObjectHandler); err != nil {
+		return nil, fmt.Errorf("failed to create federated informer: %w", err)
+	}
+	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandler(federatedObjectHandler); err != nil {
+		return nil, fmt.Errorf("failed to create cluster federated informer: %w", err)
+	}
+
+	c.federatedInformer.AddPodEventHandler(&informermanager.ResourceEventHandlerWithClusterFuncs{
+		UpdateFunc: func(oldObj, newObj interface{}, cluster string) {
+			ctx := klog.NewContext(ctx, c.logger)
+			ctx, logger := logging.InjectLoggerValues(ctx, "cluster", cluster)
+
+			newPod := newObj.(*corev1.Pod)
+			if newPod.GetDeletionTimestamp() != nil {
+				return
+			}
+			oldPod := oldObj.(*corev1.Pod)
+			if !podScheduledConditionChanged(oldPod, newPod) {
+				return
+			}
+
+			qualifiedNames, err := c.getPossibleSourceObjectsFromCluster(ctx, newPod, cluster)
+			if err != nil {
+				logger.V(3).Info(
+					"Failed to get possible source objects form pod",
+					"pod", common.NewQualifiedName(newPod),
+					"err", err,
+				)
+				return
+			}
+			for _, qualifiedName := range qualifiedNames {
+				// enqueue with a delay to simulate a rudimentary rate limiter
+				c.worker.EnqueueWithDelay(qualifiedName, 10*time.Second)
+			}
+		},
 	})
 
-	var err error
-	targetType := typeConfig.GetTargetType()
-	c.federatedInformer, err = util.NewFederatedInformer(
-		controllerConfig,
-		genericFedClient,
-		controllerConfig.KubeConfig,
-		&targetType,
-		func(o pkgruntime.Object) {
-			// enqueue with a delay to simulate a rudimentary rate limiter
-			c.worker.EnqueueWithDelay(common.NewQualifiedName(o), 10*time.Second)
+	objectHandler := func(obj interface{}) {
+		// work.enqueue
+		targetObj := obj.(*unstructured.Unstructured)
+		if !targetObj.GetDeletionTimestamp().IsZero() {
+			return
+		}
+		gvk := targetObj.GroupVersionKind()
+		ftc := c.getFTCIfAutoMigrationIsEnabled(gvk)
+		if ftc == nil {
+			c.logger.V(3).Info("Auto migration is disabled", "gvk", gvk)
+			return
+		}
+		c.worker.EnqueueWithDelay(common.QualifiedName{
+			Namespace: targetObj.GetNamespace(),
+			Name:      naming.GenerateFederatedObjectName(targetObj.GetName(), ftc.Name),
+		}, 10*time.Second)
+	}
+	if err := c.federatedInformer.AddEventHandlerGenerator(&informermanager.EventHandlerGenerator{
+		Predicate: informermanager.RegisterOncePredicate,
+		Generator: func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler {
+			// EventHandler for target obj
+			return cache.ResourceEventHandlerFuncs{
+				AddFunc: func(obj interface{}) {
+					objectHandler(obj)
+				},
+				UpdateFunc: func(oldObj, newObj interface{}) {
+					objectHandler(newObj)
+				},
+				DeleteFunc: func(obj interface{}) {
+					if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+						obj = tombstone.Obj
+						if obj == nil {
+							return
+						}
+					}
+					objectHandler(obj)
+				},
+			}
 		},
-		&util.ClusterLifecycleHandlerFuncs{},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create federated informer: %w", err)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create target object informer: %w", err)
 	}
 
 	return c, nil
 }
 
 func (c *Controller) Run(ctx context.Context) {
-	c.logger.Info("Starting controller")
-	defer c.logger.Info("Stopping controller")
+	ctx, logger := logging.InjectLogger(ctx, c.logger)
 
-	c.federatedInformer.Start()
-	defer c.federatedInformer.Stop()
+	logger.Info("Starting controller")
+	defer logger.Info("Stopping controller")
 
-	if !cache.WaitForNamedCacheSync(c.name, ctx.Done(), c.HasSynced) {
+	if !cache.WaitForNamedCacheSync(AutoMigrationControllerName, ctx.Done(), c.HasSynced) {
+		logger.Error(nil, "Timed out waiting for cache sync")
 		return
 	}
-	c.worker.Run(ctx.Done())
 
+	logger.Info("Caches are synced")
+
+	c.worker.Run(ctx)
 	<-ctx.Done()
 }
 
 func (c *Controller) HasSynced() bool {
-	if !c.federatedObjectInformer.Informer().HasSynced() || !c.federatedInformer.ClustersSynced() {
+	if !c.fedObjectInformer.Informer().HasSynced() ||
+		!c.clusterFedObjectInformer.Informer().HasSynced() ||
+		!c.federatedInformer.HasSynced() ||
+		!c.ftcManager.HasSynced() {
 		return false
 	}
 
@@ -175,39 +251,39 @@ func (c *Controller) HasSynced() bool {
 	return true
 }
 
-func (c *Controller) reconcile(qualifiedName common.QualifiedName) (status worker.Result) {
+func (c *Controller) reconcile(ctx context.Context, qualifiedName common.QualifiedName) (status worker.Result) {
 	key := qualifiedName.String()
-	keyedLogger := c.logger.WithValues("control-loop", "reconcile", "object", key)
-	ctx := klog.NewContext(context.TODO(), keyedLogger)
+	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "control-loop", "reconcile", "object", key)
 
 	startTime := time.Now()
-	c.metrics.Rate("auto-migration.throughput", 1)
+	c.metrics.Counter("auto_migration_throughput", 1)
 	keyedLogger.V(3).Info("Start reconcile")
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("%s.latency", c.name), startTime)
-		keyedLogger.V(3).Info("Finished reconcile", "duration", time.Since(startTime), "status", status.String())
+		c.metrics.Duration("auto_migration_latency", startTime)
+		keyedLogger.V(3).Info("Finished reconcile", "duration", time.Since(startTime), "status", status)
 	}()
 
-	fedObject, err := util.UnstructuredFromStore(c.federatedObjectInformer.Informer().GetStore(), key)
-	if err != nil {
-		keyedLogger.Error(err, "Failed to get object from store")
+	fedObject, err := fedobjectadapters.GetFromLister(
+		c.fedObjectInformer.Lister(),
+		c.clusterFedObjectInformer.Lister(),
+		qualifiedName.Namespace,
+		qualifiedName.Name,
+	)
+	if err != nil && !apierrors.IsNotFound(err) {
+		keyedLogger.Error(err, "Failed to get federated object from store")
 		return worker.StatusError
 	}
 	if fedObject == nil || fedObject.GetDeletionTimestamp() != nil {
 		return worker.StatusAllOK
 	}
+	fedObject = fedObject.DeepCopyGenericFederatedObject()
 
-	// PodUnschedulableThresholdAnnotation is set by the scheduler. Its presence determines whether auto migration is enabled.
 	annotations := fedObject.GetAnnotations()
-	var unschedulableThreshold *time.Duration
-	if value, exists := annotations[common.PodUnschedulableThresholdAnnotation]; exists {
-		if duration, err := time.ParseDuration(value); err != nil {
-			keyedLogger.Error(err, "Failed to parse PodUnschedulableThresholdAnnotation")
-		} else {
-			unschedulableThreshold = &duration
-		}
+	clusterObjs, ftc, unschedulableThreshold, err := c.getTargetObjectsIfAutoMigrationEnabled(fedObject)
+	if err != nil {
+		keyedLogger.Error(err, "Failed to get objects from federated informer stores")
+		return worker.StatusError
 	}
-
 	// auto-migration controller sets AutoMigrationAnnotation to
 	// feedback auto-migration information back to the scheduler
 
@@ -225,13 +301,7 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) (status worke
 	} else {
 		// Keep the annotation up-to-date if auto migration is enabled.
 		keyedLogger.V(3).Info("Auto migration is enabled")
-		clusterObjs, err := c.federatedInformer.GetTargetStore().GetFromAllClusters(key)
-		if err != nil {
-			keyedLogger.Error(err, "Failed to get objects from federated informer stores")
-			return worker.StatusError
-		}
-
-		estimatedCapacity, result = c.estimateCapacity(ctx, clusterObjs, *unschedulableThreshold)
+		estimatedCapacity, result = c.estimateCapacity(ctx, ftc, clusterObjs, *unschedulableThreshold)
 		autoMigrationInfo := &framework.AutoMigrationInfo{EstimatedCapacity: estimatedCapacity}
 
 		// Compare with the existing autoMigration annotation
@@ -257,14 +327,15 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) (status worke
 
 	keyedLogger.V(3).Info("Observed migration information", "estimatedCapacity", estimatedCapacity)
 	if needsUpdate {
-		fedObject = fedObject.DeepCopy()
 		fedObject.SetAnnotations(annotations)
 
 		keyedLogger.V(1).Info("Updating federated object with auto migration information", "estimatedCapacity", estimatedCapacity)
-		_, err = c.federatedObjectClient.
-			Namespace(qualifiedName.Namespace).
-			Update(ctx, fedObject, metav1.UpdateOptions{})
-		if err != nil {
+		if _, err = fedobjectadapters.Update(
+			ctx,
+			c.fedClient.CoreV1alpha1(),
+			fedObject,
+			metav1.UpdateOptions{},
+		); err != nil {
 			keyedLogger.Error(err, "Failed to update federated object for auto migration")
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
@@ -291,38 +362,35 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) (status worke
 
 func (c *Controller) estimateCapacity(
 	ctx context.Context,
-	clusterObjs []util.FederatedObject,
+	typeConfig *fedcorev1a1.FederatedTypeConfig,
+	clusterObjs []FederatedObject,
 	unschedulableThreshold time.Duration,
 ) (map[string]int64, *worker.Result) {
-	keyedLogger := klog.FromContext(ctx)
 	needsBackoff := false
 	var retryAfter *time.Duration
 
 	estimatedCapacity := make(map[string]int64, len(clusterObjs))
 
 	for _, clusterObj := range clusterObjs {
-		keyedLogger := keyedLogger.WithValues("cluster", clusterObj.ClusterName)
-		ctx := klog.NewContext(ctx, keyedLogger)
-
-		unsClusterObj := clusterObj.Object.(*unstructured.Unstructured)
+		ctx, logger := logging.InjectLoggerValues(ctx, "cluster", clusterObj.ClusterName, "ftc", typeConfig.Name)
 
 		// This is an optimization to skip pod listing when there are no unschedulable pods.
-		totalReplicas, readyReplicas, err := c.getTotalAndReadyReplicas(unsClusterObj)
+		totalReplicas, readyReplicas, err := c.getTotalAndReadyReplicas(typeConfig, clusterObj.Object)
 		if err == nil && totalReplicas == readyReplicas {
-			keyedLogger.V(3).Info("No unschedulable pods found, skip estimating capacity")
+			logger.V(3).Info("No unschedulable pods found, skip estimating capacity")
 			continue
 		}
 
-		desiredReplicas, err := c.getDesiredReplicas(unsClusterObj)
+		desiredReplicas, err := c.getDesiredReplicas(typeConfig, clusterObj.Object)
 		if err != nil {
-			keyedLogger.Error(err, "Failed to get desired replicas from object")
+			logger.Error(err, "Failed to get desired replicas from object")
 			continue
 		}
 
-		keyedLogger.V(2).Info("Getting pods from cluster")
-		pods, clusterNeedsBackoff, err := c.getPodsFromCluster(ctx, unsClusterObj, clusterObj.ClusterName)
+		logger.V(2).Info("Getting pods from cluster")
+		pods, clusterNeedsBackoff, err := c.getPodsFromCluster(ctx, typeConfig, clusterObj.Object, clusterObj.ClusterName)
 		if err != nil {
-			keyedLogger.Error(err, "Failed to get pods from cluster")
+			logger.Error(err, "Failed to get pods from cluster")
 			if clusterNeedsBackoff {
 				needsBackoff = true
 			}
@@ -330,12 +398,10 @@ func (c *Controller) estimateCapacity(
 		}
 
 		unschedulable, nextCrossIn := countUnschedulablePods(pods, time.Now(), unschedulableThreshold)
-
-		keyedLogger.V(2).Info("Analyzed pods",
+		logger.V(2).Info("Analyzed pods",
 			"total", len(pods),
 			"desired", desiredReplicas,
 			"unschedulable", unschedulable,
-			"next-cross-in", nextCrossIn,
 		)
 
 		if nextCrossIn != nil && (retryAfter == nil || *nextCrossIn < *retryAfter) {
@@ -378,13 +444,14 @@ func (c *Controller) estimateCapacity(
 }
 
 func (c *Controller) getTotalAndReadyReplicas(
+	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	unsObj *unstructured.Unstructured,
 ) (int64, int64, error) {
 	// These values might not have been populated by the controller, in which case we default to 0
 
 	totalReplicas := int64(0)
 	if replicasPtr, err := utilunstructured.GetInt64FromPath(
-		unsObj, c.typeConfig.Spec.PathDefinition.ReplicasStatus, nil,
+		unsObj, typeConfig.Spec.PathDefinition.ReplicasStatus, nil,
 	); err != nil {
 		return 0, 0, fmt.Errorf("replicas: %w", err)
 	} else if replicasPtr != nil {
@@ -393,7 +460,7 @@ func (c *Controller) getTotalAndReadyReplicas(
 
 	readyReplicas := int64(0)
 	if readyReplicasPtr, err := utilunstructured.GetInt64FromPath(
-		unsObj, c.typeConfig.Spec.PathDefinition.ReadyReplicasStatus, nil,
+		unsObj, typeConfig.Spec.PathDefinition.ReadyReplicasStatus, nil,
 	); err != nil {
 		return 0, 0, fmt.Errorf("ready replicas: %w", err)
 	} else if readyReplicasPtr != nil {
@@ -403,12 +470,15 @@ func (c *Controller) getTotalAndReadyReplicas(
 	return totalReplicas, readyReplicas, nil
 }
 
-func (c *Controller) getDesiredReplicas(unsObj *unstructured.Unstructured) (int64, error) {
-	desiredReplicas, err := utilunstructured.GetInt64FromPath(unsObj, c.typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
+func (c *Controller) getDesiredReplicas(
+	typeConfig *fedcorev1a1.FederatedTypeConfig,
+	unsObj *unstructured.Unstructured,
+) (int64, error) {
+	desiredReplicas, err := utilunstructured.GetInt64FromPath(unsObj, typeConfig.Spec.PathDefinition.ReplicasSpec, nil)
 	if err != nil {
 		return 0, fmt.Errorf("desired replicas: %w", err)
 	} else if desiredReplicas == nil {
-		return 0, fmt.Errorf("no desired replicas at %s", c.typeConfig.Spec.PathDefinition.ReplicasSpec)
+		return 0, fmt.Errorf("no desired replicas at %s", typeConfig.Spec.PathDefinition.ReplicasSpec)
 	}
 
 	return *desiredReplicas, nil
@@ -416,25 +486,141 @@ func (c *Controller) getDesiredReplicas(unsObj *unstructured.Unstructured) (int6
 
 func (c *Controller) getPodsFromCluster(
 	ctx context.Context,
+	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	unsClusterObj *unstructured.Unstructured,
 	clusterName string,
 ) ([]*corev1.Pod, bool, error) {
-	plugin, err := plugins.ResolvePlugin(c.typeConfig)
+	plugin, err := plugins.ResolvePlugin(typeConfig.GetSourceTypeGVK())
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get plugin for FTC: %w", err)
 	}
 
-	client, err := c.federatedInformer.GetClientForCluster(clusterName)
-	if err != nil {
-		return nil, true, fmt.Errorf("failed to get client for cluster: %w", err)
+	dynamicClient, exist := c.federatedInformer.GetClusterDynamicClient(clusterName)
+	if !exist {
+		return nil, true, fmt.Errorf("failed to get dynamic client for cluster %s", clusterName)
+	}
+	kubeClient, exist := c.federatedInformer.GetClusterKubeClient(clusterName)
+	if !exist {
+		return nil, true, fmt.Errorf("failed to get kube client for cluster: %s", clusterName)
 	}
 
 	pods, err := plugin.GetPodsForClusterObject(ctx, unsClusterObj, plugins.ClusterHandle{
-		Client: client,
+		DynamicClient: dynamicClient,
+		KubeClient:    kubeClient,
 	})
 	if err != nil {
 		return nil, true, fmt.Errorf("failed to get pods for federated object: %w", err)
 	}
 
 	return pods, false, nil
+}
+
+func (c *Controller) getPossibleSourceObjectsFromCluster(
+	ctx context.Context,
+	pod *corev1.Pod,
+	clusterName string,
+) (possibleQualifies []common.QualifiedName, err error) {
+	dynamicClient, exist := c.federatedInformer.GetClusterDynamicClient(clusterName)
+	if !exist {
+		return nil, fmt.Errorf("failed to get dynamic client for cluster %s", clusterName)
+	}
+	kubeClient, exist := c.federatedInformer.GetClusterKubeClient(clusterName)
+	if !exist {
+		return nil, fmt.Errorf("failed to get kube client for cluster %s", clusterName)
+	}
+
+	for gvk, plugin := range plugins.NativePlugins {
+		ctx, logger := logging.InjectLoggerValues(ctx, "gvk", gvk)
+		ftc := c.getFTCIfAutoMigrationIsEnabled(gvk)
+		if ftc == nil {
+			continue
+		}
+		object, found, err := plugin.GetTargetObjectFromPod(ctx, pod.DeepCopy(), plugins.ClusterHandle{
+			DynamicClient: dynamicClient,
+			KubeClient:    kubeClient,
+		})
+		if err != nil || !found {
+			logger.V(3).Info(
+				"Failed to get target object form pod",
+				"found", found,
+				"err", err,
+			)
+			continue
+		}
+		managed := object.GetLabels()[managedlabel.ManagedByKubeAdmiralLabelKey] == managedlabel.ManagedByKubeAdmiralLabelValue
+		gkMatched := object.GroupVersionKind().GroupKind() == gvk.GroupKind()
+		if !managed || !gkMatched {
+			c.logger.V(3).Info(
+				"The GVK of Target object not matched",
+				"got-gvk", object.GroupVersionKind(),
+				"managed", managed,
+				"resource", common.NewQualifiedName(object),
+			)
+			continue
+		}
+		possibleQualifies = append(possibleQualifies, common.QualifiedName{
+			Namespace: object.GetNamespace(),
+			Name:      naming.GenerateFederatedObjectName(object.GetName(), ftc.Name),
+		})
+	}
+	return possibleQualifies, nil
+}
+
+func (c *Controller) getTargetObjectsIfAutoMigrationEnabled(
+	fedObject fedcorev1a1.GenericFederatedObject,
+) (clusterObjs []FederatedObject, ftc *fedcorev1a1.FederatedTypeConfig, unschedulableThreshold *time.Duration, err error) {
+	// PodUnschedulableThresholdAnnotation is set by the scheduler. Its presence determines whether auto migration is enabled.
+	if value, exists := fedObject.GetAnnotations()[common.PodUnschedulableThresholdAnnotation]; exists {
+		if duration, err := time.ParseDuration(value); err != nil {
+			err = fmt.Errorf("failed to parse PodUnschedulableThresholdAnnotation: %w", err)
+			return nil, nil, nil, err
+		} else {
+			unschedulableThreshold = &duration
+		}
+	}
+
+	objectMeta := &metav1.PartialObjectMetadata{}
+	if err = json.Unmarshal(fedObject.GetSpec().Template.Raw, objectMeta); err != nil {
+		err = fmt.Errorf("failed to unmarshall template of federated object: %w", err)
+		return nil, nil, nil, err
+	}
+	gvk := objectMeta.GroupVersionKind()
+
+	ftc = c.getFTCIfAutoMigrationIsEnabled(gvk)
+	if ftc == nil {
+		return nil, nil, nil, nil
+	}
+
+	for _, placement := range fedObject.GetSpec().Placements {
+		for _, cluster := range placement.Placement {
+			lister, synced, exist := c.federatedInformer.GetResourceLister(gvk, cluster.Cluster)
+			if !exist || !synced() {
+				err = fmt.Errorf("informer of resource %v not exists or not synced for cluster %s", gvk, cluster.Cluster)
+				return nil, nil, nil, err
+			}
+			object, err := lister.ByNamespace(objectMeta.Namespace).Get(objectMeta.Name)
+			if err != nil && !apierrors.IsNotFound(err) {
+				err = fmt.Errorf("failed to get %v from informer stores for cluster %s: %w", objectMeta, cluster.Cluster, err)
+				return nil, nil, nil, err
+			}
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			unsObj, ok := object.(*unstructured.Unstructured)
+			if !ok {
+				continue
+			}
+			clusterObjs = append(clusterObjs, FederatedObject{Object: unsObj, ClusterName: cluster.Cluster})
+		}
+	}
+	return clusterObjs, ftc, unschedulableThreshold, nil
+}
+
+func (c *Controller) getFTCIfAutoMigrationIsEnabled(gvk schema.GroupVersionKind) *fedcorev1a1.FederatedTypeConfig {
+	typeConfig, exists := c.ftcManager.GetResourceFTC(gvk)
+	if !exists || typeConfig == nil || !typeConfig.GetAutoMigrationEnabled() {
+		return nil
+	}
+
+	return typeConfig
 }

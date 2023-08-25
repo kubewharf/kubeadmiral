@@ -19,6 +19,7 @@ package app
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,24 +28,25 @@ import (
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/kubewharf/kubeadmiral/cmd/controller-manager/app/options"
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/federatedclient"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	prometheusstats "github.com/kubewharf/kubeadmiral/pkg/stats/prometheus"
+	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
+	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
 // KnownControllers returns all well known controller names
 func KnownControllers() []string {
 	controllers := sets.StringKeySet(knownControllers)
-	ftcSubControllers := sets.StringKeySet(knownFTCSubControllers)
-	ret := controllers.Union(ftcSubControllers)
-	return ret.List()
+	return controllers.List()
 }
 
 // ControllersDisabledByDefault returns all controllers that are disabled by default
@@ -90,7 +92,26 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 		return nil, fmt.Errorf("failed to create component config: %w", err)
 	}
 
-	metrics := stats.NewMock("", "kube-federation-manager", false)
+	var metrics stats.Metrics
+	if opts.PrometheusMetrics {
+		quantiles := map[float64]float64{}
+		for qStr, eStr := range opts.PrometheusQuantiles {
+			q, err := strconv.ParseFloat(qStr, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid float %q: %w", qStr, err)
+			}
+
+			e, err := strconv.ParseFloat(eStr, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid float %q: %w", eStr, err)
+			}
+
+			quantiles[q] = e
+		}
+		metrics = prometheusstats.New("kubeadmiral_controller_manager", opts.PrometheusAddr, opts.PrometheusPort, quantiles)
+	} else {
+		metrics = stats.NewMock("", "kubeadmiral_controller_manager", true)
+	}
 
 	kubeClientset, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
@@ -105,19 +126,30 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 		return nil, fmt.Errorf("failed to create fed clientset: %w", err)
 	}
 
-	informerResyncPeriod := util.NoResyncPeriod
+	informerResyncPeriod := time.Duration(0)
 	kubeInformerFactory := informers.NewSharedInformerFactory(kubeClientset, informerResyncPeriod)
 	dynamicInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(dynamicClientset, informerResyncPeriod)
 	fedInformerFactory := fedinformers.NewSharedInformerFactory(fedClientset, informerResyncPeriod)
 
-	federatedClientFactory := federatedclient.NewFederatedClientsetFactory(
-		fedClientset,
-		kubeClientset,
+	informerManager := informermanager.NewInformerManager(
+		dynamicClientset,
+		fedInformerFactory.Core().V1alpha1().FederatedTypeConfigs(),
+		nil,
+	)
+	federatedInformerManager := informermanager.NewFederatedInformerManager(
+		informermanager.ClusterClientHelper{
+			ConnectionHash: informermanager.DefaultClusterConnectionHash,
+			RestConfigGetter: func(cluster *fedcorev1a1.FederatedCluster) (*rest.Config, error) {
+				return clusterutil.BuildClusterConfig(
+					cluster,
+					kubeClientset,
+					restConfig,
+					common.DefaultFedSystemNamespace,
+				)
+			},
+		},
+		fedInformerFactory.Core().V1alpha1().FederatedTypeConfigs(),
 		fedInformerFactory.Core().V1alpha1().FederatedClusters(),
-		common.DefaultFedSystemNamespace,
-		restConfig,
-		opts.MaxPodListers,
-		opts.EnablePodPruning,
 	)
 
 	return &controllercontext.Context{
@@ -140,14 +172,15 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 		DynamicInformerFactory: dynamicInformerFactory,
 		FedInformerFactory:     fedInformerFactory,
 
-		FederatedClientFactory: federatedClientFactory,
+		InformerManager:          informerManager,
+		FederatedInformerManager: federatedInformerManager,
 	}, nil
 }
 
 func getComponentConfig(opts *options.Options) (*controllercontext.ComponentConfig, error) {
 	componentConfig := &controllercontext.ComponentConfig{
-		FederatedTypeConfigCreateCRDsForFTCs: opts.CreateCRDsForFTCs,
-		ClusterJoinTimeout:                   opts.ClusterJoinTimeout,
+		ClusterJoinTimeout:       opts.ClusterJoinTimeout,
+		MemberObjectEnqueueDelay: opts.MemberObjectEnqueueDelay,
 	}
 
 	if opts.NSAutoPropExcludeRegexp != "" {

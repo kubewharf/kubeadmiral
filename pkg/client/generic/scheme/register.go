@@ -29,7 +29,6 @@ import (
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
 )
 
 var (
@@ -38,7 +37,6 @@ var (
 	ParameterCodec     = runtime.NewParameterCodec(Scheme)
 	localSchemeBuilder = runtime.SchemeBuilder{
 		fedcorev1a1.AddToScheme,
-		fedtypesv1a1.AddToScheme,
 		k8sscheme.AddToScheme,
 	}
 )

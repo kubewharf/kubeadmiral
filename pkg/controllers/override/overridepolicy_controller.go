@@ -19,29 +19,34 @@ package override
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	kubeclient "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
+	"k8s.io/apimachinery/pkg/labels"
+	pkgruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
+	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
+	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/eventsink"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/pendingcontrollers"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
+	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
+	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/meta"
+	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
+	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
 const (
@@ -49,231 +54,261 @@ const (
 	EventReasonMatchOverridePolicyFailed = "MatchOverridePolicyFailed"
 	EventReasonParseOverridePolicyFailed = "ParseOverridePolicyFailed"
 	EventReasonOverridePolicyApplied     = "OverridePolicyApplied"
-
-	OverridePolicyNameLabel        = common.DefaultPrefix + "override-policy-name"
-	ClusterOverridePolicyNameLabel = common.DefaultPrefix + "cluster-override-policy-name"
 )
 
 var PrefixedControllerName = common.DefaultPrefix + ControllerName
 
-// OverrideController adds override rules specified in OverridePolicies
+// Controller adds override rules specified in OverridePolicies
 // to federated objects.
 type Controller struct {
-	// name of controller
-	name string
+	worker worker.ReconcileWorker[common.QualifiedName]
 
-	// FederatedTypeConfig for this controller
-	typeConfig *fedcorev1a1.FederatedTypeConfig
+	informerManager               informermanager.InformerManager
+	fedObjectInformer             fedcorev1a1informers.FederatedObjectInformer
+	clusterFedObjectInformer      fedcorev1a1informers.ClusterFederatedObjectInformer
+	overridePolicyInformer        fedcorev1a1informers.OverridePolicyInformer
+	clusterOverridePolicyInformer fedcorev1a1informers.ClusterOverridePolicyInformer
+	federatedClusterInformer      fedcorev1a1informers.FederatedClusterInformer
 
-	// Store for federated objects
-	federatedStore cache.Store
-	// Controller for federated objects
-	federatedController cache.Controller
-	// Client for federated objects
-	federatedClient util.ResourceClient
-
-	// Store for OverridePolicy
-	overridePolicyStore cache.Store
-	// Controller for OverridePolicy
-	overridePolicyController cache.Controller
-
-	// Store for ClusterOverridePolicy
-	clusterOverridePolicyStore cache.Store
-	// Controller for ClusterOverridePolicy
-	clusterOverridePolicyController cache.Controller
-
-	// Store for FederatedCluster
-	clusterStore cache.Store
-	// Controller for FederatedCluster
-	clusterController cache.Controller
-
-	worker        worker.ReconcileWorker
+	fedClient     fedclient.Interface
 	eventRecorder record.EventRecorder
 	metrics       stats.Metrics
+	logger        klog.Logger
 }
 
-func StartController(
-	controllerConfig *util.ControllerConfig,
-	stopChan <-chan struct{},
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
-) error {
-	controller, err := newController(controllerConfig, typeConfig)
-	if err != nil {
-		return err
-	}
-	klog.V(4).Infof("Starting %s", controller.name)
-	controller.Run(stopChan)
-	return nil
-}
-
-func newController(
-	controllerConfig *util.ControllerConfig,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
+func NewOverridePolicyController(
+	kubeClient kubernetes.Interface,
+	fedClient fedclient.Interface,
+	fedInformerFactory fedinformers.SharedInformerFactory,
+	informerManager informermanager.InformerManager,
+	metrics stats.Metrics,
+	logger klog.Logger,
+	workerCount int,
 ) (*Controller, error) {
-	userAgent := fmt.Sprintf("%s-%s", strings.ToLower(typeConfig.GetFederatedType().Kind), ControllerName)
-	configWithUserAgent := rest.CopyConfig(controllerConfig.KubeConfig)
-	rest.AddUserAgent(configWithUserAgent, userAgent)
-
-	kubeClient := kubeclient.NewForConfigOrDie(configWithUserAgent)
-	recorder := eventsink.NewDefederatingRecorderMux(kubeClient, userAgent, 4)
-
 	c := &Controller{
-		name:          userAgent,
-		typeConfig:    typeConfig,
-		eventRecorder: recorder,
-		metrics:       controllerConfig.Metrics,
+		informerManager:               informerManager,
+		fedObjectInformer:             fedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		clusterFedObjectInformer:      fedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
+		overridePolicyInformer:        fedInformerFactory.Core().V1alpha1().OverridePolicies(),
+		clusterOverridePolicyInformer: fedInformerFactory.Core().V1alpha1().ClusterOverridePolicies(),
+		federatedClusterInformer:      fedInformerFactory.Core().V1alpha1().FederatedClusters(),
+		fedClient:                     fedClient,
+		metrics:                       metrics,
+		logger:                        logger.WithValues("controller", ControllerName),
 	}
 
-	var err error
-
-	federatedApiResource := typeConfig.GetFederatedType()
-	c.federatedClient, err = util.NewResourceClient(configWithUserAgent, &federatedApiResource)
-	if err != nil {
-		return nil, fmt.Errorf("NewResourceClient failed: %w", err)
-	}
-
-	c.worker = worker.NewReconcileWorker(
+	c.eventRecorder = eventsink.NewDefederatingRecorderMux(kubeClient, ControllerName, 4)
+	c.worker = worker.NewReconcileWorker[common.QualifiedName](
+		ControllerName,
 		c.reconcile,
-		worker.WorkerTiming{},
-		controllerConfig.WorkerCount,
-		controllerConfig.Metrics,
-		delayingdeliver.NewMetricTags(c.name, federatedApiResource.Kind),
-	)
-	enqueueObj := c.worker.EnqueueObject
-	c.federatedStore, c.federatedController = util.NewResourceInformer(
-		c.federatedClient,
-		controllerConfig.TargetNamespace,
-		enqueueObj,
-		controllerConfig.Metrics,
+		worker.RateLimiterOptions{},
+		workerCount,
+		metrics,
 	)
 
-	getPolicyHandlers := func(labelKey string) *cache.ResourceEventHandlerFuncs {
-		return &cache.ResourceEventHandlerFuncs{
-			// Policy added/updated: we need to reconcile all fedObjects referencing this policy
-			AddFunc: func(obj interface{}) {
-				policy := obj.(fedcorev1a1.GenericOverridePolicy)
-				c.enqueueFedObjectsUsingPolicy(policy, labelKey)
-			},
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				oldPolicy := oldObj.(fedcorev1a1.GenericOverridePolicy)
-				newPolicy := newObj.(fedcorev1a1.GenericOverridePolicy)
-				if !equality.Semantic.DeepEqual(oldPolicy.GetSpec(), newPolicy.GetSpec()) {
-					c.enqueueFedObjectsUsingPolicy(newPolicy, labelKey)
-				}
-			},
-			DeleteFunc: nil,
-		}
-	}
-
-	c.overridePolicyStore, c.overridePolicyController, err = util.NewGenericInformerWithEventHandler(
-		controllerConfig.KubeConfig,
-		"",
-		&fedcorev1a1.OverridePolicy{},
-		util.NoResyncPeriod,
-		getPolicyHandlers(OverridePolicyNameLabel),
-		controllerConfig.Metrics,
-	)
-	if err != nil {
+	if _, err := c.fedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
+		fedObj := o.(*fedcorev1a1.FederatedObject)
+		c.worker.Enqueue(common.QualifiedName{Namespace: fedObj.Namespace, Name: fedObj.Name})
+	})); err != nil {
 		return nil, err
 	}
 
-	c.clusterOverridePolicyStore, c.clusterOverridePolicyController, err = util.NewGenericInformerWithEventHandler(
-		controllerConfig.KubeConfig,
-		"",
-		&fedcorev1a1.ClusterOverridePolicy{},
-		util.NoResyncPeriod,
-		getPolicyHandlers(ClusterOverridePolicyNameLabel),
-		controllerConfig.Metrics,
-	)
-	if err != nil {
+	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
+		fedObj := o.(*fedcorev1a1.ClusterFederatedObject)
+		c.worker.Enqueue(common.QualifiedName{Name: fedObj.Name})
+	})); err != nil {
 		return nil, err
 	}
 
-	c.clusterStore, c.clusterController, err = util.NewGenericInformerWithEventHandler(
-		controllerConfig.KubeConfig,
-		"",
-		&fedcorev1a1.FederatedCluster{},
-		util.NoResyncPeriod,
-		&cache.ResourceEventHandlerFuncs{
-			/*
-				No need to reconcile on Add and Delete. Since we only resolve overrides for
-				scheduled clusters, there's no point in reconciling before scheduler does rescheduling.
-			*/
-			AddFunc:    nil,
-			DeleteFunc: nil,
-			// We only care about label change, since that is the only cluster change
-			// that can affect overrider computation.
-			// Currently MatchFields only matches /metadata/name.
-			// If we extend MatchFields to match new fields, we may need to revise UpdateFunc
-			// to expand the trigger conditions.
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				oldCluster := oldObj.(*fedcorev1a1.FederatedCluster)
-				newCluster := newObj.(*fedcorev1a1.FederatedCluster)
-				if !equality.Semantic.DeepEqual(oldCluster.Labels, newCluster.Labels) {
-					c.reconcileOnClusterChange(newCluster)
-				}
-			},
+	if _, err := c.overridePolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
+		policy := o.(fedcorev1a1.GenericOverridePolicy)
+		c.enqueueFedObjectsUsingPolicy(policy, OverridePolicyNameLabel)
+	})); err != nil {
+		return nil, err
+	}
+
+	if _, err := c.clusterOverridePolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
+		policy := o.(fedcorev1a1.GenericOverridePolicy)
+		c.enqueueFedObjectsUsingPolicy(policy, OverridePolicyNameLabel)
+	})); err != nil {
+		return nil, err
+	}
+
+	if _, err := c.federatedClusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		/*
+			No need to reconcile on Add and Delete. Since we only resolve overrides for
+			scheduled clusters, there's no point in reconciling before scheduler does rescheduling.
+		*/
+		AddFunc:    nil,
+		DeleteFunc: nil,
+		// We only care about label change, since that is the only cluster change
+		// that can affect overrider computation.
+		// Currently MatchFields only matches /metadata/name.
+		// If we extend MatchFields to match new fields, we may need to revise UpdateFunc
+		// to expand the trigger conditions.
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldCluster := oldObj.(*fedcorev1a1.FederatedCluster)
+			newCluster := newObj.(*fedcorev1a1.FederatedCluster)
+			if !equality.Semantic.DeepEqual(oldCluster.Labels, newCluster.Labels) {
+				c.reconcileOnClusterChange(newCluster)
+			}
 		},
-		controllerConfig.Metrics,
-	)
-	if err != nil {
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := informerManager.AddFTCUpdateHandler(func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
+		if lastObserved == nil && latest != nil {
+			c.enqueueFederatedObjectsForFTC(latest)
+			return
+		}
+	}); err != nil {
 		return nil, err
 	}
 
 	return c, nil
 }
 
+func (c *Controller) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedTypeConfig) {
+	logger := c.logger.WithValues("ftc", ftc.GetName())
+
+	logger.V(2).Info("Enqueue federated objects for FTC")
+
+	allObjects := []fedcorev1a1.GenericFederatedObject{}
+	fedObjects, err := c.fedObjectInformer.Lister().List(labels.Everything())
+	if err != nil {
+		c.logger.Error(err, "Failed to enqueue FederatedObjects for override policy")
+		return
+	}
+	for _, obj := range fedObjects {
+		allObjects = append(allObjects, obj)
+	}
+	clusterFedObjects, err := c.clusterFedObjectInformer.Lister().List(labels.Everything())
+	if err != nil {
+		c.logger.Error(err, "Failed to enqueue ClusterFederatedObjects for override policy")
+		return
+	}
+	for _, obj := range clusterFedObjects {
+		allObjects = append(allObjects, obj)
+	}
+
+	for _, obj := range allObjects {
+		sourceMetadata, err := obj.GetSpec().GetTemplateMetadata()
+		if err != nil {
+			c.logger.Error(err, "Failed to get source metadata from FederatedObject, will not enqueue")
+			continue
+		}
+		if sourceMetadata.GroupVersionKind() == ftc.GetSourceTypeGVK() {
+			c.worker.Enqueue(common.NewQualifiedName(obj))
+		}
+	}
+}
+
 func (c *Controller) enqueueFedObjectsUsingPolicy(policy fedcorev1a1.GenericOverridePolicy, labelKey string) {
-	klog.V(2).Infof("%s observed a policy change for %s %q", c.name, util.GetResourceKind(policy), policy.GetKey())
-	for _, fedObjectInterface := range c.federatedStore.List() {
-		fedObject := fedObjectInterface.(*unstructured.Unstructured)
-		labelValue, exists := fedObject.GetLabels()[labelKey]
-		if exists &&
-			// fedObject must reference the policy
-			labelValue == policy.GetName() &&
-			// for ClusterOverridePolicy, fedObject can be cluster-scoped or belong to any namespace
-			// for OverridePolicy, policy and fedObject must belong to the same namespace;
-			(policy.GetNamespace() == "" || policy.GetNamespace() == fedObject.GetNamespace()) {
-			c.worker.EnqueueObject(fedObject)
+	logger := c.logger.WithValues("override-policy", policy.GetKey())
+	logger.V(2).Info("observed a policy change")
+
+	selector := labels.SelectorFromSet(labels.Set{labelKey: policy.GetName()})
+	clusterFedObjects, err := c.clusterFedObjectInformer.Lister().List(selector)
+	if err != nil {
+		logger.Error(err, "Failed to list reference cluster federated objects")
+		return
+	}
+
+	for _, clusterFedObject := range clusterFedObjects {
+		c.worker.Enqueue(common.QualifiedName{Name: clusterFedObject.GetName()})
+	}
+
+	if policy.GetNamespace() != "" {
+		fedObjects, err := c.fedObjectInformer.Lister().FederatedObjects(policy.GetNamespace()).List(selector)
+		if err != nil {
+			logger.Error(err, "Failed to list reference federated objects")
+			return
+		}
+
+		for _, fedObject := range fedObjects {
+			c.worker.Enqueue(common.QualifiedName{
+				Namespace: fedObject.GetNamespace(),
+				Name:      fedObject.GetName(),
+			})
 		}
 	}
 }
 
 func (c *Controller) reconcileOnClusterChange(cluster *fedcorev1a1.FederatedCluster) {
-	klog.V(2).Infof("%s observed a cluster change for %q", c.name, cluster.GetName())
-	for _, fedObjectInterface := range c.federatedStore.List() {
-		fedObject := fedObjectInterface.(*unstructured.Unstructured)
-		labels := fedObject.GetLabels()
-		// only enqueue fedObjects with a policy since we only need to recompute policies that are already applied
-		if len(labels[OverridePolicyNameLabel]) > 0 || len(labels[ClusterOverridePolicyNameLabel]) > 0 {
-			c.worker.EnqueueObject(fedObject)
+	logger := c.logger.WithValues("federated-cluster", cluster.GetName())
+	logger.V(2).Info("Observed a cluster change")
+
+	opRequirement, _ := labels.NewRequirement(OverridePolicyNameLabel, selection.Exists, nil)
+	copRequirement, _ := labels.NewRequirement(ClusterOverridePolicyNameLabel, selection.Exists, nil)
+
+	for _, requirement := range []labels.Requirement{*opRequirement, *copRequirement} {
+		fedObjects, err := c.fedObjectInformer.Lister().List(labels.NewSelector().Add(requirement))
+		if err != nil {
+			logger.Error(err, "Failed to list federated objects")
+			return
+		}
+		for _, fedObject := range fedObjects {
+			c.worker.Enqueue(common.QualifiedName{
+				Namespace: fedObject.Namespace,
+				Name:      fedObject.Name,
+			})
+		}
+
+		// no need to list cluster federated object for override policy
+		if requirement.Key() == ClusterOverridePolicyNameLabel {
+			clusterFedObjects, err := c.clusterFedObjectInformer.Lister().List(labels.NewSelector().Add(requirement))
+			if err != nil {
+				logger.Error(err, "Failed to list cluster federated objects")
+				return
+			}
+			for _, clusterFedObject := range clusterFedObjects {
+				c.worker.Enqueue(common.QualifiedName{
+					Name: clusterFedObject.Name,
+				})
+			}
 		}
 	}
 }
 
-func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result {
-	kind := c.typeConfig.GetFederatedType().Kind
-	key := qualifiedName.String()
+func (c *Controller) reconcile(ctx context.Context, qualifiedName common.QualifiedName) (status worker.Result) {
+	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "federated-name", qualifiedName.String())
 
-	c.metrics.Rate(fmt.Sprintf("%v.throughput", c.name), 1)
-	klog.V(4).Infof("%s starting to reconcile %s %v", c.name, kind, key)
+	c.metrics.Counter("override_policy_controller_throughput", 1)
+	keyedLogger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("%s.latency", c.name), startTime)
-		klog.V(4).Infof("%s finished reconciling %s %v (duration: %v)", c.name, kind, key, time.Since(startTime))
+		c.metrics.Duration("override_policy_controller_latency", startTime)
+		keyedLogger.WithValues("duration", time.Since(startTime), "status", status).V(3).Info("Finished reconciling")
 	}()
 
 	fedObject, err := c.getFederatedObject(qualifiedName)
 	if err != nil {
-		utilruntime.HandleError(err)
+		keyedLogger.Error(err, "Failed to get federated object")
 		return worker.StatusError
 	}
+
 	if fedObject == nil || fedObject.GetDeletionTimestamp() != nil {
 		return worker.StatusAllOK
 	}
 
+	templateMetadata, err := fedObject.GetSpec().GetTemplateMetadata()
+	if err != nil {
+		keyedLogger.Error(err, "Failed to get template metadata")
+		return worker.StatusError
+	}
+	templateGVK := templateMetadata.GroupVersionKind()
+
+	ctx, keyedLogger = logging.InjectLoggerValues(ctx, "source-gvk", templateGVK.String())
+	typeConfig, exist := c.informerManager.GetResourceFTC(templateGVK)
+	if !exist {
+		keyedLogger.V(3).Info("Resource ftc not found")
+		return worker.StatusAllOK
+	}
+
+	ctx, keyedLogger = logging.InjectLoggerValues(ctx, "ftc", typeConfig.Name)
 	if ok, err := pendingcontrollers.ControllerDependenciesFulfilled(fedObject, PrefixedControllerName); err != nil {
-		utilruntime.HandleError(fmt.Errorf("failed to check controller dependencies for %s %q: %w", kind, key, err))
+		keyedLogger.Error(err, "Failed to check controller dependencies")
 		return worker.StatusError
 	} else if !ok {
 		return worker.StatusAllOK
@@ -282,11 +317,12 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 	// TODO: don't apply a policy until it has the required finalizer for deletion protection
 	policies, recheckOnErr, err := lookForMatchedPolicies(
 		fedObject,
-		c.typeConfig.GetNamespaced(),
-		c.overridePolicyStore,
-		c.clusterOverridePolicyStore,
+		fedObject.GetNamespace() != "",
+		c.overridePolicyInformer.Lister(),
+		c.clusterOverridePolicyInformer.Lister(),
 	)
 	if err != nil {
+		keyedLogger.Error(err, "Failed to look for matched policy")
 		c.eventRecorder.Eventf(
 			fedObject,
 			corev1.EventTypeWarning,
@@ -302,11 +338,11 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 
 	placedClusters, err := c.getPlacedClusters(fedObject)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("failed to get placed clusters for %s %q: %w", kind, key, err))
+		keyedLogger.Error(err, "Failed to get placed clusters")
 		return worker.StatusError
 	}
 
-	var overrides util.OverridesMap
+	var overrides overridesMap
 	// Apply overrides from each policy in order
 	for _, policy := range policies {
 		newOverrides, err := parseOverrides(policy, placedClusters)
@@ -316,7 +352,7 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 				corev1.EventTypeWarning,
 				EventReasonParseOverridePolicyFailed,
 				"failed to parse overrides from %s %q: %v",
-				util.GetResourceKind(policy),
+				meta.GetResourceKind(policy),
 				policy.GetKey(),
 				err.Error(),
 			)
@@ -325,18 +361,13 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 		overrides = mergeOverrides(overrides, newOverrides)
 	}
 
-	currentOverrides, err := util.GetOverrides(fedObject, PrefixedControllerName)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("failed to get overrides from %s %q: %w", kind, key, err))
-		return worker.StatusError
-	}
-
+	currentOverrides := fedObject.GetSpec().GetControllerOverrides(PrefixedControllerName)
 	needsUpdate := !equality.Semantic.DeepEqual(overrides, currentOverrides)
 
 	if needsUpdate {
-		err = util.SetOverrides(fedObject, PrefixedControllerName, overrides)
+		err = setOverrides(fedObject, overrides)
 		if err != nil {
-			utilruntime.HandleError(fmt.Errorf("failed to set overrides for %s %q: %w", kind, key, err))
+			keyedLogger.Error(err, "Failed to set overrides")
 			return worker.StatusError
 		}
 	}
@@ -345,22 +376,21 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 		fedObject,
 		PrefixedControllerName,
 		needsUpdate,
-		c.typeConfig.GetControllers(),
+		typeConfig.GetControllers(),
 	)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("failed to update pending controllers for %s %q: %w", kind, key, err))
+		keyedLogger.Error(err, "Failed to update pending controllers")
 		return worker.StatusError
 	}
 	needsUpdate = needsUpdate || pendingControllersUpdated
 
 	if needsUpdate {
-		_, err = c.federatedClient.Resources(fedObject.GetNamespace()).
-			Update(context.TODO(), fedObject, metav1.UpdateOptions{})
+		_, err = fedobjectadapters.Update(ctx, c.fedClient.CoreV1alpha1(), fedObject, metav1.UpdateOptions{})
 		if err != nil {
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
 			}
-			utilruntime.HandleError(fmt.Errorf("failed to update %s %q for applying overrides: %w", kind, key, err))
+			keyedLogger.Error(err, "Failed to update federated object for applying overrides")
 			return worker.StatusAllOK
 		}
 
@@ -375,53 +405,61 @@ func (c *Controller) reconcile(qualifiedName common.QualifiedName) worker.Result
 	return worker.StatusAllOK
 }
 
-func (c *Controller) getPlacedClusters(fedObject *unstructured.Unstructured) ([]*fedcorev1a1.FederatedCluster, error) {
-	placementObj, err := util.UnmarshalGenericPlacements(fedObject)
+func (c *Controller) getPlacedClusters(fedObject fedcorev1a1.GenericFederatedObject) ([]*fedcorev1a1.FederatedCluster, error) {
+	placedClusterNames := fedObject.GetSpec().GetPlacementUnion()
+	clusterObjs, err := c.federatedClusterInformer.Lister().List(labels.Everything())
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal placements: %w", err)
+		return nil, fmt.Errorf("failed to list federated cluster: %w", err)
 	}
 
-	placedClusterNames := placementObj.ClusterNameUnion()
-
-	clusterObjs := c.clusterStore.List()
 	placedClusters := make([]*fedcorev1a1.FederatedCluster, 0, len(clusterObjs))
 	for _, clusterObj := range clusterObjs {
-		cluster, ok := clusterObj.(*fedcorev1a1.FederatedCluster)
-		if !ok {
-			return nil, fmt.Errorf("got wrong type %T from cluster store", cluster)
-		}
-		if _, exists := placedClusterNames[cluster.Name]; exists {
-			placedClusters = append(placedClusters, cluster)
+		if _, exists := placedClusterNames[clusterObj.Name]; exists {
+			placedClusters = append(placedClusters, clusterObj)
 		}
 	}
 
 	return placedClusters, nil
 }
 
-func (c *Controller) Run(stopChan <-chan struct{}) {
-	go c.federatedController.Run(stopChan)
-	go c.overridePolicyController.Run(stopChan)
-	go c.clusterOverridePolicyController.Run(stopChan)
-	go c.clusterController.Run(stopChan)
+func (c *Controller) Run(ctx context.Context) {
+	ctx, logger := logging.InjectLogger(ctx, c.logger)
 
-	if !cache.WaitForNamedCacheSync(c.name, stopChan,
-		c.federatedController.HasSynced,
-		c.overridePolicyController.HasSynced,
-		c.clusterOverridePolicyController.HasSynced,
-		c.clusterController.HasSynced,
-	) {
-		utilruntime.HandleError(fmt.Errorf("timed out waiting for caches to sync for controller: %s", c.name))
+	logger.Info("Starting controller")
+	defer logger.Info("Stopping controller")
+
+	if !cache.WaitForNamedCacheSync(ControllerName, ctx.Done(), c.HasSynced) {
+		logger.Error(nil, "Timed out waiting for caches to sync")
+		return
 	}
-	c.worker.Run(stopChan)
+	logger.Info("Caches are synced")
+	c.worker.Run(ctx)
+	<-ctx.Done()
 }
 
-func (c *Controller) getFederatedObject(qualifiedName common.QualifiedName) (*unstructured.Unstructured, error) {
-	cachedObj, exist, err := c.federatedStore.GetByKey(qualifiedName.String())
-	if err != nil {
+func (c *Controller) HasSynced() bool {
+	return c.federatedClusterInformer.Informer().HasSynced() &&
+		c.overridePolicyInformer.Informer().HasSynced() &&
+		c.clusterOverridePolicyInformer.Informer().HasSynced() &&
+		c.fedObjectInformer.Informer().HasSynced() &&
+		c.clusterFedObjectInformer.Informer().HasSynced() &&
+		c.informerManager.HasSynced()
+}
+
+func (c *Controller) IsControllerReady() bool {
+	return c.HasSynced()
+}
+
+func (c *Controller) getFederatedObject(qualifiedName common.QualifiedName) (fedcorev1a1.GenericFederatedObject, error) {
+	cachedObj, err := fedobjectadapters.GetFromLister(c.fedObjectInformer.Lister(), c.clusterFedObjectInformer.Lister(),
+		qualifiedName.Namespace, qualifiedName.Name)
+	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, err
 	}
-	if !exist {
+
+	if apierrors.IsNotFound(err) {
 		return nil, nil
 	}
-	return cachedObj.(*unstructured.Unstructured).DeepCopy(), nil
+
+	return cachedObj.DeepCopyGenericFederatedObject(), nil
 }

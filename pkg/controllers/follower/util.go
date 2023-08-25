@@ -19,17 +19,27 @@ package follower
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	podutil "github.com/kubewharf/kubeadmiral/pkg/lifted/kubernetes/pkg/api/v1/pod"
+	fedpodutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
 )
+
+type objectGroupKindKey struct {
+	namespace  string
+	fedName    string
+	sourceName string
+	sourceGK   schema.GroupKind
+}
+
+func (k objectGroupKindKey) ObjectSourceKey() string {
+	return fmt.Sprintf("%s/%s", k.namespace, k.sourceName)
+}
 
 type FollowerReference struct {
 	GroupKind schema.GroupKind
@@ -44,8 +54,7 @@ type followerAnnotationElement struct {
 }
 
 func getFollowersFromAnnotation(
-	fedObject *unstructured.Unstructured,
-	sourceToFederatedGKMap map[schema.GroupKind]schema.GroupKind,
+	fedObject fedcorev1a1.GenericFederatedObject,
 ) (sets.Set[FollowerReference], error) {
 	annotation := fedObject.GetAnnotations()[common.FollowersAnnotation]
 	if len(annotation) == 0 {
@@ -63,12 +72,9 @@ func getFollowersFromAnnotation(
 			Group: followerFromAnnotation.Group,
 			Kind:  followerFromAnnotation.Kind,
 		}
-		federatedGK, exists := sourceToFederatedGKMap[sourceGK]
-		if !exists {
-			return nil, fmt.Errorf("no federated type config found for source type %v", sourceGK)
-		}
+
 		followers.Insert(FollowerReference{
-			GroupKind: federatedGK,
+			GroupKind: sourceGK,
 			// Only allow followers from the same namespace
 			Namespace: fedObject.GetNamespace(),
 			Name:      followerFromAnnotation.Name,
@@ -78,11 +84,10 @@ func getFollowersFromAnnotation(
 }
 
 func getFollowersFromPodSpec(
-	fedObject *unstructured.Unstructured,
+	fedObject fedcorev1a1.GenericFederatedObject,
 	podSpecPath string,
-	sourceToFederatedGKMap map[schema.GroupKind]schema.GroupKind,
 ) (sets.Set[FollowerReference], error) {
-	podSpec, err := getPodSpec(fedObject, podSpecPath)
+	podSpec, err := fedpodutil.GetPodSpec(fedObject, podSpecPath)
 	if err != nil {
 		return nil, err
 	}
@@ -90,81 +95,51 @@ func getFollowersFromPodSpec(
 	pod := &corev1.Pod{
 		Spec: *podSpec,
 	}
-	return getFollowersFromPod(fedObject.GetNamespace(), pod, sourceToFederatedGKMap), nil
+	return getFollowersFromPod(fedObject.GetNamespace(), pod), nil
 }
 
 func getFollowersFromPod(
 	namespace string,
 	pod *corev1.Pod,
-	sourceToFederatedGKMap map[schema.GroupKind]schema.GroupKind,
 ) sets.Set[FollowerReference] {
 	followers := sets.New[FollowerReference]()
 
-	if federatedSecretGK, exists := sourceToFederatedGKMap[schema.GroupKind{Kind: "Secret"}]; exists {
-		podutil.VisitPodSecretNames(pod, func(name string) bool {
-			followers.Insert(FollowerReference{
-				GroupKind: federatedSecretGK,
-				Namespace: namespace,
-				Name:      name,
-			})
-			return true
+	podutil.VisitPodSecretNames(pod, func(name string) bool {
+		followers.Insert(FollowerReference{
+			GroupKind: schema.GroupKind{Kind: "Secret"},
+			Namespace: namespace,
+			Name:      name,
 		})
-	}
+		return true
+	})
 
-	if federatedConfigMapGK, exists := sourceToFederatedGKMap[schema.GroupKind{Kind: "ConfigMap"}]; exists {
-		podutil.VisitPodConfigmapNames(pod, func(name string) bool {
-			followers.Insert(FollowerReference{
-				GroupKind: federatedConfigMapGK,
-				Namespace: namespace,
-				Name:      name,
-			})
-			return true
+	podutil.VisitPodConfigmapNames(pod, func(name string) bool {
+		followers.Insert(FollowerReference{
+			GroupKind: schema.GroupKind{Kind: "ConfigMap"},
+			Namespace: namespace,
+			Name:      name,
 		})
-	}
+		return true
+	})
 
-	if federatedPVCGK, exists := sourceToFederatedGKMap[schema.GroupKind{Kind: "PersistentVolumeClaim"}]; exists {
-		for _, vol := range pod.Spec.Volumes {
-			// TODO: do we need to support PVCs created from ephemeral volumes?
-			if vol.PersistentVolumeClaim != nil {
-				followers.Insert(FollowerReference{
-					GroupKind: federatedPVCGK,
-					Namespace: namespace,
-					Name:      vol.PersistentVolumeClaim.ClaimName,
-				})
-			}
+	for _, vol := range pod.Spec.Volumes {
+		// TODO: do we need to support PVCs created from ephemeral volumes?
+		if vol.PersistentVolumeClaim != nil {
+			followers.Insert(FollowerReference{
+				GroupKind: schema.GroupKind{Kind: "PersistentVolumeClaim"},
+				Namespace: namespace,
+				Name:      vol.PersistentVolumeClaim.ClaimName,
+			})
 		}
 	}
 
-	if federatedSAGK, exists := sourceToFederatedGKMap[schema.GroupKind{Kind: "ServiceAccount"}]; exists {
-		if saName := pod.Spec.ServiceAccountName; saName != "" {
-			followers.Insert(FollowerReference{
-				GroupKind: federatedSAGK,
-				Namespace: namespace,
-				Name:      saName,
-			})
-		}
+	if saName := pod.Spec.ServiceAccountName; saName != "" {
+		followers.Insert(FollowerReference{
+			GroupKind: schema.GroupKind{Kind: "ServiceAccount"},
+			Namespace: namespace,
+			Name:      saName,
+		})
 	}
 
 	return followers
-}
-
-func getPodSpec(fedObject *unstructured.Unstructured, podSpecPath string) (*corev1.PodSpec, error) {
-	if fedObject == nil {
-		return nil, fmt.Errorf("fedObject is nil")
-	}
-	fedObjectPodSpecPath := append(
-		[]string{common.SpecField, common.TemplateField},
-		strings.Split(podSpecPath, ".")...)
-	podSpecMap, found, err := unstructured.NestedMap(fedObject.Object, fedObjectPodSpecPath...)
-	if err != nil {
-		return nil, err
-	}
-	if !found {
-		return nil, fmt.Errorf("pod spec does not exist at path %q", podSpecPath)
-	}
-	podSpec := &corev1.PodSpec{}
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(podSpecMap, podSpec); err != nil {
-		return nil, err
-	}
-	return podSpec, nil
 }

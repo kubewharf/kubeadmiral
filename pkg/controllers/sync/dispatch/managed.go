@@ -28,50 +28,54 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	fedtypesv1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/types/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/propagatedversion"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/status"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/annotation"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/managedlabel"
-	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/controllers/util/unstructured"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
+	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
 
-const IndexRolloutPlans = "federation_placement_rollout"
+const (
+	IndexRolloutPlans    = "federation_placement_rollout"
+	clusterOperationOk   = "ok"
+	clusterOperationFail = "fail"
+)
 
 // FederatedResourceForDispatch is the subset of the FederatedResource
 // interface required for dispatching operations to managed resources.
 type FederatedResourceForDispatch interface {
+	// TargetName returns the name of the resource's target object.
 	TargetName() common.QualifiedName
-	TargetKind() string
+	// TargetGVK returns the resource's target group/version/kind.
 	TargetGVK() schema.GroupVersionKind
+	// TargetGVR returns the resource's target group/version/resource.
+	TargetGVR() schema.GroupVersionResource
+	// TypeConfig returns the FederatedTypeConfig for the resource's target type.
 	TypeConfig() *fedcorev1a1.FederatedTypeConfig
-	// Replicas is the number of replicas specified in the federated object.
-	Replicas() (*int64, error)
-	// Object returns the federated object.
-	Object() *unstructured.Unstructured
+	// Object returns the underlying FederatedObject or ClusterFederatedObject
+	// as a GenericFederatedObject.
+	Object() fedcorev1a1.GenericFederatedObject
+	// VersionForCluster returns the resource's last propagated version for the given cluster.
 	VersionForCluster(clusterName string) (string, error)
+	// ObjectForCluster returns the resource's desired object for the given cluster.
 	ObjectForCluster(clusterName string) (*unstructured.Unstructured, error)
-	ApplyOverrides(
-		obj *unstructured.Unstructured,
-		clusterName string,
-		otherOverrides fedtypesv1a1.OverridePatches,
-	) error
+	// ApplyOverrides applies cluster-specific overrides to the given object.
+	ApplyOverrides(obj *unstructured.Unstructured, clusterName string) error
+	// RecordError records an error for the resource.
 	RecordError(errorCode string, err error)
+	// RecordEvent records an event for the resource.
 	RecordEvent(reason, messageFmt string, args ...interface{})
-	ReplicasOverrideForCluster(clusterName string) (int32, bool, error)
-	TotalReplicas(clusterNames sets.String) (int32, error)
 }
 
 // ManagedDispatcher dispatches operations to member clusters for resources
@@ -83,8 +87,8 @@ type ManagedDispatcher interface {
 	Update(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured)
 	VersionMap() map[string]string
 	CollectedStatus() status.CollectedPropagationStatus
-	RecordClusterError(propStatus fedtypesv1a1.PropagationStatus, clusterName string, err error)
-	RecordStatus(clusterName string, propStatus fedtypesv1a1.PropagationStatus)
+	RecordClusterError(propStatus fedcorev1a1.PropagationStatusType, clusterName string, err error)
+	RecordStatus(clusterName string, propStatus fedcorev1a1.PropagationStatusType)
 }
 
 type managedDispatcherImpl struct {
@@ -100,7 +104,6 @@ type managedDispatcherImpl struct {
 	// Track when resource updates are performed to allow indicating
 	// when a change was last propagated to member clusters.
 	resourcesUpdated bool
-	rolloutPlans     util.RolloutPlans
 
 	metrics stats.Metrics
 }
@@ -119,7 +122,7 @@ func NewManagedDispatcher(
 		metrics:               metrics,
 	}
 	d.dispatcher = newOperationDispatcher(clientAccessor, d)
-	d.unmanagedDispatcher = newUnmanagedDispatcher(d.dispatcher, d, fedResource.TargetGVK(), fedResource.TargetName())
+	d.unmanagedDispatcher = newUnmanagedDispatcher(d.dispatcher, d, fedResource.TargetGVR(), fedResource.TargetName(), metrics)
 	return d
 }
 
@@ -135,18 +138,18 @@ func (d *managedDispatcherImpl) Wait() (bool, error) {
 	defer d.RUnlock()
 	// Transition timed out status for this set to ok.
 	okTimedOut := sets.NewString(
-		string(fedtypesv1a1.CreationTimedOut),
-		string(fedtypesv1a1.UpdateTimedOut),
+		string(fedcorev1a1.CreationTimedOut),
+		string(fedcorev1a1.UpdateTimedOut),
 	)
 	for key, value := range d.statusMap {
 		propStatus := string(value)
 		if okTimedOut.Has(propStatus) {
-			d.statusMap[key] = fedtypesv1a1.ClusterPropagationOK
-		} else if propStatus == string(fedtypesv1a1.DeletionTimedOut) {
+			d.statusMap[key] = fedcorev1a1.ClusterPropagationOK
+		} else if propStatus == string(fedcorev1a1.DeletionTimedOut) {
 			// If deletion was successful, then assume the resource is
 			// pending garbage collection.
-			d.statusMap[key] = fedtypesv1a1.WaitingForRemoval
-		} else if propStatus == string(fedtypesv1a1.LabelRemovalTimedOut) {
+			d.statusMap[key] = fedcorev1a1.WaitingForRemoval
+		} else if propStatus == string(fedcorev1a1.LabelRemovalTimedOut) {
 			// If label removal was successful, the resource is
 			// effectively unmanaged for the cluster even though it
 			// still may be cached.
@@ -156,193 +159,47 @@ func (d *managedDispatcherImpl) Wait() (bool, error) {
 	return ok, nil
 }
 
-// Deprecated: this method is not used and outdated, but should be kept to reintegrate rollout planner in the future
-func (d *managedDispatcherImpl) Dispatch(ctx context.Context, targetGetter targetAccessorFunc, clusters []*fedcorev1a1.FederatedCluster,
-	selectedClusterNames sets.String, rolloutPlanEnabled bool,
-) {
-	clusterObjs := make(map[string]*unstructured.Unstructured)
-	toDelete := sets.String{}
-	for _, cluster := range clusters {
-		clusterName := cluster.Name
-		selectedCluster := selectedClusterNames.Has(clusterName)
-
-		if !util.IsClusterReady(&cluster.Status) {
-			if selectedCluster {
-				// Cluster state only needs to be reported in resource
-				// status for clusters selected for placement.
-				err := errors.New("Cluster not ready")
-				d.RecordClusterError(fedtypesv1a1.ClusterNotReady, clusterName, err)
-			}
-			continue
-		}
-
-		clusterObj, err := targetGetter(clusterName)
-		if err != nil {
-			wrappedErr := errors.Wrap(err, "Failed to retrieve cached cluster object")
-			d.RecordClusterError(fedtypesv1a1.CachedRetrievalFailed, clusterName, wrappedErr)
-			continue
-		}
-
-		// Resource should not exist in the named cluster
-		if !selectedCluster {
-			if clusterObj == nil {
-				// Resource does not exist in the cluster
-				continue
-			}
-			if clusterObj.GetDeletionTimestamp() != nil {
-				// Resource is marked for deletion
-				d.RecordStatus(clusterName, fedtypesv1a1.WaitingForRemoval)
-				continue
-			}
-			toDelete.Insert(clusterName)
-		}
-
-		clusterObjs[clusterName] = clusterObj
-	}
-
-	// skip rollout plan for hpa and daemonset
-	if rolloutPlanEnabled {
-		retain, err := checkRetainReplicas(d.fedResource.Object())
-		if err != nil {
-			d.fedResource.RecordError("CheckRetainReplicasFailed", err)
-			return
-		}
-		if retain {
-			rolloutPlanEnabled = false
-		}
-	}
-	if rolloutPlanEnabled {
-		clusterPlans, err := d.planRolloutProcess(ctx, clusterObjs, selectedClusterNames, toDelete)
-		if err != nil {
-			d.fedResource.RecordError(string(fedtypesv1a1.PlanRolloutFailed), err)
-		}
-		for clusterName, clusterObj := range clusterObjs {
-			var planned bool
-			var plan util.RolloutPlan
-			if clusterPlans != nil {
-				if p, ok := clusterPlans[clusterName]; ok && p != nil {
-					planned = true
-					plan = *p
-				}
-			}
-
-			if !planned {
-				if clusterObj != nil {
-					// dispatch without updating template
-					d.PatchAndKeepTemplate(ctx, clusterName, clusterObj, true)
-				}
-				continue
-			}
-			if toDelete.Has(clusterName) && (plan.Replicas == nil || plan.Replicas != nil && *plan.Replicas == 0) {
-				d.Delete(ctx, clusterName, clusterObj)
-				continue
-			}
-			if clusterObj == nil {
-				d.Create(ctx, clusterName)
-				continue
-			}
-			if plan.OnlyPatchReplicas && plan.Replicas != nil {
-				d.PatchAndKeepTemplate(ctx, clusterName, clusterObj, false)
-				continue
-			}
-			d.Update(ctx, clusterName, clusterObj)
-		}
-		return
-	}
-
-	d.emitRolloutStatus(ctx, clusterObjs, selectedClusterNames, nil)
-	for clusterName, clusterObj := range clusterObjs {
-		if toDelete.Has(clusterName) {
-			d.Delete(ctx, clusterName, clusterObj)
-			continue
-		}
-
-		// TODO Consider waiting until the result of resource
-		// creation has reached the target store before attempting
-		// subsequent operations.  Otherwise the object won't be found
-		// but an add operation will fail with AlreadyExists.
-		if clusterObj == nil {
-			d.Create(ctx, clusterName)
-		} else {
-			d.Update(ctx, clusterName, clusterObj)
-		}
-	}
-}
-
-func (d *managedDispatcherImpl) planRolloutProcess(ctx context.Context, clusterObjs map[string]*unstructured.Unstructured,
-	selectedClusterNames, toDelete sets.String,
-) (util.RolloutPlans, error) {
-	var (
-		r        = d.fedResource
-		key      = r.TargetName().String()
-		gvk      = r.TargetGVK()
-		planner  *util.RolloutPlanner
-		plans    util.RolloutPlans
-		replicas int32
-		err      error
-		logger   = klog.FromContext(ctx)
-	)
-
-	defer func() {
-		if err != nil {
-			logger.Error(err, "Failed to generate rollout plans")
-		} else {
-			logger.WithValues("plans", plans, "current-status", planner).V(4).Info("Generating rollout plans")
-		}
-		SendRolloutPlansToES(planner, plans, r.Object(), err)
-		d.emitRolloutStatus(ctx, clusterObjs, selectedClusterNames, planner)
-	}()
-
-	if gvk != appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind) {
-		err = errors.Errorf("Unsupported target type for rollout plan: %s", gvk)
-		return nil, err
-	}
-	if replicas, err = r.TotalReplicas(selectedClusterNames); err != nil {
-		return nil, err
-	}
-	if planner, err = util.NewRolloutPlanner(key, r.TypeConfig(), r.Object(), replicas); err != nil {
-		return nil, err
-	}
-	for clusterName, clusterObj := range clusterObjs {
-		var desiredReplicas int32
-		if !toDelete.Has(clusterName) {
-			var dr int32
-			if dr, _, err = r.ReplicasOverrideForCluster(clusterName); err != nil {
-				return nil, err
-			}
-			desiredReplicas = dr
-		}
-		if err = planner.RegisterTarget(clusterName, clusterObj, desiredReplicas); err != nil {
-			err = errors.Wrap(err, "Failed to register target in "+clusterName)
-			return nil, err
-		}
-	}
-	plans = planner.Plan()
-	d.rolloutPlans = plans
-	return plans, nil
-}
-
 func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) {
 	// Default the status to an operation-specific timeout.  Otherwise
 	// when a timeout occurs it won't be possible to determine which
 	// operation timed out.  The timeout status will be cleared by
 	// Wait() if a timeout does not occur.
-	d.RecordStatus(clusterName, fedtypesv1a1.CreationTimedOut)
+	d.RecordStatus(clusterName, fedcorev1a1.CreationTimedOut)
 
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "create"
-	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
+	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client dynamic.Interface) bool {
+		startTime := time.Now()
+		result := true
+		defer func() {
+			metricResult := clusterOperationOk
+			if !result {
+				metricResult = clusterOperationFail
+			}
+			d.metrics.Duration("dispatch_operation_duration_seconds", startTime,
+				stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
+				stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
+				stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
+				stats.Tag{Name: "version", Value: d.fedResource.TargetGVK().Version},
+				stats.Tag{Name: "kind", Value: d.fedResource.TargetGVK().Kind},
+				stats.Tag{Name: "operation", Value: op},
+				stats.Tag{Name: "cluster", Value: clusterName},
+				stats.Tag{Name: "result", Value: metricResult},
+			)
+		}()
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		d.recordEvent(clusterName, op, "Creating")
 
 		obj, err := d.fedResource.ObjectForCluster(clusterName)
 		if err != nil {
-			return d.recordOperationError(ctx, fedtypesv1a1.ComputeResourceFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.ComputeResourceFailed, clusterName, op, err)
+			return result
 		}
 
-		err = d.fedResource.ApplyOverrides(obj, clusterName, d.rolloutOverrides(clusterName))
+		err = d.fedResource.ApplyOverrides(obj, clusterName)
 		if err != nil {
-			return d.recordOperationError(ctx, fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.ApplyOverridesFailed, clusterName, op, err)
+			return result
 		}
 
 		recordPropagatedLabelsAndAnnotations(obj)
@@ -351,11 +208,13 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		defer cancel()
 
 		keyedLogger.V(1).Info("Creating target object in cluster")
-		err = client.Create(ctxWithTimeout, obj)
+		createdObj, err := client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Create(
+			ctxWithTimeout, obj, metav1.CreateOptions{},
+		)
 		if err == nil {
-			version := util.ObjectVersion(obj)
+			version := propagatedversion.ObjectVersion(createdObj)
 			d.recordVersion(clusterName, version)
-			return true
+			return result
 		}
 
 		// TODO Figure out why attempting to create a namespace that
@@ -363,25 +222,30 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		alreadyExists := apierrors.IsAlreadyExists(err) ||
 			d.fedResource.TargetGVK() == corev1.SchemeGroupVersion.WithKind(common.NamespaceKind) && apierrors.IsServerTimeout(err)
 		if !alreadyExists {
-			return d.recordOperationError(ctxWithTimeout, fedtypesv1a1.CreationFailed, clusterName, op, err)
+			result = d.recordOperationError(ctxWithTimeout, fedcorev1a1.CreationFailed, clusterName, op, err)
+			return result
 		}
 
 		// Attempt to update the existing resource to ensure that it
 		// is labeled as a managed resource.
-		err = client.Get(ctxWithTimeout, obj, obj.GetNamespace(), obj.GetName())
+		obj, err = client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Get(
+			ctxWithTimeout, obj.GetName(), metav1.GetOptions{},
+		)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retrieve object potentially requiring adoption")
-			return d.recordOperationError(ctxWithTimeout, fedtypesv1a1.RetrievalFailed, clusterName, op, wrappedErr)
+			result = d.recordOperationError(ctxWithTimeout, fedcorev1a1.RetrievalFailed, clusterName, op, wrappedErr)
+			return result
 		}
 
 		if d.skipAdoptingResources {
-			return d.recordOperationError(
+			result = d.recordOperationError(
 				ctxWithTimeout,
-				fedtypesv1a1.AlreadyExists,
+				fedcorev1a1.AlreadyExists,
 				clusterName,
 				op,
 				errors.Errorf("Resource pre-exist in cluster"),
 			)
+			return result
 		}
 
 		d.recordError(
@@ -392,19 +256,37 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		)
 		if !managedlabel.HasManagedLabel(obj) {
 			// If the object was not managed by us, mark it as adopted.
-			annotation.AddAnnotation(obj, util.AdoptedAnnotation, common.AnnotationValueTrue)
+			adoption.AddAdoptedAnnotation(obj)
 		}
 		d.Update(ctx, clusterName, obj)
-		return true
+		return result
 	})
 }
 
 func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured) {
-	d.RecordStatus(clusterName, fedtypesv1a1.UpdateTimedOut)
+	d.RecordStatus(clusterName, fedcorev1a1.UpdateTimedOut)
 
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "update"
-	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
+	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client dynamic.Interface) bool {
+		startTime := time.Now()
+		result := true
+		defer func() {
+			metricResult := clusterOperationOk
+			if !result {
+				metricResult = clusterOperationFail
+			}
+			d.metrics.Duration("dispatch_operation_duration_seconds", startTime,
+				stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
+				stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
+				stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
+				stats.Tag{Name: "version", Value: d.fedResource.TargetGVK().Version},
+				stats.Tag{Name: "kind", Value: d.fedResource.TargetGVK().Kind},
+				stats.Tag{Name: "operation", Value: op},
+				stats.Tag{Name: "cluster", Value: clusterName},
+				stats.Tag{Name: "result", Value: metricResult},
+			)
+		}()
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		if managedlabel.IsExplicitlyUnmanaged(clusterObj) {
 			err := errors.Errorf(
@@ -412,165 +294,83 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 				managedlabel.ManagedByKubeAdmiralLabelKey,
 				managedlabel.UnmanagedByKubeAdmiralLabelValue,
 			)
-			return d.recordOperationError(ctx, fedtypesv1a1.ManagedLabelFalse, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.ManagedLabelFalse, clusterName, op, err)
+			return result
 		}
 
 		obj, err := d.fedResource.ObjectForCluster(clusterName)
 		if err != nil {
-			return d.recordOperationError(ctx, fedtypesv1a1.ComputeResourceFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.ComputeResourceFailed, clusterName, op, err)
+			return result
 		}
 
-		err = d.fedResource.ApplyOverrides(obj, clusterName, d.rolloutOverrides(clusterName))
+		err = d.fedResource.ApplyOverrides(obj, clusterName)
 		if err != nil {
-			return d.recordOperationError(ctx, fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.ApplyOverridesFailed, clusterName, op, err)
+			return result
 		}
 
 		recordPropagatedLabelsAndAnnotations(obj)
 
-		err = RetainOrMergeClusterFields(d.fedResource.TargetGVK(), obj, clusterObj, d.fedResource.Object())
+		err = RetainOrMergeClusterFields(d.fedResource.TargetGVK(), obj, clusterObj)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain fields")
-			return d.recordOperationError(ctx, fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+			result = d.recordOperationError(ctx, fedcorev1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+			return result
 		}
 
-		err = retainReplicas(obj, clusterObj, d.fedResource.Object(), d.fedResource.TypeConfig())
+		err = retainReplicas(obj, clusterObj, d.fedResource.Object(), d.fedResource.TypeConfig().Spec.PathDefinition.ReplicasSpec)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain replicas")
-			return d.recordOperationError(ctx, fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
-		}
-
-		if d.fedResource.TargetGVK() == appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind) {
-			err = setLastReplicasetName(obj, clusterObj)
-			if err != nil {
-				wrappedErr := errors.Wrapf(err, "failed to set last replicaset name")
-				return d.recordOperationError(ctx, fedtypesv1a1.SetLastReplicasetNameFailed, clusterName, op, wrappedErr)
-			}
+			result = d.recordOperationError(ctx, fedcorev1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
+			return result
 		}
 
 		version, err := d.fedResource.VersionForCluster(clusterName)
 		if err != nil {
-			return d.recordOperationError(ctx, fedtypesv1a1.VersionRetrievalFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.VersionRetrievalFailed, clusterName, op, err)
+			return result
 		}
 
-		if !util.ObjectNeedsUpdate(obj, clusterObj, version, d.fedResource.TypeConfig()) {
+		if !propagatedversion.ObjectNeedsUpdate(obj, clusterObj, version, d.fedResource.TypeConfig()) {
 			// Resource is current, we still record version in dispatcher
 			// so that federated status can be set with cluster resource generation
 			d.recordVersion(clusterName, version)
-			return true
+			return result
 		}
 
 		// Only record an event if the resource is not current
 		d.recordEvent(clusterName, op, "Updating")
 
 		keyedLogger.V(1).Info("Updating target object in cluster")
-		err = client.Update(ctx, obj)
+		obj, err = client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Update(
+			ctx, obj, metav1.UpdateOptions{},
+		)
 		if err != nil {
-			return d.recordOperationError(ctx, fedtypesv1a1.UpdateFailed, clusterName, op, err)
+			result = d.recordOperationError(ctx, fedcorev1a1.UpdateFailed, clusterName, op, err)
+			return result
 		}
 		d.setResourcesUpdated()
-		version = util.ObjectVersion(obj)
+		version = propagatedversion.ObjectVersion(obj)
 		d.recordVersion(clusterName, version)
-		return true
+		return result
 	})
 }
 
 func (d *managedDispatcherImpl) Delete(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured) {
-	d.RecordStatus(clusterName, fedtypesv1a1.DeletionTimedOut)
+	d.RecordStatus(clusterName, fedcorev1a1.DeletionTimedOut)
 
 	d.unmanagedDispatcher.Delete(ctx, clusterName, clusterObj)
 }
 
-func (d *managedDispatcherImpl) PatchAndKeepTemplate(
-	ctx context.Context,
-	clusterName string,
-	clusterObj *unstructured.Unstructured,
-	keepRolloutSettings bool,
-) {
-	d.RecordStatus(clusterName, fedtypesv1a1.UpdateTimedOut)
-
-	d.dispatcher.incrementOperationsInitiated()
-	const op = "update"
-	go d.dispatcher.clusterOperation(ctx, clusterName, op, func(client generic.Client) bool {
-		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
-		if managedlabel.IsExplicitlyUnmanaged(clusterObj) {
-			err := errors.Errorf(
-				"Unable to manage the object which has label %s: %s",
-				managedlabel.ManagedByKubeAdmiralLabelKey,
-				managedlabel.UnmanagedByKubeAdmiralLabelValue,
-			)
-			return d.recordOperationError(ctx, fedtypesv1a1.ManagedLabelFalse, clusterName, op, err)
-		}
-
-		obj, err := d.fedResource.ObjectForCluster(clusterName)
-		if err != nil {
-			return d.recordOperationError(ctx, fedtypesv1a1.ComputeResourceFailed, clusterName, op, err)
-		}
-
-		err = d.fedResource.ApplyOverrides(obj, clusterName, d.rolloutOverrides(clusterName))
-		if err != nil {
-			return d.recordOperationError(ctx, fedtypesv1a1.ApplyOverridesFailed, clusterName, op, err)
-		}
-
-		recordPropagatedLabelsAndAnnotations(obj)
-
-		err = RetainOrMergeClusterFields(d.fedResource.TargetGVK(), obj, clusterObj, d.fedResource.Object())
-		if err != nil {
-			wrappedErr := errors.Wrapf(err, "failed to retain fields")
-			return d.recordOperationError(ctx, fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
-		}
-
-		err = retainReplicas(obj, clusterObj, d.fedResource.Object(), d.fedResource.TypeConfig())
-		if err != nil {
-			wrappedErr := errors.Wrapf(err, "failed to retain replicas")
-			return d.recordOperationError(ctx, fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
-		}
-
-		if d.fedResource.TargetGVK() == appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind) {
-			if err = retainTemplate(obj, clusterObj, d.fedResource.TypeConfig(), keepRolloutSettings); err != nil {
-				wrappedErr := errors.Wrapf(err, "failed to retain template")
-				return d.recordOperationError(ctx, fedtypesv1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
-			}
-			if err = setLastReplicasetName(obj, clusterObj); err != nil {
-				wrappedErr := errors.Wrapf(err, "failed to set last replicaset name")
-				return d.recordOperationError(ctx, fedtypesv1a1.SetLastReplicasetNameFailed, clusterName, op, wrappedErr)
-			}
-		}
-
-		version, err := d.fedResource.VersionForCluster(clusterName)
-		if err != nil {
-			return d.recordOperationError(ctx, fedtypesv1a1.VersionRetrievalFailed, clusterName, op, err)
-		}
-
-		if !util.ObjectNeedsUpdate(obj, clusterObj, version, d.fedResource.TypeConfig()) {
-			// Resource is current, we still record version in dispatcher
-			// so that federated status can be set with cluster resource generation
-			d.recordVersion(clusterName, version)
-			return true
-		}
-
-		// Only record an event if the resource is not current
-		d.recordEvent(clusterName, op, "Updating")
-
-		keyedLogger.V(1).Info("Patching and keeping template for target object in cluster")
-		err = client.Update(ctx, obj)
-		if err != nil {
-			return d.recordOperationError(ctx, fedtypesv1a1.UpdateFailed, clusterName, op, err)
-		}
-		d.setResourcesUpdated()
-		version = util.ObjectVersion(obj)
-		d.recordVersion(clusterName, version)
-		return true
-	})
-}
-
 func (d *managedDispatcherImpl) RemoveManagedLabel(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured) {
-	d.RecordStatus(clusterName, fedtypesv1a1.LabelRemovalTimedOut)
+	d.RecordStatus(clusterName, fedcorev1a1.LabelRemovalTimedOut)
 
 	d.unmanagedDispatcher.RemoveManagedLabel(ctx, clusterName, clusterObj)
 }
 
 func (d *managedDispatcherImpl) RecordClusterError(
-	propStatus fedtypesv1a1.PropagationStatus,
+	propStatus fedcorev1a1.PropagationStatusType,
 	clusterName string,
 	err error,
 ) {
@@ -578,7 +378,7 @@ func (d *managedDispatcherImpl) RecordClusterError(
 	d.RecordStatus(clusterName, propStatus)
 }
 
-func (d *managedDispatcherImpl) RecordStatus(clusterName string, propStatus fedtypesv1a1.PropagationStatus) {
+func (d *managedDispatcherImpl) RecordStatus(clusterName string, propStatus fedcorev1a1.PropagationStatusType) {
 	d.Lock()
 	defer d.Unlock()
 	d.statusMap[clusterName] = propStatus
@@ -586,24 +386,34 @@ func (d *managedDispatcherImpl) RecordStatus(clusterName string, propStatus fedt
 
 func (d *managedDispatcherImpl) recordOperationError(
 	ctx context.Context,
-	propStatus fedtypesv1a1.PropagationStatus,
+	propStatus fedcorev1a1.PropagationStatusType,
 	clusterName, operation string,
 	err error,
 ) bool {
 	d.recordError(ctx, clusterName, operation, err)
 	d.RecordStatus(clusterName, propStatus)
+	d.metrics.Counter("dispatch_operation_error_total", 1,
+		stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
+		stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
+		stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
+		stats.Tag{Name: "version", Value: d.fedResource.TargetGVK().Version},
+		stats.Tag{Name: "kind", Value: d.fedResource.TargetGVK().Kind},
+		stats.Tag{Name: "operation", Value: operation},
+		stats.Tag{Name: "cluster", Value: clusterName},
+		stats.Tag{Name: "error_type", Value: string(propStatus)},
+	)
 	return false
 }
 
 func (d *managedDispatcherImpl) recordError(ctx context.Context, clusterName, operation string, err error) {
-	targetName := d.unmanagedDispatcher.targetNameForCluster(clusterName)
-	args := []interface{}{operation, d.fedResource.TargetKind(), targetName, clusterName}
+	targetName := d.unmanagedDispatcher.targetName
+	args := []interface{}{operation, d.fedResource.TargetGVR().String(), targetName, clusterName}
 	eventType := fmt.Sprintf("%sInClusterFailed", strings.Replace(strings.Title(operation), " ", "", -1))
 	eventErr := errors.Wrapf(err, "Failed to "+eventTemplate, args...)
 	logger := klog.FromContext(ctx)
 	logger.Error(eventErr, "event", eventType, "Operation failed with error")
 	d.fedResource.RecordError(eventType, eventErr)
-	d.metrics.Rate("member_operation_error", 1, []stats.Tag{
+	d.metrics.Counter("member_operation_error", 1, []stats.Tag{
 		{Name: "cluster", Value: clusterName},
 		{Name: "operation", Value: operation},
 		{Name: "reason", Value: string(apierrors.ReasonForError(err))},
@@ -611,8 +421,8 @@ func (d *managedDispatcherImpl) recordError(ctx context.Context, clusterName, op
 }
 
 func (d *managedDispatcherImpl) recordEvent(clusterName, operation, operationContinuous string) {
-	targetName := d.unmanagedDispatcher.targetNameForCluster(clusterName)
-	args := []interface{}{operationContinuous, d.fedResource.TargetKind(), targetName, clusterName}
+	targetName := d.unmanagedDispatcher.targetName
+	args := []interface{}{operationContinuous, d.fedResource.TargetGVR().String(), targetName, clusterName}
 	eventType := fmt.Sprintf("%sInCluster", strings.Replace(strings.Title(operation), " ", "", -1))
 	d.fedResource.RecordEvent(eventType, eventTemplate, args...)
 }
@@ -648,153 +458,7 @@ func (d *managedDispatcherImpl) CollectedStatus() status.CollectedPropagationSta
 	}
 	return status.CollectedPropagationStatus{
 		StatusMap:        statusMap,
-		GenerationMap:    util.ConvertVersionMapToGenerationMap(d.versionMap),
+		GenerationMap:    propagatedversion.ConvertVersionMapToGenerationMap(d.versionMap),
 		ResourcesUpdated: d.resourcesUpdated,
-	}
-}
-
-func (d *managedDispatcherImpl) rolloutOverrides(clusterName string) fedtypesv1a1.OverridePatches {
-	if d.rolloutPlans == nil {
-		return fedtypesv1a1.OverridePatches{}
-	}
-	return d.rolloutPlans.GetRolloutOverrides(clusterName)
-}
-
-// emitRolloutStatus temporarily emit status metrics during rollout for observation
-func (d *managedDispatcherImpl) emitRolloutStatus(
-	ctx context.Context,
-	clusterObjs map[string]*unstructured.Unstructured,
-	selectedClusterNames sets.String,
-	planner *util.RolloutPlanner,
-) {
-	r := d.fedResource
-	deployName := r.TargetName().Name
-	if r.TargetGVK() != appsv1.SchemeGroupVersion.WithKind(common.DeploymentKind) {
-		return
-	}
-
-	fedClusterName := "fed"
-	fedTags := []stats.Tag{
-		{Name: "dp", Value: deployName},
-		{Name: "cluster", Value: fedClusterName},
-		{Name: "ismember", Value: "false"},
-	}
-	logger := klog.FromContext(ctx)
-
-	// settings
-	if planner == nil {
-		replicas, err := r.TotalReplicas(selectedClusterNames)
-		if err != nil {
-			logger.Error(err, "Skip rollout metrics: failed to get replicas")
-			return
-		}
-		pathPrefix := []string{common.SpecField, common.TemplateField}
-		maxSurgePath := append(pathPrefix, util.MaxSurgePathSlice...)
-		maxUnavailablePath := append(pathPrefix, util.MaxUnavailablePathSlice...)
-		maxSurge, maxUnavailable, err := util.RetrieveFencepost(r.Object(), maxSurgePath, maxUnavailablePath, replicas)
-		if err != nil {
-			logger.Error(err, "Skip rollout metrics: failed to get maxSurge and maxUnavailable")
-			return
-		}
-		_ = d.metrics.Store("sync.rollout.maxSurge", maxSurge, fedTags...)
-		_ = d.metrics.Store("sync.rollout.maxUnavailable", maxUnavailable, fedTags...)
-		_ = d.metrics.Store("sync.rollout.minAvailable", replicas-maxUnavailable, fedTags...)
-	} else {
-		_ = d.metrics.Store("sync.rollout.maxSurge", planner.MaxSurge, fedTags...)
-		_ = d.metrics.Store("sync.rollout.maxUnavailable", planner.MaxUnavailable, fedTags...)
-		_ = d.metrics.Store("sync.rollout.minAvailable", planner.Replicas-planner.MaxUnavailable, fedTags...)
-
-		for _, t := range planner.Targets {
-			clusterName := t.ClusterName
-			tags := []stats.Tag{{Name: "dp", Value: deployName}, {Name: "cluster", Value: clusterName}, {Name: "ismember", Value: "true"}}
-			_ = d.metrics.Store("sync.rollout.maxSurge", t.Status.MaxSurge, tags...)
-			_ = d.metrics.Store("sync.rollout.maxUnavailable", t.Status.MaxUnavailable, tags...)
-		}
-	}
-
-	// status
-	var unavailable, surge, available int64
-	for clusterName, clusterObj := range clusterObjs {
-		if clusterObj == nil {
-			continue
-		}
-		tags := []stats.Tag{
-			{Name: "dp", Value: deployName},
-			{Name: "cluster", Value: clusterName},
-			{Name: "ismember", Value: "true"},
-		}
-		if u, ok, err := unstructured.NestedInt64(clusterObj.Object, "status", "unavailableReplicas"); err == nil &&
-			ok {
-			_ = d.metrics.Store("sync.rollout.unavailable", u, tags...)
-			unavailable += u
-		}
-		if r, ok, err := unstructured.NestedInt64(clusterObj.Object, "status", "replicas"); err == nil && ok {
-			if r0, err := utilunstructured.GetInt64FromPath(
-				clusterObj,
-				d.fedResource.TypeConfig().Spec.PathDefinition.ReplicasSpec,
-				nil,
-			); err == nil && r0 != nil {
-				s := r - *r0
-				_ = d.metrics.Store("sync.rollout.surge", s, tags...)
-				surge += s
-			}
-		}
-		if a, ok, err := unstructured.NestedInt64(clusterObj.Object, "status", "availableReplicas"); err == nil && ok {
-			_ = d.metrics.Store("sync.rollout.available", a, tags...)
-			available += a
-		}
-	}
-	_ = d.metrics.Store("sync.rollout.surge", surge, fedTags...)
-	_ = d.metrics.Store("sync.rollout.unavailable", unavailable, fedTags...)
-	_ = d.metrics.Store("sync.rollout.available", available, fedTags...)
-}
-
-func SendRolloutPlansToES(
-	planner *util.RolloutPlanner,
-	plans util.RolloutPlans,
-	fedResource *unstructured.Unstructured,
-	err error,
-) {
-	data := struct {
-		Date           time.Time
-		Name           string
-		Namespace      string
-		Kind           string
-		Replicas       int32
-		MaxSurge       int32
-		MaxUnavailable int32
-		Revision       string
-		CurrentStatus  string
-		Result         util.RolloutPlans
-		ResultStr      string
-		Error          string
-	}{
-		Date:      time.Now(),
-		Name:      fedResource.GetName(),
-		Namespace: fedResource.GetNamespace(),
-		Kind:      fedResource.GetKind(),
-		Result:    plans,
-	}
-	if err != nil {
-		data.Error = err.Error()
-	} else {
-		if planner != nil {
-			var s []string
-			for _, t := range planner.Targets {
-				s = append(s, t.String())
-			}
-			data.Replicas = planner.Replicas
-			data.MaxSurge = planner.MaxSurge
-			data.MaxUnavailable = planner.MaxUnavailable
-			data.Revision = planner.Revision
-			data.CurrentStatus = strings.Join(s, "\n")
-		}
-		if len(plans) > 0 {
-			var s []string
-			for c, p := range plans {
-				s = append(s, c+":"+p.String())
-			}
-			data.ResultStr = strings.Join(s, "\n")
-		}
 	}
 }

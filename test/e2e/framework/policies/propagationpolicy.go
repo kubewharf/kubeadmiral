@@ -38,13 +38,12 @@ func PropagationPolicyForClustersWithPlacements(
 		},
 		Spec: fedcorev1a1.PropagationPolicySpec{
 			SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
-			StickyCluster:  false,
-			Placements:     []fedcorev1a1.Placement{},
+			Placements:     []fedcorev1a1.ClusterReference{},
 		},
 	}
 
 	for _, c := range clusters {
-		policy.Spec.Placements = append(policy.Spec.Placements, fedcorev1a1.Placement{Cluster: c.Name})
+		policy.Spec.Placements = append(policy.Spec.Placements, fedcorev1a1.ClusterReference{Cluster: c.Name})
 	}
 
 	return policy

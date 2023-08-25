@@ -25,9 +25,6 @@ const (
 	GlobalSchedulerName         = "global-scheduler"
 	PrefixedGlobalSchedulerName = common.DefaultPrefix + "global-scheduler"
 
-	PropagationPolicyNameLabel        = common.DefaultPrefix + "propagation-policy-name"
-	ClusterPropagationPolicyNameLabel = common.DefaultPrefix + "cluster-propagation-policy-name"
-
 	// Marks that the annotated object must follow the placement of the followed object.
 	// Value is in the form G/V/R/ns/name, e.g. `types.kubeadmiral.io/v1alpha1/federateddeployments/default/fed-dp-xxx`.
 	FollowsObjectAnnotation = common.DefaultPrefix + "follows-object"
@@ -49,5 +46,17 @@ const (
 	EventReasonWebhookConfigurationError = "WebhookConfigurationError"
 	EventReasonWebhookRegistered         = "WebhookRegistered"
 
-	SchedulingTriggerHashAnnotation = common.DefaultPrefix + "scheduling-trigger-hash"
+	SchedulingTriggersAnnotation        = common.DefaultPrefix + "scheduling-triggers"
+	SchedulingDeferredReasonsAnnotation = common.DefaultPrefix + "scheduling-deferred-reasons"
+)
+
+const (
+	// FedObjChanged is the event when FederatedObject/ClusterFederatedObject changes.
+	FedObjChanged = "FedObjChanged"
+	// PolicyChanged is the event when PropagationPolicy/ClusterPropagationPolicy changes.
+	PolicyChanged = "PolicyChanged"
+	// ClusterChanged is the event when cluster changes.
+	ClusterChanged = "ClusterChanged"
+	// FTCChanged is the event when FTC changes.
+	FTCChanged = "FTCChanged"
 )

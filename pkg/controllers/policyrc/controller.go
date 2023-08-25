@@ -18,176 +18,147 @@ package policyrc
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/client/generic"
+	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
+	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/delayingdeliver"
-	"github.com/kubewharf/kubeadmiral/pkg/controllers/util/worker"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
+	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
 const (
 	ControllerName = "policyrc-controller"
 )
 
-var PolicyrcControllerName = common.DefaultPrefix + "policyrc-controller"
-
-type informerPair struct {
-	store      cache.Store
-	controller cache.Controller
-}
-
 type Controller struct {
-	// name of controller: <federatedKind>-policyrc-controller
-	name string
-
-	// Informer store and controller for the federated type, PropagationPolicy,
-	// ClusterPropagationPolicy, OverridePolicy and ClusterOverridePolicy respectively.
-	federated, pp, cpp, op, cop informerPair
-
-	client generic.Client
+	fedObjectInformer                fedcorev1a1informers.FederatedObjectInformer
+	clusterFedObjectInformer         fedcorev1a1informers.ClusterFederatedObjectInformer
+	overridePolicyInformer           fedcorev1a1informers.OverridePolicyInformer
+	clusterOverridePolicyInformer    fedcorev1a1informers.ClusterOverridePolicyInformer
+	propagationPolicyInformer        fedcorev1a1informers.PropagationPolicyInformer
+	clusterPropagationPolicyInformer fedcorev1a1informers.ClusterPropagationPolicyInformer
 
 	ppCounter, opCounter *Counter
 
 	// updates the local counter upon fed object updates
-	countWorker worker.ReconcileWorker
+	countWorker worker.ReconcileWorker[common.QualifiedName]
 	// pushes values from local counter to apiserver
-	persistPpWorker, persistOpWorker worker.ReconcileWorker
+	persistPpWorker, persistOpWorker worker.ReconcileWorker[common.QualifiedName]
 
-	typeConfig *fedcorev1a1.FederatedTypeConfig
-
+	client  generic.Client
 	metrics stats.Metrics
 	logger  klog.Logger
 }
 
-func StartController(controllerConfig *util.ControllerConfig,
-	stopChan <-chan struct{}, typeConfig *fedcorev1a1.FederatedTypeConfig,
-) error {
-	controller, err := newController(controllerConfig, typeConfig)
-	if err != nil {
-		return err
-	}
-	controller.logger.Info("Starting policyrc controller")
-	controller.Run(stopChan)
-	return nil
-}
-
-func newController(controllerConfig *util.ControllerConfig,
-	typeConfig *fedcorev1a1.FederatedTypeConfig,
+func NewPolicyRCController(
+	restConfig *rest.Config,
+	fedInformerFactory fedinformers.SharedInformerFactory,
+	metrics stats.Metrics,
+	logger klog.Logger,
+	workerCount int,
 ) (*Controller, error) {
-	federatedAPIResource := typeConfig.GetFederatedType()
-
-	userAgent := fmt.Sprintf("%s-policyrc-controller", strings.ToLower(federatedAPIResource.Kind))
-	configWithUserAgent := rest.CopyConfig(controllerConfig.KubeConfig)
-	rest.AddUserAgent(configWithUserAgent, userAgent)
-
 	c := &Controller{
-		name:       userAgent,
-		typeConfig: typeConfig,
-		metrics:    controllerConfig.Metrics,
-		logger:     klog.LoggerWithValues(klog.Background(), "controller", ControllerName, "ftc", typeConfig.Name),
+		client:                           generic.NewForConfigOrDie(restConfig),
+		fedObjectInformer:                fedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		clusterFedObjectInformer:         fedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
+		propagationPolicyInformer:        fedInformerFactory.Core().V1alpha1().PropagationPolicies(),
+		clusterPropagationPolicyInformer: fedInformerFactory.Core().V1alpha1().ClusterPropagationPolicies(),
+		overridePolicyInformer:           fedInformerFactory.Core().V1alpha1().OverridePolicies(),
+		clusterOverridePolicyInformer:    fedInformerFactory.Core().V1alpha1().ClusterOverridePolicies(),
+		metrics:                          metrics,
+		logger:                           logger.WithValues("controller", ControllerName),
 	}
 
-	c.countWorker = worker.NewReconcileWorker(
+	c.countWorker = worker.NewReconcileWorker[common.QualifiedName](
+		"policyrc-controller-count-worker",
 		c.reconcileCount,
-		worker.WorkerTiming{},
+		worker.RateLimiterOptions{},
 		1, // currently only one worker is meaningful due to the global mutex
-		controllerConfig.Metrics,
-		delayingdeliver.NewMetricTags("policyrc-controller-count-worker", c.typeConfig.GetFederatedType().Kind),
+		metrics,
 	)
 
-	c.persistPpWorker = worker.NewReconcileWorker(
-		func(qualifiedName common.QualifiedName) worker.Result {
-			return c.reconcilePersist("propagation-policy", qualifiedName, c.pp.store, c.cpp.store, c.ppCounter)
+	c.persistPpWorker = worker.NewReconcileWorker[common.QualifiedName](
+		"policyrc-controller-persist-worker",
+		func(ctx context.Context, qualifiedName common.QualifiedName) worker.Result {
+			return c.reconcilePersist(
+				ctx,
+				"propagation_policy_reference_count",
+				qualifiedName,
+				c.propagationPolicyInformer.Informer().GetStore(),
+				c.clusterPropagationPolicyInformer.Informer().GetStore(),
+				c.ppCounter,
+			)
 		},
-		worker.WorkerTiming{},
-		controllerConfig.WorkerCount,
-		controllerConfig.Metrics,
-		delayingdeliver.NewMetricTags("policyrc-controller-persist-worker", c.typeConfig.GetFederatedType().Kind),
+		worker.RateLimiterOptions{},
+		workerCount,
+		metrics,
 	)
-	c.persistOpWorker = worker.NewReconcileWorker(
-		func(qualifiedName common.QualifiedName) worker.Result {
-			return c.reconcilePersist("override-policy", qualifiedName, c.op.store, c.cop.store, c.opCounter)
+
+	c.persistOpWorker = worker.NewReconcileWorker[common.QualifiedName](
+		"policyrc-controller-persist-worker",
+		func(ctx context.Context, qualifiedName common.QualifiedName) worker.Result {
+			return c.reconcilePersist(
+				ctx,
+				"override_policy_reference_count",
+				qualifiedName,
+				c.overridePolicyInformer.Informer().GetStore(),
+				c.clusterOverridePolicyInformer.Informer().GetStore(),
+				c.opCounter,
+			)
 		},
-		worker.WorkerTiming{},
-		controllerConfig.WorkerCount,
-		controllerConfig.Metrics,
-		delayingdeliver.NewMetricTags("policyrc-controller-persist-worker", c.typeConfig.GetFederatedType().Kind),
+		worker.RateLimiterOptions{},
+		workerCount,
+		metrics,
 	)
 
-	targetNamespace := controllerConfig.TargetNamespace
-
-	federatedClient, err := util.NewResourceClient(configWithUserAgent, &federatedAPIResource)
-	if err != nil {
-		return nil, err
-	}
-	c.federated.store, c.federated.controller = util.NewResourceInformer(
-		federatedClient,
-		targetNamespace,
-		c.countWorker.EnqueueObject,
-		controllerConfig.Metrics,
-	)
-
-	c.client = generic.NewForConfigOrDie(configWithUserAgent)
-	c.pp.store, c.pp.controller, err = util.NewGenericInformer(
-		configWithUserAgent,
-		targetNamespace,
-		&fedcorev1a1.PropagationPolicy{},
-		0,
-		c.persistPpWorker.EnqueueObject,
-		controllerConfig.Metrics,
-	)
-	if err != nil {
+	if _, err := c.fedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
+		common.NewQualifiedName,
+		c.countWorker.Enqueue,
+	)); err != nil {
 		return nil, err
 	}
 
-	c.cpp.store, c.cpp.controller, err = util.NewGenericInformer(
-		configWithUserAgent,
-		targetNamespace,
-		&fedcorev1a1.ClusterPropagationPolicy{},
-		0,
-		c.persistPpWorker.EnqueueObject,
-		controllerConfig.Metrics,
-	)
-	if err != nil {
+	if _, err := c.clusterFedObjectInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChangesWithTransform(
+		common.NewQualifiedName,
+		c.countWorker.Enqueue,
+	)); err != nil {
 		return nil, err
 	}
 
-	c.op.store, c.op.controller, err = util.NewGenericInformer(
-		configWithUserAgent,
-		targetNamespace,
-		&fedcorev1a1.OverridePolicy{},
-		0,
-		c.persistOpWorker.EnqueueObject,
-		controllerConfig.Metrics,
-	)
-	if err != nil {
+	if _, err := c.propagationPolicyInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistPpWorker.Enqueue),
+	); err != nil {
 		return nil, err
 	}
 
-	c.cop.store, c.cop.controller, err = util.NewGenericInformer(
-		configWithUserAgent,
-		targetNamespace,
-		&fedcorev1a1.ClusterOverridePolicy{},
-		0,
-		c.persistOpWorker.EnqueueObject,
-		controllerConfig.Metrics,
-	)
-	if err != nil {
+	if _, err := c.clusterPropagationPolicyInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistPpWorker.Enqueue),
+	); err != nil {
+		return nil, err
+	}
+
+	if _, err := c.overridePolicyInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistOpWorker.Enqueue),
+	); err != nil {
+		return nil, err
+	}
+
+	if _, err := c.clusterOverridePolicyInformer.Informer().AddEventHandler(
+		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistPpWorker.Enqueue),
+	); err != nil {
 		return nil, err
 	}
 
@@ -206,53 +177,64 @@ func newController(controllerConfig *util.ControllerConfig,
 	return c, nil
 }
 
-func (c *Controller) Run(stopChan <-chan struct{}) {
-	c.logger.Info("Starting controller")
+func (c *Controller) Run(ctx context.Context) {
+	ctx, logger := logging.InjectLogger(ctx, c.logger)
+
+	logger.Info("Starting controller")
 	defer c.logger.Info("Stopping controller")
 
-	for _, pair := range []informerPair{c.federated, c.pp, c.cpp, c.op, c.cop} {
-		go pair.controller.Run(stopChan)
-	}
-
-	c.countWorker.Run(stopChan)
-
 	// wait for all counts to finish sync before persisting the values
-	if !cache.WaitForNamedCacheSync(c.name, stopChan, c.HasSynced) {
-		utilruntime.HandleError(fmt.Errorf("timed out waiting for caches to sync for controller: %s", c.name))
+	if !cache.WaitForNamedCacheSync(ControllerName, ctx.Done(), c.HasSynced) {
+		logger.Error(nil, "Timed out waiting for caches to sync")
+		return
 	}
-	c.persistPpWorker.Run(stopChan)
-	c.persistOpWorker.Run(stopChan)
+	logger.Info("Caches are synced")
+	c.countWorker.Run(ctx)
+	c.persistPpWorker.Run(ctx)
+	c.persistOpWorker.Run(ctx)
+	<-ctx.Done()
 }
 
 func (c *Controller) HasSynced() bool {
-	return c.federated.controller.HasSynced()
+	return c.propagationPolicyInformer.Informer().HasSynced() &&
+		c.clusterPropagationPolicyInformer.Informer().HasSynced() &&
+		c.overridePolicyInformer.Informer().HasSynced() &&
+		c.clusterOverridePolicyInformer.Informer().HasSynced() &&
+		c.fedObjectInformer.Informer().HasSynced() &&
+		c.clusterFedObjectInformer.Informer().HasSynced()
 }
 
-func (c *Controller) reconcileCount(qualifiedName common.QualifiedName) (status worker.Result) {
-	logger := c.logger.WithValues("object", qualifiedName.String())
+func (c *Controller) IsControllerReady() bool {
+	return c.HasSynced()
+}
 
-	c.metrics.Rate("policyrc-count-controller.throughput", 1)
+func (c *Controller) reconcileCount(ctx context.Context, qualifiedName common.QualifiedName) (status worker.Result) {
+	//nolint:staticcheck
+	ctx, logger := logging.InjectLoggerValues(ctx, "object", qualifiedName.String())
+
+	c.metrics.Counter("policyrc_count_controller_throughput", 1)
 	logger.V(3).Info("Policyrc count controller starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration("policyrc-count-controller.latency", startTime)
+		c.metrics.Duration("policyrc_count_latency", startTime)
 		logger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).
 			Info("Policyrc count controller finished reconciling")
 	}()
 
-	fedObjAny, fedObjExists, err := c.federated.store.GetByKey(qualifiedName.String())
-	if err != nil {
-		utilruntime.HandleError(err)
+	fedObj, err := fedobjectadapters.GetFromLister(
+		c.fedObjectInformer.Lister(),
+		c.clusterFedObjectInformer.Lister(),
+		qualifiedName.Namespace,
+		qualifiedName.Name,
+	)
+	if err != nil && !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to get federated object")
 		return worker.StatusError
-	}
-	var fedObj *unstructured.Unstructured
-	if fedObjExists {
-		fedObj = fedObjAny.(*unstructured.Unstructured)
 	}
 
 	var newPps []PolicyKey
-	if fedObjExists {
-		newPolicy, newHasPolicy := scheduler.MatchedPolicyKey(fedObj, c.typeConfig.GetNamespaced())
+	if fedObj != nil {
+		newPolicy, newHasPolicy := scheduler.GetMatchedPolicyKey(fedObj)
 		if newHasPolicy {
 			newPps = []PolicyKey{PolicyKey(newPolicy)}
 		}
@@ -262,7 +244,7 @@ func (c *Controller) reconcileCount(qualifiedName common.QualifiedName) (status 
 	c.ppCounter.Update(ObjectKey(qualifiedName), newPps)
 
 	var newOps []PolicyKey
-	if fedObjExists {
+	if fedObj != nil {
 		if op, exists := fedObj.GetLabels()[override.OverridePolicyNameLabel]; exists {
 			newOps = append(newOps, PolicyKey{Namespace: fedObj.GetNamespace(), Name: op})
 		}
@@ -278,19 +260,22 @@ func (c *Controller) reconcileCount(qualifiedName common.QualifiedName) (status 
 }
 
 func (c *Controller) reconcilePersist(
+	ctx context.Context,
 	metricName string,
 	qualifiedName common.QualifiedName,
 	nsScopeStore, clusterScopeStore cache.Store,
 	counter *Counter,
 ) worker.Result {
-	logger := c.logger.WithValues("object", qualifiedName.String())
+	ctx, logger := logging.InjectLoggerValues(ctx, "object", qualifiedName.String())
 
-	c.metrics.Rate(fmt.Sprintf("policyrc-persist-%s-controller.throughput", metricName), 1)
+	c.metrics.Counter("policyrc_persist_throughput", 1)
 	logger.V(3).Info("Policyrc persist controller starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration(fmt.Sprintf("policyrc-persist-%s-controller.latency", metricName), startTime)
-		logger.V(3).WithValues("duration", time.Since(startTime)).Info("Policyrc persist controller finished reconciling")
+		c.metrics.Duration("policyrc_persist_latency", startTime)
+		logger.V(3).
+			WithValues("duration", time.Since(startTime)).
+			Info("Policyrc persist controller finished reconciling")
 	}()
 
 	store := clusterScopeStore
@@ -300,7 +285,7 @@ func (c *Controller) reconcilePersist(
 
 	policyAny, exists, err := store.GetByKey(qualifiedName.String())
 	if err != nil {
-		utilruntime.HandleError(err)
+		logger.Error(err, "Failed to get policy")
 		return worker.StatusError
 	}
 
@@ -314,53 +299,29 @@ func (c *Controller) reconcilePersist(
 
 	status := policy.GetRefCountedStatus()
 
-	group := c.typeConfig.GetTargetType().Group
-	resource := c.typeConfig.GetTargetType().Name
-
-	var matchedTypedRefCount *fedcorev1a1.TypedRefCount
-	for i := range status.TypedRefCount {
-		typed := &status.TypedRefCount[i]
-		if typed.Group == group && typed.Resource == resource {
-			matchedTypedRefCount = typed
-			break
-		}
-	}
-
-	if matchedTypedRefCount == nil {
-		status.TypedRefCount = append(status.TypedRefCount, fedcorev1a1.TypedRefCount{
-			Group:    group,
-			Resource: resource,
-		})
-		matchedTypedRefCount = &status.TypedRefCount[len(status.TypedRefCount)-1]
-	}
-
-	newTypedRefCount := counter.GetPolicyCounts([]PolicyKey{PolicyKey(qualifiedName)})[0]
+	newRefCount := counter.GetPolicyCounts([]PolicyKey{PolicyKey(qualifiedName)})[0]
 
 	hasChange := false
-	if newTypedRefCount != matchedTypedRefCount.Count {
-		matchedTypedRefCount.Count = newTypedRefCount
-		hasChange = true
-	}
-
-	sum := int64(0)
-	for _, typed := range status.TypedRefCount {
-		sum += typed.Count
-	}
-	if sum != status.RefCount {
-		status.RefCount = sum
+	if newRefCount != status.RefCount {
+		status.RefCount = newRefCount
 		hasChange = true
 	}
 
 	if hasChange {
-		err := c.client.UpdateStatus(context.TODO(), policy)
+		err := c.client.UpdateStatus(ctx, policy)
 		if err != nil {
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
 			}
-			utilruntime.HandleError(err)
+			logger.Error(err, "Failed to update policy status")
 			return worker.StatusError
 		}
 	}
+
+	c.metrics.Store(metricName, newRefCount, []stats.Tag{
+		{Name: "name", Value: qualifiedName.Name},
+		{Name: "namespace", Value: qualifiedName.Namespace},
+	}...)
 
 	return worker.StatusAllOK
 }
