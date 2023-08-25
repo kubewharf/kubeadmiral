@@ -157,12 +157,14 @@ func NewOverridePolicyController(
 		return nil, err
 	}
 
-	informerManager.AddFTCUpdateHandler(func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
+	if err := informerManager.AddFTCUpdateHandler(func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
 		if lastObserved == nil && latest != nil {
 			c.enqueueFederatedObjectsForFTC(latest)
 			return
 		}
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	return c, nil
 }
@@ -383,7 +385,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 	needsUpdate = needsUpdate || pendingControllersUpdated
 
 	if needsUpdate {
-		_, err = fedobjectadapters.Update(context.Background(), c.fedClient.CoreV1alpha1(), fedObject, metav1.UpdateOptions{})
+		_, err = fedobjectadapters.Update(ctx, c.fedClient.CoreV1alpha1(), fedObject, metav1.UpdateOptions{})
 		if err != nil {
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict

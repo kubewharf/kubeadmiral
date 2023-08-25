@@ -148,7 +148,14 @@ func TestGenerateFederatedObjectName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, GenerateFederatedObjectName(tt.args.objectName, tt.args.ftcName), "GenerateFederatedObjectName(%v, %v)", tt.args.ftcName, tt.args.objectName)
+			assert.Equalf(
+				t,
+				tt.want,
+				GenerateFederatedObjectName(tt.args.objectName, tt.args.ftcName),
+				"GenerateFederatedObjectName(%v, %v)",
+				tt.args.ftcName,
+				tt.args.objectName,
+			)
 		})
 	}
 }

@@ -13,7 +13,7 @@ linters:
     - errcheck
     - gosimple
     - govet
-    - ineffassign
+    # - ineffassign # favour staticcheck
     - staticcheck
     - typecheck
     - unused
@@ -99,7 +99,7 @@ linters:
     # - unparam # too many false-positives
     - usestdlibvars
     # - varnamelen # too demanding
-    - wastedassign
+    # - wastedassign # favour staticcheck
     - whitespace
     # - wrapcheck # too demanding
     # - wsl # too demanding

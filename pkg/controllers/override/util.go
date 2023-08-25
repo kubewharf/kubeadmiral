@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -59,10 +59,10 @@ func lookForMatchedPolicies(
 		}
 
 		matchedPolicy, err := clusterOverridePolicyLister.Get(clusterPolicyName)
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !apierrors.IsNotFound(err) {
 			return nil, true, err
 		}
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return nil, false, fmt.Errorf("ClusterOverridePolicy %s not found", clusterPolicyName)
 		}
 
@@ -76,10 +76,10 @@ func lookForMatchedPolicies(
 		}
 
 		matchedPolicy, err := overridePolicyLister.OverridePolicies(obj.GetNamespace()).Get(policyName)
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !apierrors.IsNotFound(err) {
 			return nil, true, err
 		}
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return nil, false, fmt.Errorf("OverridePolicy %s/%s not found", obj.GetNamespace(), policyName)
 		}
 		policies = append(policies, matchedPolicy)

@@ -209,6 +209,7 @@ func (c *Controller) IsControllerReady() bool {
 }
 
 func (c *Controller) reconcileCount(ctx context.Context, qualifiedName common.QualifiedName) (status worker.Result) {
+	//nolint:staticcheck
 	ctx, logger := logging.InjectLoggerValues(ctx, "object", qualifiedName.String())
 
 	c.metrics.Counter("policyrc_count_controller_throughput", 1)

@@ -94,7 +94,11 @@ func (d *unmanagedDispatcherImpl) Wait() (bool, error) {
 	return d.dispatcher.Wait()
 }
 
-func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured) {
+func (d *unmanagedDispatcherImpl) Delete(
+	ctx context.Context,
+	clusterName string,
+	clusterObj *unstructured.Unstructured,
+) {
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "delete"
 	const opContinuous = "Deleting"
@@ -196,7 +200,11 @@ func (d *unmanagedDispatcherImpl) Delete(ctx context.Context, clusterName string
 	})
 }
 
-func (d *unmanagedDispatcherImpl) RemoveManagedLabel(ctx context.Context, clusterName string, clusterObj *unstructured.Unstructured) {
+func (d *unmanagedDispatcherImpl) RemoveManagedLabel(
+	ctx context.Context,
+	clusterName string,
+	clusterObj *unstructured.Unstructured,
+) {
 	d.dispatcher.incrementOperationsInitiated()
 	const op = "remove managed label from"
 	const opContinuous = "Removing managed label from"
@@ -222,10 +230,9 @@ func (d *unmanagedDispatcherImpl) RemoveManagedLabel(ctx context.Context, cluste
 		}
 
 		var err error
-		updateObj, err = client.Resource(d.targetGVR).Namespace(clusterObj.GetNamespace()).Update(
+		if _, err = client.Resource(d.targetGVR).Namespace(clusterObj.GetNamespace()).Update(
 			ctx, updateObj, metav1.UpdateOptions{},
-		)
-		if err != nil {
+		); err != nil {
 			if d.recorder == nil {
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
 				keyedLogger.Error(wrappedErr, "Failed to remove managed label from target object in cluster")

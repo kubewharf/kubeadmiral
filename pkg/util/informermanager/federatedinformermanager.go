@@ -36,7 +36,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	v1 "k8s.io/client-go/listers/core/v1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -404,7 +404,7 @@ func (m *federatedInformerManager) GetFederatedTypeConfigLister() fedcorev1a1lis
 
 func (m *federatedInformerManager) GetNodeLister(
 	cluster string,
-) (lister v1.NodeLister, informerSynced cache.InformerSynced, exists bool) {
+) (lister corev1listers.NodeLister, informerSynced cache.InformerSynced, exists bool) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
@@ -425,7 +425,7 @@ func (m *federatedInformerManager) AddPodEventHandler(handler *ResourceEventHand
 
 func (m *federatedInformerManager) GetPodLister(
 	cluster string,
-) (lister v1.PodLister, informerSynced cache.InformerSynced, exists bool) {
+) (lister corev1listers.PodLister, informerSynced cache.InformerSynced, exists bool) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 

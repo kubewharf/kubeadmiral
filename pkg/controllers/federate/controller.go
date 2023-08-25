@@ -277,7 +277,7 @@ func (c *FederateController) reconcile(ctx context.Context, key workerKey) (stat
 
 	sourceUns, err := lister.Get(key.QualifiedName().String())
 	if err != nil && apierrors.IsNotFound(err) {
-		logger.V(3).Info(fmt.Sprintf("No source object found, skip federating"))
+		logger.V(3).Info("No source object found, skip federating")
 		return worker.StatusAllOK
 	}
 	if err != nil {

@@ -203,12 +203,14 @@ func NewScheduler(
 	})
 	s.webhookConfigurationSynced = webhookConfigurationInformer.Informer().HasSynced
 
-	informerManager.AddFTCUpdateHandler(func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
+	if err := informerManager.AddFTCUpdateHandler(func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
 		if lastObserved == nil && latest != nil {
 			s.enqueueFederatedObjectsForFTC(latest)
 			return
 		}
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	s.algorithm = core.NewSchedulerAlgorithm()
 
@@ -434,7 +436,12 @@ func (s *Scheduler) prepareToSchedule(
 		return nil, nil, nil, &worker.StatusError
 	}
 
-	triggersText, deferredReasons, triggersChanged, err := computeSchedulingAnnotations(ctx, triggers, fedObject, policy)
+	triggersText, deferredReasons, triggersChanged, err := computeSchedulingAnnotations(
+		ctx,
+		triggers,
+		fedObject,
+		policy,
+	)
 	if err != nil {
 		logger.Error(err, "Failed to compute scheduling annotations")
 		return nil, nil, nil, &worker.StatusError

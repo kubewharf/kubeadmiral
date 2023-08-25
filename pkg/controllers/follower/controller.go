@@ -242,7 +242,16 @@ func (c *Controller) reconcileLeader(
 	key objectGroupKindKey,
 ) (status worker.Result) {
 	c.metrics.Counter("follower_controller_throughput", 1)
-	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "origin", "reconcileLeader", "type", key.sourceGK.String(), "key", key.ObjectSourceKey())
+	//nolint:staticcheck
+	ctx, keyedLogger := logging.InjectLoggerValues(
+		ctx,
+		"origin",
+		"reconcileLeader",
+		"type",
+		key.sourceGK.String(),
+		"key",
+		key.ObjectSourceKey(),
+	)
 	startTime := time.Now()
 
 	keyedLogger.V(3).Info("Starting reconcileLeader")
@@ -253,7 +262,12 @@ func (c *Controller) reconcileLeader(
 			stats.Tag{Name: "name", Value: key.sourceGK.String()},
 			stats.Tag{Name: "source", Value: "leader"},
 		)
-		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcileLeader")
+		keyedLogger.WithValues(
+			"duration",
+			time.Since(startTime),
+			"status",
+			status.String(),
+		).V(3).Info("Finished reconcileLeader")
 	}()
 
 	leader := fedcorev1a1.LeaderReference{
@@ -263,7 +277,12 @@ func (c *Controller) reconcileLeader(
 		Name:      key.sourceName,
 	}
 
-	fedObj, err := fedobjectadapters.GetFromLister(c.fedObjectInformer.Lister(), c.clusterFedObjectInformer.Lister(), key.namespace, key.fedName)
+	fedObj, err := fedobjectadapters.GetFromLister(
+		c.fedObjectInformer.Lister(),
+		c.clusterFedObjectInformer.Lister(),
+		key.namespace,
+		key.fedName,
+	)
 	if err != nil && !apierrors.IsNotFound(err) {
 		keyedLogger.Error(err, "Failed to get leader object from store")
 		return worker.StatusError
@@ -393,7 +412,15 @@ func (c *Controller) reconcileFollower(
 	key objectGroupKindKey,
 ) (status worker.Result) {
 	c.metrics.Counter("follower_controller_throughput", 1)
-	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "origin", "reconcileFollower", "type", key.sourceGK.String(), "key", key.ObjectSourceKey())
+	ctx, keyedLogger := logging.InjectLoggerValues(
+		ctx,
+		"origin",
+		"reconcileFollower",
+		"type",
+		key.sourceGK.String(),
+		"key",
+		key.ObjectSourceKey(),
+	)
 
 	startTime := time.Now()
 
@@ -405,7 +432,9 @@ func (c *Controller) reconcileFollower(
 			stats.Tag{Name: "name", Value: key.sourceGK.String()},
 			stats.Tag{Name: "source", Value: "follower"},
 		)
-		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcileFollower")
+		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).
+			V(3).
+			Info("Finished reconcileFollower")
 	}()
 
 	follower := FollowerReference{

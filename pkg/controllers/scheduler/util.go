@@ -19,7 +19,7 @@ package scheduler
 import (
 	"fmt"
 
-	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/json"
 
@@ -66,7 +66,7 @@ func UpdateReplicasOverride(
 				{
 					Op:   overridePatchOpReplace,
 					Path: replicasPath,
-					Value: v1.JSON{
+					Value: apiextensionsv1.JSON{
 						Raw: replicasRaw,
 					},
 				},

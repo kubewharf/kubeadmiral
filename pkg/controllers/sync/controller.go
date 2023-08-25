@@ -180,7 +180,9 @@ func NewSyncController(
 	)
 
 	// Build queue for triggering reconciliation of all federated resources..
-	s.reconcileAllResourcesQueue = workqueue.NewNamedDelayingQueue(SyncControllerName + "-reconcile-all-resources-queue")
+	s.reconcileAllResourcesQueue = workqueue.NewNamedDelayingQueue(
+		SyncControllerName + "-reconcile-all-resources-queue",
+	)
 
 	if err := s.ftcManager.AddFTCUpdateHandler(func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
 		isNewFTC := lastObserved == nil && latest != nil
@@ -218,7 +220,8 @@ func NewSyncController(
 		&informermanager.ClusterEventHandler{
 			Predicate: func(oldCluster, newCluster *fedcorev1a1.FederatedCluster) bool {
 				// Enqueue cluster when it's added or marked for deletion to ensure cascading deletion
-				return oldCluster == nil || newCluster != nil && oldCluster.GetDeletionTimestamp().IsZero() && !newCluster.GetDeletionTimestamp().IsZero()
+				return oldCluster == nil || newCluster != nil && oldCluster.GetDeletionTimestamp().IsZero() &&
+					!newCluster.GetDeletionTimestamp().IsZero()
 			},
 			Callback: func(cluster *fedcorev1a1.FederatedCluster) {
 				s.clusterCascadingDeletionWorker.Enqueue(common.NewQualifiedName(cluster))
@@ -390,7 +393,9 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 	startTime := time.Now()
 	defer func() {
 		s.metrics.Duration("sync_latency", startTime)
-		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconciling")
+		keyedLogger.WithValues("duration", time.Since(startTime), "status", status.String()).
+			V(3).
+			Info("Finished reconciling")
 	}()
 
 	if fedResource.Object().GetDeletionTimestamp() != nil {
@@ -496,7 +501,13 @@ func (s *SyncController) prepareToSync(
 			return true, nil
 		}
 		if apierrors.IsConflict(err) {
-			obj, err = fedobjectadapters.Get(ctx, s.fedClient.CoreV1alpha1(), objNamespace, objName, metav1.GetOptions{})
+			obj, err = fedobjectadapters.Get(
+				ctx,
+				s.fedClient.CoreV1alpha1(),
+				objNamespace,
+				objName,
+				metav1.GetOptions{},
+			)
 			if err != nil {
 				return false, errors.Wrapf(err, "failed to retrieve resource")
 			}
@@ -521,7 +532,8 @@ func (s *SyncController) syncToClusters(
 ) worker.Result {
 	keyedLogger := klog.FromContext(ctx)
 	var err error
-	keyedLogger.V(2).Info("Ensuring target object in clusters", "clusters", strings.Join(sets.List(selectedClusterNames), ","))
+	keyedLogger.V(2).
+		Info("Ensuring target object in clusters", "clusters", strings.Join(sets.List(selectedClusterNames), ","))
 
 	skipAdoptingPreexistingResources := !adoption.ShouldAdoptPreexistingResources(fedResource.Object())
 	dispatcher := dispatch.NewManagedDispatcher(
@@ -535,7 +547,8 @@ func (s *SyncController) syncToClusters(
 	for _, cluster := range clusters {
 		clusterName := cluster.Name
 		isSelectedCluster := selectedClusterNames.Has(clusterName)
-		isCascadingDeletionTriggered := cluster.GetDeletionTimestamp() != nil && cascadingdeletion.IsCascadingDeleteEnabled(cluster)
+		isCascadingDeletionTriggered := cluster.GetDeletionTimestamp() != nil &&
+			cascadingdeletion.IsCascadingDeleteEnabled(cluster)
 		shouldBeDeleted := !isSelectedCluster || isCascadingDeletionTriggered
 
 		if !clusterutil.IsClusterReady(&cluster.Status) {
@@ -697,7 +710,13 @@ func (s *SyncController) setFederatedStatus(
 			return true, nil
 		}
 		if apierrors.IsConflict(err) {
-			obj, err = fedobjectadapters.Get(ctx, s.fedClient.CoreV1alpha1(), objNamespace, objName, metav1.GetOptions{})
+			obj, err = fedobjectadapters.Get(
+				ctx,
+				s.fedClient.CoreV1alpha1(),
+				objNamespace,
+				objName,
+				metav1.GetOptions{},
+			)
 			if err != nil {
 				return false, errors.Wrapf(err, "failed to retrieve resource")
 			}
@@ -713,7 +732,10 @@ func (s *SyncController) setFederatedStatus(
 	return worker.StatusAllOK
 }
 
-func (s *SyncController) handleTerminatingFederatedResource(ctx context.Context, fedResource FederatedResource) worker.Result {
+func (s *SyncController) handleTerminatingFederatedResource(
+	ctx context.Context,
+	fedResource FederatedResource,
+) worker.Result {
 	fedResource.DeleteVersions()
 
 	keyedLogger := klog.FromContext(ctx)
@@ -723,7 +745,8 @@ func (s *SyncController) handleTerminatingFederatedResource(ctx context.Context,
 
 	finalizers := sets.NewString(obj.GetFinalizers()...)
 	if !finalizers.Has(FinalizerSyncController) {
-		keyedLogger.V(3).Info("Federated object does not have the finalizer. Nothing to do", "finalizer-name", FinalizerSyncController)
+		keyedLogger.V(3).
+			Info("Federated object does not have the finalizer. Nothing to do", "finalizer-name", FinalizerSyncController)
 		return worker.StatusAllOK
 	}
 
@@ -741,7 +764,12 @@ func (s *SyncController) handleTerminatingFederatedResource(ctx context.Context,
 		if apierrors.IsConflict(err) {
 			return worker.StatusConflict
 		}
-		keyedLogger.Error(err, "Failed to remove finalizer from the federated object", "finalizer-name", FinalizerSyncController)
+		keyedLogger.Error(
+			err,
+			"Failed to remove finalizer from the federated object",
+			"finalizer-name",
+			FinalizerSyncController,
+		)
 		return worker.StatusError
 	}
 	return worker.StatusAllOK
@@ -1026,13 +1054,17 @@ func (s *SyncController) removeClusterFinalizer(ctx context.Context, cluster *fe
 	return nil
 }
 
-func (s *SyncController) reconcileClusterForCascadingDeletion(ctx context.Context, qualifiedName common.QualifiedName) (status worker.Result) {
+func (s *SyncController) reconcileClusterForCascadingDeletion(
+	ctx context.Context,
+	qualifiedName common.QualifiedName,
+) (status worker.Result) {
 	logger := s.logger.WithValues("cluster-name", qualifiedName.String(), "process", "cluster-cascading-deletion")
 	ctx = klog.NewContext(ctx, logger)
 	start := time.Now()
 	logger.V(3).Info("Starting to reconcile cluster for cascading deletion")
 	defer func() {
-		logger.V(3).Info("Finished reconciling cluster for cascading deletion", "duration", time.Since(start), "status", status.String())
+		logger.V(3).
+			Info("Finished reconciling cluster for cascading deletion", "duration", time.Since(start), "status", status.String())
 	}()
 
 	clusterLister := s.fedInformerManager.GetFederatedClusterLister()
@@ -1082,7 +1114,10 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(ctx context.Contex
 	remainingByGVK := make(map[string]string, len(ftcs))
 	for _, ftc := range ftcs {
 		gvk := ftc.GetSourceTypeGVK().String()
-		resourceLister, hasSynced, exists := s.fedInformerManager.GetResourceLister(ftc.GetSourceTypeGVK(), cluster.Name)
+		resourceLister, hasSynced, exists := s.fedInformerManager.GetResourceLister(
+			ftc.GetSourceTypeGVK(),
+			cluster.Name,
+		)
 		if !exists {
 			remainingByGVK[gvk] = fmt.Sprintf("failed to get resource lister for %s", gvk)
 			continue
