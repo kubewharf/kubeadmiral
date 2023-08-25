@@ -161,7 +161,7 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 		}
 	}
 
-	return nil
+	return 0, nil
 }
 
 func isReadyStatusChanged(clusterStatus *fedcorev1a1.FederatedClusterStatus, readyStatus corev1.ConditionStatus) bool {
