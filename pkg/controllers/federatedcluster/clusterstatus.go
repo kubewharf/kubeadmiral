@@ -85,7 +85,6 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	}
 
 	discoveryClient := clusterKubeClient.Discovery()
-
 	oldClusterStatus := cluster.Status.DeepCopy()
 	cluster = cluster.DeepCopy()
 	conditionTime := metav1.Now()
@@ -154,13 +153,15 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	if isReadyStatusChanged(oldClusterStatus, readyStatus) {
 		switch readyStatus {
 		case corev1.ConditionTrue:
-			c.eventRecorder.Eventf(cluster, corev1.EventTypeNormal, readyReason, readyMessage)
-		case corev1.ConditionFalse, corev1.ConditionUnknown:
-			c.eventRecorder.Eventf(cluster, corev1.EventTypeWarning, readyReason, readyMessage)
+			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster is ready")
+		case corev1.ConditionFalse:
+			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster is not ready")
+		case corev1.ConditionUnknown:
+			c.eventRecorder.Eventf(cluster, readyReason, readyMessage, "Cluster ready state is unknown")
 		}
 	}
 
-	return 0, nil
+	return nil
 }
 
 func isReadyStatusChanged(clusterStatus *fedcorev1a1.FederatedClusterStatus, readyStatus corev1.ConditionStatus) bool {
