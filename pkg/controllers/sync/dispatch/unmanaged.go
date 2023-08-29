@@ -134,7 +134,7 @@ func (d *unmanagedDispatcherImpl) Delete(
 		// Avoid mutating the resource in the informer cache
 		clusterObj := clusterObj.DeepCopy()
 
-		needUpdate, err := removeRetainObjectFinalizer(clusterObj)
+		needUpdate, err := RemoveRetainObjectFinalizer(clusterObj)
 		if err != nil {
 			if d.recorder == nil {
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
@@ -220,7 +220,7 @@ func (d *unmanagedDispatcherImpl) RemoveManagedLabel(
 		updateObj := clusterObj.DeepCopy()
 
 		managedlabel.RemoveManagedLabel(updateObj)
-		if _, err := removeRetainObjectFinalizer(updateObj); err != nil {
+		if _, err := RemoveRetainObjectFinalizer(updateObj); err != nil {
 			if d.recorder == nil {
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
 				keyedLogger.Error(wrappedErr, "Failed to remove managed label from target object in cluster")
@@ -260,6 +260,6 @@ func wrapOperationError(err error, operation, targetGVR, targetName, clusterName
 	return errors.Wrapf(err, "Failed to "+eventTemplate, operation, targetGVR, targetName, clusterName)
 }
 
-func removeRetainObjectFinalizer(obj *unstructured.Unstructured) (bool, error) {
+func RemoveRetainObjectFinalizer(obj *unstructured.Unstructured) (bool, error) {
 	return finalizers.RemoveFinalizers(obj, sets.NewString(RetainTerminatingObjectFinalizer))
 }
