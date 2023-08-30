@@ -39,6 +39,7 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
@@ -274,11 +275,11 @@ func (c *Controller) reconcileOnClusterChange(cluster *fedcorev1a1.FederatedClus
 func (c *Controller) reconcile(ctx context.Context, qualifiedName common.QualifiedName) (status worker.Result) {
 	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "federated-name", qualifiedName.String())
 
-	c.metrics.Counter("override_policy_controller_throughput", 1)
+	c.metrics.Counter(metrics.OverridePolicyControllerThroughput, 1)
 	keyedLogger.V(3).Info("Starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration("override_policy_controller_latency", startTime)
+		c.metrics.Duration(metrics.OverridePolicyControllerLatency, startTime)
 		keyedLogger.WithValues("duration", time.Since(startTime), "status", status).V(3).Info("Finished reconciling")
 	}()
 

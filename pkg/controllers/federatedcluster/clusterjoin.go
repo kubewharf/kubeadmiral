@@ -40,6 +40,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 )
 
@@ -99,7 +100,7 @@ func (c *FederatedClusterController) handleNotJoinedCluster(
 		time.Since(joinedCondition.LastTransitionTime.Time) > c.clusterJoinTimeout {
 		// Join timed out
 		logger.Error(nil, "Cluster join timed out")
-		c.metrics.Duration("cluster_joined_duration", cluster.CreationTimestamp.Time,
+		c.metrics.Duration(metrics.ClusterJoinedDuration, cluster.CreationTimestamp.Time,
 			stats.Tag{Name: "cluster_name", Value: cluster.Name},
 			stats.Tag{Name: "result", Value: joinFailure},
 			stats.Tag{Name: "reason", Value: EventReasonJoinClusterTimeoutExceeded})
@@ -162,7 +163,7 @@ func (c *FederatedClusterController) handleNotJoinedCluster(
 		// Namespace exists and is not created by us - the cluster is managed by another control plane.
 		msg := "Cluster is unjoinable (check if cluster is already joined to another federation)"
 		logger.Error(nil, msg, "UID", memberFedNamespace.Annotations[FederatedClusterUID], "clusterUID", string(cluster.UID))
-		c.metrics.Duration("cluster_joined_duration", cluster.CreationTimestamp.Time,
+		c.metrics.Duration(metrics.ClusterJoinedDuration, cluster.CreationTimestamp.Time,
 			stats.Tag{Name: "cluster_name", Value: cluster.Name},
 			stats.Tag{Name: "result", Value: joinFailure},
 			stats.Tag{Name: "reason", Value: EventReasonClusterUnjoinable})
@@ -237,7 +238,7 @@ func (c *FederatedClusterController) handleNotJoinedCluster(
 	// 5. Cluster is joined, update condition
 
 	logger.V(2).Info("Cluster joined successfully")
-	c.metrics.Duration("cluster_joined_duration", cluster.CreationTimestamp.Time,
+	c.metrics.Duration(metrics.ClusterJoinedDuration, cluster.CreationTimestamp.Time,
 		stats.Tag{Name: "cluster_name", Value: cluster.Name},
 		stats.Tag{Name: "result", Value: joinSuccess},
 		stats.Tag{Name: "reason", Value: EventReasonJoinClusterSuccess})

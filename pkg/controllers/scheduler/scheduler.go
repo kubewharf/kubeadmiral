@@ -45,6 +45,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/core"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	utilmetrics "github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
@@ -146,7 +147,7 @@ func NewScheduler(
 		common.NewQualifiedName,
 		func(name common.QualifiedName) {
 			s.worker.Enqueue(name)
-			s.metrics.Counter("queue_incoming_federated_object_total", 1,
+			s.metrics.Counter(utilmetrics.QueueIncomingFederatedObjectTotal, 1,
 				stats.Tag{Name: "event", Value: FedObjChanged})
 		},
 	))
@@ -154,7 +155,7 @@ func NewScheduler(
 		common.NewQualifiedName,
 		func(name common.QualifiedName) {
 			s.worker.Enqueue(name)
-			s.metrics.Counter("queue_incoming_federated_object_total", 1,
+			s.metrics.Counter(utilmetrics.QueueIncomingFederatedObjectTotal, 1,
 				stats.Tag{Name: "event", Value: FedObjChanged})
 		},
 	))
@@ -256,14 +257,14 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) reconcile(ctx context.Context, key common.QualifiedName) (status worker.Result) {
-	s.metrics.Counter("scheduler_throughput", 1)
+	s.metrics.Counter(utilmetrics.SchedulerThroughput, 1)
 	ctx, logger := logging.InjectLoggerValues(ctx, "key", key.String())
 
 	startTime := time.Now()
 
 	logger.V(3).Info("Start reconcile")
 	defer func() {
-		s.metrics.Duration("scheduler_latency", startTime)
+		s.metrics.Duration(utilmetrics.SchedulerLatency, startTime)
 		logger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).Info("Finished reconcile")
 	}()
 
@@ -795,7 +796,7 @@ func (s *Scheduler) enqueueFederatedObjectsForPolicy(policy metav1.Object) {
 			continue
 		} else if policyKey.Name == policyAccessor.GetName() && policyKey.Namespace == policyAccessor.GetNamespace() {
 			s.worker.Enqueue(common.NewQualifiedName(obj))
-			s.metrics.Counter("queue_incoming_federated_object_total", 1,
+			s.metrics.Counter(utilmetrics.QueueIncomingFederatedObjectTotal, 1,
 				stats.Tag{Name: "event", Value: PolicyChanged})
 		}
 	}
@@ -840,7 +841,7 @@ func (s *Scheduler) enqueueFederatedObjectsForCluster(cluster *fedcorev1a1.Feder
 
 	for obj := range allObjects {
 		s.worker.Enqueue(obj)
-		s.metrics.Counter("queue_incoming_federated_object_total", 1,
+		s.metrics.Counter(utilmetrics.QueueIncomingFederatedObjectTotal, 1,
 			stats.Tag{Name: "event", Value: ClusterChanged})
 	}
 }
@@ -876,7 +877,7 @@ func (s *Scheduler) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedType
 		}
 		if templateMetadata.GroupVersionKind() == ftc.GetSourceTypeGVK() {
 			s.worker.Enqueue(common.NewQualifiedName(obj))
-			s.metrics.Counter("queue_incoming_federated_object_total", 1,
+			s.metrics.Counter(utilmetrics.QueueIncomingFederatedObjectTotal, 1,
 				stats.Tag{Name: "event", Value: FTCChanged})
 		}
 	}
@@ -899,10 +900,10 @@ func (s *Scheduler) federatedObjectSchedule(result *worker.Result, profileName s
 }
 
 func (s *Scheduler) observeScheduleAttemptAndLatency(result, profileName string, startTime time.Time) {
-	s.metrics.Counter("schedule_attempts_total", 1,
+	s.metrics.Counter(utilmetrics.ScheduleAttemptsTotal, 1,
 		stats.Tag{Name: "profile", Value: profileName},
 		stats.Tag{Name: "result", Value: result})
-	s.metrics.Duration("scheduling_attempt_duration", startTime,
+	s.metrics.Duration(utilmetrics.SchedulingAttemptDuration, startTime,
 		stats.Tag{Name: "profile", Value: profileName},
 		stats.Tag{Name: "result", Value: result})
 }

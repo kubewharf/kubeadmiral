@@ -42,6 +42,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/propagatedversion"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/status"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
@@ -176,7 +177,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 			if !result {
 				metricResult = clusterOperationFail
 			}
-			d.metrics.Duration("dispatch_operation_duration_seconds", startTime,
+			d.metrics.Duration(metrics.DispatchOperationDuration, startTime,
 				stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
 				stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
 				stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
@@ -287,7 +288,7 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			if !result {
 				metricResult = clusterOperationFail
 			}
-			d.metrics.Duration("dispatch_operation_duration_seconds", startTime,
+			d.metrics.Duration(metrics.DispatchOperationDuration, startTime,
 				stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
 				stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
 				stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
@@ -403,7 +404,7 @@ func (d *managedDispatcherImpl) recordOperationError(
 ) bool {
 	d.recordError(ctx, clusterName, operation, err)
 	d.RecordStatus(clusterName, propStatus)
-	d.metrics.Counter("dispatch_operation_error_total", 1,
+	d.metrics.Counter(metrics.DispatchOperationErrorTotal, 1,
 		stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
 		stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
 		stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
@@ -424,7 +425,7 @@ func (d *managedDispatcherImpl) recordError(ctx context.Context, clusterName, op
 	logger := klog.FromContext(ctx)
 	logger.Error(eventErr, "event", eventType, "Operation failed with error")
 	d.fedResource.RecordError(eventType, eventErr)
-	d.metrics.Counter("member_operation_error", 1, []stats.Tag{
+	d.metrics.Counter(metrics.MemberOperationError, 1, []stats.Tag{
 		{Name: "cluster", Value: clusterName},
 		{Name: "operation", Value: operation},
 		{Name: "reason", Value: string(apierrors.ReasonForError(err))},
