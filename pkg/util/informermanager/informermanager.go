@@ -44,8 +44,9 @@ import (
 type informerManager struct {
 	lock sync.RWMutex
 
-	started  bool
-	shutdown bool
+	started                     bool
+	shutdown                    bool
+	ftcEventHandlerRegistration cache.ResourceEventHandlerRegistration
 
 	client                   dynamic.Interface
 	informerTweakListOptions dynamicinformer.TweakListOptionsFunc
@@ -92,11 +93,14 @@ func NewInformerManager(
 		initialFTCs: sets.New[string](),
 	}
 
-	ftcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	var err error
+	if manager.ftcEventHandlerRegistration, err = ftcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj interface{}) { manager.enqueue(obj) },
 		UpdateFunc: func(_ interface{}, obj interface{}) { manager.enqueue(obj) },
 		DeleteFunc: func(obj interface{}) { manager.enqueue(obj) },
-	})
+	}); err != nil {
+		klog.Error(err, "informer-manager: Failed to register event handler for FederatedTypeConfig")
+	}
 
 	return manager
 }
@@ -405,6 +409,21 @@ func (m *informerManager) Start(ctx context.Context) {
 
 		logger.V(2).Info("Stopping InformerManager")
 		m.queue.ShutDown()
+
+		// We must cancel the contexts for any running informers to prevent goroutine leaks
+		for ftc, cancel := range m.informerCancelFuncs {
+			logger.V(2).Info("Stopping informer for FederatedTypeConfig", "ftc", ftc)
+			cancel()
+		}
+
+		// We also unregister the event handler for FederatedTypeConfig to prevent goroutine leak
+		if m.ftcEventHandlerRegistration != nil {
+			logger.V(2).Info("Removing event handler FederatedTypeConfig")
+			if err := m.ftcInformer.Informer().RemoveEventHandler(m.ftcEventHandlerRegistration); err != nil {
+				logger.Error(err, "Failed to remove event handler for FederatedTypeConfig")
+			}
+		}
+
 		m.shutdown = true
 	}()
 }

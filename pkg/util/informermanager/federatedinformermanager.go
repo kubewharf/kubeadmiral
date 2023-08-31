@@ -54,8 +54,9 @@ import (
 type federatedInformerManager struct {
 	lock sync.RWMutex
 
-	started  bool
-	shutdown bool
+	started                         bool
+	shutdown                        bool
+	clusterEventHandlerRegistration cache.ResourceEventHandlerRegistration
 
 	clientHelper        ClusterClientHelper
 	kubeClientGetter    func(*fedcorev1a1.FederatedCluster, *rest.Config) (kubernetes.Interface, error)
@@ -111,7 +112,8 @@ func NewFederatedInformerManager(
 		podEventRegistrations: map[string]map[*ResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{},
 	}
 
-	clusterInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
+	var err error
+	if manager.clusterEventHandlerRegistration, err = clusterInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
 			cluster := obj.(*fedcorev1a1.FederatedCluster)
 			return clusterutil.IsClusterJoined(&cluster.Status)
@@ -121,7 +123,9 @@ func NewFederatedInformerManager(
 			UpdateFunc: func(_ interface{}, obj interface{}) { manager.enqueue(obj) },
 			DeleteFunc: func(obj interface{}) { manager.enqueue(obj) },
 		},
-	})
+	}); err != nil {
+		klog.Error(err, "Failed to register event handler for FederatedCluster")
+	}
 
 	ftcInformer.Informer()
 
@@ -529,6 +533,14 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 
 		logger.V(2).Info("Stopping FederatedInformerManager")
 		m.queue.ShutDown()
+
+		if m.clusterEventHandlerRegistration != nil {
+			logger.V(2).Info("Removing event handler for FederatedCluster")
+			if err := m.clusterInformer.Informer().RemoveEventHandler(m.clusterEventHandlerRegistration); err != nil {
+				logger.Error(err, "Failed to remove event handler for FederatedCluster")
+			}
+		}
+
 		m.shutdown = true
 	}()
 }
