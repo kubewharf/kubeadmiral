@@ -33,6 +33,7 @@ import (
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 )
 
 const (
@@ -134,7 +135,7 @@ func (f *frameworkImpl) RunFilterPlugins(
 ) (result *framework.Result) {
 	startTime := time.Now()
 	defer func() {
-		f.metrics.Duration("scheduler_framework_extension_point_duration", startTime,
+		f.metrics.Duration(metrics.SchedulerFrameworkExtensionPointDuration, startTime,
 			stats.Tag{Name: "extension_point", Value: filter},
 			stats.Tag{Name: "profile", Value: f.profileName},
 			stats.Tag{Name: "status", Value: result.Code().String()})
@@ -156,7 +157,7 @@ func (f *frameworkImpl) runFilterPlugin(
 ) (result *framework.Result) {
 	startTime := time.Now()
 	defer func() {
-		f.metrics.Duration("scheduler_plugin_execution_duration", startTime,
+		f.metrics.Duration(metrics.SchedulerPluginExecutionDuration, startTime,
 			stats.Tag{Name: "extension_point", Value: filter},
 			stats.Tag{Name: "plugin", Value: pl.Name()},
 			stats.Tag{Name: "status", Value: result.Code().String()})
@@ -172,7 +173,7 @@ func (f *frameworkImpl) RunScorePlugins(
 ) (pluginToClusterScore framework.PluginToClusterScore, result *framework.Result) {
 	startTime := time.Now()
 	defer func() {
-		f.metrics.Duration("scheduler_framework_extension_point_duration", startTime,
+		f.metrics.Duration(metrics.SchedulerFrameworkExtensionPointDuration, startTime,
 			stats.Tag{Name: "extension_point", Value: score},
 			stats.Tag{Name: "profile", Value: f.profileName},
 			stats.Tag{Name: "status", Value: result.Code().String()})
@@ -223,7 +224,7 @@ func (f *frameworkImpl) RunSelectClustersPlugin(
 ) (clusters []*fedcorev1a1.FederatedCluster, result *framework.Result) {
 	startTime := time.Now()
 	defer func() {
-		f.metrics.Duration("scheduler_framework_extension_point_duration", startTime,
+		f.metrics.Duration(metrics.SchedulerFrameworkExtensionPointDuration, startTime,
 			stats.Tag{Name: "extension_point", Value: selectClusters},
 			stats.Tag{Name: "profile", Value: f.profileName},
 			stats.Tag{Name: "status", Value: result.Code().String()})
@@ -258,7 +259,7 @@ func (f *frameworkImpl) RunReplicasPlugin(
 ) (clusterReplicasList framework.ClusterReplicasList, result *framework.Result) {
 	startTime := time.Now()
 	defer func() {
-		f.metrics.Duration("scheduler_framework_extension_point_duration", startTime,
+		f.metrics.Duration(metrics.SchedulerFrameworkExtensionPointDuration, startTime,
 			stats.Tag{Name: "extension_point", Value: replicas},
 			stats.Tag{Name: "profile", Value: f.profileName},
 			stats.Tag{Name: "status", Value: result.Code().String()})

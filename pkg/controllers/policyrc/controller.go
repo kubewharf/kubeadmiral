@@ -33,6 +33,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
@@ -212,11 +213,11 @@ func (c *Controller) reconcileCount(ctx context.Context, qualifiedName common.Qu
 	//nolint:staticcheck
 	ctx, logger := logging.InjectLoggerValues(ctx, "object", qualifiedName.String())
 
-	c.metrics.Counter("policyrc_count_controller_throughput", 1)
+	c.metrics.Counter(metrics.PolicyRCCountControllerThroughput, 1)
 	logger.V(3).Info("Policyrc count controller starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration("policyrc_count_latency", startTime)
+		c.metrics.Duration(metrics.PolicyRCCountLatency, startTime)
 		logger.V(3).WithValues("duration", time.Since(startTime), "status", status.String()).
 			Info("Policyrc count controller finished reconciling")
 	}()
@@ -268,11 +269,11 @@ func (c *Controller) reconcilePersist(
 ) worker.Result {
 	ctx, logger := logging.InjectLoggerValues(ctx, "object", qualifiedName.String())
 
-	c.metrics.Counter("policyrc_persist_throughput", 1)
+	c.metrics.Counter(metrics.PolicyRCPersistThroughput, 1)
 	logger.V(3).Info("Policyrc persist controller starting to reconcile")
 	startTime := time.Now()
 	defer func() {
-		c.metrics.Duration("policyrc_persist_latency", startTime)
+		c.metrics.Duration(metrics.PolicyRCPersistLatency, startTime)
 		logger.V(3).
 			WithValues("duration", time.Since(startTime)).
 			Info("Policyrc persist controller finished reconciling")

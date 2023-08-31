@@ -55,8 +55,7 @@ func IsClusterOffline(clusterStatus *fedcorev1a1.FederatedClusterStatus) bool {
 	return false
 }
 
-func GetClusterConditionReason(clusterStatus *fedcorev1a1.FederatedClusterStatus) (string, string, string) {
-	var readyReason, joinedReason, offlineReason string
+func GetClusterConditionReasons(clusterStatus *fedcorev1a1.FederatedClusterStatus) (readyReason, joinedReason, offlineReason string) {
 	for _, condition := range clusterStatus.Conditions {
 		switch condition.Type {
 		case fedcorev1a1.ClusterReady:

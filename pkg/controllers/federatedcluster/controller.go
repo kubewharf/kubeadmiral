@@ -45,6 +45,7 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
@@ -196,14 +197,14 @@ func (c *FederatedClusterController) reconcile(
 	ctx context.Context,
 	key common.QualifiedName,
 ) (status worker.Result) {
-	c.metrics.Counter("federated_cluster_controller_throughput", 1)
+	c.metrics.Counter(metrics.FederatedClusterControllerThroughput, 1)
 	ctx, logger := logging.InjectLoggerValues(ctx, "cluster", key.String())
 
 	startTime := time.Now()
 
 	logger.V(3).Info("Starting reconcile")
 	defer func() {
-		c.metrics.Duration("federated_cluster_controller_latency", startTime)
+		c.metrics.Duration(metrics.FederatedClusterControllerLatency, startTime)
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()
 
@@ -220,10 +221,10 @@ func (c *FederatedClusterController) reconcile(
 	cluster = cluster.DeepCopy()
 
 	if cluster.GetDeletionTimestamp() != nil {
-		c.metrics.Store("cluster_deletion_state", 1,
+		c.metrics.Store(metrics.ClusterDeletionState, 1,
 			stats.Tag{Name: "cluster_name", Value: cluster.Name},
 			stats.Tag{Name: "status", Value: "deleting"})
-		c.metrics.Store("cluster_deletion_state", 0,
+		c.metrics.Store(metrics.ClusterDeletionState, 0,
 			stats.Tag{Name: "cluster_name", Value: cluster.Name},
 			stats.Tag{Name: "status", Value: "deleted"})
 		logger.V(2).Info("Handle terminating cluster")
@@ -313,7 +314,7 @@ func (c *FederatedClusterController) collectClusterStatus(
 
 	logger.V(3).Info("Starting to collect cluster status")
 	defer func() {
-		c.metrics.Duration("federated_cluster_controller_collect_status_latency", startTime)
+		c.metrics.Duration(metrics.FederatedClusterControllerCollectStatusLatency, startTime)
 		logger.WithValues(
 			"duration",
 			time.Since(startTime),
@@ -452,10 +453,10 @@ func (c *FederatedClusterController) handleTerminatingCluster(
 		return fmt.Errorf("failed to update cluster for finalizer removal: %w", err)
 	}
 
-	c.metrics.Store("cluster_deletion_state", 0,
+	c.metrics.Store(metrics.ClusterDeletionState, 0,
 		stats.Tag{Name: "cluster_name", Value: cluster.Name},
 		stats.Tag{Name: "status", Value: "deleting"})
-	c.metrics.Store("cluster_deletion_state", 1,
+	c.metrics.Store(metrics.ClusterDeletionState, 1,
 		stats.Tag{Name: "cluster_name", Value: cluster.Name},
 		stats.Tag{Name: "status", Value: "deleted"})
 	return nil

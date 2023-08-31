@@ -42,6 +42,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/propagatedversion"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/status"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
+	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
 )
@@ -176,7 +177,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 			if !result {
 				metricResult = clusterOperationFail
 			}
-			d.metrics.Duration("dispatch_operation_duration_seconds", startTime,
+			d.metrics.Duration(metrics.DispatchOperationDuration, startTime,
 				stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
 				stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
 				stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
@@ -208,33 +209,44 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		defer cancel()
 
 		keyedLogger.V(1).Info("Creating target object in cluster")
-		createdObj, err := client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Create(
+		createdObj, createErr := client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Create(
 			ctxWithTimeout, obj, metav1.CreateOptions{},
 		)
-		if err == nil {
+		if createErr == nil {
 			version := propagatedversion.ObjectVersion(createdObj)
 			d.recordVersion(clusterName, version)
 			return result
 		}
 
-		// TODO Figure out why attempting to create a namespace that
-		// already exists indicates ServerTimeout instead of AlreadyExists.
-		alreadyExists := apierrors.IsAlreadyExists(err) ||
-			d.fedResource.TargetGVK() == corev1.SchemeGroupVersion.WithKind(common.NamespaceKind) && apierrors.IsServerTimeout(err)
-		if !alreadyExists {
-			result = d.recordOperationError(ctxWithTimeout, fedcorev1a1.CreationFailed, clusterName, op, err)
-			return result
+		// If the object exists, we may attempt to adopt the resource. We check if the object exists by examining the
+		// returned error.
+		var needsExistenceRecheck bool
+		switch {
+		case apierrors.IsAlreadyExists(createErr):
+			needsExistenceRecheck = false
+		case d.fedResource.TargetGVK() == corev1.SchemeGroupVersion.WithKind(common.NamespaceKind) && apierrors.IsServerTimeout(createErr):
+			// For namespaces, ServerTimeout is returned if object exists. We differentiate with the subsequent GET.
+			needsExistenceRecheck = true
+		case d.fedResource.TargetGVK() == corev1.SchemeGroupVersion.WithKind(common.ServiceKind) && apierrors.IsInvalid(createErr):
+			// For services, Invalid is returned if the object exists. We differentiate with the subsequent GET.
+			needsExistenceRecheck = true
+		default:
+			return d.recordOperationError(ctxWithTimeout, fedcorev1a1.CreationFailed, clusterName, op, createErr)
 		}
 
 		// Attempt to update the existing resource to ensure that it
 		// is labeled as a managed resource.
-		obj, err = client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Get(
+		obj, getErr := client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Get(
 			ctxWithTimeout, obj.GetName(), metav1.GetOptions{},
 		)
-		if err != nil {
-			wrappedErr := errors.Wrapf(err, "failed to retrieve object potentially requiring adoption")
-			result = d.recordOperationError(ctxWithTimeout, fedcorev1a1.RetrievalFailed, clusterName, op, wrappedErr)
-			return result
+		if needsExistenceRecheck && apierrors.IsNotFound(getErr) {
+			// The previous creation error should not be an AlreadyExists error, skip trying to adopt.
+			// Note: there is a chance that the previous error is still an AlreadyExists error and the object was
+			// simply deleted in between the 2 requests.
+			return d.recordOperationError(ctxWithTimeout, fedcorev1a1.CreationFailed, clusterName, op, createErr)
+		} else if getErr != nil {
+			wrappedErr := errors.Wrapf(getErr, "failed to retrieve object potentially requiring adoption")
+			return d.recordOperationError(ctxWithTimeout, fedcorev1a1.RetrievalFailed, clusterName, op, wrappedErr)
 		}
 
 		if d.skipAdoptingResources {
@@ -276,7 +288,7 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			if !result {
 				metricResult = clusterOperationFail
 			}
-			d.metrics.Duration("dispatch_operation_duration_seconds", startTime,
+			d.metrics.Duration(metrics.DispatchOperationDuration, startTime,
 				stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
 				stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
 				stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
@@ -392,7 +404,7 @@ func (d *managedDispatcherImpl) recordOperationError(
 ) bool {
 	d.recordError(ctx, clusterName, operation, err)
 	d.RecordStatus(clusterName, propStatus)
-	d.metrics.Counter("dispatch_operation_error_total", 1,
+	d.metrics.Counter(metrics.DispatchOperationErrorTotal, 1,
 		stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
 		stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
 		stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
@@ -413,7 +425,7 @@ func (d *managedDispatcherImpl) recordError(ctx context.Context, clusterName, op
 	logger := klog.FromContext(ctx)
 	logger.Error(eventErr, "event", eventType, "Operation failed with error")
 	d.fedResource.RecordError(eventType, eventErr)
-	d.metrics.Counter("member_operation_error", 1, []stats.Tag{
+	d.metrics.Counter(metrics.MemberOperationError, 1, []stats.Tag{
 		{Name: "cluster", Value: clusterName},
 		{Name: "operation", Value: operation},
 		{Name: "reason", Value: string(apierrors.ReasonForError(err))},
