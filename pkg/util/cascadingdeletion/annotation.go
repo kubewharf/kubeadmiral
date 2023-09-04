@@ -21,7 +21,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
-// AnnotationCascadingDelete on a fedreated cluster means that
+// AnnotationCascadingDelete on a federated cluster means that
 // resources managed by KubeAdmiral in the cluster should be cleaned
 // up before deletion can occur.
 var AnnotationCascadingDelete = common.DefaultPrefix + "cascading-delete"

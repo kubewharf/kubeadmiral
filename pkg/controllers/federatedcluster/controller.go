@@ -63,6 +63,9 @@ const (
 	EventReasonHandleTerminatingClusterBlocked = "HandleTerminatingClusterBlocked"
 )
 
+// annotationForcibleDelete on a federated cluster means that cluster should be forcible delete by KubeAdmiral.
+var annotationForcibleDelete = common.DefaultPrefix + "forcible-delete"
+
 // ClusterHealthCheckConfig defines the configurable parameters for cluster health check
 type ClusterHealthCheckConfig struct {
 	Period time.Duration
@@ -373,6 +376,10 @@ func (c *FederatedClusterController) handleTerminatingCluster(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
 ) error {
+	if isForcibleDeleteEnabled(cluster) {
+		return c.removeTerminatingClusterFinalizers(ctx, cluster)
+	}
+
 	finalizers := sets.New(cluster.GetFinalizers()...)
 	if !finalizers.Has(FinalizerFederatedClusterController) {
 		return nil
@@ -443,7 +450,27 @@ func (c *FederatedClusterController) handleTerminatingCluster(
 		}
 	}
 
-	// We have already checked that we are the last finalizer so we can simply set finalizers to be empty.
+	// We have already checked that we are the last finalizer, so we can simply set finalizers to be empty.
+	return c.removeTerminatingClusterFinalizers(ctx, cluster)
+}
+
+func isForcibleDeleteEnabled(cluster *fedcorev1a1.FederatedCluster) bool {
+	annotations := cluster.GetAnnotations()
+	if annotations == nil {
+		return false
+	}
+
+	if _, exists := annotations[annotationForcibleDelete]; exists {
+		return true
+	}
+
+	return false
+}
+
+func (c *FederatedClusterController) removeTerminatingClusterFinalizers(
+	ctx context.Context,
+	cluster *fedcorev1a1.FederatedCluster,
+) error {
 	cluster.SetFinalizers(nil)
 	if _, err := c.fedClient.CoreV1alpha1().FederatedClusters().Update(
 		ctx,
