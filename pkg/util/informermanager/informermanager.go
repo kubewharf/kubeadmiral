@@ -244,6 +244,7 @@ func (m *informerManager) processFTC(
 			continue
 		}
 
+		// We remove the event handler for FederatedTypeConfig to prevent goroutine leak
 		if oldRegistration := registrations[generator]; oldRegistration != nil {
 			if err := informer.Informer().RemoveEventHandler(oldRegistration); err != nil {
 				return true, fmt.Errorf("failed to unregister event handler: %w", err)
