@@ -534,6 +534,7 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 		logger.V(2).Info("Stopping FederatedInformerManager")
 		m.queue.ShutDown()
 
+		// We unregister the event handler for FederatedCluster to prevent goroutine leak
 		if m.clusterEventHandlerRegistration != nil {
 			logger.V(2).Info("Removing event handler for FederatedCluster")
 			if err := m.clusterInformer.Informer().RemoveEventHandler(m.clusterEventHandlerRegistration); err != nil {
