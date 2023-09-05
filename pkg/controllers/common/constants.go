@@ -189,3 +189,5 @@ var (
 //
 //nolint:lll
 const MaxFederatedObjectNameLength = 253
+
+const RetainTerminatingObjectFinalizer = DefaultPrefix + "retain-terminating-object"

@@ -22,7 +22,9 @@ are Copyright 2023 The KubeAdmiral Authors.
 package finalizers
 
 import (
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	meta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
@@ -67,4 +69,8 @@ func RemoveFinalizers(obj runtime.Object, finalizers sets.String) (bool, error) 
 	newFinalizers := oldFinalizers.Difference(finalizers)
 	accessor.SetFinalizers(newFinalizers.List())
 	return true, nil
+}
+
+func RemoveRetainObjectFinalizer(obj *unstructured.Unstructured) (bool, error) {
+	return RemoveFinalizers(obj, sets.NewString(common.RetainTerminatingObjectFinalizer))
 }

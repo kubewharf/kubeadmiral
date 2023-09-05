@@ -198,7 +198,7 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 }
 
 func addRetainObjectFinalizer(obj *unstructured.Unstructured) error {
-	if _, err := finalizers.AddFinalizers(obj, sets.NewString(dispatch.RetainTerminatingObjectFinalizer)); err != nil {
+	if _, err := finalizers.AddFinalizers(obj, sets.NewString(common.RetainTerminatingObjectFinalizer)); err != nil {
 		return err
 	}
 	return nil

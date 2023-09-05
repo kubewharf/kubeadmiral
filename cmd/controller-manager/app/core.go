@@ -230,6 +230,7 @@ func startSyncController(
 		controllerCtx.ComponentConfig.MemberObjectEnqueueDelay,
 		klog.Background(),
 		controllerCtx.WorkerCount,
+		controllerCtx.CascadingDeletionWorkerCount,
 		controllerCtx.Metrics,
 	)
 	if err != nil {

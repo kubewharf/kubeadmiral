@@ -29,7 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/klog/v2"
 
@@ -42,8 +41,7 @@ import (
 )
 
 const (
-	RetainTerminatingObjectFinalizer = common.DefaultPrefix + "retain-terminating-object"
-	eventTemplate                    = "%s %s %q in cluster %q"
+	eventTemplate = "%s %s %q in cluster %q"
 )
 
 // UnmanagedDispatcher dispatches operations to member clusters for
@@ -134,7 +132,7 @@ func (d *unmanagedDispatcherImpl) Delete(
 		// Avoid mutating the resource in the informer cache
 		clusterObj := clusterObj.DeepCopy()
 
-		needUpdate, err := RemoveRetainObjectFinalizer(clusterObj)
+		needUpdate, err := finalizers.RemoveRetainObjectFinalizer(clusterObj)
 		if err != nil {
 			if d.recorder == nil {
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
@@ -220,7 +218,7 @@ func (d *unmanagedDispatcherImpl) RemoveManagedLabel(
 		updateObj := clusterObj.DeepCopy()
 
 		managedlabel.RemoveManagedLabel(updateObj)
-		if _, err := RemoveRetainObjectFinalizer(updateObj); err != nil {
+		if _, err := finalizers.RemoveRetainObjectFinalizer(updateObj); err != nil {
 			if d.recorder == nil {
 				wrappedErr := d.wrapOperationError(err, clusterName, op)
 				keyedLogger.Error(wrappedErr, "Failed to remove managed label from target object in cluster")
@@ -258,8 +256,4 @@ func (d *unmanagedDispatcherImpl) wrapOperationError(err error, clusterName, ope
 
 func wrapOperationError(err error, operation, targetGVR, targetName, clusterName string) error {
 	return errors.Wrapf(err, "Failed to "+eventTemplate, operation, targetGVR, targetName, clusterName)
-}
-
-func RemoveRetainObjectFinalizer(obj *unstructured.Unstructured) (bool, error) {
-	return finalizers.RemoveFinalizers(obj, sets.NewString(RetainTerminatingObjectFinalizer))
 }

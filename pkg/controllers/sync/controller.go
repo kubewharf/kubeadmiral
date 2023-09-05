@@ -142,7 +142,8 @@ func NewSyncController(
 	clusterAvailableDelay, clusterUnavailableDelay, memberObjectEnqueueDelay time.Duration,
 
 	logger klog.Logger,
-	workerCount int,
+	syncWorkerCount int,
+	cascadingDeletionWorkerCount int,
 	metrics stats.Metrics,
 ) (*SyncController, error) {
 	recorder := eventsink.NewDefederatingRecorderMux(kubeClient, SyncControllerName, 4)
@@ -168,7 +169,7 @@ func NewSyncController(
 		SyncControllerName,
 		s.reconcile,
 		worker.RateLimiterOptions{},
-		workerCount,
+		syncWorkerCount,
 		metrics,
 	)
 
@@ -176,7 +177,7 @@ func NewSyncController(
 		SyncControllerName+"-cluster-cascading-deletion-worker",
 		s.reconcileClusterForCascadingDeletion,
 		worker.RateLimiterOptions{},
-		1,
+		cascadingDeletionWorkerCount,
 		metrics,
 	)
 
@@ -550,7 +551,7 @@ func (s *SyncController) syncToClusters(
 		isSelectedCluster := selectedClusterNames.Has(clusterName)
 		isCascadingDeletionTriggered := cluster.GetDeletionTimestamp() != nil &&
 			cascadingdeletion.IsCascadingDeleteEnabled(cluster)
-		shouldBeDeleted := !isSelectedCluster || isCascadingDeletionTriggered
+		shouldBeDeleted := !isSelectedCluster
 
 		if !clusterutil.IsClusterReady(&cluster.Status) {
 			if !shouldBeDeleted {
@@ -564,8 +565,6 @@ func (s *SyncController) syncToClusters(
 
 		var clusterObj *unstructured.Unstructured
 		{
-			// TODO: updating the sync status may thrash the host apiserver if the host caches are synced but member caches are not synced.
-			// Find out if this is ok.
 			clusterObj, _, err = informermanager.GetClusterObject(
 				ctx,
 				s.ftcManager,
@@ -583,7 +582,7 @@ func (s *SyncController) syncToClusters(
 
 		// If cascading deletion is triggered,
 		// wait for reconcileClusterForCascadingDeletion to perform the deletion operation.
-		// If the resource has not been deleted yet, update the status of the resource to waiting for deletion.
+		// If the delete operation has not been performed, federatedObject's status will be updated to WaitingForRemoval.
 		if isCascadingDeletionTriggered {
 			if clusterObj != nil && clusterObj.GetDeletionTimestamp() == nil {
 				dispatcher.RecordStatus(clusterName, fedcorev1a1.WaitingForRemoval)
@@ -1111,7 +1110,8 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(
 		return worker.StatusAllOK
 	}
 
-	if !clusterutil.IsClusterReady(&cluster.Status) && cascadingdeletion.IsCascadingDeleteEnabled(cluster) {
+	if !clusterutil.IsClusterReady(&cluster.Status) {
+		logger.V(3).Info("Requeue federatedCluster because it's not ready")
 		return worker.Result{RequeueAfter: &s.cascadingDeletionRecheckDelay}
 	}
 
@@ -1152,9 +1152,12 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(
 
 			// update some cluster objects before deleting them
 			var updateFailedObjs []string
+			var objsNeedToDelete []*unstructured.Unstructured
 			for i := range clusterObjs {
 				clusterObj := clusterObjs[i].DeepCopy()
-				keyedLogger := logger.WithValues(
+				objsNeedToDelete = append(objsNeedToDelete, clusterObj)
+
+				_, keyedLogger := logging.InjectLoggerValues(ctx,
 					"namespace", clusterObj.GetNamespace(),
 					"name", clusterObj.GetName(),
 					"gvk", gvk)
@@ -1179,7 +1182,7 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(
 				}
 
 				// remove the finalizer added by admiral
-				needUpdate, err := dispatch.RemoveRetainObjectFinalizer(clusterObj)
+				needUpdate, err := finalizersutil.RemoveRetainObjectFinalizer(clusterObj)
 				if err != nil {
 					keyedLogger.Error(err, "Failed to remove retain finalizer of target object in cluster")
 					updateFailedObjs = append(updateFailedObjs, namespacedName)
@@ -1190,6 +1193,7 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(
 				if orphaning.ShouldBeOrphaned(fedObj.Object(), clusterObj) {
 					managedlabel.RemoveManagedLabel(clusterObj)
 					needUpdate = true
+					objsNeedToDelete = objsNeedToDelete[:len(objsNeedToDelete)-1]
 				}
 
 				if needUpdate {
@@ -1209,7 +1213,7 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(
 			}
 
 			// if the update operation is successful, all managed cluster objects will be deleted.
-			if err := s.deleteClusterObjects(ctx, ftc, namespaces.UnsortedList(), client, cluster.Name); err != nil {
+			if err := s.deleteClusterObjects(ctx, ftc, namespaces.UnsortedList(), client, objsNeedToDelete); err != nil {
 				syncMap.Store(gvk, fmt.Sprintf("failed to delete cluster objects for %s, err: %v", gvk, err))
 			}
 		}(ftcs[i])
@@ -1256,7 +1260,7 @@ func (s *SyncController) listManagedClusterObjects(
 
 	resourceLister, hasSynced, exists := s.fedInformerManager.GetResourceLister(ftc.GetSourceTypeGVK(), clusterName)
 	if !exists {
-		return nil, nil, fmt.Errorf("failed to get dynamic client")
+		return nil, nil, fmt.Errorf("lister of cluster %s does not exist", clusterName)
 	}
 
 	// If cluster cache is synced, we check the store.
@@ -1264,7 +1268,7 @@ func (s *SyncController) listManagedClusterObjects(
 	if hasSynced() {
 		objects, err := resourceLister.List(labels.Everything())
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("failed to list cluster objects in %s: %w", clusterName, err)
 		}
 
 		clusterObjs = make([]*unstructured.Unstructured, len(objects))
@@ -1311,7 +1315,7 @@ func (s *SyncController) deleteClusterObjects(
 	ftc *fedcorev1a1.FederatedTypeConfig,
 	namespaces []string,
 	client dynamic.Interface,
-	clusterName string,
+	objsNeedToDelete []*unstructured.Unstructured,
 ) error {
 	sourceGVR := ftc.GetSourceTypeGVR()
 	deletionPropagation := metav1.DeletePropagationBackground
@@ -1352,17 +1356,13 @@ func (s *SyncController) deleteClusterObjects(
 	// some resources(e.g.: namespaces,services) may not support the deleteCollection operation,
 	// and need to be deleted one by one
 	if methodNotSupportedErr != nil {
-		clusterObjs, _, err := s.listManagedClusterObjects(ctx, ftc, clusterName)
-		if err != nil {
-			return err
-		}
 		var failedObjs []string
-		for _, clusterObj := range clusterObjs {
+		for _, clusterObj := range objsNeedToDelete {
 			if clusterObj.GetDeletionTimestamp() != nil {
 				continue
 			}
 
-			err = client.Resource(sourceGVR).Namespace(clusterObj.GetNamespace()).Delete(
+			err := client.Resource(sourceGVR).Namespace(clusterObj.GetNamespace()).Delete(
 				ctx,
 				clusterObj.GetName(),
 				metav1.DeleteOptions{PropagationPolicy: &deletionPropagation},
@@ -1372,7 +1372,7 @@ func (s *SyncController) deleteClusterObjects(
 			}
 		}
 		if len(failedObjs) != 0 {
-			return fmt.Errorf("failed to delete those cluster objects: %v", failedObjs)
+			return fmt.Errorf("failed to delete some cluster objects: %v", failedObjs)
 		}
 	}
 	return nil
