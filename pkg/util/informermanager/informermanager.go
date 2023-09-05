@@ -410,13 +410,6 @@ func (m *informerManager) Start(ctx context.Context) {
 		logger.V(2).Info("Stopping InformerManager")
 		m.queue.ShutDown()
 
-		// We explicitly cancel the contexts for any running informers to prevent goroutine leaks
-		for ftc, cancel := range m.informerCancelFuncs {
-			logger.V(2).Info("Stopping informer for FederatedTypeConfig", "ftc", ftc)
-			cancel()
-		}
-
-		// We also unregister the event handler for FederatedTypeConfig to prevent goroutine leak
 		if m.ftcEventHandlerRegistration != nil {
 			logger.V(2).Info("Removing event handler FederatedTypeConfig")
 			if err := m.ftcInformer.Informer().RemoveEventHandler(m.ftcEventHandlerRegistration); err != nil {

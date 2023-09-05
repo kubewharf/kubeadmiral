@@ -534,17 +534,6 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 		logger.V(2).Info("Stopping FederatedInformerManager")
 		m.queue.ShutDown()
 
-		// We explicitly cancel the contexts for any running managers to prevent goroutine leaks
-		for cluster, cancel := range m.clusterCancelFuncs {
-			klog.FromContext(ctx).V(2).Info(
-				"Stopping InformerManager and SharedInformerFactory for FederatedCluster",
-				"cluster",
-				cluster,
-			)
-			cancel()
-		}
-
-		// We also unregister the event handler for FederatedCluster to prevent goroutine leak
 		if m.clusterEventHandlerRegistration != nil {
 			logger.V(2).Info("Removing event handler for FederatedCluster")
 			if err := m.clusterInformer.Informer().RemoveEventHandler(m.clusterEventHandlerRegistration); err != nil {
