@@ -59,6 +59,11 @@ func (receiver *DeploymentPlugin) AggregateStatuses(
 
 	aggregatedStatus := &appsv1.DeploymentStatus{}
 
+	if !clusterObjsUpToDate {
+		logger.V(3).Info("Cluster objects are not up to date")
+		needUpdateObservedGeneration = false
+	}
+
 	clusterSyncedGenerations := make(map[string]int64)
 	for _, cluster := range fedObject.GetStatus().Clusters {
 		clusterSyncedGenerations[cluster.Cluster] = cluster.LastObservedGeneration
