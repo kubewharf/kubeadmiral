@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
 )
 
 type OrphanManagedResourcesBehavior string
@@ -59,4 +60,10 @@ func GetOrphaningBehavior(obj metav1.Object) OrphanManagedResourcesBehavior {
 	default:
 		return OrphanManagedResourcesNone
 	}
+}
+
+func ShouldBeOrphaned(fedObj, clusterObj metav1.Object) bool {
+	orphaningBehavior := GetOrphaningBehavior(fedObj)
+	return orphaningBehavior == OrphanManagedResourcesAll ||
+		orphaningBehavior == OrphanManagedResourcesAdopted && adoption.HasAdoptedAnnotation(clusterObj)
 }
