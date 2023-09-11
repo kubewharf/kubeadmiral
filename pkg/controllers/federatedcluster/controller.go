@@ -61,10 +61,10 @@ const (
 
 	EventReasonHandleTerminatingClusterFailed  = "HandleTerminatingClusterFailed"
 	EventReasonHandleTerminatingClusterBlocked = "HandleTerminatingClusterBlocked"
-)
 
-// annotationForcibleDelete on a federated cluster means that cluster should be forcible delete by KubeAdmiral.
-var annotationForcibleDelete = common.DefaultPrefix + "forcible-delete"
+	// AnnotationForceDelete on a federated cluster means that cluster should be force delete by KubeAdmiral.
+	AnnotationForceDelete = common.DefaultPrefix + "force-delete"
+)
 
 // ClusterHealthCheckConfig defines the configurable parameters for cluster health check
 type ClusterHealthCheckConfig struct {
@@ -376,7 +376,7 @@ func (c *FederatedClusterController) handleTerminatingCluster(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
 ) error {
-	if isForcibleDeleteEnabled(cluster) {
+	if isForceDeleteEnabled(cluster) {
 		return c.removeTerminatingClusterFinalizers(ctx, cluster)
 	}
 
@@ -454,13 +454,13 @@ func (c *FederatedClusterController) handleTerminatingCluster(
 	return c.removeTerminatingClusterFinalizers(ctx, cluster)
 }
 
-func isForcibleDeleteEnabled(cluster *fedcorev1a1.FederatedCluster) bool {
+func isForceDeleteEnabled(cluster *fedcorev1a1.FederatedCluster) bool {
 	annotations := cluster.GetAnnotations()
 	if annotations == nil {
 		return false
 	}
 
-	if _, exists := annotations[annotationForcibleDelete]; exists {
+	if _, exists := annotations[AnnotationForceDelete]; exists {
 		return true
 	}
 
