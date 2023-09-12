@@ -162,7 +162,7 @@ func TestRunFilterPlugins(t *testing.T) {
 				"a": getNaiveFilterPluginFactory(false),
 			},
 			&fedcore.EnabledPlugins{FilterPlugins: []string{"a"}},
-			framework.NewResult(framework.Error),
+			framework.NewResult(framework.Error).WithFailedPlugin("NaiveFilterPlugin"),
 		},
 		{
 			"multiple filter plugins, all succeed",
@@ -182,7 +182,7 @@ func TestRunFilterPlugins(t *testing.T) {
 				"c": getNaiveFilterPluginFactory(true),
 			},
 			&fedcore.EnabledPlugins{FilterPlugins: []string{"a", "b", "c"}},
-			framework.NewResult(framework.Error),
+			framework.NewResult(framework.Error).WithFailedPlugin("NaiveFilterPlugin"),
 		},
 		{
 			"multiple filter plugins, none succeed",
@@ -192,7 +192,7 @@ func TestRunFilterPlugins(t *testing.T) {
 				"c": getNaiveFilterPluginFactory(false),
 			},
 			&fedcore.EnabledPlugins{FilterPlugins: []string{"a", "b", "c"}},
-			framework.NewResult(framework.Error),
+			framework.NewResult(framework.Error).WithFailedPlugin("NaiveFilterPlugin"),
 		},
 	}
 

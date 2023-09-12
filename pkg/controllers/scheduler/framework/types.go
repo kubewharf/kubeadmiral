@@ -22,10 +22,13 @@ package framework
 
 import (
 	"errors"
+	"fmt"
+	"sort"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
@@ -150,6 +153,8 @@ type Result struct {
 	code    Code
 	reasons []string
 	err     error
+
+	failedPlugin string
 }
 
 // Code is the Status code/type which is returned from plugins.
@@ -194,6 +199,23 @@ func (s *Result) Code() Code {
 	return s.code
 }
 
+// SetFailedPlugin sets the given plugin name to s.failedPlugin.
+func (s *Result) SetFailedPlugin(plugin string) {
+	s.failedPlugin = plugin
+}
+
+// WithFailedPlugin sets the given plugin name to s.failedPlugin,
+// and returns the given result object.
+func (s *Result) WithFailedPlugin(plugin string) *Result {
+	s.SetFailedPlugin(plugin)
+	return s
+}
+
+// FailedPlugin returns the failed plugin name.
+func (s *Result) FailedPlugin() string {
+	return s.failedPlugin
+}
+
 // IsSuccess returns true if and only if "Result" is nil or Code is "Success".
 func (s *Result) IsSuccess() bool {
 	return s == nil || s.code == Success
@@ -217,4 +239,59 @@ func (s *Result) AsError() error {
 		return s.err
 	}
 	return errors.New(strings.Join(s.reasons, ", "))
+}
+
+// Reasons returns reasons of the Result.
+func (s *Result) Reasons() []string {
+	if s.err != nil {
+		return append([]string{s.err.Error()}, s.reasons...)
+	}
+	return s.reasons
+}
+
+// FitError describes a fit error of a cluster.
+type FitError struct {
+	NumAllClusters int
+	Diagnosis      Diagnosis
+}
+
+// ClusterToResultMap declares map from cluster name to its result.
+type ClusterToResultMap map[string]*Result
+
+// Diagnosis records the details to diagnose a scheduling failure.
+type Diagnosis struct {
+	ClusterToResultMap   ClusterToResultMap
+	UnschedulablePlugins sets.Set[string]
+}
+
+const (
+	// NoClusterAvailableMsg is used to format message when no clusters available.
+	NoClusterAvailableMsg = "0/%v clusters are available"
+)
+
+// Error returns detailed information of why the pod failed to fit on each node.
+// A message format is "0/X clusters are available: <FilterMsg>. "
+func (f *FitError) Error() string {
+	reasons := make(map[string]int)
+	for _, result := range f.Diagnosis.ClusterToResultMap {
+		for _, reason := range result.Reasons() {
+			reasons[reason]++
+		}
+	}
+
+	reasonMsg := fmt.Sprintf(NoClusterAvailableMsg+": ", f.NumAllClusters)
+	sortReasonsHistogram := func() []string {
+		var reasonStrings []string
+		for k, v := range reasons {
+			reasonStrings = append(reasonStrings, fmt.Sprintf("%v %v", v, k))
+		}
+		sort.Strings(reasonStrings)
+		return reasonStrings
+	}
+	sortedFilterMsg := sortReasonsHistogram()
+	if len(sortedFilterMsg) != 0 {
+		reasonMsg += strings.Join(sortedFilterMsg, ", ")
+	}
+
+	return reasonMsg
 }

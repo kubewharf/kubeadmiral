@@ -104,14 +104,17 @@ func (g *genericScheduler) Schedule(
 		return result, nil
 	}
 
-	feasibleClusters, err := g.findClustersThatFitWorkload(ctx, fwk, schedulingUnit, clusters)
+	feasibleClusters, diagnosis, err := g.findClustersThatFitWorkload(ctx, fwk, schedulingUnit, clusters)
 	if err != nil {
 		return result, fmt.Errorf("failed to findClustersThatFitWorkload: %w", err)
 	}
 	logger.V(2).
 		Info("Clusters filtered", "result", spew.Sprint(feasibleClusters))
 	if len(feasibleClusters) == 0 {
-		return result, nil
+		return result, &framework.FitError{
+			NumAllClusters: len(clusters),
+			Diagnosis:      diagnosis,
+		}
 	}
 
 	clusterScores, err := g.scoreClusters(ctx, fwk, schedulingUnit, feasibleClusters)
@@ -155,18 +158,25 @@ func (g *genericScheduler) findClustersThatFitWorkload(
 	fwk framework.Framework,
 	schedulingUnit framework.SchedulingUnit,
 	clusters []*fedcorev1a1.FederatedCluster,
-) ([]*fedcorev1a1.FederatedCluster, error) {
+) ([]*fedcorev1a1.FederatedCluster, framework.Diagnosis, error) {
 	logger := klog.FromContext(ctx)
+
+	diagnosis := framework.Diagnosis{
+		ClusterToResultMap:   make(framework.ClusterToResultMap),
+		UnschedulablePlugins: sets.New[string](),
+	}
 
 	ret := make([]*fedcorev1a1.FederatedCluster, 0)
 	for _, cluster := range clusters {
 		if result := fwk.RunFilterPlugins(ctx, &schedulingUnit, cluster); !result.IsSuccess() {
 			logger.V(2).Info("Cluster doesn't fit", "name", cluster.Name, "reason", result.AsError())
+			diagnosis.ClusterToResultMap[cluster.Name] = result
+			diagnosis.UnschedulablePlugins.Insert(result.FailedPlugin())
 		} else {
 			ret = append(ret, cluster)
 		}
 	}
-	return ret, nil
+	return ret, diagnosis, nil
 }
 
 func (g *genericScheduler) scoreClusters(

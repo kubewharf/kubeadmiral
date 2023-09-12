@@ -50,7 +50,7 @@ func (pl *PlacementFilter) Filter(
 	}
 
 	if _, exists := su.ClusterNames[cluster.Name]; !exists {
-		return framework.NewResult(framework.Unschedulable, "cluster is not in placement list")
+		return framework.NewResult(framework.Unschedulable, "cluster(s) were not in placement list")
 	}
 
 	return framework.NewResult(framework.Success)

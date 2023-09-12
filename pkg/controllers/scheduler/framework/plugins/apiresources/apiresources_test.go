@@ -77,7 +77,7 @@ func TestAPIResourcesFilter(t *testing.T) {
 					Kind:    "Deployment",
 				},
 			}),
-			wantResult: framework.NewResult(framework.Unschedulable, "No matched group version kind."),
+			wantResult: framework.NewResult(framework.Unschedulable, "cluster(s) didn't support this APIVersion"),
 		},
 	}
 

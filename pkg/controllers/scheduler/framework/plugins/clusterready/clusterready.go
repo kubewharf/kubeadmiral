@@ -48,7 +48,7 @@ func (pl *ClusterReady) Filter(
 	// Prevent scheduling to unready cluster unless it is already scheduled to.
 	_, alreadyScheduled := su.CurrentClusters[cluster.Name]
 	if !alreadyScheduled && !clusterutil.IsClusterReady(&cluster.Status) {
-		return framework.NewResult(framework.Unschedulable, "cluster is unready")
+		return framework.NewResult(framework.Unschedulable, "cluster(s) were unready")
 	}
 
 	return framework.NewResult(framework.Success)
