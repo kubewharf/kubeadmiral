@@ -44,11 +44,12 @@ type Options struct {
 	KubeAPIQPS   float32
 	KubeAPIBurst int
 
-	WorkerCount     int
-	EnableProfiling bool
-	LogFile         string
-	LogVerbosity    int
-	KlogVerbosity   int
+	WorkerCount                  int
+	CascadingDeletionWorkerCount int
+	EnableProfiling              bool
+	LogFile                      string
+	LogVerbosity                 int
+	KlogVerbosity                int
 
 	NSAutoPropExcludeRegexp  string
 	ClusterJoinTimeout       time.Duration
@@ -65,7 +66,8 @@ type Options struct {
 
 func NewOptions() *Options {
 	return &Options{
-		WorkerCount: 1,
+		WorkerCount:                  1,
+		CascadingDeletionWorkerCount: 1,
 	}
 }
 
@@ -101,6 +103,8 @@ func (o *Options) AddFlags(flags *pflag.FlagSet, allControllers []string, disabl
 	flags.IntVar(&o.KubeAPIBurst, "kube-api-burst", 1000, "The maximum burst for throttling requests from each Kubernetes client.")
 
 	flags.IntVar(&o.WorkerCount, "worker-count", 1, "The number of workers to use for Kubeadmiral controllers")
+	flags.IntVar(&o.CascadingDeletionWorkerCount, "cascading-deletion-worker-count", 1, "The number of workers to perform cascading delete operations.")
+
 	flags.BoolVar(&o.EnableProfiling, "enable-profiling", false, "Enable profiling for the controller manager.")
 
 	flags.StringVar(

@@ -217,9 +217,10 @@ const (
 type PropagationStatusType string
 
 const (
-	ClusterPropagationOK PropagationStatusType = "OK"
-	WaitingForRemoval    PropagationStatusType = "WaitingForRemoval"
-	PendingCreate        PropagationStatusType = "PendingCreate"
+	ClusterPropagationOK        PropagationStatusType = "OK"
+	WaitingForRemoval           PropagationStatusType = "WaitingForRemoval"
+	WaitingForCascadingDeletion PropagationStatusType = "WaitingForCascadingDeletion"
+	PendingCreate               PropagationStatusType = "PendingCreate"
 
 	// Cluster-specific errors
 

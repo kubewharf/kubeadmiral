@@ -23,8 +23,8 @@ package sync
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -142,7 +142,8 @@ func NewSyncController(
 	clusterAvailableDelay, clusterUnavailableDelay, memberObjectEnqueueDelay time.Duration,
 
 	logger klog.Logger,
-	workerCount int,
+	syncWorkerCount int,
+	cascadingDeletionWorkerCount int,
 	metrics stats.Metrics,
 ) (*SyncController, error) {
 	recorder := eventsink.NewDefederatingRecorderMux(kubeClient, SyncControllerName, 4)
@@ -168,7 +169,7 @@ func NewSyncController(
 		SyncControllerName,
 		s.reconcile,
 		worker.RateLimiterOptions{},
-		workerCount,
+		syncWorkerCount,
 		metrics,
 	)
 
@@ -176,7 +177,7 @@ func NewSyncController(
 		SyncControllerName+"-cluster-cascading-deletion-worker",
 		s.reconcileClusterForCascadingDeletion,
 		worker.RateLimiterOptions{},
-		1,
+		cascadingDeletionWorkerCount,
 		metrics,
 	)
 
@@ -547,10 +548,9 @@ func (s *SyncController) syncToClusters(
 	shouldRecheckAfterDispatch := false
 	for _, cluster := range clusters {
 		clusterName := cluster.Name
-		isSelectedCluster := selectedClusterNames.Has(clusterName)
+		shouldBeDeleted := !selectedClusterNames.Has(clusterName)
 		isCascadingDeletionTriggered := cluster.GetDeletionTimestamp() != nil &&
 			cascadingdeletion.IsCascadingDeleteEnabled(cluster)
-		shouldBeDeleted := !isSelectedCluster || isCascadingDeletionTriggered
 
 		if !clusterutil.IsClusterReady(&cluster.Status) {
 			if !shouldBeDeleted {
@@ -564,8 +564,6 @@ func (s *SyncController) syncToClusters(
 
 		var clusterObj *unstructured.Unstructured
 		{
-			// TODO: updating the sync status may thrash the host apiserver if the host caches are synced but member caches are not synced.
-			// Find out if this is ok.
 			clusterObj, _, err = informermanager.GetClusterObject(
 				ctx,
 				s.ftcManager,
@@ -579,6 +577,15 @@ func (s *SyncController) syncToClusters(
 				dispatcher.RecordClusterError(fedcorev1a1.CachedRetrievalFailed, clusterName, wrappedErr)
 				continue
 			}
+		}
+
+		// If cascading deletion is triggered, wait for reconcileClusterForCascadingDeletion to perform the deletion operation.
+		// If the delete operation has not been performed, federatedObject's status will be updated to WaitingForCascadingDeletion.
+		if isCascadingDeletionTriggered {
+			if clusterObj != nil && clusterObj.GetDeletionTimestamp() == nil {
+				dispatcher.RecordStatus(clusterName, fedcorev1a1.WaitingForCascadingDeletion)
+			}
+			continue
 		}
 
 		// Resource should not exist in the named cluster
@@ -791,10 +798,7 @@ func (s *SyncController) removeFromCluster(
 
 	keyedLogger := klog.FromContext(ctx)
 	// Respect orphaning behavior
-	orphaningBehavior := orphaning.GetOrphaningBehavior(fedResource.Object())
-	shouldBeOrphaned := orphaningBehavior == orphaning.OrphanManagedResourcesAll ||
-		orphaningBehavior == orphaning.OrphanManagedResourcesAdopted && adoption.HasAdoptedAnnotation(clusterObj)
-	if shouldBeOrphaned {
+	if orphaning.ShouldBeOrphaned(fedResource.Object(), clusterObj) {
 		keyedLogger.WithValues("cluster-name", clusterName).
 			V(2).Info("Cluster object is going to be orphaned")
 		dispatcher.RemoveManagedLabel(ctx, clusterName, clusterObj)
@@ -1091,8 +1095,8 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(
 		return worker.StatusAllOK
 	}
 
+	// if cluster is unjoined or cascading-delete is not required, remove cascading-delete finalizer immediately
 	if !clusterutil.IsClusterJoined(&cluster.Status) || !cascadingdeletion.IsCascadingDeleteEnabled(cluster) {
-		// cascading-delete is not required, remove cascading-delete finalizer immediately
 		err := s.removeClusterFinalizer(ctx, cluster)
 		if err != nil {
 			if apierrors.IsConflict(err) {
@@ -1104,58 +1108,34 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(
 		return worker.StatusAllOK
 	}
 
-	// cascading-delete is enabled, wait for member objects to be deleted
+	if !clusterutil.IsClusterReady(&cluster.Status) {
+		logger.V(3).Info("Requeue federatedCluster because it's not ready")
+		return worker.Result{RequeueAfter: &s.cascadingDeletionRecheckDelay}
+	}
+
+	// cascading-delete is enabled, delete the member objects managed by admiral
 	ftcLister := s.ftcManager.GetFederatedTypeConfigLister()
 	ftcs, err := ftcLister.List(labels.Everything())
 	if err != nil {
-		logger.Error(err, "failed to get ftc lister")
+		logger.Error(err, "Failed to get ftc lister")
 		return worker.StatusError
 	}
 
-	remainingByGVK := make(map[string]string, len(ftcs))
-	for _, ftc := range ftcs {
-		gvk := ftc.GetSourceTypeGVK().String()
-		resourceLister, hasSynced, exists := s.fedInformerManager.GetResourceLister(
-			ftc.GetSourceTypeGVK(),
-			cluster.Name,
-		)
-		if !exists {
-			remainingByGVK[gvk] = fmt.Sprintf("failed to get resource lister for %s", gvk)
-			continue
-		}
-
-		// If cluster cache is synced, we check the store.
-		// Otherwise, we will have to issue a list request.
-		if hasSynced() {
-			objects, err := resourceLister.List(labels.Everything())
-			if err != nil {
-				remainingByGVK[gvk] = fmt.Sprintf("Unknown (failed to list from cluster lister: %v)", err)
-			} else if len(objects) > 0 {
-				remainingByGVK[gvk] = strconv.Itoa(len(objects))
-			}
-		} else {
-			client, exists := s.fedInformerManager.GetClusterDynamicClient(cluster.Name)
-			if !exists {
-				remainingByGVK[gvk] = "Unknown (cluster client does not exist)"
-				continue
-			}
-
-			objects, err := client.Resource(ftc.GetSourceTypeGVR()).Namespace(corev1.NamespaceAll).List(
-				ctx, metav1.ListOptions{
-					Limit: 1,
-					LabelSelector: labels.SelectorFromSet(labels.Set{
-						managedlabel.ManagedByKubeAdmiralLabelKey: managedlabel.ManagedByKubeAdmiralLabelValue,
-					}).String(),
-				},
-			)
-			if err == nil && len(objects.Items) > 0 {
-				remainingByGVK[gvk] = strconv.Itoa(len(objects.Items))
-			} else if err != nil && !meta.IsNoMatchError(err) && !apierrors.IsNotFound(err) {
-				remainingByGVK[gvk] = fmt.Sprintf("Unknown (failed to list from cluster: %v)", err)
-			}
-		}
+	// concurrent cascading-delete operations for each ftc
+	wg := sync.WaitGroup{}
+	cascadingDeletionStatus := sync.Map{}
+	for i := range ftcs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			s.cascadingDeletionForFTC(ctx, ftcs[i], &cascadingDeletionStatus, cluster.Name)
+		}(i)
 	}
+	wg.Wait()
 
+	// if any cluster objects fail to be deleted,
+	// the failure information will be updated to the federatedCluster as an event.
+	remainingByGVK := convertSyncMapToMap(&cascadingDeletionStatus)
 	if len(remainingByGVK) > 0 {
 		s.eventRecorder.Eventf(
 			cluster,
@@ -1167,17 +1147,7 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(
 		return worker.Result{RequeueAfter: &s.cascadingDeletionRecheckDelay}
 	}
 
-	// The CRD may be deleted before the CR, and then the member cluster will be stuck
-	// in the cascade deletion because the api no longer exists. So we need to ignore
-	// the NoMatch and NotFound error.
-	// Whether to return NoMatch or NotFound depends on whether the client has visited CR,
-	// if so, returns NotFound (because the client has a scheme cache), otherwise returns NoMatch.
-	if err != nil && !(meta.IsNoMatchError(err) || apierrors.IsNotFound(err)) {
-		logger.Error(err, "Failed to list target objects from cluster")
-		return worker.StatusError
-	}
-
-	// all member objects are deleted
+	// if all cluster objects are successfully deleted, the federatedCluster will be deleted.
 	err = s.removeClusterFinalizer(ctx, cluster)
 	if err != nil {
 		logger.Error(err, "Failed to remove cluster finalizer")
@@ -1185,4 +1155,142 @@ func (s *SyncController) reconcileClusterForCascadingDeletion(
 	}
 
 	return worker.StatusAllOK
+}
+
+func (s *SyncController) cascadingDeletionForFTC(
+	ctx context.Context,
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	syncMap *sync.Map,
+	clusterName string,
+) {
+	targetGVK := ftc.GetSourceTypeGVK().String()
+	ctx, logger := logging.InjectLoggerValues(ctx, "targetGVK", targetGVK)
+
+	// get all managed cluster objects according to ftc type
+	clusterObjs, err := s.listManagedClusterObjects(ctx, ftc, clusterName)
+	if err != nil {
+		logger.Error(err, "Failed to list clusterObjects")
+		syncMap.Store(targetGVK, fmt.Sprintf("failed to list cluster objects for %s", targetGVK))
+		return
+	}
+	if len(clusterObjs) == 0 {
+		return
+	}
+
+	// cascading-delete managed cluster objects
+	var deleteFailedObjs []string
+	for i := range clusterObjs {
+		clusterObj := clusterObjs[i].DeepCopy()
+		namespacedName := fmt.Sprintf("%s/%s", clusterObj.GetNamespace(), clusterObj.GetName())
+		_, keyedLogger := logging.InjectLoggerValues(ctx,
+			"namespace", clusterObj.GetNamespace(), "name", clusterObj.GetName(),
+		)
+
+		// get the corresponding federated object
+		fedObjName := naming.GenerateFederatedObjectName(clusterObj.GetName(), ftc.Name)
+		fedObj, err := s.fedAccessor.FederatedResource(common.QualifiedName{
+			Namespace: clusterObj.GetNamespace(),
+			Name:      fedObjName,
+		})
+		if err != nil {
+			keyedLogger.Error(err, "Failed to get corresponding federated object")
+			deleteFailedObjs = append(deleteFailedObjs, namespacedName)
+			continue
+		}
+		if fedObj == nil {
+			err := fmt.Errorf("the federated object %s is not found", fedObj.FederatedName())
+			keyedLogger.Error(err, "Failed to get corresponding federated object")
+			deleteFailedObjs = append(deleteFailedObjs, namespacedName)
+			continue
+		}
+
+		// execute the cascading-delete operation
+		dispatcher := dispatch.NewUnmanagedDispatcher(s.getClusterClient, fedObj.TargetGVR(), fedObj.TargetName(), s.metrics)
+		s.removeFromCluster(ctx, dispatcher, clusterName, fedObj, clusterObj, true)
+
+		dispatchOk, timeoutErr := dispatcher.Wait()
+		// if timeoutErr is not nil, the dispatchOk is false
+		if timeoutErr != nil {
+			keyedLogger.Error(timeoutErr, "Cascading-delete cluster object timeout")
+		}
+		if !dispatchOk {
+			keyedLogger.Error(nil, "Failed to cascading-delete target object")
+			deleteFailedObjs = append(deleteFailedObjs, namespacedName)
+		}
+	}
+
+	// record cluster objects that failed to be deleted
+	if len(deleteFailedObjs) > 0 {
+		syncMap.Store(targetGVK, fmt.Sprintf("failed to delete those cluster objects for %s: %v", targetGVK, deleteFailedObjs))
+	}
+}
+
+func (s *SyncController) listManagedClusterObjects(
+	ctx context.Context,
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	clusterName string,
+) ([]*unstructured.Unstructured, error) {
+	clusterObjs := []*unstructured.Unstructured{}
+
+	resourceLister, hasSynced, exists := s.fedInformerManager.GetResourceLister(ftc.GetSourceTypeGVK(), clusterName)
+	if !exists {
+		return nil, fmt.Errorf("lister of cluster %s does not exist", clusterName)
+	}
+
+	// If cluster cache is synced, we check the store.
+	// Otherwise, we will have to issue a list request.
+	if hasSynced() {
+		objects, err := resourceLister.List(labels.Everything())
+		if err != nil {
+			return nil, fmt.Errorf("failed to list cluster objects in %s: %w", clusterName, err)
+		}
+
+		clusterObjs = make([]*unstructured.Unstructured, len(objects))
+		for i := range objects {
+			clusterObjs[i] = objects[i].(*unstructured.Unstructured)
+		}
+	} else {
+		client, err := s.getClusterClient(clusterName)
+		if err != nil {
+			return nil, err
+		}
+
+		objects, err := client.Resource(ftc.GetSourceTypeGVR()).Namespace(corev1.NamespaceAll).List(ctx,
+			metav1.ListOptions{
+				LabelSelector: labels.SelectorFromSet(labels.Set{
+					managedlabel.ManagedByKubeAdmiralLabelKey: managedlabel.ManagedByKubeAdmiralLabelValue,
+				}).String(),
+				ResourceVersion: "0",
+			},
+		)
+		if err != nil {
+			// the CRD may be deleted before the CR, and then the member cluster will be stuck
+			// in the cascade deletion because the api no longer exists. So we need to ignore
+			// the NoMatch and NotFound error.
+			// Whether to return NoMatch or NotFound depends on whether the client has visited CR,
+			// if so, returns NotFound (because the client has a scheme cache), otherwise returns NoMatch.
+			if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+				return clusterObjs, nil
+			}
+			return nil, err
+		}
+
+		clusterObjs = make([]*unstructured.Unstructured, len(objects.Items))
+		for i := range objects.Items {
+			clusterObjs[i] = &objects.Items[i]
+		}
+	}
+	return clusterObjs, nil
+}
+
+// convertSyncMapToMap convert sync.map to normal map
+func convertSyncMapToMap(syncMap *sync.Map) map[interface{}]interface{} {
+	normalMap := make(map[interface{}]interface{})
+
+	syncMap.Range(func(key, value interface{}) bool {
+		normalMap[key] = value
+		return true
+	})
+
+	return normalMap
 }

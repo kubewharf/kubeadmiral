@@ -37,9 +37,10 @@ type Context struct {
 	FedSystemNamespace string
 	TargetNamespace    string
 
-	WorkerCount             int
-	ClusterAvailableDelay   time.Duration
-	ClusterUnavailableDelay time.Duration
+	WorkerCount                  int
+	CascadingDeletionWorkerCount int
+	ClusterAvailableDelay        time.Duration
+	ClusterUnavailableDelay      time.Duration
 
 	RestConfig      *rest.Config
 	ComponentConfig *ComponentConfig

@@ -156,9 +156,10 @@ func createControllerContext(opts *options.Options) (*controllercontext.Context,
 		FedSystemNamespace: common.DefaultFedSystemNamespace,
 		TargetNamespace:    metav1.NamespaceAll,
 
-		WorkerCount:             opts.WorkerCount,
-		ClusterAvailableDelay:   20 * time.Second,
-		ClusterUnavailableDelay: 60 * time.Second,
+		WorkerCount:                  opts.WorkerCount,
+		CascadingDeletionWorkerCount: opts.CascadingDeletionWorkerCount,
+		ClusterAvailableDelay:        20 * time.Second,
+		ClusterUnavailableDelay:      60 * time.Second,
 
 		RestConfig:      restConfig,
 		ComponentConfig: componentConfig,
