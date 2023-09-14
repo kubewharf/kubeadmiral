@@ -62,6 +62,8 @@ type Options struct {
 	PrometheusAddr      string
 	PrometheusPort      uint16
 	PrometheusQuantiles map[string]string
+
+	ResourceAggregationNodeFilter []string
 }
 
 func NewOptions() *Options {
@@ -140,7 +142,16 @@ func (o *Options) AddFlags(flags *pflag.FlagSet, allControllers []string, disabl
 		&o.PrometheusQuantiles,
 		"prometheus-quantiles",
 		map[string]string{"0.5": "0.01", "0.95": "0.01", "0.99": "0.002"},
-		"prometheus summary objective quantiles",
+		"Prometheus summary objective quantiles",
+	)
+
+	flags.StringArrayVar(
+		&o.ResourceAggregationNodeFilter,
+		"resource-aggregation-node-filter",
+		[]string{},
+		"Nodes matching the provided label selector are excluded from resource aggregation. "+
+			"If the flag is provided multiple times, "+
+			"nodes are excluded as long as at least one of the selectors is matched.",
 	)
 }
 

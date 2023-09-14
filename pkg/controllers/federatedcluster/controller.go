@@ -76,9 +76,10 @@ type FederatedClusterController struct {
 	kubeClient kubeclient.Interface
 	fedClient  fedclient.Interface
 
-	fedSystemNamespace       string
-	clusterHealthCheckConfig *ClusterHealthCheckConfig
-	clusterJoinTimeout       time.Duration
+	fedSystemNamespace            string
+	clusterHealthCheckConfig      *ClusterHealthCheckConfig
+	clusterJoinTimeout            time.Duration
+	resourceAggregationNodeFilter []labels.Selector
 
 	worker              worker.ReconcileWorker[common.QualifiedName]
 	statusCollectWorker worker.ReconcileWorker[common.QualifiedName]
@@ -98,6 +99,7 @@ func NewFederatedClusterController(
 	clusterJoinTimeout time.Duration,
 	workerCount int,
 	fedSystemNamespace string,
+	resourceAggregationNodeFilter []labels.Selector,
 ) (*FederatedClusterController, error) {
 	c := &FederatedClusterController{
 		clusterInformer:          clusterInformer,
@@ -109,9 +111,10 @@ func NewFederatedClusterController(
 			// TODO: make health check period configurable
 			Period: time.Second * 30,
 		},
-		clusterJoinTimeout: clusterJoinTimeout,
-		metrics:            metrics,
-		logger:             logger.WithValues("controller", FederatedClusterControllerName),
+		clusterJoinTimeout:            clusterJoinTimeout,
+		resourceAggregationNodeFilter: resourceAggregationNodeFilter,
+		metrics:                       metrics,
+		logger:                        logger.WithValues("controller", FederatedClusterControllerName),
 	}
 
 	broadcaster := record.NewBroadcaster()

@@ -107,7 +107,7 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 
 	// We skip updating cluster resources and api resources if cluster is not ready
 	if readyStatus == corev1.ConditionTrue {
-		if err := updateClusterResources(
+		if err := c.updateClusterResources(
 			ctx,
 			&cluster.Status,
 			podLister,
@@ -200,7 +200,7 @@ func checkReadyByHealthz(
 	return corev1.ConditionFalse, clusterReadyStatus
 }
 
-func updateClusterResources(
+func (c *FederatedClusterController) updateClusterResources(
 	ctx context.Context,
 	clusterStatus *fedcorev1a1.FederatedClusterStatus,
 	podLister corev1listers.PodLister,
@@ -225,12 +225,12 @@ func updateClusterResources(
 
 	schedulableNodes := int64(0)
 	for _, node := range nodes {
-		if isNodeSchedulable(node) {
+		if isNodeSchedulable(node) && !c.isNodeFiltered(node) {
 			schedulableNodes++
 		}
 	}
 
-	allocatable, available := aggregateResources(nodes, pods)
+	allocatable, available := c.aggregateResources(nodes, pods)
 	clusterStatus.Resources = fedcorev1a1.Resources{
 		SchedulableNodes: &schedulableNodes,
 		Allocatable:      allocatable,

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
@@ -191,6 +192,16 @@ func getComponentConfig(opts *options.Options) (*controllercontext.ComponentConf
 		}
 		componentConfig.NSAutoPropExcludeRegexp = nsAutoPropExcludeRegexp
 	}
+
+	labelSelectors := make([]labels.Selector, len(opts.ResourceAggregationNodeFilter))
+	for i, labelSelectorString := range opts.ResourceAggregationNodeFilter {
+		labelSelector, err := labels.Parse(labelSelectorString)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile resource aggregation node filter: %w", err)
+		}
+		labelSelectors[i] = labelSelector
+	}
+	componentConfig.ResourceAggregationNodeFilter = labelSelectors
 
 	return componentConfig, nil
 }

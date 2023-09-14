@@ -173,6 +173,7 @@ func startFederatedClusterController(
 		controllerCtx.ComponentConfig.ClusterJoinTimeout,
 		controllerCtx.WorkerCount,
 		controllerCtx.FedSystemNamespace,
+		controllerCtx.ComponentConfig.ResourceAggregationNodeFilter,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating federate controller: %w", err)

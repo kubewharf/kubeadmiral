@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"time"
 
+	"k8s.io/apimachinery/pkg/labels"
 	dynamicclient "k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	kubeinformer "k8s.io/client-go/informers"
@@ -78,7 +79,8 @@ func (c *Context) StartFactories(ctx context.Context) {
 }
 
 type ComponentConfig struct {
-	NSAutoPropExcludeRegexp  *regexp.Regexp
-	ClusterJoinTimeout       time.Duration
-	MemberObjectEnqueueDelay time.Duration
+	NSAutoPropExcludeRegexp       *regexp.Regexp
+	ClusterJoinTimeout            time.Duration
+	MemberObjectEnqueueDelay      time.Duration
+	ResourceAggregationNodeFilter []labels.Selector
 }

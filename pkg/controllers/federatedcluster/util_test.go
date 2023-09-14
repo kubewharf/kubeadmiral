@@ -22,6 +22,8 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 func Test_aggregateResources(t *testing.T) {
@@ -256,11 +258,80 @@ func Test_aggregateResources(t *testing.T) {
 				corev1.ResourceMemory: resource.MustParse("2Gi"),
 			},
 		},
+		{
+			name: "one container per pod, and filtering some nodes",
+			nodes: []*corev1.Node{
+				{
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							"type": "virtual-kubelet",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("500m"),
+										corev1.ResourceMemory: resource.MustParse("1Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("500m"),
+										corev1.ResourceMemory: resource.MustParse("1Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+			expectedAvailable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("0"),
+				corev1.ResourceMemory: resource.MustParse("0Gi"),
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			allocatable, available := aggregateResources(tc.nodes, tc.pods)
+			selector, _ := labels.Parse("type=virtual-kubelet")
+			c := &FederatedClusterController{
+				resourceAggregationNodeFilter: []labels.Selector{selector},
+			}
+
+			allocatable, available := c.aggregateResources(tc.nodes, tc.pods)
 			if len(allocatable) != len(tc.expectedAllocatable) {
 				t.Fatalf("expected allocatable %s differs from actual allocatable %s", spew.Sdump(tc.expectedAllocatable), spew.Sdump(allocatable))
 			}
