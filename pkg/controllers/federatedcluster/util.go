@@ -55,25 +55,25 @@ func setClusterCondition(
 func getNewClusterOfflineCondition(
 	status corev1.ConditionStatus,
 	conditionTime metav1.Time,
+	oldCondition *fedcorev1a1.ClusterCondition,
 ) fedcorev1a1.ClusterCondition {
 	condition := fedcorev1a1.ClusterCondition{
 		Type:               fedcorev1a1.ClusterOffline,
+		Status:             status,
 		LastProbeTime:      conditionTime,
 		LastTransitionTime: conditionTime,
 	}
-
-	var reason, message string
-	if status == corev1.ConditionTrue {
-		reason = ClusterNotReachableReason
-		message = ClusterNotReachableMsg
-	} else if status == corev1.ConditionFalse {
-		reason = ClusterReachableReason
-		message = ClusterReachableMsg
+	if oldCondition != nil && oldCondition.Status == status {
+		condition.LastTransitionTime = oldCondition.LastTransitionTime
 	}
 
-	condition.Status = status
-	condition.Reason = reason
-	condition.Message = message
+	if status == corev1.ConditionTrue {
+		condition.Reason = ClusterNotReachableReason
+		condition.Message = ClusterNotReachableMsg
+	} else if status == corev1.ConditionFalse {
+		condition.Reason = ClusterReachableReason
+		condition.Message = ClusterReachableMsg
+	}
 
 	return condition
 }
@@ -82,6 +82,7 @@ func getNewClusterReadyCondition(
 	status corev1.ConditionStatus,
 	reason, message string,
 	conditionTime metav1.Time,
+	oldCondition *fedcorev1a1.ClusterCondition,
 ) fedcorev1a1.ClusterCondition {
 	condition := fedcorev1a1.ClusterCondition{
 		Type:               fedcorev1a1.ClusterReady,
@@ -90,6 +91,9 @@ func getNewClusterReadyCondition(
 		Message:            message,
 		LastProbeTime:      conditionTime,
 		LastTransitionTime: conditionTime,
+	}
+	if oldCondition != nil && oldCondition.Status == status {
+		condition.LastTransitionTime = oldCondition.LastTransitionTime
 	}
 
 	return condition
