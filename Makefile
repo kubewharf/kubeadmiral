@@ -43,15 +43,9 @@ build-debug: build
 # Start a local kubeadmiral cluster for developers.
 #
 # It will directly start the kubeadmiral control-plane cluster(excluding the kubeadmiral-controller-manager) and three member-clusters.
-# Users can run the kubeadmiral-controller-manager component through binary for easy debugging, e.g.:
-# ./output/bin/darwin/amd64/kubeadmiral-controller-manager_debug \
-#    --klog-logtostderr=false \
-#    --klog-log-file "./kubeadmiral.log" \
-#    --kubeconfig "$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml" \
-#    2>/dev/null
+# Users can run the kubeadmiral-controller-manager component through binary for easy debugging using make dev-run.
 .PHONY: dev-up
 dev-up:
-	make clean-local-cluster
 	bash hack/make-rules/dev-up.sh
 	make build-debug
 
@@ -59,6 +53,19 @@ dev-up:
 .PHONY: dev-clean
 dev-clean:
 	bash hack/make-rules/dev-clean.sh
+
+# Run the kubeadmiral-controller-manager component with sane defaults for development.
+.PHONY: dev-run
+dev-run:
+	./output/bin/$(GOOS)/$(GOARCH)/$(DEBUG_TARGET_NAME) \
+		--enable-leader-elect=false \
+		--worker-count=5 \
+		--kubeconfig=${HOME}/.kube/kubeadmiral/kubeadmiral-host.yaml \
+		--klog-v=4 \
+		--klog-add-dir-header=true \
+		--klog-logtostderr=false \
+		--klog-log-file=/dev/stdout \
+		--cluster-join-timeout=15s 2>&1
 
 # Local up the KubeAdmiral.
 #
