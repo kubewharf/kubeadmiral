@@ -48,6 +48,11 @@ dev-up:
 	bash hack/make-rules/dev-up.sh
 	make debug
 
+# Clean up the clusters created by dev-up.
+.PHONY: dev-clean
+dev-clean:
+	bash hack/make-rules/dev-clean.sh
+
 # Local up the KubeAdmiral.
 #
 # Args:
