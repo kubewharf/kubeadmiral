@@ -6,6 +6,7 @@ GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 GOPROXY ?= $(shell go env GOPROXY)
 TARGET_NAME ?= kubeadmiral-controller-manager
+DEBUG_TARGET_NAME ?= $(TARGET_NAME)_debug
 
 # image information
 REGISTRY ?= ghcr.io/kubewharf
@@ -33,6 +34,12 @@ all: build
 build:
 	BUILD_FLAGS="$(BUILD_FLAGS)" TARGET_NAME="$(TARGET_NAME)" GOPROXY="$(GOPROXY)" bash hack/make-rules/build.sh
 
+# Debug build
+.PHONY: build-debug
+build-debug: BUILD_FLAGS+=-race
+build-debug: TARGET_NAME:=$(DEBUG_TARGET_NAME)
+build-debug: build
+
 # Start a local kubeadmiral cluster for developers.
 #
 # It will directly start the kubeadmiral control-plane cluster(excluding the kubeadmiral-controller-manager) and three member-clusters.
@@ -46,7 +53,7 @@ build:
 dev-up:
 	make clean-local-cluster
 	bash hack/make-rules/dev-up.sh
-	make debug
+	make build-debug
 
 # Clean up the clusters created by dev-up.
 .PHONY: dev-clean
@@ -67,12 +74,6 @@ dev-clean:
 local-up:
 	make clean-local-cluster
 	REGION="$(REGION)" NUM_MEMBER_CLUSTERS="$(NUM_MEMBER_CLUSTERS)" bash hack/make-rules/local-up.sh
-
-# Debug build
-.PHONY: debug
-debug: BUILD_FLAGS+=-race
-debug: TARGET_NAME:=$(TARGET_NAME)_debug
-debug: build
 
 # Build binaries and docker images.
 # The supported OS is linux, and user can specify the arch type (only amd64,arm64,arm are supported)
