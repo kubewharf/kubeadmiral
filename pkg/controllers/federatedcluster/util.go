@@ -19,6 +19,7 @@ package federatedcluster
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/util/resource"
@@ -132,16 +133,32 @@ func isNodeSchedulable(node *corev1.Node) bool {
 	return true
 }
 
+// isNodeFiltered returns true if the node is filtered to aggregate resources, otherwise false.
+func (c *FederatedClusterController) isNodeFiltered(node *corev1.Node) bool {
+	nodeLabels := node.GetLabels()
+	if nodeLabels == nil {
+		return false
+	}
+
+	for _, labelSelector := range c.resourceAggregationNodeFilter {
+		if labelSelector.Matches(labels.Set(nodeLabels)) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // aggregateResources returns
 //   - allocatable resources from the nodes and,
 //   - available resources after considering allocations to the given pods.
-func aggregateResources(
+func (c *FederatedClusterController) aggregateResources(
 	nodes []*corev1.Node,
 	pods []*corev1.Pod,
 ) (corev1.ResourceList, corev1.ResourceList) {
 	allocatable := make(corev1.ResourceList)
 	for _, node := range nodes {
-		if !isNodeSchedulable(node) {
+		if !isNodeSchedulable(node) || c.isNodeFiltered(node) {
 			continue
 		}
 
