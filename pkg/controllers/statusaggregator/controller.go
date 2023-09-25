@@ -305,7 +305,7 @@ func (a *StatusAggregator) reconcile(ctx context.Context, key reconcileKey) (sta
 	}()
 
 	sourceObject, err := a.getObjectFromStore(key, "")
-	if err != nil {
+	if err != nil && !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to get source object from cache")
 		return worker.StatusError
 	}
