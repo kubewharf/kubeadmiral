@@ -20,6 +20,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -44,6 +45,7 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/core"
+	frameworktypes "github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	utilmetrics "github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
@@ -561,8 +563,18 @@ func (s *Scheduler) schedule(
 	}
 
 	ctx = klog.NewContext(ctx, logger)
+	var fitErr *frameworktypes.FitError
 	result, err := s.algorithm.Schedule(ctx, framework, *schedulingUnit, clusters)
 	if err != nil {
+		if errors.As(err, &fitErr) {
+			logger.Error(err, "No available clusters")
+			s.eventRecorder.Eventf(
+				fedObject,
+				corev1.EventTypeWarning,
+				EventReasonScheduleFederatedObject,
+				err.Error())
+			return nil, &worker.StatusError
+		}
 		logger.Error(err, "Failed to compute scheduling result")
 		s.eventRecorder.Eventf(
 			fedObject,

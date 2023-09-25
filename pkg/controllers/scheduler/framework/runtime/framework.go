@@ -143,6 +143,7 @@ func (f *frameworkImpl) RunFilterPlugins(
 	for _, pl := range f.filterPlugins {
 		pluginResult := f.runFilterPlugin(ctx, pl, schedulingUnit, cluster)
 		if !pluginResult.IsSuccess() {
+			pluginResult.SetFailedPlugin(pl.Name())
 			return pluginResult
 		}
 	}

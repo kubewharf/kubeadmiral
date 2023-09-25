@@ -39,5 +39,5 @@ func (pl *APIResources) Filter(ctx context.Context, su *framework.SchedulingUnit
 			return framework.NewResult(framework.Success)
 		}
 	}
-	return framework.NewResult(framework.Unschedulable, "No matched group version kind.")
+	return framework.NewResult(framework.Unschedulable, "cluster(s) didn't support this APIVersion")
 }

@@ -158,7 +158,7 @@ func (p *WebhookPlugin) Filter(
 	if resp.Selected {
 		return framework.NewResult(framework.Success)
 	} else {
-		return framework.NewResult(framework.Unschedulable)
+		return framework.NewResult(framework.Unschedulable, fmt.Sprintf("cluster(s) were filtered by webhookPlugin(%s)", p.name))
 	}
 }
 

@@ -168,6 +168,9 @@ func TestFilter(t *testing.T) {
 			selected: true,
 		},
 		"webhook does not select cluster": {
+			webhookErrors: webhookErrors{
+				responseError: "cluster(s) were filtered by webhookPlugin(test)",
+			},
 			su:       getSampleSchedulingUnit(),
 			cluster:  getSampleCluster("test"),
 			selected: false,
