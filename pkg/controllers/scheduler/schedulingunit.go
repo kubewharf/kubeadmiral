@@ -241,20 +241,13 @@ func getAutoMigrationInfo(fedObject fedcorev1a1.GenericFederatedObject) (*framew
 }
 
 func getIsStickyClusterFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) bool {
-	// Currently, either switch can take effect
-	if rp := policy.GetSpec().ReschedulePolicy; rp != nil && rp.DisableRescheduling {
-		return true
-	}
-	return policy.GetSpec().StickyCluster
+	rp := policy.GetSpec().ReschedulePolicy
+	return rp != nil && rp.DisableRescheduling
 }
 
 func getAvoidDisruptionFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) bool {
-	// Currently, either switch can take effect
-	if rp := policy.GetSpec().ReschedulePolicy; rp != nil &&
-		rp.ReplicaRescheduling != nil && rp.ReplicaRescheduling.AvoidDisruption {
-		return true
-	}
-	return policy.GetSpec().ReplicaRescheduling != nil && policy.GetSpec().ReplicaRescheduling.AvoidDisruption
+	rp := policy.GetSpec().ReschedulePolicy
+	return rp != nil && rp.ReplicaRescheduling != nil && rp.ReplicaRescheduling.AvoidDisruption
 }
 
 func getIsStickyClusterFromObject(object fedcorev1a1.GenericFederatedObject) (bool, bool) {

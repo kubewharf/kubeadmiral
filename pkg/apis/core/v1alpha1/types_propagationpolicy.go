@@ -66,10 +66,6 @@ type PropagationPolicySpec struct {
 
 	// SchedulingMode determines the mode used for scheduling.
 	SchedulingMode SchedulingMode `json:"schedulingMode"`
-	// StickyCluster determines if a federated object can be rescheduled.
-	// +optional
-	// Deprecated: Please use reschedulePolicy.disableRescheduling instead. This field will be removed in the next release.
-	StickyCluster bool `json:"stickyCluster"`
 
 	// ClusterSelector is a label query over clusters to consider for scheduling.
 	// An empty or nil ClusterSelector selects everything.
@@ -102,13 +98,6 @@ type PropagationPolicySpec struct {
 	// Configures behaviors related to auto migration. If absent, auto migration will be disabled.
 	// +optional
 	AutoMigration *AutoMigration `json:"autoMigration,omitempty"`
-
-	// Configures behaviors related to replica rescheduling.
-	// +optional
-	// Default set via a post-generation patch.
-	// See patch file for details.
-	// Deprecated: Please use reschedulePolicy.disableRescheduling instead. This field will be removed in the next release.
-	ReplicaRescheduling *ReplicaRescheduling `json:"replicaRescheduling,omitempty"`
 
 	// Configures behaviors related to rescheduling.
 	// +optional

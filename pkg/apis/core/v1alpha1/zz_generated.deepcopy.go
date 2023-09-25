@@ -1593,11 +1593,6 @@ func (in *PropagationPolicySpec) DeepCopyInto(out *PropagationPolicySpec) {
 		*out = new(AutoMigration)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.ReplicaRescheduling != nil {
-		in, out := &in.ReplicaRescheduling, &out.ReplicaRescheduling
-		*out = new(ReplicaRescheduling)
-		**out = **in
-	}
 	if in.ReschedulePolicy != nil {
 		in, out := &in.ReschedulePolicy, &out.ReschedulePolicy
 		*out = new(ReschedulePolicy)

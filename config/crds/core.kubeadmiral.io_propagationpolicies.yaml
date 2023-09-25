@@ -159,15 +159,6 @@ spec:
                       - cluster
                     type: object
                   type: array
-                replicaRescheduling:
-                  description: 'Configures behaviors related to replica rescheduling. Default set via a post-generation patch. See patch file for details. Deprecated: Please use reschedulePolicy.disableRescheduling instead. This field will be removed in the next release.'
-                  properties:
-                    avoidDisruption:
-                      default: true
-                      description: If set to true, the scheduler will attempt to prevent migrating existing replicas during rescheduling. In order to do so, replica scheduling preferences might not be fully respected. If set to false, the scheduler will always rebalance the replicas based on the specified preferences, which might cause temporary service disruption.
-                      type: boolean
-                  type: object
-                  default: {}
                 reschedulePolicy:
                   default:
                     rescheduleWhen:
@@ -216,9 +207,6 @@ spec:
                 schedulingProfile:
                   description: Profile determines the scheduling profile to be used for scheduling
                   type: string
-                stickyCluster:
-                  description: 'StickyCluster determines if a federated object can be rescheduled. Deprecated: Please use reschedulePolicy.disableRescheduling instead. This field will be removed in the next release.'
-                  type: boolean
                 tolerations:
                   description: Tolerations describe a set of cluster taints that the policy tolerates.
                   items:
