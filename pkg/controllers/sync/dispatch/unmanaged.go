@@ -113,8 +113,6 @@ func (d *unmanagedDispatcherImpl) Delete(
 					metricResult = clusterOperationFail
 				}
 				d.metrics.Duration(metrics.DispatchOperationDuration, startTime,
-					stats.Tag{Name: "namespace", Value: clusterObj.GetName()},
-					stats.Tag{Name: "name", Value: clusterObj.GetNamespace()},
 					stats.Tag{Name: "group", Value: clusterObj.GroupVersionKind().Group},
 					stats.Tag{Name: "version", Value: clusterObj.GroupVersionKind().Version},
 					stats.Tag{Name: "kind", Value: clusterObj.GroupVersionKind().Kind},

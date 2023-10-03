@@ -573,7 +573,7 @@ func (s *StatusController) clusterStatuses(
 			resourceClusterStatus.Error = errMsg
 			clusterStatus = append(clusterStatus, resourceClusterStatus)
 			errList = append(errList, fmt.Sprintf("cluster-name: %s, error-info: %s", clusterName, errMsg))
-			s.recordStatusCollectionError(targetQualifiedName.Name, targetQualifiedName.Namespace, clusterName, targetGVK)
+			s.recordStatusCollectionError(clusterName, targetGVK)
 			continue
 		}
 		if !exist {
@@ -612,7 +612,7 @@ func (s *StatusController) clusterStatuses(
 		if err != nil {
 			keyedLogger.WithValues("cluster-name", clusterName).
 				Error(err, "Failed to marshal collected fields")
-			s.recordStatusCollectionError(targetQualifiedName.Name, targetQualifiedName.Namespace, clusterName, targetGVK)
+			s.recordStatusCollectionError(clusterName, targetGVK)
 			continue
 		}
 
@@ -632,8 +632,6 @@ func (s *StatusController) clusterStatuses(
 		}
 		clusterStatus = append(clusterStatus, resourceClusterStatus)
 		s.metrics.Duration(metrics.StatusCollectionDuration, startTime, []stats.Tag{
-			{Name: "name", Value: targetQualifiedName.Name},
-			{Name: "namespace", Value: targetQualifiedName.Namespace},
 			{Name: "cluster", Value: clusterName},
 			{Name: "group", Value: targetGVK.Group},
 			{Name: "version", Value: targetGVK.Version},
@@ -655,10 +653,8 @@ func (s *StatusController) clusterStatuses(
 	return clusterStatus
 }
 
-func (s *StatusController) recordStatusCollectionError(name, namespace, cluster string, targetGVK schema.GroupVersionKind) {
+func (s *StatusController) recordStatusCollectionError(cluster string, targetGVK schema.GroupVersionKind) {
 	s.metrics.Counter(metrics.StatusCollectionErrorTotal, 1, []stats.Tag{
-		{Name: "name", Value: name},
-		{Name: "namespace", Value: namespace},
 		{Name: "cluster", Value: cluster},
 		{Name: "group", Value: targetGVK.Group},
 		{Name: "version", Value: targetGVK.Version},
