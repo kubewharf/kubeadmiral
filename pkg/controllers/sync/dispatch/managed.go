@@ -48,7 +48,6 @@ import (
 )
 
 const (
-	IndexRolloutPlans    = "federation_placement_rollout"
 	clusterOperationOk   = "ok"
 	clusterOperationFail = "fail"
 )
@@ -178,8 +177,6 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 				metricResult = clusterOperationFail
 			}
 			d.metrics.Duration(metrics.DispatchOperationDuration, startTime,
-				stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
-				stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
 				stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
 				stats.Tag{Name: "version", Value: d.fedResource.TargetGVK().Version},
 				stats.Tag{Name: "kind", Value: d.fedResource.TargetGVK().Kind},
@@ -289,8 +286,6 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 				metricResult = clusterOperationFail
 			}
 			d.metrics.Duration(metrics.DispatchOperationDuration, startTime,
-				stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
-				stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
 				stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
 				stats.Tag{Name: "version", Value: d.fedResource.TargetGVK().Version},
 				stats.Tag{Name: "kind", Value: d.fedResource.TargetGVK().Kind},
@@ -405,8 +400,6 @@ func (d *managedDispatcherImpl) recordOperationError(
 	d.recordError(ctx, clusterName, operation, err)
 	d.RecordStatus(clusterName, propStatus)
 	d.metrics.Counter(metrics.DispatchOperationErrorTotal, 1,
-		stats.Tag{Name: "namespace", Value: d.fedResource.TargetName().Namespace},
-		stats.Tag{Name: "name", Value: d.fedResource.TargetName().Name},
 		stats.Tag{Name: "group", Value: d.fedResource.TargetGVK().Group},
 		stats.Tag{Name: "version", Value: d.fedResource.TargetGVK().Version},
 		stats.Tag{Name: "kind", Value: d.fedResource.TargetGVK().Kind},
