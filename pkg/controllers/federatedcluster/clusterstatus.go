@@ -87,7 +87,7 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 
 	discoveryClient := clusterKubeClient.Discovery()
 
-	oldClusterStatus := cluster.Status.DeepCopy()
+	oldReadyCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterReady)
 	cluster = cluster.DeepCopy()
 	conditionTime := metav1.Now()
 
@@ -152,7 +152,7 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 		return 0, fmt.Errorf("failed to update cluster status: %w", err)
 	}
 
-	if isReadyStatusChanged(oldClusterStatus, readyStatus) {
+	if oldReadyCondition == nil || oldReadyCondition.Status != readyStatus {
 		switch readyStatus {
 		case corev1.ConditionTrue:
 			c.eventRecorder.Eventf(cluster, corev1.EventTypeNormal, readyReason, readyMessage)
@@ -162,20 +162,6 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	}
 
 	return 0, nil
-}
-
-func isReadyStatusChanged(clusterStatus *fedcorev1a1.FederatedClusterStatus, readyStatus corev1.ConditionStatus) bool {
-	for _, condition := range clusterStatus.Conditions {
-		if condition.Type == fedcorev1a1.ClusterReady {
-			if condition.Status == readyStatus {
-				return false
-			} else {
-				return true
-			}
-		}
-	}
-
-	return true
 }
 
 func checkReadyByHealthz(

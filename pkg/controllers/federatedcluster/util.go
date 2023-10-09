@@ -44,6 +44,10 @@ func setClusterCondition(
 ) {
 	for i, existingCondition := range status.Conditions {
 		if existingCondition.Type == newCondition.Type {
+			// Only update LastTransitionTime if the status has changed
+			if existingCondition.Status == newCondition.Status {
+				newCondition.LastTransitionTime = existingCondition.LastTransitionTime
+			}
 			status.Conditions[i] = *newCondition
 			return
 		}
@@ -58,22 +62,18 @@ func getNewClusterOfflineCondition(
 ) fedcorev1a1.ClusterCondition {
 	condition := fedcorev1a1.ClusterCondition{
 		Type:               fedcorev1a1.ClusterOffline,
+		Status:             status,
 		LastProbeTime:      conditionTime,
 		LastTransitionTime: conditionTime,
 	}
 
-	var reason, message string
 	if status == corev1.ConditionTrue {
-		reason = ClusterNotReachableReason
-		message = ClusterNotReachableMsg
+		condition.Reason = ClusterNotReachableReason
+		condition.Message = ClusterNotReachableMsg
 	} else if status == corev1.ConditionFalse {
-		reason = ClusterReachableReason
-		message = ClusterReachableMsg
+		condition.Reason = ClusterReachableReason
+		condition.Message = ClusterReachableMsg
 	}
-
-	condition.Status = status
-	condition.Reason = reason
-	condition.Message = message
 
 	return condition
 }
