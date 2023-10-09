@@ -152,6 +152,17 @@ func schedulingUnitForFedObject(
 		schedulingUnit.MaxClusters = maxClustersOverride
 	}
 
+	resourceRequest, err := getResourceRequest(typeConfig, fedObject)
+	if err != nil {
+		return nil, err
+	}
+	gpuResourceRequest := &framework.Resource{}
+	if resourceRequest.HasScalarResource(framework.ResourceGPU) {
+		gpuResourceRequest.SetScalar(framework.ResourceGPU, resourceRequest.ScalarResources[framework.ResourceGPU])
+	}
+	// now we only consider the resource request of gpu
+	schedulingUnit.ResourceRequest = *gpuResourceRequest
+
 	return schedulingUnit, nil
 }
 

@@ -173,3 +173,29 @@ func calculateResourceAllocatableRequest(
 
 	return 0, 0
 }
+
+func getRelevantResources(su *framework.SchedulingUnit) []corev1.ResourceName {
+	resources := make([]corev1.ResourceName, 0, len(framework.DefaultRequestedRatioResources))
+	for resourceName := range framework.DefaultRequestedRatioResources {
+		if resourceName == corev1.ResourceCPU || resourceName == corev1.ResourceMemory ||
+			su.ResourceRequest.HasScalarResource(resourceName) {
+			resources = append(resources, resourceName)
+		}
+	}
+
+	return resources
+}
+
+func getAllocatableAndRequested(
+	su *framework.SchedulingUnit,
+	cluster *fedcorev1a1.FederatedCluster,
+	resources []corev1.ResourceName,
+) (framework.ResourceToValueMap, framework.ResourceToValueMap) {
+	requested := make(framework.ResourceToValueMap, len(resources))
+	allocatable := make(framework.ResourceToValueMap, len(resources))
+	for _, resourceName := range resources {
+		allocatable[resourceName], requested[resourceName] = calculateResourceAllocatableRequest(su, cluster, resourceName)
+	}
+
+	return allocatable, requested
+}

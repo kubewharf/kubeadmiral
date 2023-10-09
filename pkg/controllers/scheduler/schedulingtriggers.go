@@ -26,7 +26,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
@@ -35,8 +34,6 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/util/annotation"
-	podutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
-	resourceutil "github.com/kubewharf/kubeadmiral/pkg/util/resource"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
 
@@ -352,22 +349,6 @@ func getReplicaCount(
 	}
 
 	return *value, nil
-}
-
-func getResourceRequest(
-	ftc *fedcorev1a1.FederatedTypeConfig,
-	fedObject fedcorev1a1.GenericFederatedObject,
-) (framework.Resource, error) {
-	gvk := ftc.GetSourceTypeGVK()
-	podSpec, err := podutil.GetResourcePodSpec(fedObject, gvk)
-	if err != nil {
-		if errors.Is(err, podutil.ErrUnknownTypeToGetPodSpec) {
-			return framework.Resource{}, nil
-		}
-		return framework.Resource{}, err
-	}
-	resource := resourceutil.GetPodResourceRequests(podSpec)
-	return *framework.NewResource(resource), nil
 }
 
 func getPolicySchedulingContentHash(policySpec *fedcorev1a1.PropagationPolicySpec) (string, error) {
