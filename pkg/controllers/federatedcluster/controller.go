@@ -264,14 +264,7 @@ func (c *FederatedClusterController) reconcile(
 		currentTime := metav1.Now()
 		newCondition.Type = fedcorev1a1.ClusterJoined
 		newCondition.LastProbeTime = currentTime
-
-		// The condition's last transition time is updated to the current time only if the status has changed.
-		oldCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterJoined)
-		if oldCondition != nil && oldCondition.Status == newCondition.Status {
-			newCondition.LastTransitionTime = oldCondition.LastTransitionTime
-		} else {
-			newCondition.LastTransitionTime = currentTime
-		}
+		newCondition.LastTransitionTime = currentTime
 
 		setClusterCondition(&cluster.Status, newCondition)
 	}

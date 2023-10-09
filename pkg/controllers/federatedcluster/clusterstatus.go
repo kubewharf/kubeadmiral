@@ -88,7 +88,6 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	discoveryClient := clusterKubeClient.Discovery()
 
 	oldReadyCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterReady)
-	oldOfflineCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterOffline)
 	cluster = cluster.DeepCopy()
 	conditionTime := metav1.Now()
 
@@ -128,9 +127,9 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 		}
 	}
 
-	offlineCondition := getNewClusterOfflineCondition(offlineStatus, conditionTime, oldOfflineCondition)
+	offlineCondition := getNewClusterOfflineCondition(offlineStatus, conditionTime)
 	setClusterCondition(&cluster.Status, &offlineCondition)
-	readyCondition := getNewClusterReadyCondition(readyStatus, readyReason, readyMessage, conditionTime, oldReadyCondition)
+	readyCondition := getNewClusterReadyCondition(readyStatus, readyReason, readyMessage, conditionTime)
 	setClusterCondition(&cluster.Status, &readyCondition)
 
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
