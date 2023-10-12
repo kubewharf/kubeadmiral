@@ -1198,7 +1198,7 @@ func (s *SyncController) cascadingDeletionForFTC(
 			continue
 		}
 		if fedObj == nil {
-			err := fmt.Errorf("the federated object %s is not found", fedObj.FederatedName())
+			err := fmt.Errorf("the federated object %s is not found", fedObjName)
 			keyedLogger.Error(err, "Failed to get corresponding federated object")
 			deleteFailedObjs = append(deleteFailedObjs, namespacedName)
 			continue
