@@ -567,13 +567,13 @@ func (s *Scheduler) schedule(
 	result, err := s.algorithm.Schedule(ctx, framework, *schedulingUnit, clusters)
 	if err != nil {
 		if errors.As(err, &fitErr) {
-			logger.Error(err, "No available clusters")
+			logger.Info("No available clusters")
 			s.eventRecorder.Eventf(
 				fedObject,
 				corev1.EventTypeWarning,
 				EventReasonScheduleFederatedObject,
 				err.Error())
-			return nil, &worker.StatusError
+			return &result, &worker.StatusAllOK
 		}
 		logger.Error(err, "Failed to compute scheduling result")
 		s.eventRecorder.Eventf(
