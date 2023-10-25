@@ -8,8 +8,6 @@ on:
       - v*
   pull_request:
 
-# TODO: coverage
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -26,7 +24,28 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - run: make test
+      - name: Ensure coverage is reported for every package
+        run: |
+          find pkg -type d -print0 | while IFS= read -r -d '' dir; do
+            go_file=$(ls -1 $dir | grep '\.go$' | grep -v '_test\.go$' | head -n1)
+            if [[ $go_file ]]; then
+              package_line=$(grep '^package' ${dir}/${go_file} | head -n1)
+              echo "${package_line}_test" >$dir/package_coverage_test.go
+            fi
+          done
+
+      - name: Run unit tests
+        run: make test
+
+      - name: Upload coverage reports to Codecov
+        if: ${{ github.repository == 'kubewharf/kubeadmiral' && matrix.go-version == '1.19' }}
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.out
+          flags: unittests
+          fail_ci_if_error: true
+          verbose: true
 
   lint:
     runs-on: ubuntu-latest

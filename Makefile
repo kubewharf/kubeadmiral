@@ -147,10 +147,10 @@ lint-new: lint
 # Run tests
 .PHONY: test
 test:
-	go test -race -coverprofile coverage0.out ./pkg/...
+	go test -race -coverpkg=./pkg/... -coverprofile coverage.out.tmp ./pkg/...
 # exclude generated files from coverage calculation
-	sed '/generated/d' coverage0.out > coverage.out
-	rm coverage0.out
+	sed '/generated/d' coverage.out.tmp > coverage.out
+	rm coverage.out.tmp
 
 # Run e2e tests
 .PHONY: e2e
