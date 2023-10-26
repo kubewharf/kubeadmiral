@@ -54,6 +54,15 @@ func (pl *ClusterResourcesFit) Filter(
 		return framework.NewResult(framework.Error, err.Error())
 	}
 
+	// When a workload has been scheduled to the current cluster, the available resources of the current cluster
+	// currently does not (but should) include the amount of resources requested by Pods of the current workload.
+	// In the absence of ample resource buffer, rescheduling may mistakenly
+	// evict the workload from the current cluster.
+	// Disable this plugin for rescheduling as a temporary workaround.
+	if _, alreadyScheduled := su.CurrentClusters[cluster.Name]; alreadyScheduled {
+		return framework.NewResult(framework.Success)
+	}
+
 	insufficientResources := fitsRequest(su, cluster)
 
 	if len(insufficientResources) != 0 {

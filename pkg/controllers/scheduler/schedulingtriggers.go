@@ -421,7 +421,7 @@ func getClusterAPIResourceTypesHashes(clusters []*fedcorev1a1.FederatedCluster) 
 			case lhs.Version != rhs.Version:
 				return lhs.Version < rhs.Version
 			case lhs.Kind != rhs.Kind:
-				return lhs.Kind != rhs.Kind
+				return lhs.Kind < rhs.Kind
 			case lhs.PluralName != rhs.PluralName:
 				return lhs.PluralName < rhs.PluralName
 			case lhs.Scope != rhs.Scope:
