@@ -510,7 +510,7 @@ func (m *federatedInformerManager) Start(ctx context.Context) {
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
-				if deleted, ok := obj.(*cache.DeletedFinalStateUnknown); ok {
+				if deleted, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 					obj = deleted.Obj
 					if obj == nil {
 						return
