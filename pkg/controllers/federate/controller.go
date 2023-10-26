@@ -125,7 +125,7 @@ func NewFederateController(
 		Generator: func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler {
 			return cache.FilteringResourceEventHandler{
 				FilterFunc: func(obj interface{}) bool {
-					if deleted, ok := obj.(*cache.DeletedFinalStateUnknown); ok {
+					if deleted, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 						obj = deleted.Obj
 					}
 					uns := obj.(*unstructured.Unstructured)
@@ -148,7 +148,7 @@ func NewFederateController(
 
 	if _, err := fedObjectInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
-			if deleted, ok := obj.(*cache.DeletedFinalStateUnknown); ok {
+			if deleted, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 				obj = deleted.Obj
 			}
 			fedObj := obj.(*fedcorev1a1.FederatedObject)
