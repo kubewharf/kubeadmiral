@@ -155,3 +155,27 @@ EOF
     exit 1
   fi
 }
+
+function dev-up::clean() {
+  local HOST_CLUSTER_NAME=${1}
+  local MEMBER_CLUSTER_NAME=${2}
+  local NUM_MEMBER_CLUSTERS=${3}
+  local CLUSTER_PROVIDER=${4}
+
+  if [[ "${NUM_MEMBER_CLUSTERS}" -gt "0" ]]; then
+    if [[ $CLUSTER_PROVIDER == "kind" ]]; then
+      kind delete cluster --name="${HOST_CLUSTER_NAME}"
+      for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
+        kind delete cluster --name="${MEMBER_CLUSTER_NAME}-${i}"
+      done
+    elif [[ $CLUSTER_PROVIDER == "kwok" ]]; then
+      kwokctl delete cluster --name="${HOST_CLUSTER_NAME}" || true
+      for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
+        kwokctl delete cluster --name="$MEMBER_CLUSTER_NAME-${i}" || true
+      done
+    else
+      echo "Invalid provider, only kwok or kind allowed"
+      exit 1
+    fi
+  fi
+}

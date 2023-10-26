@@ -6,6 +6,7 @@ GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 GOPROXY ?= $(shell go env GOPROXY)
 TARGET_NAME ?= kubeadmiral-controller-manager
+DEBUG_TARGET_NAME ?= $(TARGET_NAME)_debug
 
 # image information
 REGISTRY ?= ghcr.io/kubewharf
@@ -33,20 +34,38 @@ all: build
 build:
 	BUILD_FLAGS="$(BUILD_FLAGS)" TARGET_NAME="$(TARGET_NAME)" GOPROXY="$(GOPROXY)" bash hack/make-rules/build.sh
 
+# Debug build
+.PHONY: build-debug
+build-debug: BUILD_FLAGS+=-race
+build-debug: TARGET_NAME:=$(DEBUG_TARGET_NAME)
+build-debug: build
+
 # Start a local kubeadmiral cluster for developers.
 #
 # It will directly start the kubeadmiral control-plane cluster(excluding the kubeadmiral-controller-manager) and three member-clusters.
-# Users can run the kubeadmiral-controller-manager component through binary for easy debugging, e.g.:
-# ./output/bin/darwin/amd64/kubeadmiral-controller-manager_debug \
-#    --klog-logtostderr=false \
-#    --klog-log-file "./kubeadmiral.log" \
-#    --kubeconfig "$HOME/.kube/kubeadmiral/kubeadmiral-host.yaml" \
-#    2>/dev/null
+# Users can run the kubeadmiral-controller-manager component through binary for easy debugging using make dev-run.
 .PHONY: dev-up
 dev-up:
-	make clean-local-cluster
 	bash hack/make-rules/dev-up.sh
-	make debug
+	make build-debug
+
+# Clean up the clusters created by dev-up.
+.PHONY: dev-clean
+dev-clean:
+	bash hack/make-rules/dev-clean.sh
+
+# Run the kubeadmiral-controller-manager component with sane defaults for development.
+.PHONY: dev-run
+dev-run:
+	./output/bin/$(GOOS)/$(GOARCH)/$(DEBUG_TARGET_NAME) \
+		--enable-leader-elect=false \
+		--worker-count=5 \
+		--kubeconfig=${HOME}/.kube/kubeadmiral/kubeadmiral-host.yaml \
+		--klog-v=4 \
+		--klog-add-dir-header=true \
+		--klog-logtostderr=false \
+		--klog-log-file=/dev/stdout \
+		--cluster-join-timeout=15s 2>&1
 
 # Local up the KubeAdmiral.
 #
@@ -62,12 +81,6 @@ dev-up:
 local-up:
 	make clean-local-cluster
 	REGION="$(REGION)" NUM_MEMBER_CLUSTERS="$(NUM_MEMBER_CLUSTERS)" bash hack/make-rules/local-up.sh
-
-# Debug build
-.PHONY: debug
-debug: BUILD_FLAGS+=-race
-debug: TARGET_NAME:=$(TARGET_NAME)_debug
-debug: build
 
 # Build binaries and docker images.
 # The supported OS is linux, and user can specify the arch type (only amd64,arm64,arm are supported)
