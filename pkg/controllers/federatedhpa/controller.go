@@ -2,22 +2,27 @@ package federatedhpa
 
 import (
 	"context"
+	"fmt"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	"github.com/pkg/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/bijection"
@@ -27,22 +32,19 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
+	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
 const (
-	FederatedHPAControllerName  = "federated-hpa"
+	FederatedHPAControllerName         = "federatedhpa-controller"
+	PrefixedFederatedHPAControllerName = common.DefaultPrefix + FederatedHPAControllerName
+
 	FederatedHPAMode            = "hpa-mode"
 	FederatedHPAModeFederation  = "federation"
 	FederatedHPAModeDistributed = "distributed"
 	FederatedHPAModeDefault     = ""
 )
-
-type Resource struct {
-	gvk       schema.GroupVersionKind
-	namespace string
-	name      string
-}
 
 type FederatedHPAController struct {
 	name string
@@ -52,20 +54,19 @@ type FederatedHPAController struct {
 	propagationPolicyInformer        fedcorev1a1informers.PropagationPolicyInformer
 	clusterPropagationPolicyInformer fedcorev1a1informers.ClusterPropagationPolicyInformer
 
-	kubeClient    kubernetes.Interface
 	fedClient     fedclient.Interface
 	dynamicClient dynamic.Interface
 
-	worker worker.ReconcileWorker[Resource]
+	worker               worker.ReconcileWorker[Resource]
+	cacheSyncRateLimiter workqueue.RateLimiter
 
-	scaleTargetRefMapping map[schema.GroupVersionKind]string               // hpa 的 scaleTargetRef 的路径
-	workloadHPAMapping    *bijection.OneToManyRelation[Resource, Resource] // workload 和 HPA 的1对多映射【多个hpa可以指向同一workload，尽管会冲突，但是无法拦截】
-	ppWorkloadMapping     *bijection.OneToManyRelation[Resource, Resource] // PP 和 HPA有关联的workload 的1对多映射【多个workload可以被同一个PP管理】
+	scaleTargetRefMapping map[schema.GroupVersionKind]string
+	workloadHPAMapping    *bijection.OneToManyRelation[Resource, Resource]
+	ppWorkloadMapping     *bijection.OneToManyRelation[Resource, Resource]
 
+	metrics       stats.Metrics
+	logger        klog.Logger
 	eventRecorder record.EventRecorder
-
-	metrics stats.Metrics
-	logger  klog.Logger
 }
 
 func NewFederatedHPAController(
@@ -89,9 +90,14 @@ func NewFederatedHPAController(
 		propagationPolicyInformer:        propagationPolicyInformer,
 		clusterPropagationPolicyInformer: clusterPropagationPolicyInformer,
 
-		kubeClient:    kubeClient,
 		fedClient:     fedClient,
 		dynamicClient: dynamicClient,
+
+		cacheSyncRateLimiter: workqueue.NewItemExponentialFailureRateLimiter(100*time.Millisecond, 10*time.Second),
+
+		scaleTargetRefMapping: map[schema.GroupVersionKind]string{},
+		workloadHPAMapping:    bijection.NewOneToManyRelation[Resource, Resource](),
+		ppWorkloadMapping:     bijection.NewOneToManyRelation[Resource, Resource](),
 
 		metrics:       metrics,
 		logger:        logger.WithValues("controller", FederatedHPAControllerName),
@@ -99,7 +105,7 @@ func NewFederatedHPAController(
 	}
 
 	f.worker = worker.NewReconcileWorker[Resource](
-		"fed-hpa-controller",
+		FederatedHPAControllerName,
 		f.reconcile,
 		worker.RateLimiterOptions{},
 		workerCount,
@@ -120,12 +126,12 @@ func NewFederatedHPAController(
 	}
 
 	if _, err := fedObjectInformer.Informer().AddEventHandler(
-		eventhandlers.NewTriggerOnGenerationChanges(f.enqueueFedHPAForFederatedObjects),
+		eventhandlers.NewTriggerOnAllChanges(f.enqueueFedHPAForFederatedObjects),
 	); err != nil {
 		return nil, err
 	}
 	if _, err := clusterFedObjectInformer.Informer().AddEventHandler(
-		eventhandlers.NewTriggerOnGenerationChanges(f.enqueueFedHPAForFederatedObjects),
+		eventhandlers.NewTriggerOnAllChanges(f.enqueueFedHPAForFederatedObjects),
 	); err != nil {
 		return nil, err
 	}
@@ -142,12 +148,87 @@ func NewFederatedHPAController(
 	}
 
 	if err := informerManager.AddFTCUpdateHandler(func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
-		f.handleFTCUpdate(latest)
+		if lastObserved == nil && latest != nil ||
+			lastObserved != nil && latest != nil && isHPAFTCAnnoChanged(lastObserved, latest) {
+			f.enqueueFederatedObjectsForFTC(latest)
+		}
 	}); err != nil {
 		return nil, err
 	}
 
 	return f, nil
+}
+
+func (f *FederatedHPAController) enqueueFedHPAForFederatedObjects(fo metav1.Object) {
+	key, err := fedObjectToSourceObjectResource(fo)
+	if err != nil {
+		f.logger.Error(err, "Failed to get source object resource from fed object")
+		return
+	}
+
+	if f.isHPAType(fo) {
+		f.worker.EnqueueWithDelay(key, 3*time.Second)
+		return
+	}
+
+	if hpas, exist := f.workloadHPAMapping.LookupByT1(key); exist {
+		for hpa := range hpas {
+			f.worker.Enqueue(hpa)
+		}
+	}
+}
+
+func (f *FederatedHPAController) enqueueFedHPAForPropagationPolicy(policy metav1.Object) {
+	key := policyObjectToResource(policy)
+
+	if workloads, exist := f.ppWorkloadMapping.LookupByT1(key); exist {
+		for workload := range workloads {
+			if hpas, exist := f.workloadHPAMapping.LookupByT1(workload); exist {
+				for hpa := range hpas {
+					f.worker.Enqueue(hpa)
+				}
+			}
+		}
+	}
+}
+
+func (f *FederatedHPAController) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedTypeConfig) {
+	logger := f.logger.WithValues("ftc", ftc.GetName())
+
+	if scaleTargetRefPath, ok := ftc.GetAnnotations()[HPAScaleTargetRefPath]; ok {
+		f.scaleTargetRefMapping[ftc.GetSourceTypeGVK()] = scaleTargetRefPath
+	} else {
+		delete(f.scaleTargetRefMapping, ftc.GetSourceTypeGVK())
+		return
+	}
+
+	logger.V(2).Info("Enqueue federated objects for FTC")
+
+	allObjects := []fedcorev1a1.GenericFederatedObject{}
+	fedObjects, err := f.fedObjectInformer.Lister().List(labels.Everything())
+	if err != nil {
+		logger.Error(err, "Failed to enqueue FederatedObjects for policy")
+		return
+	}
+	for _, obj := range fedObjects {
+		allObjects = append(allObjects, obj)
+	}
+
+	for _, obj := range allObjects {
+		templateMetadata, err := obj.GetSpec().GetTemplateMetadata()
+		if err != nil {
+			logger.Error(err, "Failed to get source GVK from FederatedObject, will not enqueue")
+			continue
+		}
+		if templateMetadata.GroupVersionKind() == ftc.GetSourceTypeGVK() {
+			sourceObjectResource, err := fedObjectToSourceObjectResource(obj)
+			if err != nil {
+				logger.Error(err, "Failed to get source Resource from FederatedObject, will not enqueue")
+				continue
+			}
+			f.worker.Enqueue(sourceObjectResource)
+		}
+	}
 }
 
 func (f *FederatedHPAController) HasSynced() bool {
@@ -178,8 +259,8 @@ func (f *FederatedHPAController) Run(ctx context.Context) {
 }
 
 func (f *FederatedHPAController) reconcile(ctx context.Context, key Resource) (status worker.Result) {
-	f.metrics.Counter(metrics.FederateControllerThroughput, 1)
-	ctx, logger := logging.InjectLoggerValues(ctx, "source-object", key.QualifiedName().String(), "gvk", key.gvk)
+	f.metrics.Counter(metrics.FederateHPAControllerThroughput, 1)
+	ctx, logger := logging.InjectLoggerValues(ctx, "source-hpa-object", key.QualifiedName().String(), "gvk", key.gvk)
 
 	startTime := time.Now()
 
@@ -189,200 +270,172 @@ func (f *FederatedHPAController) reconcile(ctx context.Context, key Resource) (s
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()
 
-	// 获取联邦层的 hpa
-	ftc, exists := f.informerManager.GetResourceFTC(key.gvk)
+	hpaFTC, exists := f.informerManager.GetResourceFTC(key.gvk)
 	if !exists {
-		// This could happen if:
-		// 1) The InformerManager is not yet up-to-date.
-		// 2) We received an event from a FederatedObject without a corresponding FTC.
-		//
-		// For case 1, when the InformerManager becomes up-to-date, all the source objects will be enqueued once anyway,
-		// so it is safe to skip processing this time round. We do not have to process orphaned FederatedObjects.
-		// For case 2, the federate controller does not have to process FederatedObjects without a corresponding FTC.
+		// Waiting for func enqueueFederatedObjectsForFTC enqueue it again.
 		return worker.StatusAllOK
 	}
 
-	sourceGVR := ftc.GetSourceTypeGVR()
-	ctx, logger = logging.InjectLoggerValues(ctx, "ftc", ftc.Name, "gvr", sourceGVR)
+	hpaGVR := hpaFTC.GetSourceTypeGVR()
+	ctx, logger = logging.InjectLoggerValues(ctx, "hpa-ftc", hpaFTC.Name, "hpa-gvr", hpaGVR)
 
-	lister, hasSynced, exists := c.informerManager.GetResourceLister(key.gvk)
+	lister, hasSynced, exists := f.informerManager.GetResourceLister(key.gvk)
 	if !exists {
-		// Once again, this could happen if:
-		// 1) The InformerManager is not yet up-to-date.
-		// 2) We received an event from a FederatedObject without a corresponding FTC.
-		//
-		// See above comment for an explanation of the handling logic.
 		return worker.StatusAllOK
 	}
 	if !hasSynced() {
 		// If lister is not yet synced, simply reenqueue after a short delay.
-		logger.V(3).Info("Lister for source type not yet synced, will reenqueue")
+		logger.V(3).Info("Lister for source hpa type not yet synced, will reenqueue")
 		return worker.Result{
 			Success:      true,
-			RequeueAfter: pointer.Duration(c.cacheSyncRateLimiter.When(key)),
+			RequeueAfter: pointer.Duration(f.cacheSyncRateLimiter.When(key)),
 		}
 	}
-	c.cacheSyncRateLimiter.Forget(key)
+	f.cacheSyncRateLimiter.Forget(key)
 
-	sourceUns, err := lister.Get(key.QualifiedName().String())
-	if err != nil && apierrors.IsNotFound(err) {
-		logger.V(3).Info("No source object found, skip federating")
+	hpaUns, err := lister.Get(key.QualifiedName().String())
+	if err != nil {
+		logger.Error(err, "Failed to get source hpa object from store")
 		return worker.StatusAllOK
 	}
-	if err != nil {
-		logger.Error(err, "Failed to get source object from store")
-		return worker.StatusError
-	}
-	sourceObject := sourceUns.(*unstructured.Unstructured).DeepCopy()
+	hpaObject := hpaUns.(*unstructured.Unstructured).DeepCopy()
 
-	fedObjectName := naming.GenerateFederatedObjectName(sourceObject.GetName(), ftc.Name)
-	ctx, logger = logging.InjectLoggerValues(ctx, "federated-object", fedObjectName)
+	fedHPAObjectName := naming.GenerateFederatedObjectName(hpaObject.GetName(), hpaFTC.Name)
+	ctx, logger = logging.InjectLoggerValues(ctx, "federated-hpa-object", fedHPAObjectName)
 
-	fedObject, err := fedobjectadapters.GetFromLister(
-		c.fedObjectInformer.Lister(),
-		c.clusterFedObjectInformer.Lister(),
-		sourceObject.GetNamespace(),
-		fedObjectName,
+	fedHPAObject, err := fedobjectadapters.GetFromLister(
+		f.fedObjectInformer.Lister(),
+		nil,
+		hpaObject.GetNamespace(),
+		fedHPAObjectName,
 	)
-	if err != nil && !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to get federated object from store")
-		return worker.StatusError
-	}
-	if apierrors.IsNotFound(err) {
-		fedObject = nil
-	} else {
-		fedObject = fedObject.DeepCopyGenericFederatedObject()
-	}
-
-	hpa, err := f.getTargetResource(key)
-	hpaFO, err := f.getFOFromResource(key)
-
-	// 获取hpa指向的workload
-	scaleTargetRef, err := f.getScaleTargetRef(hpa)
-	// 查看hpa指向的workload是否改变
-	newWrokload := scaleTargetRefToResource(scaleTargetRef, key.namespace)
-	oldWorkload, exist := f.workloadHPAMapping.LookupByT2(key)
-	if exist {
-		f.workloadHPAMapping.DeleteT2(key)        // 老的workload存在则删除老的
-		f.ppWorkloadMapping.DeleteT2(oldWorkload) // 同样删除老workload及其关联的PP
-	}
-	// 添加新的workload关系
-	if err := f.workloadHPAMapping.Add(newWrokload, key); err != nil {
-		return worker.StatusError
-	}
-
-	// 获取workload的 fo
-	workloadFO, err := f.getFOFromResource(newWrokload)
-	workloadExist := true
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		logger.Error(err, "Failed to get federated hpa object from store")
+		return worker.StatusError
+	}
+
+	if ok, err := pendingcontrollers.ControllerDependenciesFulfilled(fedHPAObject, PrefixedFederatedHPAControllerName); err != nil {
+		logger.Error(err, "Failed to check controller dependencies")
+		return worker.StatusError
+	} else if !ok {
+		return worker.StatusAllOK
+	}
+
+	scaleTargetRef := f.scaleTargetRefMapping[key.gvk]
+	newWorkloadResource, err := scaleTargetRefToResource(hpaObject, scaleTargetRef)
+	if err != nil {
+		logger.Error(err, "Failed to get workload resource from hpa")
+		return worker.StatusError
+	}
+
+	ctx, logger = logging.InjectLoggerValues(ctx, "workload-object", newWorkloadResource.QualifiedName(), "workload-gvk", newWorkloadResource.gvk)
+
+	oldWorkloadResource, exist := f.workloadHPAMapping.LookupByT2(key)
+	if exist {
+		f.workloadHPAMapping.DeleteT2(key)
+		f.ppWorkloadMapping.DeleteT2(oldWorkloadResource)
+	}
+	if err := f.workloadHPAMapping.Add(newWorkloadResource, key); err != nil {
+		logger.Error(err, "Failed to add workload and hpa mapping")
+		return worker.StatusError
+	}
+	workloadExist := true
+	fedWorkload, err := f.getFedWorkLoadFromResource(newWorkloadResource)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			logger.Error(err, "Failed to get fed workload from fed workload resource")
 			return worker.StatusError
 		}
 		workloadExist = false
 	}
-	// 从workload的fo上获取pp
+
 	var pp fedcorev1a1.GenericPropagationPolicy
 	if workloadExist {
-		newPPResource := getPPFromFo(workloadFO)                // 当前workload关联的pp
-		_, exist := f.ppWorkloadMapping.LookupByT2(newWrokload) //workload之前关联的PP
-		if exist {                                              // 存在老的PP则清除，因为可能已经过时
-			f.ppWorkloadMapping.DeleteT2(newWrokload)
-		}
+		newPPResource := getPPResourceFromFedWorkload(fedWorkload)
 		if newPPResource != nil {
-			// 存在新PP则写入新关系
-			if err := f.ppWorkloadMapping.Add(newPPResource, newWrokload); err != nil {
+			_, exist = f.ppWorkloadMapping.LookupByT2(newWorkloadResource)
+			if exist {
+				f.ppWorkloadMapping.DeleteT2(newWorkloadResource)
+			}
+
+			if err := f.ppWorkloadMapping.Add(*newPPResource, newWorkloadResource); err != nil {
+				logger.Error(err, "Failed to add workload and pp mapping")
 				return worker.StatusError
 			}
 
-			pp, err = f.getPP(newPPResource) // 获取pp内容
-			if err != nil {
-				if errors.IsNotFound(err) {
-					return worker.StatusAllOK
-				}
+			pp, err = f.getPPFromResource(newPPResource)
+			if err != nil && !apierrors.IsNotFound(err) {
+				logger.Error(err, "Failed to get pp from pp resource")
 				return worker.StatusError
 			}
 		}
 	}
 
-	switch hpa.GetLabels()[FederatedHPAMode] {
+	switch hpaObject.GetLabels()[FederatedHPAMode] {
 	case FederatedHPAModeFederation:
-		if err := f.addPendingController(hpaFO, "fed-hpa-controller"); err != nil {
+		if res := f.addFedHPAPendingController(ctx, fedHPAObject); res != worker.StatusAllOK {
 			return worker.StatusError
 		}
-		if !workloadExist || isDividedPP(pp) {
-			if err := f.addFedHPAAnnotation(hpa, "fed-hpa-enabled", "true"); err != nil {
-				return worker.StatusError
-			}
-			return worker.StatusAllOK
+
+		if !workloadExist || isPPExist(pp) && isPPDivided(pp) {
+			return f.addFedHPALabel(ctx, hpaObject, hpaGVR, HPAEnableKey, common.AnnotationValueTrue)
+		} else {
+			return f.removeFedHPALabel(ctx, hpaObject, hpaGVR, HPAEnableKey)
 		}
-		if err := f.removeFedHPAAnnotation(hpa, "fed-hpa-enabled"); err != nil {
-			return worker.StatusError
-		}
-		return worker.StatusAllOK
 
 	case FederatedHPAModeDistributed, FederatedHPAModeDefault:
-		if err := f.removeFedHPAAnnotation(hpa, "fed-hpa-enabled"); err != nil {
+		if res := f.removeFedHPALabel(ctx, hpaObject, hpaGVR, HPAEnableKey); res != worker.StatusAllOK {
 			return worker.StatusError
 		}
-		if !workloadExist || !isDividedPP(pp) &&
-			isFollowerEnabled(pp) &&
-			isWorkloadRetained(workloadFO) &&
-			doseHPAFollowTheWorkload(hpa, workloadFO) {
-			if err := f.removeFedHPAAnnotation(hpa, "fed-hpa-enabled"); err != nil {
-				return worker.StatusError
-			}
-			if err := f.removePendingController(hpaFO, "fed-hpa-controller"); err != nil {
-				return worker.StatusError
-			}
-			return worker.StatusAllOK
+
+		if !workloadExist || isPPExist(pp) &&
+			!isPPDivided(pp) &&
+			isPPFollowerEnabled(pp) &&
+			isWorkloadRetainReplicas(fedWorkload) &&
+			isHPAFollowTheWorkload(ctx, hpaObject, fedWorkload) {
+			return f.removePendingController(ctx, hpaFTC, fedHPAObject)
+		} else {
+			return f.addFedHPAPendingController(ctx, fedHPAObject)
 		}
-		if err := f.addPendingController(hpaFO, "fed-hpa-controller"); err != nil {
-			return worker.StatusError
-		}
-		return worker.StatusAllOK
 	}
 
 	return worker.StatusAllOK
 }
 
-func (f *FederatedHPAController) enqueueFedHPAForFederatedObjects(fo metav1.Object) {
-	key := ObjectToResource(fo)
-	if f.isHPAType(fo) {
-		f.worker.Enqueue(key)
-		return
+func (f *FederatedHPAController) getFedWorkLoadFromResource(workload Resource) (fedcorev1a1.GenericFederatedObject, error) {
+	workloadFTC, exists := f.informerManager.GetResourceFTC(workload.gvk)
+	if !exists {
+		return nil, errors.New(fmt.Sprintf("failed to get workload %v ftc", workloadFTC))
 	}
 
-	if hpas, exist := f.workloadHPAMapping.LookupByT1(key); exist {
-		for hpa := range hpas {
-			f.worker.Enqueue(hpa)
-		}
+	fedObjectName := naming.GenerateFederatedObjectName(workload.name, workloadFTC.Name)
+
+	// get fed hpa object
+	fedObject, err := fedobjectadapters.GetFromLister(
+		f.fedObjectInformer.Lister(),
+		nil,
+		workload.namespace,
+		fedObjectName,
+	)
+	if err != nil {
+		return nil, err
 	}
+
+	return fedObject, nil
 }
 
-func (f *FederatedHPAController) enqueueFedHPAForPropagationPolicy(policy metav1.Object) {
-	key := ObjectToResource(policy)
-
-	if workloads, exist := f.ppWorkloadMapping.LookupByT1(key); exist {
-		for workload := range workloads {
-			if hpas, exist := f.workloadHPAMapping.LookupByT1(workload); exist {
-				for hpa := range hpas {
-					f.worker.Enqueue(hpa)
-				}
-			}
+func (f *FederatedHPAController) getPPFromResource(resource *Resource) (fedcorev1a1.GenericPropagationPolicy, error) {
+	if resource.gvk.Kind == PropagationPolicyKind {
+		pp, err := f.propagationPolicyInformer.Lister().PropagationPolicies(resource.namespace).Get(resource.name)
+		if err != nil {
+			return nil, err
 		}
-	}
-}
-
-func (f *FederatedHPAController) handleFTCUpdate(ftc *fedcorev1a1.FederatedTypeConfig) {
-	resourceGVK := schema.GroupVersionKind{
-		Group:   ftc.Spec.SourceType.Group,
-		Version: ftc.Spec.SourceType.Version,
-		Kind:    ftc.Spec.SourceType.Kind,
+		return pp, nil
 	}
 
-	if ftc == nil {
-		delete(f.scaleTargetRefMapping, resourceGVK)
-	} else {
-		// todo: 解析scaleTargetRef
+	cpp, err := f.clusterPropagationPolicyInformer.Lister().Get(resource.name)
+	if err != nil {
+		return nil, err
 	}
+	return cpp, nil
 }

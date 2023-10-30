@@ -19,6 +19,8 @@ package bijection
 import (
 	"fmt"
 	"sync"
+
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 func NewBijection[T1, T2 comparable]() *Bijection[T1, T2] {
@@ -111,7 +113,7 @@ func (m *Bijection[T1, T2]) DeleteT2(key T2) bool {
 func NewOneToManyRelation[T1, T2 comparable]() *OneToManyRelation[T1, T2] {
 	return &OneToManyRelation[T1, T2]{
 		lock:      sync.RWMutex{},
-		t1ToT2Map: map[T1]map[T2]interface{}{},
+		t1ToT2Map: map[T1]sets.Set[T2]{},
 		t2ToT1Map: map[T2]T1{},
 	}
 }
@@ -119,11 +121,11 @@ func NewOneToManyRelation[T1, T2 comparable]() *OneToManyRelation[T1, T2] {
 type OneToManyRelation[T1, T2 comparable] struct {
 	lock sync.RWMutex
 
-	t1ToT2Map map[T1]map[T2]interface{}
+	t1ToT2Map map[T1]sets.Set[T2]
 	t2ToT1Map map[T2]T1
 }
 
-func (o *OneToManyRelation[T1, T2]) LookupByT1(key T1) (value map[T2]interface{}, exists bool) {
+func (o *OneToManyRelation[T1, T2]) LookupByT1(key T1) (value sets.Set[T2], exists bool) {
 	o.lock.RLock()
 	defer o.lock.RUnlock()
 
@@ -152,7 +154,7 @@ func (o *OneToManyRelation[T1, T2]) Add(t1 T1, t2 T2) error {
 	defer o.lock.Unlock()
 
 	if val, ok := o.t1ToT2Map[t1]; ok {
-		if _, ok := val[t2]; ok {
+		if val.Has(t2) {
 			return fmt.Errorf("%v is already mapped to %v", t1, t2)
 		}
 	}
@@ -161,7 +163,13 @@ func (o *OneToManyRelation[T1, T2]) Add(t1 T1, t2 T2) error {
 		return fmt.Errorf("%v is already mapped to %v", t2, val)
 	}
 
-	o.t1ToT2Map[t1][t2] = nil
+	set := o.t1ToT2Map[t1]
+	if set == nil {
+		set = sets.New(t2)
+	}
+	set.Insert(t2)
+	o.t1ToT2Map[t1] = set
+
 	o.t2ToT1Map[t2] = t1
 
 	return nil
@@ -195,7 +203,7 @@ func (o *OneToManyRelation[T1, T2]) DeleteT2(key T2) bool {
 	}
 
 	delete(o.t2ToT1Map, key)
-	delete(o.t1ToT2Map[val], key)
+	o.t1ToT2Map[val].Delete(key)
 
 	if len(o.t1ToT2Map[val]) == 0 {
 		delete(o.t1ToT2Map, val)

@@ -358,7 +358,7 @@ func (c *Controller) inferFollowers(
 		return nil, nil
 	}
 
-	followersFromAnnotation, err := getFollowersFromAnnotation(fedObj)
+	followersFromAnnotation, err := GetFollowersFromAnnotation(fedObj)
 	if err != nil {
 		return nil, err
 	}
