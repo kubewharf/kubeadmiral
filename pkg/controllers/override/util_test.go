@@ -636,7 +636,7 @@ func TestParseOverrides(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			overrides, err := parseOverrides(testCase.policy, testCase.clusters)
+			overrides, err := parseOverrides(testCase.policy, testCase.clusters, nil)
 			if (err != nil) != testCase.isErrorExpected {
 				t.Fatalf("err = %v, but testCase.isErrorExpected = %v", err, testCase.isErrorExpected)
 			}
