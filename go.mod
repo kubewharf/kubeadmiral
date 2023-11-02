@@ -15,7 +15,7 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.4
-	golang.org/x/sync v0.2.0
+	golang.org/x/sync v0.4.0
 	golang.org/x/time v0.3.0
 	k8s.io/api v0.26.6
 	k8s.io/apiextensions-apiserver v0.26.6
