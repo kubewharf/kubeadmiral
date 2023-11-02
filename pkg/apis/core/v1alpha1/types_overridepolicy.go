@@ -81,10 +81,53 @@ type TargetClusters struct {
 	ClusterAffinity []ClusterSelectorTerm `json:"clusterAffinity,omitempty"`
 }
 
+// Overriders contains a list of override patches.
+// The order in which the override patches take effect is:
+// - Image
+// - JsonPatch
 type Overriders struct {
+	// Image specifies the overriders that applies to the image.
+	// +optional
+	Image []ImageOverrider `json:"image,omitempty"`
 	// JsonPatch specifies overriders in a syntax similar to RFC6902 JSON Patch.
 	// +optional
 	JsonPatch []JsonPatchOverrider `json:"jsonpatch,omitempty"`
+}
+
+type ImageOverrider struct {
+	// ContainerNames are ignored when ImagePath is set.
+	// If empty, the image override rule applies to all containers.
+	// Otherwise, this override targets the specified container(s) or init container(s) in the pod template.
+	// +optional
+	ContainerNames []string `json:"containerNames,omitempty"`
+
+	// ImagePath indicates the image path to target.
+	// For Example: /spec/template/spec/containers/0/image
+	//
+	// If empty, the system will automatically resolve the image path if the resource type is
+	// Pod, CronJob, Deployment, StatefulSet, DaemonSet or Job.
+	// +optional
+	ImagePath string `json:"imagePath,omitempty"`
+
+	// Operations are the specific operations to be performed on ContainerNames or ImagePath.
+	Operations []Operation `json:"operations"`
+}
+
+type Operation struct {
+	// ImageComponent is the part of the image to override.
+	// +kubebuilder:validation:Enum=Registry;Repository;Tag;Digest
+	ImageComponent string `json:"imageComponent"`
+
+	// Operator specifies the operation.
+	// If omitted, defaults to "replace".
+	// For "add" operation, if the ImageComponent already has a value, it behaves as a "replace" action.
+	// +kubebuilder:validation:Enum=add;remove;replace
+	// +optional
+	Operator string `json:"operator,omitempty"`
+
+	// Value is the value required by the operation.
+	// +optional
+	Value string `json:"value,omitempty"`
 }
 
 type JsonPatchOverrider struct {

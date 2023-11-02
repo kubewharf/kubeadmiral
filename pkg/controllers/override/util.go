@@ -91,6 +91,7 @@ func lookForMatchedPolicies(
 func parseOverrides(
 	policy fedcorev1a1.GenericOverridePolicy,
 	clusters []*fedcorev1a1.FederatedCluster,
+	fedObject fedcorev1a1.GenericFederatedObject,
 ) (overridesMap, error) {
 	overridesMap := make(overridesMap)
 
@@ -114,13 +115,16 @@ func parseOverrides(
 				continue
 			}
 
-			for _, overrider := range rule.Overriders.JsonPatch {
-				patch, err := policyJsonPatchOverriderToOverridePatch(&overrider)
-				if err != nil {
-					return nil, err
-				}
-				patches = append(patches, *patch)
+			currPatches, err := parsePatchesFromOverriders(fedObject, rule.Overriders)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"failed to parse patches from policy %q's overrideRules[%v], error: %w",
+					policy.GetName(),
+					i,
+					err,
+				)
 			}
+			patches = append(patches, currPatches...)
 		}
 
 		if len(patches) > 0 {
@@ -212,23 +216,48 @@ func isClusterMatchedByClusterAffinity(
 	return clusterselector.MatchClusterSelectorTerms(clusterAffinity, cluster)
 }
 
-func policyJsonPatchOverriderToOverridePatch(
-	overrider *fedcorev1a1.JsonPatchOverrider,
-) (*fedcorev1a1.OverridePatch, error) {
-	overridePatch := &fedcorev1a1.OverridePatch{
-		Op:   overrider.Operator,
-		Path: overrider.Path,
+func parsePatchesFromOverriders(
+	fedObject fedcorev1a1.GenericFederatedObject,
+	overriders *fedcorev1a1.Overriders,
+) (fedcorev1a1.OverridePatches, error) {
+	patches := make(fedcorev1a1.OverridePatches, 0)
+
+	if imagePatches, err := parseImageOverriders(fedObject, overriders.Image); err != nil {
+		return nil, fmt.Errorf("failed to parse image overriders: %w", err)
+	} else {
+		patches = append(patches, imagePatches...)
 	}
 
-	// JsonPatch overrider's value is of apiextensionsv1.JSON type, which must be unmarshalled first.
-	if len(overrider.Value.Raw) > 0 {
-		err := json.Unmarshal(overrider.Value.Raw, &overridePatch.Value)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal jsonpatch overrider value %q: %w", &overrider.Value.Raw, err)
+	if jsonPatches, err := parseJSONPatchOverriders(overriders.JsonPatch); err != nil {
+		return nil, fmt.Errorf("failed to parse jsonPatch overriders: %w", err)
+	} else {
+		patches = append(patches, jsonPatches...)
+	}
+
+	return patches, nil
+}
+
+func parseJSONPatchOverriders(
+	overriders []fedcorev1a1.JsonPatchOverrider,
+) (fedcorev1a1.OverridePatches, error) {
+	patches := make(fedcorev1a1.OverridePatches, 0)
+	for _, overrider := range overriders {
+		overridePatch := &fedcorev1a1.OverridePatch{
+			Op:   overrider.Operator,
+			Path: overrider.Path,
 		}
+
+		// JsonPatch overrider's value is of apiextensionsv1.JSON type, which must be unmarshalled first.
+		if len(overrider.Value.Raw) > 0 {
+			err := json.Unmarshal(overrider.Value.Raw, &overridePatch.Value)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal jsonpatch overrider value %q: %w", &overrider.Value.Raw, err)
+			}
+		}
+		patches = append(patches, *overridePatch)
 	}
 
-	return overridePatch, nil
+	return patches, nil
 }
 
 func setOverrides(federatedObj fedcorev1a1.GenericFederatedObject, overridesMap overridesMap) error {

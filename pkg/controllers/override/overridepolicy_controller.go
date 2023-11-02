@@ -346,7 +346,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 	var overrides overridesMap
 	// Apply overrides from each policy in order
 	for _, policy := range policies {
-		newOverrides, err := parseOverrides(policy, placedClusters)
+		newOverrides, err := parseOverrides(policy, placedClusters, fedObject)
 		if err != nil {
 			c.eventRecorder.Eventf(
 				fedObject,
@@ -357,6 +357,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 				policy.GetKey(),
 				err.Error(),
 			)
+			keyedLogger.Error(err, "Failed to parse overrides")
 			return worker.StatusError
 		}
 		overrides = mergeOverrides(overrides, newOverrides)

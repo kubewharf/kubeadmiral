@@ -40,6 +40,48 @@ spec:
                       overriders:
                         description: Overriders specify the overriders to be applied in the target clusters.
                         properties:
+                          image:
+                            description: Image specifies the overriders that applies to the image.
+                            items:
+                              properties:
+                                containerNames:
+                                  description: ContainerNames are ignored when ImagePath is set. If empty, the image override rule applies to all containers. Otherwise, this override targets the specified container(s) or init container(s) in the pod template.
+                                  items:
+                                    type: string
+                                  type: array
+                                imagePath:
+                                  description: "ImagePath indicates the image path to target. For Example: /spec/template/spec/containers/0/image \n If empty, the system will automatically resolve the image path if the resource type is Pod, CronJob, Deployment, StatefulSet, DaemonSet or Job."
+                                  type: string
+                                operations:
+                                  description: Operations are the specific operations to be performed on ContainerNames or ImagePath.
+                                  items:
+                                    properties:
+                                      imageComponent:
+                                        description: ImageComponent is the part of the image to override.
+                                        enum:
+                                          - Registry
+                                          - Repository
+                                          - Tag
+                                          - Digest
+                                        type: string
+                                      operator:
+                                        description: Operator specifies the operation. If omitted, defaults to "replace". For "add" operation, if the ImageComponent already has a value, it behaves as a "replace" action.
+                                        enum:
+                                          - add
+                                          - remove
+                                          - replace
+                                        type: string
+                                      value:
+                                        description: Value is the value required by the operation.
+                                        type: string
+                                    required:
+                                      - imageComponent
+                                    type: object
+                                  type: array
+                              required:
+                                - operations
+                              type: object
+                            type: array
                           jsonpatch:
                             description: JsonPatch specifies overriders in a syntax similar to RFC6902 JSON Patch.
                             items:

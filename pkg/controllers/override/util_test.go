@@ -330,6 +330,7 @@ func TestLookForMatchedPolicies(t *testing.T) {
 func TestParseOverrides(t *testing.T) {
 	testCases := map[string]struct {
 		policy               fedcorev1a1.GenericOverridePolicy
+		fedObject            fedcorev1a1.GenericFederatedObject
 		clusters             []*fedcorev1a1.FederatedCluster
 		expectedOverridesMap overridesMap
 		isErrorExpected      bool
@@ -632,11 +633,202 @@ func TestParseOverrides(t *testing.T) {
 			},
 			isErrorExpected: false,
 		},
+		"multiple clusters multiple Overrides(jsonPatch and image) - should return overrides for each cluster in order": {
+			fedObject: generateFedObjWithDeployment(
+				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+			policy: &fedcorev1a1.OverridePolicy{
+				Spec: fedcorev1a1.GenericOverridePolicySpec{
+					OverrideRules: []fedcorev1a1.OverrideRule{
+						{
+							TargetClusters: &fedcorev1a1.TargetClusters{
+								// should match all clusters
+								ClusterSelector: map[string]string{},
+							},
+							Overriders: &fedcorev1a1.Overriders{
+								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
+									{
+										Operator: "add",
+										Path:     "/a/b",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`1`),
+										},
+									},
+									{
+										Operator: "replace",
+										Path:     "/aa/bb",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`["banana","mango"]`),
+										},
+									},
+								},
+								Image: []fedcorev1a1.ImageOverrider{
+									{
+										Operations: generateOperationsOnFullComponent(
+											OperatorReplace,
+											"all.cluster.io",
+											"all-cluster/echo-server",
+											"all",
+											"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+									},
+								},
+							},
+						},
+						{
+							TargetClusters: &fedcorev1a1.TargetClusters{
+								Clusters: []string{
+									"cluster1",
+								},
+							},
+							Overriders: &fedcorev1a1.Overriders{
+								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
+									{
+										Operator: "replace",
+										Path:     "/c/d",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`1`),
+										},
+									},
+									{
+										Operator: "replace",
+										Path:     "/cc/dd",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`{"key":"value"}`),
+										},
+									},
+								},
+								Image: []fedcorev1a1.ImageOverrider{
+									{
+										Operations: generateOperationsOnFullComponent(
+											OperatorReplace,
+											"cluster.one.io",
+											"cluster-one/echo-server",
+											"one",
+											"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+									},
+								},
+							},
+						},
+						{
+							TargetClusters: &fedcorev1a1.TargetClusters{
+								Clusters: []string{
+									"cluster2",
+								},
+							},
+							Overriders: &fedcorev1a1.Overriders{
+								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
+									{
+										Operator: "remove",
+										Path:     "/e/f",
+									},
+									{
+										Operator: "add",
+										Path:     "/ee/ff",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`"some string"`),
+										},
+									},
+								},
+								Image: []fedcorev1a1.ImageOverrider{
+									{
+										Operations: generateOperationsOnFullComponent(
+											OperatorReplace,
+											"cluster.two.io",
+											"cluster-two/echo-server",
+											"two",
+											"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "cluster1",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "cluster2",
+					},
+				},
+			},
+			expectedOverridesMap: overridesMap{
+				"cluster1": fedcorev1a1.OverridePatches{
+					generatePatch(
+						OperatorReplace,
+						"/spec/template/spec/containers/0/image",
+						"all.cluster.io/all-cluster/echo-server:all@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+					),
+					{
+						Op:    "add",
+						Path:  "/a/b",
+						Value: asJSON(float64(1)),
+					},
+					{
+						Op:    "replace",
+						Path:  "/aa/bb",
+						Value: asJSON([]interface{}{"banana", "mango"}),
+					},
+					generatePatch(
+						OperatorReplace,
+						"/spec/template/spec/containers/0/image",
+						"cluster.one.io/cluster-one/echo-server:one@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+					),
+					{
+						Op:    "replace",
+						Path:  "/c/d",
+						Value: asJSON(float64(1)),
+					},
+					{
+						Op:   "replace",
+						Path: "/cc/dd",
+						Value: asJSON(map[string]interface{}{
+							"key": "value",
+						}),
+					},
+				},
+				"cluster2": fedcorev1a1.OverridePatches{
+					generatePatch(
+						OperatorReplace,
+						"/spec/template/spec/containers/0/image",
+						"all.cluster.io/all-cluster/echo-server:all@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+					),
+					{
+						Op:    "add",
+						Path:  "/a/b",
+						Value: asJSON(float64(1)),
+					},
+					{
+						Op:    "replace",
+						Path:  "/aa/bb",
+						Value: asJSON([]interface{}{"banana", "mango"}),
+					},
+					generatePatch(
+						OperatorReplace,
+						"/spec/template/spec/containers/0/image",
+						"cluster.two.io/cluster-two/echo-server:two@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+					),
+					{
+						Op:   "remove",
+						Path: "/e/f",
+					},
+					{
+						Op:    "add",
+						Path:  "/ee/ff",
+						Value: asJSON("some string"),
+					},
+				},
+			},
+			isErrorExpected: false,
+		},
 	}
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			overrides, err := parseOverrides(testCase.policy, testCase.clusters)
+			overrides, err := parseOverrides(testCase.policy, testCase.clusters, testCase.fedObject)
 			if (err != nil) != testCase.isErrorExpected {
 				t.Fatalf("err = %v, but testCase.isErrorExpected = %v", err, testCase.isErrorExpected)
 			}
