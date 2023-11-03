@@ -1,3 +1,19 @@
+/*
+Copyright 2023 The KubeAdmiral Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package federatedhpa
 
 import (
@@ -6,7 +22,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	v2 "k8s.io/api/autoscaling/v2"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,10 +45,12 @@ const (
 	ClusterPropagationPolicyKind = "ClusterPropagationPolicy"
 
 	HPAScaleTargetRefPath = "hpa.kubeadmiral.io/scale-target-ref-path"
+	FedHPANotWorkReason   = "hpa.kubeadmiral.io/fed-hpa-not-work-reason"
 
 	HPAEnableKey = "fed-hpa-enabled"
 
 	EventReasonUpdateHPASourceObject = "UpdateHPASourceObject"
+	EventReasonUpdateHPAFedObject    = "UpdateHPAFedObject"
 )
 
 type Resource struct {
@@ -80,19 +98,65 @@ func policyObjectToResource(object metav1.Object) Resource {
 	return Resource{}
 }
 
+func generateFederationHPANotWorkReason(
+	isPropagationPolicyExist,
+	isPropagationPolicyDividedMode bool,
+) string {
+	var reasons []string
+	if !isPropagationPolicyExist {
+		reasons = append(reasons, "PropagationPolicy is not exist.")
+	}
+	if isPropagationPolicyExist && !isPropagationPolicyDividedMode {
+		reasons = append(reasons, "PropagationPolicy is not divide.")
+	}
+
+	return fmt.Sprintf("%v", reasons)
+}
+
+func generateDistributedHPANotWorkReason(
+	isPropagationPolicyExist,
+	isPropagationPolicyDuplicateMode,
+	isPropagationPolicyFollowerEnabled,
+	isWorkloadRetainReplicas,
+	isHPAFollowTheWorkload bool,
+) string {
+	var reasons []string
+	if !isPropagationPolicyExist {
+		reasons = append(reasons, "PropagationPolicy is not exist.")
+	}
+	if !isPropagationPolicyDuplicateMode {
+		reasons = append(reasons, "PropagationPolicy is not Duplicate.")
+	}
+	if !isPropagationPolicyFollowerEnabled {
+		reasons = append(reasons, "PropagationPolicy follower is not enable.")
+	}
+	if !isWorkloadRetainReplicas {
+		reasons = append(reasons, "Workload is not retain replicas.")
+	}
+	if !isHPAFollowTheWorkload {
+		reasons = append(reasons, "Hpa is not follow the workload.")
+	}
+
+	return fmt.Sprintf("%v", reasons)
+}
+
 func isHPAFTCAnnoChanged(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) bool {
 	return lastObserved.GetAnnotations()[HPAScaleTargetRefPath] != latest.GetAnnotations()[HPAScaleTargetRefPath]
 }
 
-func isPPExist(pp fedcorev1a1.GenericPropagationPolicy) bool {
+func isPropagationPolicyExist(pp fedcorev1a1.GenericPropagationPolicy) bool {
 	return pp != nil
 }
 
-func isPPDivided(pp fedcorev1a1.GenericPropagationPolicy) bool {
-	return pp.GetSpec().SchedulingMode == fedcorev1a1.SchedulingModeDivide
+func isPropagationPolicyDividedMode(pp fedcorev1a1.GenericPropagationPolicy) bool {
+	return pp != nil && pp.GetSpec().SchedulingMode == fedcorev1a1.SchedulingModeDivide
 }
 
-func isPPFollowerEnabled(pp fedcorev1a1.GenericPropagationPolicy) bool {
+func isPropagationPolicyDuplicateMode(pp fedcorev1a1.GenericPropagationPolicy) bool {
+	return pp != nil && pp.GetSpec().SchedulingMode == fedcorev1a1.SchedulingModeDuplicate
+}
+
+func isPropagationPolicyFollowerEnabled(pp fedcorev1a1.GenericPropagationPolicy) bool {
 	return !pp.GetSpec().DisableFollowerScheduling
 }
 
@@ -122,8 +186,8 @@ func isHPAFollowTheWorkload(
 	})
 }
 
-func (f *FederatedHPAController) isHPAType(fo metav1.Object) bool {
-	if federatedObject, ok := fo.(*fedcorev1a1.FederatedObject); !ok {
+func (f *FederatedHPAController) isHPAType(fedObject metav1.Object) bool {
+	if federatedObject, ok := fedObject.(*fedcorev1a1.FederatedObject); !ok {
 		return false
 	} else {
 		metadata, _ := federatedObject.Spec.GetTemplateMetadata()
@@ -132,7 +196,7 @@ func (f *FederatedHPAController) isHPAType(fo metav1.Object) bool {
 			return false
 		}
 
-		// HPA gvk already been stored
+		// HPA gvk has already been stored
 		if _, ok := f.scaleTargetRefMapping[ftc.GetSourceTypeGVK()]; ok {
 			return true
 		}
@@ -166,7 +230,7 @@ func scaleTargetRefToResource(
 	fieldValMap := fieldVal.(map[string]interface{})
 
 	// todo: does it work for all types？
-	var targetResource v2.CrossVersionObjectReference
+	var targetResource autoscalingv1.CrossVersionObjectReference
 	if err = runtime.DefaultUnstructuredConverter.FromUnstructured(fieldValMap, &targetResource); err != nil {
 		return Resource{}, err
 	}
@@ -183,7 +247,7 @@ func scaleTargetRefToResource(
 	}, nil
 }
 
-func getPPResourceFromFedWorkload(workload fedcorev1a1.GenericFederatedObject) *Resource {
+func getPropagationPolicyResourceFromFedWorkload(workload fedcorev1a1.GenericFederatedObject) *Resource {
 	if policyName, exists := workload.GetLabels()[scheduler.ClusterPropagationPolicyNameLabel]; exists {
 		return &Resource{
 			gvk: schema.GroupVersionKind{
@@ -210,7 +274,7 @@ func getPPResourceFromFedWorkload(workload fedcorev1a1.GenericFederatedObject) *
 	return nil
 }
 
-func (f *FederatedHPAController) addFedHPALabel(
+func (f *FederatedHPAController) addHPALabel(
 	ctx context.Context,
 	uns *unstructured.Unstructured,
 	gvr schema.GroupVersionResource,
@@ -220,7 +284,7 @@ func (f *FederatedHPAController) addFedHPALabel(
 
 	labels := uns.GetLabels()
 	if labels == nil {
-		labels = map[string]string{}
+		labels = make(map[string]string, 1)
 	}
 	if oldValue, ok := labels[key]; ok && oldValue == value {
 		return worker.StatusAllOK
@@ -246,7 +310,7 @@ func (f *FederatedHPAController) addFedHPALabel(
 	return worker.StatusAllOK
 }
 
-func (f *FederatedHPAController) removeFedHPALabel(
+func (f *FederatedHPAController) removeHPALabel(
 	ctx context.Context,
 	uns *unstructured.Unstructured,
 	gvr schema.GroupVersionResource,
@@ -329,7 +393,7 @@ func (f *FederatedHPAController) addFedHPAPendingController(
 	); err != nil {
 		errMsg := "Failed to add pending controller"
 		logger.Error(err, errMsg)
-		f.eventRecorder.Eventf(fedObject, corev1.EventTypeWarning, EventReasonUpdateHPASourceObject,
+		f.eventRecorder.Eventf(fedObject, corev1.EventTypeWarning, EventReasonUpdateHPAFedObject,
 			errMsg+" %v, err: %v, retry later", fedObject, err)
 		if apierrors.IsConflict(err) {
 			return worker.StatusConflict
@@ -368,13 +432,75 @@ func (f *FederatedHPAController) removePendingController(
 		); err != nil {
 			errMsg := "Failed to remove pending controller"
 			logger.Error(err, errMsg)
-			f.eventRecorder.Eventf(fedObject, corev1.EventTypeWarning, EventReasonUpdateHPASourceObject,
+			f.eventRecorder.Eventf(fedObject, corev1.EventTypeWarning, EventReasonUpdateHPAFedObject,
 				errMsg+" %v, err: %v, retry later", fedObject, err)
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
 			}
 			return worker.StatusError
 		}
+	}
+
+	return worker.StatusAllOK
+}
+
+func (f *FederatedHPAController) addFedHPANotWorkReasonAnno(
+	ctx context.Context,
+	uns *unstructured.Unstructured,
+	gvr schema.GroupVersionResource,
+	key string,
+	value string,
+) worker.Result {
+	logger := klog.FromContext(ctx)
+
+	annotations := uns.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string, 1)
+	}
+	annotations[key] = value
+	uns.SetAnnotations(annotations)
+
+	logger.V(1).Info("Adding fed hpa not work reason annotation")
+	_, err := f.dynamicClient.Resource(gvr).Namespace(uns.GetNamespace()).
+		UpdateStatus(ctx, uns, metav1.UpdateOptions{})
+	if err != nil {
+		errMsg := "Failed to add fed hpa not work reason annotation"
+		logger.Error(err, errMsg)
+		f.eventRecorder.Eventf(uns, corev1.EventTypeWarning, EventReasonUpdateHPASourceObject,
+			errMsg+" %v, err: %v, retry later", key, err)
+		if apierrors.IsConflict(err) {
+			return worker.StatusConflict
+		}
+		return worker.StatusError
+	}
+
+	return worker.StatusAllOK
+}
+
+func (f *FederatedHPAController) removeFedHPANotWorkReasonAnno(
+	ctx context.Context,
+	uns *unstructured.Unstructured,
+	gvr schema.GroupVersionResource,
+	key string,
+) worker.Result {
+	logger := klog.FromContext(ctx)
+
+	annotations := uns.GetAnnotations()
+	delete(annotations, key)
+	uns.SetAnnotations(annotations)
+
+	logger.V(1).Info("Removing fed hpa not work reason annotation")
+	_, err := f.dynamicClient.Resource(gvr).Namespace(uns.GetNamespace()).
+		UpdateStatus(ctx, uns, metav1.UpdateOptions{})
+	if err != nil {
+		errMsg := "Failed to remove fed hpa not work reason annotation"
+		logger.Error(err, errMsg)
+		f.eventRecorder.Eventf(uns, corev1.EventTypeWarning, EventReasonUpdateHPASourceObject,
+			errMsg+" %v, err: %v, retry later", key, err)
+		if apierrors.IsConflict(err) {
+			return worker.StatusConflict
+		}
+		return worker.StatusError
 	}
 
 	return worker.StatusAllOK
