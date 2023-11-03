@@ -1,3 +1,19 @@
+/*
+Copyright 2023 The KubeAdmiral Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package federatedhpa
 
 import (
@@ -6,6 +22,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -39,6 +56,9 @@ import (
 const (
 	FederatedHPAControllerName         = "federatedhpa-controller"
 	PrefixedFederatedHPAControllerName = common.DefaultPrefix + FederatedHPAControllerName
+
+	EventReasonFederationHPANotWork  = "FederationHPANotWork"
+	EventReasonDistributedHPANotWork = "DistributedHPANotWork"
 
 	FederatedHPAMode            = "hpa-mode"
 	FederatedHPAModeFederation  = "federation"
@@ -126,23 +146,23 @@ func NewFederatedHPAController(
 	}
 
 	if _, err := fedObjectInformer.Informer().AddEventHandler(
-		eventhandlers.NewTriggerOnAllChanges(f.enqueueFedHPAForFederatedObjects),
+		eventhandlers.NewTriggerOnAllChanges(f.enqueueFedHPAObjectsForFederatedObjects),
 	); err != nil {
 		return nil, err
 	}
 	if _, err := clusterFedObjectInformer.Informer().AddEventHandler(
-		eventhandlers.NewTriggerOnAllChanges(f.enqueueFedHPAForFederatedObjects),
+		eventhandlers.NewTriggerOnAllChanges(f.enqueueFedHPAObjectsForFederatedObjects),
 	); err != nil {
 		return nil, err
 	}
 
 	if _, err := propagationPolicyInformer.Informer().AddEventHandler(
-		eventhandlers.NewTriggerOnChanges(predicate, f.enqueueFedHPAForPropagationPolicy),
+		eventhandlers.NewTriggerOnChanges(predicate, f.enqueueFedHPAObjectsForPropagationPolicy),
 	); err != nil {
 		return nil, err
 	}
 	if _, err := clusterPropagationPolicyInformer.Informer().AddEventHandler(
-		eventhandlers.NewTriggerOnChanges(predicate, f.enqueueFedHPAForPropagationPolicy),
+		eventhandlers.NewTriggerOnChanges(predicate, f.enqueueFedHPAObjectsForPropagationPolicy),
 	); err != nil {
 		return nil, err
 	}
@@ -150,7 +170,7 @@ func NewFederatedHPAController(
 	if err := informerManager.AddFTCUpdateHandler(func(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) {
 		if lastObserved == nil && latest != nil ||
 			lastObserved != nil && latest != nil && isHPAFTCAnnoChanged(lastObserved, latest) {
-			f.enqueueFederatedObjectsForFTC(latest)
+			f.enqueueFedHPAObjectsForFTC(latest)
 		}
 	}); err != nil {
 		return nil, err
@@ -159,14 +179,14 @@ func NewFederatedHPAController(
 	return f, nil
 }
 
-func (f *FederatedHPAController) enqueueFedHPAForFederatedObjects(fo metav1.Object) {
-	key, err := fedObjectToSourceObjectResource(fo)
+func (f *FederatedHPAController) enqueueFedHPAObjectsForFederatedObjects(fedObject metav1.Object) {
+	key, err := fedObjectToSourceObjectResource(fedObject)
 	if err != nil {
 		f.logger.Error(err, "Failed to get source object resource from fed object")
 		return
 	}
 
-	if f.isHPAType(fo) {
+	if f.isHPAType(fedObject) {
 		f.worker.EnqueueWithDelay(key, 3*time.Second)
 		return
 	}
@@ -178,7 +198,7 @@ func (f *FederatedHPAController) enqueueFedHPAForFederatedObjects(fo metav1.Obje
 	}
 }
 
-func (f *FederatedHPAController) enqueueFedHPAForPropagationPolicy(policy metav1.Object) {
+func (f *FederatedHPAController) enqueueFedHPAObjectsForPropagationPolicy(policy metav1.Object) {
 	key := policyObjectToResource(policy)
 
 	if workloads, exist := f.ppWorkloadMapping.LookupByT1(key); exist {
@@ -192,7 +212,7 @@ func (f *FederatedHPAController) enqueueFedHPAForPropagationPolicy(policy metav1
 	}
 }
 
-func (f *FederatedHPAController) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedTypeConfig) {
+func (f *FederatedHPAController) enqueueFedHPAObjectsForFTC(ftc *fedcorev1a1.FederatedTypeConfig) {
 	logger := f.logger.WithValues("ftc", ftc.GetName())
 
 	if scaleTargetRefPath, ok := ftc.GetAnnotations()[HPAScaleTargetRefPath]; ok {
@@ -272,7 +292,7 @@ func (f *FederatedHPAController) reconcile(ctx context.Context, key Resource) (s
 
 	hpaFTC, exists := f.informerManager.GetResourceFTC(key.gvk)
 	if !exists {
-		// Waiting for func enqueueFederatedObjectsForFTC enqueue it again.
+		// Waiting for func enqueueFedHPAObjectsForFTC enqueue it again.
 		return worker.StatusAllOK
 	}
 
@@ -328,7 +348,9 @@ func (f *FederatedHPAController) reconcile(ctx context.Context, key Resource) (s
 		return worker.StatusError
 	}
 
-	ctx, logger = logging.InjectLoggerValues(ctx, "workload-object", newWorkloadResource.QualifiedName(), "workload-gvk", newWorkloadResource.gvk)
+	ctx, logger = logging.InjectLoggerValues(ctx,
+		"workload-object", newWorkloadResource.QualifiedName(),
+		"workload-gvk", newWorkloadResource.gvk)
 
 	oldWorkloadResource, exist := f.workloadHPAMapping.LookupByT2(key)
 	if exist {
@@ -351,7 +373,7 @@ func (f *FederatedHPAController) reconcile(ctx context.Context, key Resource) (s
 
 	var pp fedcorev1a1.GenericPropagationPolicy
 	if workloadExist {
-		newPPResource := getPPResourceFromFedWorkload(fedWorkload)
+		newPPResource := getPropagationPolicyResourceFromFedWorkload(fedWorkload)
 		if newPPResource != nil {
 			_, exist = f.ppWorkloadMapping.LookupByT2(newWorkloadResource)
 			if exist {
@@ -363,7 +385,7 @@ func (f *FederatedHPAController) reconcile(ctx context.Context, key Resource) (s
 				return worker.StatusError
 			}
 
-			pp, err = f.getPPFromResource(newPPResource)
+			pp, err = f.getPropagationPolicyFromResource(newPPResource)
 			if err != nil && !apierrors.IsNotFound(err) {
 				logger.Error(err, "Failed to get pp from pp resource")
 				return worker.StatusError
@@ -377,24 +399,58 @@ func (f *FederatedHPAController) reconcile(ctx context.Context, key Resource) (s
 			return worker.StatusError
 		}
 
-		if !workloadExist || isPPExist(pp) && isPPDivided(pp) {
-			return f.addFedHPALabel(ctx, hpaObject, hpaGVR, HPAEnableKey, common.AnnotationValueTrue)
+		if !workloadExist || isPropagationPolicyDividedMode(pp) {
+			if res := f.removeFedHPANotWorkReasonAnno(ctx, hpaObject, hpaGVR, FedHPANotWorkReason); res != worker.StatusAllOK {
+				return worker.StatusError
+			}
+			return f.addHPALabel(ctx, hpaObject, hpaGVR, HPAEnableKey, common.AnnotationValueTrue)
 		} else {
-			return f.removeFedHPALabel(ctx, hpaObject, hpaGVR, HPAEnableKey)
+			hpaNotWorkReason := generateFederationHPANotWorkReason(isPropagationPolicyExist(pp), isPropagationPolicyDividedMode(pp))
+			f.eventRecorder.Eventf(
+				hpaObject,
+				corev1.EventTypeWarning,
+				EventReasonFederationHPANotWork,
+				"Federation HPA not work: %s",
+				hpaNotWorkReason,
+			)
+
+			if res := f.addFedHPANotWorkReasonAnno(ctx, hpaObject, hpaGVR, FedHPANotWorkReason, hpaNotWorkReason); res != worker.StatusAllOK {
+				return worker.StatusError
+			}
+			return f.removeHPALabel(ctx, hpaObject, hpaGVR, HPAEnableKey)
 		}
 
 	case FederatedHPAModeDistributed, FederatedHPAModeDefault:
-		if res := f.removeFedHPALabel(ctx, hpaObject, hpaGVR, HPAEnableKey); res != worker.StatusAllOK {
+		if res := f.removeHPALabel(ctx, hpaObject, hpaGVR, HPAEnableKey); res != worker.StatusAllOK {
 			return worker.StatusError
 		}
 
-		if !workloadExist || isPPExist(pp) &&
-			!isPPDivided(pp) &&
-			isPPFollowerEnabled(pp) &&
+		if !workloadExist || isPropagationPolicyDuplicateMode(pp) &&
+			isPropagationPolicyFollowerEnabled(pp) &&
 			isWorkloadRetainReplicas(fedWorkload) &&
 			isHPAFollowTheWorkload(ctx, hpaObject, fedWorkload) {
+			if res := f.removeFedHPANotWorkReasonAnno(ctx, hpaObject, hpaGVR, FedHPANotWorkReason); res != worker.StatusAllOK {
+				return worker.StatusError
+			}
 			return f.removePendingController(ctx, hpaFTC, fedHPAObject)
 		} else {
+			hpaNotWorkReason := generateDistributedHPANotWorkReason(
+				isPropagationPolicyExist(pp),
+				isPropagationPolicyDuplicateMode(pp),
+				isPropagationPolicyFollowerEnabled(pp),
+				isWorkloadRetainReplicas(fedWorkload),
+				isHPAFollowTheWorkload(ctx, hpaObject, fedWorkload))
+			f.eventRecorder.Eventf(
+				hpaObject,
+				corev1.EventTypeWarning,
+				EventReasonDistributedHPANotWork,
+				"Distributed HPA not work: %s",
+				hpaNotWorkReason,
+			)
+
+			if res := f.addFedHPANotWorkReasonAnno(ctx, hpaObject, hpaGVR, FedHPANotWorkReason, hpaNotWorkReason); res != worker.StatusAllOK {
+				return worker.StatusError
+			}
 			return f.addFedHPAPendingController(ctx, fedHPAObject)
 		}
 	}
@@ -410,7 +466,6 @@ func (f *FederatedHPAController) getFedWorkLoadFromResource(workload Resource) (
 
 	fedObjectName := naming.GenerateFederatedObjectName(workload.name, workloadFTC.Name)
 
-	// get fed hpa object
 	fedObject, err := fedobjectadapters.GetFromLister(
 		f.fedObjectInformer.Lister(),
 		nil,
@@ -424,7 +479,7 @@ func (f *FederatedHPAController) getFedWorkLoadFromResource(workload Resource) (
 	return fedObject, nil
 }
 
-func (f *FederatedHPAController) getPPFromResource(resource *Resource) (fedcorev1a1.GenericPropagationPolicy, error) {
+func (f *FederatedHPAController) getPropagationPolicyFromResource(resource *Resource) (fedcorev1a1.GenericPropagationPolicy, error) {
 	if resource.gvk.Kind == PropagationPolicyKind {
 		pp, err := f.propagationPolicyInformer.Lister().PropagationPolicies(resource.namespace).Get(resource.name)
 		if err != nil {

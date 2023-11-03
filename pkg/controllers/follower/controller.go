@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/scale/scheme/autoscalingv1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
@@ -73,6 +74,7 @@ var (
 		{Group: "", Kind: common.PodKind}:                       "",
 	}
 
+	// todo: dynamic add custom hpa
 	supportedFollowerTypes = sets.New(
 		schema.GroupKind{Group: "", Kind: common.ConfigMapKind},
 		schema.GroupKind{Group: "", Kind: common.SecretKind},
@@ -80,6 +82,7 @@ var (
 		schema.GroupKind{Group: "", Kind: common.ServiceAccountKind},
 		schema.GroupKind{Group: "", Kind: common.ServiceKind},
 		schema.GroupKind{Group: networkingv1.GroupName, Kind: common.IngressKind},
+		schema.GroupKind{Group: autoscalingv1.GroupName, Kind: common.HorizontalPodAutoscalerKind},
 	)
 )
 

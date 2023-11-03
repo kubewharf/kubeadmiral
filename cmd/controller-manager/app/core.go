@@ -337,7 +337,7 @@ func startFederatedHPAController(
 		controllerCtx.WorkerCount,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error creating status-aggregator controller: %w", err)
+		return nil, fmt.Errorf("error creating federated-hpa controller: %w", err)
 	}
 
 	go federatedHPAController.Run(ctx)

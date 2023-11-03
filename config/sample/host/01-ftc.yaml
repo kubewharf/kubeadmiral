@@ -401,3 +401,26 @@ spec:
     fields:
       - metadata.creationTimestamp
       - status
+---
+apiVersion: core.kubeadmiral.io/v1alpha1
+kind: FederatedTypeConfig
+metadata:
+  annotations:
+    hpa.kubeadmiral.io/scale-target-ref-path: spec.scaleTargetRef
+  name: horizontalpodautoscalers.autoscaling
+spec:
+  sourceType:
+    group: autoscaling
+    kind: HorizontalPodAutoscaler
+    pluralName: horizontalpodautoscalers
+    scope: Namespaced
+    version: v1
+  controllers:
+    - - kubeadmiral.io/federatedhpa-controller
+    - - kubeadmiral.io/global-scheduler
+    - - kubeadmiral.io/overridepolicy-controller
+  statusCollection:
+    enabled: true
+    fields:
+      - metadata.creationTimestamp
+      - status
