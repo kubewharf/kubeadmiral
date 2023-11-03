@@ -343,7 +343,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		return worker.StatusError
 	}
 
-	var overrides overridesMap
+	var overrides, currentOverrides overridesMap
 	// Apply overrides from each policy in order
 	for _, policy := range policies {
 		newOverrides, err := parseOverrides(policy, placedClusters, fedObject)
@@ -363,7 +363,8 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		overrides = mergeOverrides(overrides, newOverrides)
 	}
 
-	currentOverrides := fedObject.GetSpec().GetControllerOverrides(PrefixedControllerName)
+	currentOverridesList := fedObject.GetSpec().GetControllerOverrides(PrefixedControllerName)
+	currentOverrides = convertOverridesListToMap(currentOverridesList)
 	needsUpdate := !equality.Semantic.DeepEqual(overrides, currentOverrides)
 
 	if needsUpdate {

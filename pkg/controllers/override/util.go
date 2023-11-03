@@ -325,3 +325,16 @@ func setOverrides(federatedObj fedcorev1a1.GenericFederatedObject, overridesMap 
 
 	return nil
 }
+
+func convertOverridesListToMap(overridesList []fedcorev1a1.ClusterReferenceWithPatches) overridesMap {
+	var ret overridesMap
+
+	for _, override := range overridesList {
+		if ret == nil {
+			ret = make(overridesMap)
+		}
+		ret[override.Cluster] = override.Patches
+	}
+
+	return ret
+}
