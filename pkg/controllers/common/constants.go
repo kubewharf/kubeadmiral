@@ -190,3 +190,9 @@ var (
 //
 //nolint:lll
 const MaxFederatedObjectNameLength = 253
+
+// HPAScaleTargetRefPath defines the fed hpa annotations and labels
+const (
+	HPAScaleTargetRefPath = DefaultPrefix + "scale-target-ref-path"
+	FedHPAEnableKey       = DefaultPrefix + "fed-hpa-enabled"
+)

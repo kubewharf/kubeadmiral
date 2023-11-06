@@ -32,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/scale/scheme/autoscalingv1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
@@ -74,7 +73,6 @@ var (
 		{Group: "", Kind: common.PodKind}:                       "",
 	}
 
-	// todo: dynamic add custom hpa
 	supportedFollowerTypes = sets.New(
 		schema.GroupKind{Group: "", Kind: common.ConfigMapKind},
 		schema.GroupKind{Group: "", Kind: common.SecretKind},
@@ -82,7 +80,6 @@ var (
 		schema.GroupKind{Group: "", Kind: common.ServiceAccountKind},
 		schema.GroupKind{Group: "", Kind: common.ServiceKind},
 		schema.GroupKind{Group: networkingv1.GroupName, Kind: common.IngressKind},
-		schema.GroupKind{Group: autoscalingv1.GroupName, Kind: common.HorizontalPodAutoscalerKind},
 	)
 )
 
@@ -105,6 +102,7 @@ type Controller struct {
 
 	worker                   worker.ReconcileWorker[objectGroupKindKey]
 	informerManager          informermanager.InformerManager
+	ftcInformer              fedcorev1a1informers.FederatedTypeConfigInformer
 	fedObjectInformer        fedcorev1a1informers.FederatedObjectInformer
 	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer
 
@@ -122,6 +120,7 @@ func NewFollowerController(
 	kubeClient kubernetes.Interface,
 	fedClient fedclient.Interface,
 	informerManager informermanager.InformerManager,
+	ftcInformer fedcorev1a1informers.FederatedTypeConfigInformer,
 	fedObjectInformer fedcorev1a1informers.FederatedObjectInformer,
 	clusterFedObjectInformer fedcorev1a1informers.ClusterFederatedObjectInformer,
 	metrics stats.Metrics,
@@ -131,6 +130,7 @@ func NewFollowerController(
 	c := &Controller{
 		gkToFTCName:                make(map[schema.GroupKind]string),
 		informerManager:            informerManager,
+		ftcInformer:                ftcInformer,
 		fedObjectInformer:          fedObjectInformer,
 		clusterFedObjectInformer:   clusterFedObjectInformer,
 		cacheObservedFromLeaders:   newBidirectionalCache[fedcorev1a1.LeaderReference, FollowerReference](),
@@ -214,7 +214,8 @@ func (c *Controller) enqueueSupportedType(object interface{}) {
 
 	templateGK := template.GroupVersionKind().GroupKind()
 	_, isLeader := leaderPodSpecPaths[templateGK]
-	isFollower := supportedFollowerTypes.Has(templateGK)
+	isHPAType, _ := c.isHPAType(templateGK)
+	isFollower := supportedFollowerTypes.Has(templateGK) || isHPAType
 	if isLeader || isFollower {
 		c.worker.Enqueue(objectGroupKindKey{
 			sourceGK:   templateGK,
@@ -230,7 +231,12 @@ func (c *Controller) reconcile(ctx context.Context, key objectGroupKindKey) (sta
 		return c.reconcileLeader(ctx, key)
 	}
 
-	if supportedFollowerTypes.Has(key.sourceGK) {
+	isHPAType, err := c.isHPAType(key.sourceGK)
+	if err != nil {
+		return worker.StatusError
+	}
+
+	if supportedFollowerTypes.Has(key.sourceGK) || isHPAType {
 		return c.reconcileFollower(ctx, key)
 	}
 
@@ -557,4 +563,19 @@ func (c *Controller) leaderPlacementUnion(
 	}
 
 	return clusters, nil
+}
+
+func (c *Controller) isHPAType(gk schema.GroupKind) (bool, error) {
+	c.gkToFTCLock.RLock()
+	defer c.gkToFTCLock.RUnlock()
+
+	ftcName := c.gkToFTCName[gk]
+	ftc, err := c.ftcInformer.Lister().Get(ftcName)
+	if err != nil {
+		c.logger.Error(err, "Failed to get ftc")
+		return false, err
+	}
+
+	_, ok := ftc.GetAnnotations()[common.HPAScaleTargetRefPath]
+	return ok, nil
 }
