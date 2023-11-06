@@ -16,6 +16,10 @@ limitations under the License.
 
 package nsautoprop
 
-import "github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+import (
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+)
 
 var NoAutoPropagationAnnotation = common.DefaultPrefix + "no-auto-propagation"
+
+const AllClustersToAdoptRegexp = `{"regexp":".*"}`

@@ -246,7 +246,12 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 			return d.recordOperationError(ctxWithTimeout, fedcorev1a1.RetrievalFailed, clusterName, op, wrappedErr)
 		}
 
-		if d.skipAdoptingResources {
+		canAdopt, err := adoption.FilterToAdoptCluster(d.fedResource.Object(), clusterName)
+		if err != nil {
+			return d.recordOperationError(ctxWithTimeout, fedcorev1a1.AlreadyExists, clusterName, op, err)
+		}
+
+		if d.skipAdoptingResources || !canAdopt {
 			result = d.recordOperationError(
 				ctxWithTimeout,
 				fedcorev1a1.AlreadyExists,
