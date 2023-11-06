@@ -910,7 +910,8 @@ func (s *Scheduler) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedType
 	logger.V(2).Info("Enqueue federated objects for FTC")
 
 	allObjects := []fedcorev1a1.GenericFederatedObject{}
-	fedObjects, err := s.fedObjectInformer.Lister().List(labels.Everything())
+	labelsSet := labels.Set{ftc.GetSourceTypeGVK().GroupVersion().String(): ftc.GetSourceTypeGVK().Kind}
+	fedObjects, err := s.fedObjectInformer.Lister().List(labels.SelectorFromSet(labelsSet))
 	if err != nil {
 		logger.Error(err, "Failed to enqueue FederatedObjects for policy")
 		return
@@ -928,16 +929,9 @@ func (s *Scheduler) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedType
 	}
 
 	for _, obj := range allObjects {
-		templateMetadata, err := obj.GetSpec().GetTemplateMetadata()
-		if err != nil {
-			logger.Error(err, "Failed to get source GVK from FederatedObject, will not enqueue")
-			continue
-		}
-		if templateMetadata.GroupVersionKind() == ftc.GetSourceTypeGVK() {
-			s.worker.Enqueue(common.NewQualifiedName(obj))
-			s.metrics.Counter(utilmetrics.QueueIncomingFederatedObjectTotal, 1,
-				stats.Tag{Name: "event", Value: FTCChanged})
-		}
+		s.worker.Enqueue(common.NewQualifiedName(obj))
+		s.metrics.Counter(utilmetrics.QueueIncomingFederatedObjectTotal, 1,
+			stats.Tag{Name: "event", Value: FTCChanged})
 	}
 }
 

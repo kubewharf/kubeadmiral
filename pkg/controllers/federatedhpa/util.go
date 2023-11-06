@@ -23,8 +23,6 @@ import (
 
 	"github.com/pkg/errors"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,19 +33,14 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/follower"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler"
-	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
 	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
-	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
 )
 
 const (
 	PropagationPolicyKind        = "PropagationPolicy"
 	ClusterPropagationPolicyKind = "ClusterPropagationPolicy"
 
-	HPAScaleTargetRefPath = "hpa.kubeadmiral.io/scale-target-ref-path"
-	FedHPANotWorkReason   = "hpa.kubeadmiral.io/fed-hpa-not-work-reason"
-
-	HPAEnableKey = "fed-hpa-enabled"
+	FedHPANotWorkReason = common.DefaultPrefix + "fed-hpa-not-work-reason"
 
 	EventReasonUpdateHPASourceObject = "UpdateHPASourceObject"
 	EventReasonUpdateHPAFedObject    = "UpdateHPAFedObject"
@@ -98,10 +91,7 @@ func policyObjectToResource(object metav1.Object) Resource {
 	return Resource{}
 }
 
-func generateFederationHPANotWorkReason(
-	isPropagationPolicyExist,
-	isPropagationPolicyDividedMode bool,
-) string {
+func generateFederationHPANotWorkReason(isPropagationPolicyExist, isPropagationPolicyDividedMode bool) string {
 	var reasons []string
 	if !isPropagationPolicyExist {
 		reasons = append(reasons, "PropagationPolicy is not exist.")
@@ -141,7 +131,7 @@ func generateDistributedHPANotWorkReason(
 }
 
 func isHPAFTCAnnoChanged(lastObserved, latest *fedcorev1a1.FederatedTypeConfig) bool {
-	return lastObserved.GetAnnotations()[HPAScaleTargetRefPath] != latest.GetAnnotations()[HPAScaleTargetRefPath]
+	return lastObserved.GetAnnotations()[common.HPAScaleTargetRefPath] != latest.GetAnnotations()[common.HPAScaleTargetRefPath]
 }
 
 func isPropagationPolicyExist(pp fedcorev1a1.GenericPropagationPolicy) bool {
@@ -160,11 +150,7 @@ func isPropagationPolicyFollowerEnabled(pp fedcorev1a1.GenericPropagationPolicy)
 	return !pp.GetSpec().DisableFollowerScheduling
 }
 
-func isHPAFollowTheWorkload(
-	ctx context.Context,
-	hpaUns *unstructured.Unstructured,
-	fedWorkload fedcorev1a1.GenericFederatedObject,
-) bool {
+func isHPAFollowTheWorkload(ctx context.Context, hpaUns *unstructured.Unstructured, fedWorkload fedcorev1a1.GenericFederatedObject) bool {
 	logger := klog.FromContext(ctx)
 	if hpaUns.GetAnnotations()[common.DisableFollowingAnnotation] == common.AnnotationValueTrue {
 		return false
@@ -186,28 +172,23 @@ func isHPAFollowTheWorkload(
 	})
 }
 
-func (f *FederatedHPAController) isHPAType(fedObject metav1.Object) bool {
-	if federatedObject, ok := fedObject.(*fedcorev1a1.FederatedObject); !ok {
+func (f *FederatedHPAController) isHPAType(resourceGVK schema.GroupVersionKind) bool {
+	ftc, exists := f.informerManager.GetResourceFTC(resourceGVK)
+	if !exists {
 		return false
+	}
+
+	// HPA gvk has already been stored
+	if _, ok := f.scaleTargetRefMapping[resourceGVK]; ok {
+		return true
+	}
+
+	if path, ok := ftc.Annotations[common.HPAScaleTargetRefPath]; ok {
+		f.scaleTargetRefMapping[resourceGVK] = path
+		return true
 	} else {
-		metadata, _ := federatedObject.Spec.GetTemplateMetadata()
-		ftc, exists := f.informerManager.GetResourceFTC(metadata.GroupVersionKind())
-		if !exists {
-			return false
-		}
-
-		// HPA gvk has already been stored
-		if _, ok := f.scaleTargetRefMapping[ftc.GetSourceTypeGVK()]; ok {
-			return true
-		}
-
-		if path, ok := ftc.Annotations[HPAScaleTargetRefPath]; ok {
-			f.scaleTargetRefMapping[ftc.GetSourceTypeGVK()] = path
-			return true
-		} else {
-			delete(f.scaleTargetRefMapping, ftc.GetSourceTypeGVK())
-			return false
-		}
+		delete(f.scaleTargetRefMapping, resourceGVK)
+		return false
 	}
 }
 
@@ -215,10 +196,7 @@ func isWorkloadRetainReplicas(fedObj metav1.Object) bool {
 	return fedObj.GetAnnotations()[common.RetainReplicasAnnotation] == common.AnnotationValueTrue
 }
 
-func scaleTargetRefToResource(
-	hpaUns *unstructured.Unstructured,
-	scaleTargetRef string,
-) (Resource, error) {
+func scaleTargetRefToResource(hpaUns *unstructured.Unstructured, scaleTargetRef string) (Resource, error) {
 	fieldVal, found, err := unstructured.NestedFieldCopy(hpaUns.Object, strings.Split(scaleTargetRef, ".")...)
 	if err != nil || !found {
 		if err != nil {
@@ -229,7 +207,7 @@ func scaleTargetRefToResource(
 	}
 	fieldValMap := fieldVal.(map[string]interface{})
 
-	// todo: does it work for all types？
+	// TODO: does it work for all types？
 	var targetResource autoscalingv1.CrossVersionObjectReference
 	if err = runtime.DefaultUnstructuredConverter.FromUnstructured(fieldValMap, &targetResource); err != nil {
 		return Resource{}, err
@@ -248,17 +226,6 @@ func scaleTargetRefToResource(
 }
 
 func getPropagationPolicyResourceFromFedWorkload(workload fedcorev1a1.GenericFederatedObject) *Resource {
-	if policyName, exists := workload.GetLabels()[scheduler.ClusterPropagationPolicyNameLabel]; exists {
-		return &Resource{
-			gvk: schema.GroupVersionKind{
-				Group:   fedcorev1a1.SchemeGroupVersion.Group,
-				Version: fedcorev1a1.SchemeGroupVersion.Version,
-				Kind:    ClusterPropagationPolicyKind,
-			},
-			name: policyName,
-		}
-	}
-
 	if policyName, exists := workload.GetLabels()[scheduler.PropagationPolicyNameLabel]; exists {
 		return &Resource{
 			gvk: schema.GroupVersionKind{
@@ -271,144 +238,84 @@ func getPropagationPolicyResourceFromFedWorkload(workload fedcorev1a1.GenericFed
 		}
 	}
 
+	if policyName, exists := workload.GetLabels()[scheduler.ClusterPropagationPolicyNameLabel]; exists {
+		return &Resource{
+			gvk: schema.GroupVersionKind{
+				Group:   fedcorev1a1.SchemeGroupVersion.Group,
+				Version: fedcorev1a1.SchemeGroupVersion.Version,
+				Kind:    ClusterPropagationPolicyKind,
+			},
+			name: policyName,
+		}
+	}
+
 	return nil
 }
 
-func (f *FederatedHPAController) addHPALabel(
-	ctx context.Context,
-	uns *unstructured.Unstructured,
-	gvr schema.GroupVersionResource,
-	key, value string,
-) worker.Result {
-	logger := klog.FromContext(ctx)
-
+func addHPALabel(uns *unstructured.Unstructured, key, value string) bool {
 	labels := uns.GetLabels()
 	if labels == nil {
 		labels = make(map[string]string, 1)
 	}
 	if oldValue, ok := labels[key]; ok && oldValue == value {
-		return worker.StatusAllOK
+		return false
 	}
 
 	labels[key] = value
 	uns.SetLabels(labels)
 
-	logger.V(1).Info("Adding fed hpa label of source object")
-	_, err := f.dynamicClient.Resource(gvr).Namespace(uns.GetNamespace()).
-		UpdateStatus(ctx, uns, metav1.UpdateOptions{})
-	if err != nil {
-		errMsg := "Failed to add fed hpa annotation"
-		logger.Error(err, errMsg)
-		f.eventRecorder.Eventf(uns, corev1.EventTypeWarning, EventReasonUpdateHPASourceObject,
-			errMsg+" %v, err: %v, retry later", key, err)
-		if apierrors.IsConflict(err) {
-			return worker.StatusConflict
-		}
-		return worker.StatusError
-	}
-
-	return worker.StatusAllOK
+	return true
 }
 
-func (f *FederatedHPAController) removeHPALabel(
-	ctx context.Context,
-	uns *unstructured.Unstructured,
-	gvr schema.GroupVersionResource,
-	key string,
-) worker.Result {
-	logger := klog.FromContext(ctx)
-
+func removeHPALabel(uns *unstructured.Unstructured, key string) bool {
 	labels := uns.GetLabels()
-	if labels == nil {
-		return worker.StatusAllOK
-	}
 	if _, ok := labels[key]; !ok {
-		return worker.StatusAllOK
+		return false
 	}
 
 	delete(labels, key)
 	uns.SetLabels(labels)
 
-	logger.V(1).Info("Removing fed hpa label of source object")
-	_, err := f.dynamicClient.Resource(gvr).Namespace(uns.GetNamespace()).
-		UpdateStatus(ctx, uns, metav1.UpdateOptions{})
-	if err != nil {
-		errMsg := "Failed to remove fed hpa label"
-		logger.Error(err, errMsg)
-		f.eventRecorder.Eventf(uns, corev1.EventTypeWarning, EventReasonUpdateHPASourceObject,
-			errMsg+" %v, err: %v, retry later", key, err)
-		if apierrors.IsConflict(err) {
-			return worker.StatusConflict
-		}
-		return worker.StatusError
-	}
-
-	return worker.StatusAllOK
+	return true
 }
 
-func (f *FederatedHPAController) addFedHPAPendingController(
+func addFedHPAPendingController(
 	ctx context.Context,
 	fedObject fedcorev1a1.GenericFederatedObject,
-) worker.Result {
+	ftc *fedcorev1a1.FederatedTypeConfig,
+) (bool, error) {
 	logger := klog.FromContext(ctx)
 
 	pendControllers, err := pendingcontrollers.GetPendingControllers(fedObject)
 	if err != nil {
 		logger.Error(err, "Failed to get pending controllers")
-		return worker.StatusError
+		return false, err
 	}
 
-	var hpaControllerExist bool
 	for _, controllers := range pendControllers {
 		for _, controller := range controllers {
 			if controller == PrefixedFederatedHPAControllerName {
-				hpaControllerExist = true
-				break
+				return false, nil
 			}
 		}
 	}
 
-	if hpaControllerExist {
-		return worker.StatusAllOK
-	}
-
-	if pendControllers == nil {
-		pendControllers = [][]string{{PrefixedFederatedHPAControllerName}}
-	} else {
-		pendControllers = append(pendControllers, []string{PrefixedFederatedHPAControllerName})
-	}
-
-	_, err = pendingcontrollers.SetPendingControllers(fedObject, pendControllers)
+	// TODO: By default, fed-hpa controller is the first controller.
+	// 	Otherwise, this code needs to be modified.
+	_, err = pendingcontrollers.SetPendingControllers(fedObject, ftc.GetControllers())
 	if err != nil {
 		logger.Error(err, "Failed to set pending controllers")
-		return worker.StatusError
+		return false, err
 	}
 
-	logger.V(1).Info("Adding pending controller")
-	if _, err = fedobjectadapters.Update(
-		ctx,
-		f.fedClient.CoreV1alpha1(),
-		fedObject,
-		metav1.UpdateOptions{},
-	); err != nil {
-		errMsg := "Failed to add pending controller"
-		logger.Error(err, errMsg)
-		f.eventRecorder.Eventf(fedObject, corev1.EventTypeWarning, EventReasonUpdateHPAFedObject,
-			errMsg+" %v, err: %v, retry later", fedObject, err)
-		if apierrors.IsConflict(err) {
-			return worker.StatusConflict
-		}
-		return worker.StatusError
-	}
-
-	return worker.StatusAllOK
+	return true, nil
 }
 
-func (f *FederatedHPAController) removePendingController(
+func removePendingController(
 	ctx context.Context,
 	ftc *fedcorev1a1.FederatedTypeConfig,
 	fedObject fedcorev1a1.GenericFederatedObject,
-) worker.Result {
+) (bool, error) {
 	logger := klog.FromContext(ctx)
 
 	updated, err := pendingcontrollers.UpdatePendingControllers(
@@ -419,89 +326,35 @@ func (f *FederatedHPAController) removePendingController(
 	)
 	if err != nil {
 		logger.Error(err, "Failed to update pending controllers")
-		return worker.StatusError
+		return false, err
 	}
 
-	if updated {
-		logger.V(1).Info("Removing pending controller")
-		if _, err = fedobjectadapters.Update(
-			ctx,
-			f.fedClient.CoreV1alpha1(),
-			fedObject,
-			metav1.UpdateOptions{},
-		); err != nil {
-			errMsg := "Failed to remove pending controller"
-			logger.Error(err, errMsg)
-			f.eventRecorder.Eventf(fedObject, corev1.EventTypeWarning, EventReasonUpdateHPAFedObject,
-				errMsg+" %v, err: %v, retry later", fedObject, err)
-			if apierrors.IsConflict(err) {
-				return worker.StatusConflict
-			}
-			return worker.StatusError
-		}
-	}
-
-	return worker.StatusAllOK
+	return updated, nil
 }
 
-func (f *FederatedHPAController) addFedHPANotWorkReasonAnno(
-	ctx context.Context,
-	uns *unstructured.Unstructured,
-	gvr schema.GroupVersionResource,
-	key string,
-	value string,
-) worker.Result {
-	logger := klog.FromContext(ctx)
-
+func addFedHPANotWorkReasonAnno(uns *unstructured.Unstructured, key string, value string) bool {
 	annotations := uns.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string, 1)
 	}
+	if oldValue, ok := annotations[key]; ok && oldValue == value {
+		return false
+	}
+
 	annotations[key] = value
 	uns.SetAnnotations(annotations)
 
-	logger.V(1).Info("Adding fed hpa not work reason annotation")
-	_, err := f.dynamicClient.Resource(gvr).Namespace(uns.GetNamespace()).
-		UpdateStatus(ctx, uns, metav1.UpdateOptions{})
-	if err != nil {
-		errMsg := "Failed to add fed hpa not work reason annotation"
-		logger.Error(err, errMsg)
-		f.eventRecorder.Eventf(uns, corev1.EventTypeWarning, EventReasonUpdateHPASourceObject,
-			errMsg+" %v, err: %v, retry later", key, err)
-		if apierrors.IsConflict(err) {
-			return worker.StatusConflict
-		}
-		return worker.StatusError
-	}
-
-	return worker.StatusAllOK
+	return true
 }
 
-func (f *FederatedHPAController) removeFedHPANotWorkReasonAnno(
-	ctx context.Context,
-	uns *unstructured.Unstructured,
-	gvr schema.GroupVersionResource,
-	key string,
-) worker.Result {
-	logger := klog.FromContext(ctx)
-
+func removeFedHPANotWorkReasonAnno(uns *unstructured.Unstructured, key string) bool {
 	annotations := uns.GetAnnotations()
+	if _, exists := annotations[key]; !exists {
+		return false
+	}
+
 	delete(annotations, key)
 	uns.SetAnnotations(annotations)
 
-	logger.V(1).Info("Removing fed hpa not work reason annotation")
-	_, err := f.dynamicClient.Resource(gvr).Namespace(uns.GetNamespace()).
-		UpdateStatus(ctx, uns, metav1.UpdateOptions{})
-	if err != nil {
-		errMsg := "Failed to remove fed hpa not work reason annotation"
-		logger.Error(err, errMsg)
-		f.eventRecorder.Eventf(uns, corev1.EventTypeWarning, EventReasonUpdateHPASourceObject,
-			errMsg+" %v, err: %v, retry later", key, err)
-		if apierrors.IsConflict(err) {
-			return worker.StatusConflict
-		}
-		return worker.StatusError
-	}
-
-	return worker.StatusAllOK
+	return true
 }

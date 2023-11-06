@@ -130,11 +130,8 @@ func (o *OneToManyRelation[T1, T2]) LookupByT1(key T1) (value sets.Set[T2], exis
 	defer o.lock.RUnlock()
 
 	val, exists := o.t1ToT2Map[key]
-	if !exists {
-		return nil, false
-	}
 
-	return val, true
+	return val, exists
 }
 
 func (o *OneToManyRelation[T1, T2]) LookupByT2(key T2) (value T1, exists bool) {
