@@ -19,6 +19,7 @@ package federatedhpa
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -26,7 +27,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -42,12 +42,12 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
-	"github.com/kubewharf/kubeadmiral/pkg/util/bijection"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventhandlers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/multimap"
 	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	"github.com/kubewharf/kubeadmiral/pkg/util/pendingcontrollers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/worker"
@@ -57,15 +57,16 @@ const (
 	FederatedHPAControllerName         = "federatedhpa-controller"
 	PrefixedFederatedHPAControllerName = common.DefaultPrefix + FederatedHPAControllerName
 
-	EventReasonFederationHPANotWork  = "FederationHPANotWork"
+	EventReasonCentralizedHPANotWork = "CentralizedHPANotWork"
 	EventReasonDistributedHPANotWork = "DistributedHPANotWork"
 
-	FederatedHPAMode            = "hpa-mode"
-	FederatedHPAModeFederation  = "federation"
+	FederatedHPAMode            = common.DefaultPrefix + "hpa-mode"
+	FederatedHPAModeCentralized = "centralized"
 	FederatedHPAModeDistributed = "distributed"
 	FederatedHPAModeDefault     = ""
 )
 
+// FederatedHPAController reconciles an HPA object
 type FederatedHPAController struct {
 	name string
 
@@ -80,9 +81,10 @@ type FederatedHPAController struct {
 	worker               worker.ReconcileWorker[Resource]
 	cacheSyncRateLimiter workqueue.RateLimiter
 
-	scaleTargetRefMapping map[schema.GroupVersionKind]string
-	workloadHPAMapping    *bijection.OneToManyRelation[Resource, Resource]
-	ppWorkloadMapping     *bijection.OneToManyRelation[Resource, Resource]
+	gvkToScaleTargetRefLock sync.RWMutex
+	gvkToScaleTargetRef     map[schema.GroupVersionKind]string
+	workloadHPAMapping      *multimap.MultiMap[Resource, Resource]
+	ppWorkloadMapping       *multimap.MultiMap[Resource, Resource]
 
 	metrics       stats.Metrics
 	logger        klog.Logger
@@ -114,9 +116,9 @@ func NewFederatedHPAController(
 
 		cacheSyncRateLimiter: workqueue.NewItemExponentialFailureRateLimiter(100*time.Millisecond, 10*time.Second),
 
-		scaleTargetRefMapping: map[schema.GroupVersionKind]string{},
-		workloadHPAMapping:    bijection.NewOneToManyRelation[Resource, Resource](),
-		ppWorkloadMapping:     bijection.NewOneToManyRelation[Resource, Resource](),
+		gvkToScaleTargetRef: map[schema.GroupVersionKind]string{},
+		workloadHPAMapping:  multimap.NewMultiMap[Resource, Resource](),
+		ppWorkloadMapping:   multimap.NewMultiMap[Resource, Resource](),
 
 		metrics:       metrics,
 		logger:        logger.WithValues("controller", FederatedHPAControllerName),
@@ -181,7 +183,7 @@ func (f *FederatedHPAController) enqueueFedHPAObjectsForFederatedObjects(fedObje
 	}
 
 	if f.isHPAType(key.gvk) {
-		f.worker.EnqueueWithDelay(key, 3*time.Second)
+		f.worker.Enqueue(key)
 		return
 	}
 
@@ -210,29 +212,24 @@ func (f *FederatedHPAController) enqueueFedHPAObjectsForFTC(ftc *fedcorev1a1.Fed
 	logger := f.logger.WithValues("ftc", ftc.GetName())
 
 	if scaleTargetRefPath, ok := ftc.GetAnnotations()[common.HPAScaleTargetRefPath]; ok {
-		f.scaleTargetRefMapping[ftc.GetSourceTypeGVK()] = scaleTargetRefPath
+		f.setGVKToScaleTargetRef(ftc.GetSourceTypeGVK(), scaleTargetRefPath)
 	} else {
-		delete(f.scaleTargetRefMapping, ftc.GetSourceTypeGVK())
+		f.deleteGVKToScaleTargetRef(ftc.GetSourceTypeGVK())
 		return
 	}
 
 	logger.V(2).Info("Enqueue federated objects for FTC")
 
-	allObjects := []fedcorev1a1.GenericFederatedObject{}
-	labelsSet := labels.Set{ftc.GetSourceTypeGVK().GroupVersion().String(): ftc.GetSourceTypeGVK().Kind}
-	fedObjects, err := f.fedObjectInformer.Lister().List(labels.SelectorFromSet(labelsSet))
+	allObjects, err := fedobjectadapters.ListAllFedObjsForFTC(ftc, f.fedObjectInformer, nil)
 	if err != nil {
-		logger.Error(err, "Failed to enqueue FederatedObjects for policy")
+		f.logger.Error(err, "Failed to enqueue objects for FTC")
 		return
-	}
-	for _, obj := range fedObjects {
-		allObjects = append(allObjects, obj)
 	}
 
 	for _, obj := range allObjects {
 		sourceObjectResource, err := fedObjectToSourceObjectResource(obj)
 		if err != nil {
-			logger.Error(err, "Failed to get source Resource from FederatedObject, will not enqueue")
+			logger.Error(err, "Failed to get source resource from federated object, will not enqueue")
 			continue
 		}
 		f.worker.Enqueue(sourceObjectResource)
@@ -278,151 +275,57 @@ func (f *FederatedHPAController) reconcile(ctx context.Context, key Resource) (s
 		logger.WithValues("duration", time.Since(startTime), "status", status.String()).V(3).Info("Finished reconcile")
 	}()
 
-	hpaFTC, exists := f.informerManager.GetResourceFTC(key.gvk)
-	if !exists {
-		// Waiting for func enqueueFedHPAObjectsForFTC enqueue it again.
-		return worker.StatusAllOK
+	// Retrieve the workload associated with the HPA, the PropagationPolicy associated with the workload,
+	// and cache them in the map of the FederatedHPAController.
+	ctx, handleResp, res := f.handleCache(ctx, key)
+	if handleResp == nil {
+		return res
 	}
 
-	hpaGVR := hpaFTC.GetSourceTypeGVR()
-	ctx, logger = logging.InjectLoggerValues(ctx, "hpa-ftc", hpaFTC.Name)
+	logger = klog.FromContext(ctx)
 
-	lister, hasSynced, exists := f.informerManager.GetResourceLister(key.gvk)
-	if !exists {
-		return worker.StatusAllOK
-	}
-	if !hasSynced() {
-		// If lister is not yet synced, simply reenqueue after a short delay.
-		logger.V(3).Info("Lister for source hpa type not yet synced, will reenqueue")
-		return worker.Result{
-			Success:      true,
-			RequeueAfter: pointer.Duration(f.cacheSyncRateLimiter.When(key)),
-		}
-	}
-	f.cacheSyncRateLimiter.Forget(key)
+	hpaFTC, hpaGVR, hpaObject, fedHPAObject, fedWorkloadObject, ppObject, newPPResource := handleResp.hpaFTC, handleResp.hpaGVR,
+		handleResp.hpaObject, handleResp.fedHPAObject, handleResp.fedWorkloadObject, handleResp.ppObject, handleResp.newPPResource
 
-	hpaUns, err := lister.Get(key.QualifiedName().String())
-	if err != nil {
-		logger.Error(err, "Failed to get source hpa object from store")
-		return worker.StatusAllOK
-	}
-	hpaObject := hpaUns.(*unstructured.Unstructured).DeepCopy()
-
-	fedHPAObjectName := naming.GenerateFederatedObjectName(hpaObject.GetName(), hpaFTC.Name)
-	ctx, logger = logging.InjectLoggerValues(ctx, "federated-hpa-object", fedHPAObjectName)
-
-	fedHPAObject, err := fedobjectadapters.GetFromLister(
-		f.fedObjectInformer.Lister(),
-		nil,
-		hpaObject.GetNamespace(),
-		fedHPAObjectName,
-	)
-	if err != nil {
-		logger.Error(err, "Failed to get federated hpa object from store")
-		return worker.StatusError
-	}
-
-	if ok, err := pendingcontrollers.ControllerDependenciesFulfilled(fedHPAObject, PrefixedFederatedHPAControllerName); err != nil {
-		logger.Error(err, "Failed to check controller dependencies")
-		return worker.StatusError
-	} else if !ok {
-		return worker.StatusAllOK
-	}
-
-	scaleTargetRef := f.scaleTargetRefMapping[key.gvk]
-	newWorkloadResource, err := scaleTargetRefToResource(hpaObject, scaleTargetRef)
-	if err != nil {
-		logger.Error(err, "Failed to get workload resource from hpa")
-		return worker.StatusError
-	}
-
-	ctx, logger = logging.InjectLoggerValues(ctx,
-		"workload-object", newWorkloadResource.QualifiedName(),
-		"workload-gvk", newWorkloadResource.gvk)
-
-	oldWorkloadResource, exist := f.workloadHPAMapping.LookupByT2(key)
-	if exist {
-		f.workloadHPAMapping.DeleteT2(key)
-		f.ppWorkloadMapping.DeleteT2(oldWorkloadResource)
-	}
-	if err := f.workloadHPAMapping.Add(newWorkloadResource, key); err != nil {
-		logger.Error(err, "Failed to add workload and hpa mapping")
-		return worker.StatusError
-	}
-	workloadExist := true
-	fedWorkload, err := f.getFedWorkLoadFromResource(newWorkloadResource)
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			logger.Error(err, "Failed to get fed workload from fed workload resource")
-			return worker.StatusError
-		}
-		workloadExist = false
-	}
-
-	var pp fedcorev1a1.GenericPropagationPolicy
-	if workloadExist {
-		newPPResource := getPropagationPolicyResourceFromFedWorkload(fedWorkload)
-		if newPPResource != nil {
-			_, exist = f.ppWorkloadMapping.LookupByT2(newWorkloadResource)
-			if exist {
-				f.ppWorkloadMapping.DeleteT2(newWorkloadResource)
-			}
-
-			if err := f.ppWorkloadMapping.Add(*newPPResource, newWorkloadResource); err != nil {
-				logger.Error(err, "Failed to add workload and pp mapping")
-				return worker.StatusError
-			}
-
-			pp, err = f.getPropagationPolicyFromResource(newPPResource)
-			if err != nil && !apierrors.IsNotFound(err) {
-				logger.Error(err, "Failed to get pp from pp resource")
-				return worker.StatusError
-			}
-		}
-	}
-
+	var err error
 	var isHPAObjectUpdated, isFedHPAObjectUpdated bool
 	switch hpaObject.GetLabels()[FederatedHPAMode] {
-	case FederatedHPAModeFederation:
+	case FederatedHPAModeCentralized:
 		if isFedHPAObjectUpdated, err = addFedHPAPendingController(ctx, fedHPAObject, hpaFTC); err != nil {
 			return worker.StatusError
 		}
 
-		if !workloadExist || isPropagationPolicyDividedMode(pp) {
-			isHPAObjectUpdated = removeFedHPANotWorkReasonAnno(hpaObject, FedHPANotWorkReason)
-			isHPAObjectUpdated = isHPAObjectUpdated || addHPALabel(hpaObject, common.FedHPAEnableKey, common.AnnotationValueTrue)
+		if fedWorkloadObject == nil || isPropagationPolicyExist(ppObject) && isPropagationPolicyDividedMode(ppObject) {
+			isHPAObjectUpdated = removeFedHPANotWorkReasonAnno(ctx, hpaObject)
+			isHPAObjectUpdated = addFedHPAEnableLabel(ctx, hpaObject) || isHPAObjectUpdated
 		} else {
-			hpaNotWorkReason := generateFederationHPANotWorkReason(isPropagationPolicyExist(pp), isPropagationPolicyDividedMode(pp))
+			hpaNotWorkReason := generateCentralizedHPANotWorkReason(newPPResource, ppObject)
 			f.eventRecorder.Eventf(
 				hpaObject,
 				corev1.EventTypeWarning,
-				EventReasonFederationHPANotWork,
-				"Federation HPA not work: %s",
+				EventReasonCentralizedHPANotWork,
+				"Centralized HPA not work: %s",
 				hpaNotWorkReason,
 			)
 
-			isHPAObjectUpdated = addFedHPANotWorkReasonAnno(hpaObject, FedHPANotWorkReason, hpaNotWorkReason)
-			isHPAObjectUpdated = isHPAObjectUpdated || removeHPALabel(hpaObject, common.FedHPAEnableKey)
+			isHPAObjectUpdated = addFedHPANotWorkReasonAnno(ctx, hpaObject, hpaNotWorkReason)
+			isHPAObjectUpdated = removeFedHPAEnableLabel(ctx, hpaObject) || isHPAObjectUpdated
 		}
 
 	case FederatedHPAModeDistributed, FederatedHPAModeDefault:
-		isHPAObjectUpdated = removeHPALabel(hpaObject, common.FedHPAEnableKey)
+		isHPAObjectUpdated = removeFedHPAEnableLabel(ctx, hpaObject)
 
-		if !workloadExist || isPropagationPolicyDuplicateMode(pp) &&
-			isPropagationPolicyFollowerEnabled(pp) &&
-			isWorkloadRetainReplicas(fedWorkload) &&
-			isHPAFollowTheWorkload(ctx, hpaObject, fedWorkload) {
-			isHPAObjectUpdated = isHPAObjectUpdated || removeFedHPANotWorkReasonAnno(hpaObject, FedHPANotWorkReason)
+		if fedWorkloadObject == nil || isPropagationPolicyExist(ppObject) &&
+			isPropagationPolicyDuplicateMode(ppObject) &&
+			isPropagationPolicyFollowerEnabled(ppObject) &&
+			isWorkloadRetainReplicas(fedWorkloadObject) &&
+			isHPAFollowTheWorkload(ctx, hpaObject, fedWorkloadObject) {
+			isHPAObjectUpdated = removeFedHPANotWorkReasonAnno(ctx, hpaObject) || isHPAObjectUpdated
 			if isFedHPAObjectUpdated, err = removePendingController(ctx, hpaFTC, fedHPAObject); err != nil {
 				return worker.StatusError
 			}
 		} else {
-			hpaNotWorkReason := generateDistributedHPANotWorkReason(
-				isPropagationPolicyExist(pp),
-				isPropagationPolicyDuplicateMode(pp),
-				isPropagationPolicyFollowerEnabled(pp),
-				isWorkloadRetainReplicas(fedWorkload),
-				isHPAFollowTheWorkload(ctx, hpaObject, fedWorkload))
+			hpaNotWorkReason := generateDistributedHPANotWorkReason(ctx, newPPResource, ppObject, fedWorkloadObject, hpaObject)
 			f.eventRecorder.Eventf(
 				hpaObject,
 				corev1.EventTypeWarning,
@@ -431,7 +334,7 @@ func (f *FederatedHPAController) reconcile(ctx context.Context, key Resource) (s
 				hpaNotWorkReason,
 			)
 
-			isHPAObjectUpdated = isHPAObjectUpdated || addFedHPANotWorkReasonAnno(hpaObject, FedHPANotWorkReason, hpaNotWorkReason)
+			isHPAObjectUpdated = addFedHPANotWorkReasonAnno(ctx, hpaObject, hpaNotWorkReason) || isHPAObjectUpdated
 			if isFedHPAObjectUpdated, err = addFedHPAPendingController(ctx, fedHPAObject, hpaFTC); err != nil {
 				return worker.StatusError
 			}
@@ -440,7 +343,7 @@ func (f *FederatedHPAController) reconcile(ctx context.Context, key Resource) (s
 
 	if isHPAObjectUpdated {
 		logger.V(1).Info("Updating hpa object")
-		_, err := f.dynamicClient.Resource(hpaGVR).Namespace(hpaObject.GetNamespace()).UpdateStatus(ctx, hpaObject, metav1.UpdateOptions{})
+		_, err := f.dynamicClient.Resource(hpaGVR).Namespace(hpaObject.GetNamespace()).Update(ctx, hpaObject, metav1.UpdateOptions{})
 		if err != nil {
 			errMsg := "Failed to update hpa object"
 			logger.Error(err, errMsg)
@@ -468,6 +371,141 @@ func (f *FederatedHPAController) reconcile(ctx context.Context, key Resource) (s
 	}
 
 	return worker.StatusAllOK
+}
+
+func (f *FederatedHPAController) handleCache(ctx context.Context, key Resource) (context.Context, *handleCacheResp, worker.Result) {
+	// Retrieve HPA Object and FedHPA Object from Resource.
+	hpaFTC, exists := f.informerManager.GetResourceFTC(key.gvk)
+	if !exists {
+		// Waiting for func enqueueFedHPAObjectsForFTC enqueue it again.
+		return ctx, nil, worker.StatusAllOK
+	}
+
+	hpaGVR := hpaFTC.GetSourceTypeGVR()
+	ctx, logger := logging.InjectLoggerValues(ctx, "hpa-ftc", hpaFTC.Name)
+
+	lister, hasSynced, exists := f.informerManager.GetResourceLister(key.gvk)
+	if !exists {
+		return ctx, nil, worker.StatusAllOK
+	}
+	if !hasSynced() {
+		// If lister is not yet synced, simply reenqueue after a short delay.
+		logger.V(3).Info("Lister for source hpa type not yet synced, will reenqueue")
+		return ctx, nil, worker.Result{
+			Success:      true,
+			RequeueAfter: pointer.Duration(f.cacheSyncRateLimiter.When(key)),
+		}
+	}
+	f.cacheSyncRateLimiter.Forget(key)
+
+	hpaUns, err := lister.Get(key.QualifiedName().String())
+	if err != nil {
+		logger.Error(err, "Failed to get source hpa object from store")
+		return ctx, nil, worker.StatusAllOK
+	}
+	hpaObject := hpaUns.(*unstructured.Unstructured).DeepCopy()
+
+	fedHPAObjectName := naming.GenerateFederatedObjectName(hpaObject.GetName(), hpaFTC.Name)
+	ctx, logger = logging.InjectLoggerValues(ctx, "federated-hpa-object", fedHPAObjectName)
+
+	fedHPAObject, err := fedobjectadapters.GetFromLister(
+		f.fedObjectInformer.Lister(),
+		nil,
+		hpaObject.GetNamespace(),
+		fedHPAObjectName,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to get federated hpa object from store")
+		return ctx, nil, worker.StatusError
+	}
+
+	if ok, err := pendingcontrollers.ControllerDependenciesFulfilled(fedHPAObject, PrefixedFederatedHPAControllerName); err != nil {
+		logger.Error(err, "Failed to check controller dependencies")
+		return ctx, nil, worker.StatusError
+	} else if !ok {
+		return ctx, nil, worker.StatusAllOK
+	}
+
+	// Retrieve the workload associated with the HPA.
+	newWorkloadResource, err := f.scaleTargetRefToResource(key.gvk, hpaObject)
+	if err != nil {
+		logger.Error(err, "Failed to get workload resource from hpa")
+		return ctx, nil, worker.StatusError
+	}
+
+	ctx, logger = logging.InjectLoggerValues(ctx,
+		"workload-object", newWorkloadResource.QualifiedName(),
+		"workload-gvk", newWorkloadResource.gvk)
+
+	oldWorkloadResource, exist := f.workloadHPAMapping.LookupByT2(key)
+	if exist {
+		f.workloadHPAMapping.DeleteT2(key)
+		f.ppWorkloadMapping.DeleteT2(oldWorkloadResource)
+	}
+	if err := f.workloadHPAMapping.Add(newWorkloadResource, key); err != nil {
+		logger.Error(err, "Failed to add workload and hpa mapping")
+		return ctx, nil, worker.StatusError
+	}
+
+	fedWorkloadObject, err := f.getFedWorkLoadFromResource(newWorkloadResource)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			logger.Error(err, "Failed to get fed workload from fed workload resource")
+			return ctx, nil, worker.StatusError
+		}
+	}
+
+	// Retrieve the PropagationPolicy associated with the workload.
+	var ppObject fedcorev1a1.GenericPropagationPolicy
+	newPPResource := getPropagationPolicyResourceFromFedWorkload(fedWorkloadObject)
+	if newPPResource != nil {
+		_, exist = f.ppWorkloadMapping.LookupByT2(newWorkloadResource)
+		if exist {
+			f.ppWorkloadMapping.DeleteT2(newWorkloadResource)
+		}
+		if err := f.ppWorkloadMapping.Add(*newPPResource, newWorkloadResource); err != nil {
+			logger.Error(err, "Failed to add workload and ppObject mapping")
+			return ctx, nil, worker.StatusError
+		}
+
+		ppObject, err = f.getPropagationPolicyFromResource(newPPResource)
+		if err != nil && !apierrors.IsNotFound(err) {
+			logger.Error(err, "Failed to get ppObject from ppObject resource")
+			return ctx, nil, worker.StatusError
+		}
+	}
+
+	return ctx, &handleCacheResp{
+		hpaGVR:            hpaGVR,
+		hpaFTC:            hpaFTC,
+		hpaObject:         hpaObject,
+		fedHPAObject:      fedHPAObject,
+		fedWorkloadObject: fedWorkloadObject,
+		ppObject:          ppObject,
+		newPPResource:     newPPResource,
+	}, worker.StatusAllOK
+}
+
+func (f *FederatedHPAController) getGVKToScaleTargetRef(gvk schema.GroupVersionKind) (string, bool) {
+	f.gvkToScaleTargetRefLock.RLock()
+	defer f.gvkToScaleTargetRefLock.RUnlock()
+
+	val, exists := f.gvkToScaleTargetRef[gvk]
+	return val, exists
+}
+
+func (f *FederatedHPAController) setGVKToScaleTargetRef(gvk schema.GroupVersionKind, val string) {
+	f.gvkToScaleTargetRefLock.Lock()
+	defer f.gvkToScaleTargetRefLock.Unlock()
+
+	f.gvkToScaleTargetRef[gvk] = val
+}
+
+func (f *FederatedHPAController) deleteGVKToScaleTargetRef(gvk schema.GroupVersionKind) {
+	f.gvkToScaleTargetRefLock.Lock()
+	defer f.gvkToScaleTargetRefLock.Unlock()
+
+	delete(f.gvkToScaleTargetRef, gvk)
 }
 
 func (f *FederatedHPAController) getFedWorkLoadFromResource(workload Resource) (fedcorev1a1.GenericFederatedObject, error) {
