@@ -197,7 +197,8 @@ func (c *Controller) Run(ctx context.Context) {
 }
 
 func (c *Controller) HasSynced() bool {
-	return c.fedObjectInformer.Informer().HasSynced() &&
+	return c.ftcInformer.Informer().HasSynced() &&
+		c.fedObjectInformer.Informer().HasSynced() &&
 		c.clusterFedObjectInformer.Informer().HasSynced()
 }
 
@@ -233,6 +234,7 @@ func (c *Controller) reconcile(ctx context.Context, key objectGroupKindKey) (sta
 
 	isHPAType, err := c.isHPAType(key.sourceGK)
 	if err != nil {
+		c.logger.WithValues("type", key.sourceGK).Error(err, "Failed to check if the resource type is HPA")
 		return worker.StatusError
 	}
 

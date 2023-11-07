@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package bijection
+package multimap
 
 import (
 	"testing"
@@ -22,10 +22,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestOneToManyRelation(t *testing.T) {
-	relation := NewOneToManyRelation[int, string]()
+func TestMultiMap(t *testing.T) {
+	relation := NewMultiMap[int, string]()
 
-	// 1. add data to OneToManyRelation
+	// 1. add data to MultiMap
 	// add key value [[1,A],[1,B],[2,C]]
 	err := relation.Add(1, "A")
 	assert.NoError(t, err)
@@ -38,7 +38,7 @@ func TestOneToManyRelation(t *testing.T) {
 	err = relation.Add(1, "A")
 	assert.Error(t, err)
 
-	// 2.check data in OneToManyRelation
+	// 2.check data in MultiMap
 	// check LookupByT1
 	set, exists := relation.LookupByT1(1)
 	assert.True(t, exists)
@@ -68,7 +68,7 @@ func TestOneToManyRelation(t *testing.T) {
 	_, exists = relation.LookupByT2("D")
 	assert.False(t, exists)
 
-	// 	3.delete data in OneToManyRelation
+	// 	3.delete data in MultiMap
 	// delete key[1] in T1 and key [C] in T2
 	deleted := relation.DeleteT1(1)
 	assert.True(t, deleted)

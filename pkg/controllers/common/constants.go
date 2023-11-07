@@ -124,6 +124,10 @@ const (
 	// DryRunAnnotation indicates resource is in dry run process. It will prevent new resources from being dispatched by the sync controller.
 	// It works only when resources have not been propagated to member clusters.
 	DryRunAnnotation = DefaultPrefix + "dry-run"
+
+	HPAScaleTargetRefPath = DefaultPrefix + "scale-target-ref-path"
+
+	CentralizedHPAEnableKey = DefaultPrefix + "centralized-hpa-enabled"
 )
 
 // PropagatedAnnotationKeys and PropagatedLabelKeys are used to store the keys of annotations and labels that are present
@@ -199,9 +203,3 @@ var (
 //
 //nolint:lll
 const MaxFederatedObjectNameLength = 253
-
-// HPAScaleTargetRefPath defines the fed hpa annotations and labels
-const (
-	HPAScaleTargetRefPath = DefaultPrefix + "scale-target-ref-path"
-	FedHPAEnableKey       = DefaultPrefix + "fed-hpa-enabled"
-)

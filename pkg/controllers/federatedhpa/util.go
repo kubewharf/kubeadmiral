@@ -52,6 +52,16 @@ type Resource struct {
 	name      string
 }
 
+type handleCacheResp struct {
+	hpaFTC            *fedcorev1a1.FederatedTypeConfig
+	hpaGVR            schema.GroupVersionResource
+	hpaObject         *unstructured.Unstructured
+	fedHPAObject      fedcorev1a1.GenericFederatedObject
+	fedWorkloadObject fedcorev1a1.GenericFederatedObject
+	ppObject          fedcorev1a1.GenericPropagationPolicy
+	newPPResource     *Resource
+}
+
 func (r Resource) QualifiedName() common.QualifiedName {
 	return common.QualifiedName{
 		Namespace: r.namespace,
@@ -73,58 +83,83 @@ func fedObjectToSourceObjectResource(object metav1.Object) (Resource, error) {
 }
 
 func policyObjectToResource(object metav1.Object) Resource {
-	if cpp, ok := object.(*fedcorev1a1.ClusterPropagationPolicy); ok {
-		return Resource{
-			name:      cpp.GetName(),
-			namespace: cpp.GetNamespace(),
-			gvk:       cpp.GroupVersionKind(),
-		}
-	}
-
 	if pp, ok := object.(*fedcorev1a1.PropagationPolicy); ok {
 		return Resource{
 			name:      pp.GetName(),
 			namespace: pp.GetNamespace(),
-			gvk:       pp.GroupVersionKind(),
+			gvk: schema.GroupVersionKind{
+				Group:   fedcorev1a1.SchemeGroupVersion.Group,
+				Version: fedcorev1a1.SchemeGroupVersion.Version,
+				Kind:    PropagationPolicyKind,
+			},
 		}
 	}
+
+	if cpp, ok := object.(*fedcorev1a1.ClusterPropagationPolicy); ok {
+		return Resource{
+			name:      cpp.GetName(),
+			namespace: cpp.GetNamespace(),
+			gvk: schema.GroupVersionKind{
+				Group:   fedcorev1a1.SchemeGroupVersion.Group,
+				Version: fedcorev1a1.SchemeGroupVersion.Version,
+				Kind:    ClusterPropagationPolicyKind,
+			},
+		}
+	}
+
 	return Resource{}
 }
 
-func generateFederationHPANotWorkReason(isPropagationPolicyExist, isPropagationPolicyDividedMode bool) string {
+func generateCentralizedHPANotWorkReason(newPPResource *Resource, pp fedcorev1a1.GenericPropagationPolicy) string {
 	var reasons []string
-	if !isPropagationPolicyExist {
-		reasons = append(reasons, "PropagationPolicy is not exist.")
+	if newPPResource == nil {
+		reasons = append(reasons, "The workload is not bound to any propagationPolicy.")
+		return fmt.Sprintf("%v", reasons)
 	}
-	if isPropagationPolicyExist && !isPropagationPolicyDividedMode {
-		reasons = append(reasons, "PropagationPolicy is not divide.")
+
+	ppKind, ppName := newPPResource.gvk.Kind, newPPResource.name
+	if !isPropagationPolicyExist(pp) {
+		reasons = append(reasons, fmt.Sprintf("The %s %s bound to the workload does not exist.", ppKind, ppName))
+		return fmt.Sprintf("%v", reasons)
+	}
+	if !isPropagationPolicyDividedMode(pp) {
+		reasons = append(reasons, fmt.Sprintf("The %s %s bound to the workload is not Divided mode.", ppKind, ppName))
 	}
 
 	return fmt.Sprintf("%v", reasons)
 }
 
 func generateDistributedHPANotWorkReason(
-	isPropagationPolicyExist,
-	isPropagationPolicyDuplicateMode,
-	isPropagationPolicyFollowerEnabled,
-	isWorkloadRetainReplicas,
-	isHPAFollowTheWorkload bool,
+	ctx context.Context,
+	newPPResource *Resource,
+	pp fedcorev1a1.GenericPropagationPolicy,
+	fedWorkload fedcorev1a1.GenericFederatedObject,
+	hpaObject *unstructured.Unstructured,
 ) string {
 	var reasons []string
-	if !isPropagationPolicyExist {
-		reasons = append(reasons, "PropagationPolicy is not exist.")
+
+	if !isWorkloadRetainReplicas(fedWorkload) {
+		reasons = append(reasons, "The workload is not enabled for retain replicas.")
 	}
-	if !isPropagationPolicyDuplicateMode {
-		reasons = append(reasons, "PropagationPolicy is not Duplicate.")
+	if !isHPAFollowTheWorkload(ctx, hpaObject, fedWorkload) {
+		reasons = append(reasons, "The hpa is not follow the workload.")
 	}
-	if !isPropagationPolicyFollowerEnabled {
-		reasons = append(reasons, "PropagationPolicy follower is not enable.")
+
+	if newPPResource == nil {
+		reasons = append(reasons, "The workload is not bound to any propagationPolicy.")
+		return fmt.Sprintf("%v", reasons)
 	}
-	if !isWorkloadRetainReplicas {
-		reasons = append(reasons, "Workload is not retain replicas.")
+
+	ppKind, ppName := newPPResource.gvk.Kind, newPPResource.name
+	if !isPropagationPolicyExist(pp) {
+		reasons = append(reasons, fmt.Sprintf("The %s %s bound to the workload does not exist.", ppKind, ppName))
+		return fmt.Sprintf("%v", reasons)
 	}
-	if !isHPAFollowTheWorkload {
-		reasons = append(reasons, "Hpa is not follow the workload.")
+	if !isPropagationPolicyDuplicateMode(pp) {
+		reasons = append(reasons, fmt.Sprintf("The %s %s bound to the workload is not Duplicate mode.", ppKind, ppName))
+	}
+	if !isPropagationPolicyFollowerEnabled(pp) {
+		reasons = append(reasons, fmt.Sprintf("The %s %s bound to the workload is not enabled for follower scheduling.", ppKind, ppName))
 	}
 
 	return fmt.Sprintf("%v", reasons)
@@ -139,11 +174,11 @@ func isPropagationPolicyExist(pp fedcorev1a1.GenericPropagationPolicy) bool {
 }
 
 func isPropagationPolicyDividedMode(pp fedcorev1a1.GenericPropagationPolicy) bool {
-	return pp != nil && pp.GetSpec().SchedulingMode == fedcorev1a1.SchedulingModeDivide
+	return pp.GetSpec().SchedulingMode == fedcorev1a1.SchedulingModeDivide
 }
 
 func isPropagationPolicyDuplicateMode(pp fedcorev1a1.GenericPropagationPolicy) bool {
-	return pp != nil && pp.GetSpec().SchedulingMode == fedcorev1a1.SchedulingModeDuplicate
+	return pp.GetSpec().SchedulingMode == fedcorev1a1.SchedulingModeDuplicate
 }
 
 func isPropagationPolicyFollowerEnabled(pp fedcorev1a1.GenericPropagationPolicy) bool {
@@ -179,15 +214,15 @@ func (f *FederatedHPAController) isHPAType(resourceGVK schema.GroupVersionKind) 
 	}
 
 	// HPA gvk has already been stored
-	if _, ok := f.scaleTargetRefMapping[resourceGVK]; ok {
+	if _, ok := f.getGVKToScaleTargetRef(resourceGVK); ok {
 		return true
 	}
 
 	if path, ok := ftc.Annotations[common.HPAScaleTargetRefPath]; ok {
-		f.scaleTargetRefMapping[resourceGVK] = path
+		f.setGVKToScaleTargetRef(resourceGVK, path)
 		return true
 	} else {
-		delete(f.scaleTargetRefMapping, resourceGVK)
+		f.deleteGVKToScaleTargetRef(resourceGVK)
 		return false
 	}
 }
@@ -196,8 +231,13 @@ func isWorkloadRetainReplicas(fedObj metav1.Object) bool {
 	return fedObj.GetAnnotations()[common.RetainReplicasAnnotation] == common.AnnotationValueTrue
 }
 
-func scaleTargetRefToResource(hpaUns *unstructured.Unstructured, scaleTargetRef string) (Resource, error) {
-	fieldVal, found, err := unstructured.NestedFieldCopy(hpaUns.Object, strings.Split(scaleTargetRef, ".")...)
+func (f *FederatedHPAController) scaleTargetRefToResource(gvk schema.GroupVersionKind, uns *unstructured.Unstructured) (Resource, error) {
+	scaleTargetRef, exists := f.getGVKToScaleTargetRef(gvk)
+	if !exists {
+		return Resource{}, errors.New("Failed to get gvk to ScaleTargetRef")
+	}
+
+	fieldVal, found, err := unstructured.NestedFieldCopy(uns.Object, strings.Split(scaleTargetRef, ".")...)
 	if err != nil || !found {
 		if err != nil {
 			return Resource{}, errors.New(fmt.Sprintf("%s: %s", scaleTargetRef, err.Error()))
@@ -220,12 +260,16 @@ func scaleTargetRefToResource(hpaUns *unstructured.Unstructured, scaleTargetRef 
 
 	return Resource{
 		name:      targetResource.Name,
-		gvk:       schema.GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: targetResource.Kind},
-		namespace: hpaUns.GetNamespace(),
+		gvk:       gv.WithKind(targetResource.Kind),
+		namespace: uns.GetNamespace(),
 	}, nil
 }
 
 func getPropagationPolicyResourceFromFedWorkload(workload fedcorev1a1.GenericFederatedObject) *Resource {
+	if workload == nil {
+		return nil
+	}
+
 	if policyName, exists := workload.GetLabels()[scheduler.PropagationPolicyNameLabel]; exists {
 		return &Resource{
 			gvk: schema.GroupVersionKind{
@@ -252,28 +296,34 @@ func getPropagationPolicyResourceFromFedWorkload(workload fedcorev1a1.GenericFed
 	return nil
 }
 
-func addHPALabel(uns *unstructured.Unstructured, key, value string) bool {
+func addFedHPAEnableLabel(ctx context.Context, uns *unstructured.Unstructured) bool {
+	logger := klog.FromContext(ctx)
+
 	labels := uns.GetLabels()
 	if labels == nil {
 		labels = make(map[string]string, 1)
 	}
-	if oldValue, ok := labels[key]; ok && oldValue == value {
+	if oldValue, ok := labels[common.CentralizedHPAEnableKey]; ok && oldValue == common.AnnotationValueTrue {
 		return false
 	}
 
-	labels[key] = value
+	logger.V(3).Info("Adding fed hpa enable label")
+	labels[common.CentralizedHPAEnableKey] = common.AnnotationValueTrue
 	uns.SetLabels(labels)
 
 	return true
 }
 
-func removeHPALabel(uns *unstructured.Unstructured, key string) bool {
+func removeFedHPAEnableLabel(ctx context.Context, uns *unstructured.Unstructured) bool {
+	logger := klog.FromContext(ctx)
+
 	labels := uns.GetLabels()
-	if _, ok := labels[key]; !ok {
+	if _, ok := labels[common.CentralizedHPAEnableKey]; !ok {
 		return false
 	}
 
-	delete(labels, key)
+	logger.V(3).Info("Removing fed hpa enable label")
+	delete(labels, common.CentralizedHPAEnableKey)
 	uns.SetLabels(labels)
 
 	return true
@@ -299,6 +349,8 @@ func addFedHPAPendingController(
 			}
 		}
 	}
+
+	logger.V(3).Info(fmt.Sprintf("Setting pending controllers %v", ftc.GetControllers()))
 
 	// TODO: By default, fed-hpa controller is the first controller.
 	// 	Otherwise, this code needs to be modified.
@@ -328,32 +380,41 @@ func removePendingController(
 		logger.Error(err, "Failed to update pending controllers")
 		return false, err
 	}
+	if updated {
+		logger.V(3).Info(fmt.Sprintf("Removing pending controller %s", PrefixedFederatedHPAControllerName))
+	}
 
 	return updated, nil
 }
 
-func addFedHPANotWorkReasonAnno(uns *unstructured.Unstructured, key string, value string) bool {
+func addFedHPANotWorkReasonAnno(ctx context.Context, uns *unstructured.Unstructured, value string) bool {
+	logger := klog.FromContext(ctx)
+
 	annotations := uns.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string, 1)
 	}
-	if oldValue, ok := annotations[key]; ok && oldValue == value {
+	if oldValue, ok := annotations[FedHPANotWorkReason]; ok && oldValue == value {
 		return false
 	}
 
-	annotations[key] = value
+	logger.V(3).Info(fmt.Sprintf("Adding fed hpa not work reason annotation %s", value))
+	annotations[FedHPANotWorkReason] = value
 	uns.SetAnnotations(annotations)
 
 	return true
 }
 
-func removeFedHPANotWorkReasonAnno(uns *unstructured.Unstructured, key string) bool {
+func removeFedHPANotWorkReasonAnno(ctx context.Context, uns *unstructured.Unstructured) bool {
+	logger := klog.FromContext(ctx)
+
 	annotations := uns.GetAnnotations()
-	if _, exists := annotations[key]; !exists {
+	if _, exists := annotations[FedHPANotWorkReason]; !exists {
 		return false
 	}
 
-	delete(annotations, key)
+	logger.V(3).Info("Removing fed hpa not work annotation")
+	delete(annotations, FedHPANotWorkReason)
 	uns.SetAnnotations(annotations)
 
 	return true
