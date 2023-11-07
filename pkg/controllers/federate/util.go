@@ -255,6 +255,7 @@ var (
 		nsautoprop.NoAutoPropagationAnnotation,
 		orphaning.OrphanManagedResourcesAnnotation,
 		adoption.ConflictResolutionAnnotation,
+		adoption.ClustersToAdoptAnnotation,
 		scheduler.TolerationsAnnotations,
 		scheduler.PlacementsAnnotations,
 		scheduler.ClusterSelectorAnnotations,

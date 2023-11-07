@@ -289,6 +289,13 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 	}
 	needsUpdate = needsUpdate || isDirty
 
+	isDirty, err = c.ensureAnnotation(fedNamespace, adoption.ClustersToAdoptAnnotation, AllClustersToAdoptRegexp)
+	if err != nil {
+		keyedLogger.Error(err, "Failed to ensure annotation")
+		return worker.StatusError
+	}
+	needsUpdate = needsUpdate || isDirty
+
 	// Ensure we don't delete adopted member namespaces when the federated namespace is deleted
 	isDirty, err = c.ensureAnnotation(
 		fedNamespace,
