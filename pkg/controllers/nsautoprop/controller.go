@@ -289,7 +289,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 	}
 	needsUpdate = needsUpdate || isDirty
 
-	isDirty, err = c.ensureAnnotation(fedNamespace, adoption.ClustersToAdoptAnnotation, AllClustersToAdoptRegexp)
+	isDirty, err = c.ensureAnnotation(fedNamespace, adoption.ClustersToAdoptInternalAnnotation, AllClustersToAdoptRegexp)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to ensure annotation")
 		return worker.StatusError
