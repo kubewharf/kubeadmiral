@@ -31,7 +31,8 @@ const (
 	ConflictResolutionInternalAnnotation = common.InternalPrefix + "conflict-resolution"
 	// ClustersToAdoptAnnotation specifies the set of clusters where preexisting resources are allowed to be adopted. Defaults to no clusters.
 	// It will only take effect if adoption is enabled by the conflict resolution annotation.
-	ClustersToAdoptAnnotation = common.DefaultPrefix + "clusters-to-adopt"
+	ClustersToAdoptAnnotation         = common.DefaultPrefix + "clusters-to-adopt"
+	ClustersToAdoptInternalAnnotation = common.InternalPrefix + "clusters-to-adopt"
 )
 
 type ConflictResolution string
@@ -58,13 +59,19 @@ type clustersToAdoptAnnotationElement struct {
 }
 
 func FilterToAdoptCluster(obj metav1.Object, clusterName string) (bool, error) {
-	annotation := obj.GetAnnotations()[ClustersToAdoptAnnotation]
-	if len(annotation) == 0 {
+	annotations := obj.GetAnnotations()
+
+	clustersToAdoptRaw := annotations[ClustersToAdoptAnnotation]
+	if value, exist := annotations[ClustersToAdoptInternalAnnotation]; exist {
+		clustersToAdoptRaw = value
+	}
+
+	if len(clustersToAdoptRaw) == 0 {
 		return false, nil
 	}
 
 	var clustersToAdopt clustersToAdoptAnnotationElement
-	if err := json.Unmarshal([]byte(annotation), &clustersToAdopt); err != nil {
+	if err := json.Unmarshal([]byte(clustersToAdoptRaw), &clustersToAdopt); err != nil {
 		return false, fmt.Errorf("failed to unmarshal %s annotation %w", ClustersToAdoptAnnotation, err)
 	}
 

@@ -132,6 +132,17 @@ func TestFilterToAdoptCluster(t *testing.T) {
 			want:    true,
 			wantErr: false,
 		},
+		{
+			name: "with internal adopt annotation",
+			args: args{
+				obj: newFederatedObject(map[string]string{
+					ClustersToAdoptInternalAnnotation: `{"clusters": ["kubeadmiral-member-1"]}`,
+				}),
+				clusterName: "kubeadmiral-member-1",
+			},
+			want:    true,
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
