@@ -129,7 +129,7 @@ func TestGetSchedulingUnit(t *testing.T) {
 		},
 	}
 
-	su, err := schedulingUnitForFedObject(typeConfig, &fedObj, &policy)
+	su, err := schedulingUnitForFedObject(typeConfig, &fedObj, &policy, nil)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	g.Expect(su).To(gomega.Equal(&framework.SchedulingUnit{
@@ -420,7 +420,7 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 					},
 				},
 			}
-			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy)
+			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy, nil)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 
 			// override fields we don't want to test
@@ -543,7 +543,7 @@ func TestSchedulingMode(t *testing.T) {
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 			obj.Spec.Template.Raw = rawJSON
 
-			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy)
+			su, err := schedulingUnitForFedObject(typeConfig, obj, test.policy, nil)
 			g.Expect(err).NotTo(gomega.HaveOccurred())
 			g.Expect(su.SchedulingMode).To(gomega.Equal(test.expectedResult))
 		})

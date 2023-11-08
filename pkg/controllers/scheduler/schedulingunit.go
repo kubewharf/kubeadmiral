@@ -35,6 +35,7 @@ func schedulingUnitForFedObject(
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	fedObject fedcorev1a1.GenericFederatedObject,
 	policy fedcorev1a1.GenericPropagationPolicy,
+	clusters []*fedcorev1a1.FederatedCluster,
 ) (*framework.SchedulingUnit, error) {
 	template, err := fedObject.GetSpec().GetTemplateAsUnstructured()
 	if err != nil {
@@ -127,6 +128,7 @@ func schedulingUnitForFedObject(
 	if exists {
 		schedulingUnit.MaxReplicas = maxReplicasOverride
 	}
+	updateMaxReplicasForTerminatingCluster(schedulingUnit, clusters)
 
 	schedulingUnit.Weights = getWeightsFromPolicy(policy)
 	weightsOverride, exists := getWeightsFromObject(fedObject)
@@ -607,6 +609,26 @@ func getMaxReplicasFromObject(object fedcorev1a1.GenericFederatedObject) (map[st
 	}
 
 	return maxReplicas, true
+}
+
+// updateMaxReplicasForTerminatingCluster prevents scheduling new replicas to terminating clusters
+func updateMaxReplicasForTerminatingCluster(
+	su *framework.SchedulingUnit,
+	clusters []*fedcorev1a1.FederatedCluster,
+) {
+	for _, cluster := range clusters {
+		if !cluster.DeletionTimestamp.IsZero() {
+			replicas := su.CurrentClusters[cluster.Name]
+			if replicas == nil {
+				replicas = new(int64)
+			}
+			if su.MaxReplicas == nil {
+				su.MaxReplicas = map[string]int64{cluster.Name: *replicas}
+			} else if max, exist := su.MaxReplicas[cluster.Name]; !exist || max > *replicas {
+				su.MaxReplicas[cluster.Name] = *replicas
+			}
+		}
+	}
 }
 
 func getClusterNamesFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[string]struct{} {

@@ -535,7 +535,7 @@ func (s *Scheduler) schedule(
 		common.NewQualifiedName(policy).String(),
 	)
 
-	schedulingUnit, err := schedulingUnitForFedObject(ftc, fedObject, policy)
+	schedulingUnit, err := schedulingUnitForFedObject(ftc, fedObject, policy, clusters)
 	if err != nil {
 		logger.Error(err, "Failed to get scheduling unit")
 		s.eventRecorder.Eventf(
