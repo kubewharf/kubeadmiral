@@ -20,6 +20,7 @@ import (
 	"context"
 	"reflect"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
@@ -28,12 +29,16 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 )
 
-func makeCluster(clusterName string) *fedcorev1a1.FederatedCluster {
-	return &fedcorev1a1.FederatedCluster{
+func makeCluster(clusterName string, terminating bool) *fedcorev1a1.FederatedCluster {
+	cluster := &fedcorev1a1.FederatedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: clusterName,
 		},
 	}
+	if terminating {
+		cluster.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+	}
+	return cluster
 }
 
 func newIntP64(in int64) *int64 {
@@ -55,7 +60,7 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			},
 			clusterScoreList: framework.ClusterScoreList{
 				{
-					Cluster: makeCluster("foo"),
+					Cluster: makeCluster("foo", false),
 					Score:   1,
 				},
 			},
@@ -69,11 +74,11 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			},
 			clusterScoreList: framework.ClusterScoreList{
 				{
-					Cluster: makeCluster("foo"),
+					Cluster: makeCluster("foo", false),
 					Score:   1,
 				},
 				{
-					Cluster: makeCluster("fun"),
+					Cluster: makeCluster("fun", false),
 					Score:   2,
 				},
 			},
@@ -88,7 +93,7 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			},
 			clusterScoreList: framework.ClusterScoreList{
 				{
-					Cluster: makeCluster("foo"),
+					Cluster: makeCluster("foo", false),
 					Score:   1,
 				},
 			},
@@ -103,11 +108,11 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			},
 			clusterScoreList: framework.ClusterScoreList{
 				{
-					Cluster: makeCluster("foo"),
+					Cluster: makeCluster("foo", false),
 					Score:   1,
 				},
 				{
-					Cluster: makeCluster("fun"),
+					Cluster: makeCluster("fun", false),
 					Score:   2,
 				},
 			},
@@ -121,11 +126,11 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			},
 			clusterScoreList: framework.ClusterScoreList{
 				{
-					Cluster: makeCluster("foo"),
+					Cluster: makeCluster("foo", false),
 					Score:   1,
 				},
 				{
-					Cluster: makeCluster("fun"),
+					Cluster: makeCluster("fun", false),
 					Score:   2,
 				},
 			},
@@ -140,11 +145,11 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			},
 			clusterScoreList: framework.ClusterScoreList{
 				{
-					Cluster: makeCluster("foo"),
+					Cluster: makeCluster("foo", false),
 					Score:   1,
 				},
 				{
-					Cluster: makeCluster("fun"),
+					Cluster: makeCluster("fun", false),
 					Score:   2,
 				},
 			},
@@ -159,11 +164,11 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			},
 			clusterScoreList: framework.ClusterScoreList{
 				{
-					Cluster: makeCluster("foo"),
+					Cluster: makeCluster("foo", false),
 					Score:   1,
 				},
 				{
-					Cluster: makeCluster("fun"),
+					Cluster: makeCluster("fun", false),
 					Score:   2,
 				},
 			},
@@ -179,11 +184,11 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			},
 			clusterScoreList: framework.ClusterScoreList{
 				{
-					Cluster: makeCluster("foo"),
+					Cluster: makeCluster("foo", false),
 					Score:   1,
 				},
 				{
-					Cluster: makeCluster("fun"),
+					Cluster: makeCluster("fun", false),
 					Score:   2,
 				},
 			},
@@ -199,11 +204,11 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			},
 			clusterScoreList: framework.ClusterScoreList{
 				{
-					Cluster: makeCluster("foo"),
+					Cluster: makeCluster("foo", false),
 					Score:   1,
 				},
 				{
-					Cluster: makeCluster("fun"),
+					Cluster: makeCluster("fun", false),
 					Score:   2,
 				},
 			},
@@ -219,11 +224,11 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			},
 			clusterScoreList: framework.ClusterScoreList{
 				{
-					Cluster: makeCluster("foo"),
+					Cluster: makeCluster("foo", false),
 					Score:   1,
 				},
 				{
-					Cluster: makeCluster("fun"),
+					Cluster: makeCluster("fun", false),
 					Score:   2,
 				},
 			},
@@ -247,7 +252,213 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			},
 			clusterScoreList: framework.ClusterScoreList{
 				{
-					Cluster: makeCluster("foo"),
+					Cluster: makeCluster("foo", false),
+					Score:   1,
+				},
+			},
+			expectedCluster: []string{},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "1 terminating cluster, duplicate scheduling mode, without max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", true),
+					Score:   1,
+				},
+			},
+			expectedCluster: []string{"foo"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "1 terminating cluster, duplicate scheduling mode, 1 max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+				MaxClusters:    pointer.Int64(1),
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", true),
+					Score:   1,
+				},
+			},
+			expectedCluster: []string{"foo"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "1 terminating cluster, duplicate scheduling mode, 2 max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+				MaxClusters:    pointer.Int64(2),
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", true),
+					Score:   1,
+				},
+			},
+			expectedCluster: []string{"foo"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "2 terminating clusters, duplicate scheduling mode, without max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", true),
+					Score:   1,
+				},
+				{
+					Cluster: makeCluster("fun", true),
+					Score:   2,
+				},
+			},
+			expectedCluster: []string{"fun", "foo"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "2 terminating clusters, duplicate scheduling mode, 1 max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+				MaxClusters:    pointer.Int64(1),
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", true),
+					Score:   1,
+				},
+				{
+					Cluster: makeCluster("fun", true),
+					Score:   2,
+				},
+			},
+			expectedCluster: []string{"fun"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "1 terminating cluster, 1 normal cluster, duplicate scheduling mode, 1 max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+				MaxClusters:    pointer.Int64(1),
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", true),
+					Score:   1,
+				},
+				{
+					Cluster: makeCluster("fun", false),
+					Score:   2,
+				},
+			},
+			expectedCluster: []string{"fun"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "1 normal cluster, 1 terminating cluster, duplicate scheduling mode, 1 max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+				MaxClusters:    pointer.Int64(1),
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", false),
+					Score:   1,
+				},
+				{
+					Cluster: makeCluster("fun", true),
+					Score:   2,
+				},
+			},
+			expectedCluster: []string{"foo"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "1 terminating cluster, divide scheduling mode, 1 max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDivide,
+				MaxClusters:    pointer.Int64(1),
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", true),
+					Score:   1,
+				},
+			},
+			expectedCluster: []string{"foo"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "2 terminating clusters, divide scheduling mode, 1 max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDivide,
+				MaxClusters:    pointer.Int64(1),
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", true),
+					Score:   1,
+				},
+				{
+					Cluster: makeCluster("fun", true),
+					Score:   2,
+				},
+			},
+			expectedCluster: []string{"fun"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "1 terminating cluster, 1 normal cluster, divide scheduling mode, 1 max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDivide,
+				MaxClusters:    pointer.Int64(1),
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", true),
+					Score:   1,
+				},
+				{
+					Cluster: makeCluster("fun", false),
+					Score:   2,
+				},
+			},
+			expectedCluster: []string{"fun"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "1 normal cluster, 1 terminating cluster, divide scheduling mode, 1 max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDivide,
+				MaxClusters:    pointer.Int64(1),
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", false),
+					Score:   1,
+				},
+				{
+					Cluster: makeCluster("fun", true),
+					Score:   2,
+				},
+			},
+			expectedCluster: []string{"foo"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
+			name: "1 terminating cluster, 0 max clusters",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDivide,
+				MaxClusters:    pointer.Int64(0),
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("foo", true),
 					Score:   1,
 				},
 			},

@@ -50,6 +50,15 @@ func (pl *MaxCluster) SelectClusters(
 	}
 
 	sort.Slice(clusterScoreList, func(i, j int) bool {
+		if clusterScoreList[i].Cluster.DeletionTimestamp.IsZero() {
+			if clusterScoreList[j].Cluster.DeletionTimestamp.IsZero() {
+				return clusterScoreList[i].Score > clusterScoreList[j].Score
+			}
+			return true
+		}
+		if clusterScoreList[j].Cluster.DeletionTimestamp.IsZero() {
+			return false
+		}
 		return clusterScoreList[i].Score > clusterScoreList[j].Score
 	})
 
