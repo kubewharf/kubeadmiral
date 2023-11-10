@@ -28,6 +28,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusteraffinity"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusterready"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusterresources"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusterterminating"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/maxcluster"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/placement"
@@ -40,6 +41,7 @@ import (
 var inTreeRegistry = runtime.Registry{
 	names.APIResources:                       apiresources.NewAPIResources,
 	names.ClusterReady:                       clusterready.NewClusterReady,
+	names.ClusterTerminating:                 clusterterminating.NewClusterTerminating,
 	names.ClusterAffinity:                    clusteraffinity.NewClusterAffinity,
 	names.ClusterResourcesFit:                clusterresources.NewClusterResourcesFit,
 	names.PlacementFilter:                    placement.NewPlacementFilter,
