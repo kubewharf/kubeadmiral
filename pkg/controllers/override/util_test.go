@@ -634,7 +634,7 @@ func TestParseOverrides(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"multiple clusters multiple Overrides(jsonPatch and image) - should return overrides for each cluster in order": {
-			fedObject: generateFedObjWithDeployment(
+			fedObject: generateFedDeploymentWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
 			policy: &fedcorev1a1.OverridePolicy{
 				Spec: fedcorev1a1.GenericOverridePolicySpec{
@@ -664,7 +664,7 @@ func TestParseOverrides(t *testing.T) {
 								Image: []fedcorev1a1.ImageOverrider{
 									{
 										Operations: generateOperationsOnFullComponent(
-											OperatorReplace,
+											OperatorOverwrite,
 											"all.cluster.io",
 											"all-cluster/echo-server",
 											"all",
@@ -699,7 +699,7 @@ func TestParseOverrides(t *testing.T) {
 								Image: []fedcorev1a1.ImageOverrider{
 									{
 										Operations: generateOperationsOnFullComponent(
-											OperatorReplace,
+											OperatorOverwrite,
 											"cluster.one.io",
 											"cluster-one/echo-server",
 											"one",
@@ -731,7 +731,7 @@ func TestParseOverrides(t *testing.T) {
 								Image: []fedcorev1a1.ImageOverrider{
 									{
 										Operations: generateOperationsOnFullComponent(
-											OperatorReplace,
+											OperatorOverwrite,
 											"cluster.two.io",
 											"cluster-two/echo-server",
 											"two",

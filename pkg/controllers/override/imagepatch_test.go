@@ -35,33 +35,13 @@ func Test_parseImageOverriders(t *testing.T) {
 	}{
 		// Test workload scenarios
 		// test operations on workload(one container)
-		"apply imageOverriders to Deployment(one container), component: full, OriginValue: not-empty, operator: add": {
-			fedObject: generateFedObjWithDeployment(
-				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
-			),
-			imageOverriders: []fedcorev1a1.ImageOverrider{
-				{
-					Operations: generateOperationsOnFullComponent(OperatorAdd,
-						"temp.io",
-						"temp/echo-server",
-						"0.5",
-						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-				},
-			},
-			expectedOverridePatches: fedcorev1a1.OverridePatches{
-				generatePatch("replace",
-					"/spec/template/spec/containers/0/image",
-					"temp.io/temp/echo-server:0.5@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-			},
-			isErrorExpected: false,
-		},
 		"apply imageOverriders to Deployment(one container), component: [registry,tag], OriginValue: empty, operator: add": {
-			fedObject: generateFedObjWithDeployment(
+			fedObject: generateFedDeploymentWithImage(
 				"ealen/echo-server@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnRegistryAndTag(OperatorAdd, "temp.io", "0.5"),
+					Operations: generateOperationsOnRegistryAndTag(OperatorAddIfAbsent, "temp.io", "0.5"),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -72,12 +52,12 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to Deployment(one container), component: full, operator: replace": {
-			fedObject: generateFedObjWithDeployment(
+			fedObject: generateFedDeploymentWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -92,12 +72,12 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to Deployment(one container), component: full, operator: remove": {
-			fedObject: generateFedObjWithDeployment(
+			fedObject: generateFedDeploymentWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorRemove, "", "", "", ""),
+					Operations: generateOperationsOnFullComponent(OperatorDelete, "", "", "", ""),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -106,33 +86,13 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 
-		"apply imageOverriders to DaemonSet(one container), component: full, OriginValue: not-empty, operator: add": {
-			fedObject: generateFedObjWithDaemonSet(
-				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
-			),
-			imageOverriders: []fedcorev1a1.ImageOverrider{
-				{
-					Operations: generateOperationsOnFullComponent(OperatorAdd,
-						"temp.io",
-						"temp/echo-server",
-						"0.5",
-						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-				},
-			},
-			expectedOverridePatches: fedcorev1a1.OverridePatches{
-				generatePatch("replace",
-					"/spec/template/spec/containers/0/image",
-					"temp.io/temp/echo-server:0.5@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-			},
-			isErrorExpected: false,
-		},
 		"apply imageOverriders to DaemonSet(one container), component: [registry,tag], OriginValue: empty, operator: add": {
-			fedObject: generateFedObjWithDaemonSet(
+			fedObject: generateFedDaemonSetWithImage(
 				"ealen/echo-server@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnRegistryAndTag(OperatorAdd, "temp.io", "0.5"),
+					Operations: generateOperationsOnRegistryAndTag(OperatorAddIfAbsent, "temp.io", "0.5"),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -143,12 +103,12 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to DaemonSet(one container), component: full, operator: replace": {
-			fedObject: generateFedObjWithDaemonSet(
+			fedObject: generateFedDaemonSetWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -163,12 +123,12 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to DaemonSet(one container), component: full, operator: remove": {
-			fedObject: generateFedObjWithDaemonSet(
+			fedObject: generateFedDaemonSetWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorRemove, "", "", "", ""),
+					Operations: generateOperationsOnFullComponent(OperatorDelete, "", "", "", ""),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -177,33 +137,13 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 
-		"apply imageOverriders to StatefulSet(one container), component: full, OriginValue: not-empty, operator: add": {
-			fedObject: generateFedObjWithStatefulSet(
-				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
-			),
-			imageOverriders: []fedcorev1a1.ImageOverrider{
-				{
-					Operations: generateOperationsOnFullComponent(OperatorAdd,
-						"temp.io",
-						"temp/echo-server",
-						"0.5",
-						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-				},
-			},
-			expectedOverridePatches: fedcorev1a1.OverridePatches{
-				generatePatch("replace",
-					"/spec/template/spec/containers/0/image",
-					"temp.io/temp/echo-server:0.5@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-			},
-			isErrorExpected: false,
-		},
 		"apply imageOverriders to StatefulSet(one container), component: [registry,tag], OriginValue: empty, operator: add": {
-			fedObject: generateFedObjWithStatefulSet(
+			fedObject: generateFedStatefulSetWithImage(
 				"ealen/echo-server@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnRegistryAndTag(OperatorAdd, "temp.io", "0.5"),
+					Operations: generateOperationsOnRegistryAndTag(OperatorAddIfAbsent, "temp.io", "0.5"),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -214,12 +154,12 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to StatefulSet(one container), component: full, operator: replace": {
-			fedObject: generateFedObjWithStatefulSet(
+			fedObject: generateFedStatefulSetWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -234,12 +174,12 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to StatefulSet(one container), component: full, operator: remove": {
-			fedObject: generateFedObjWithStatefulSet(
+			fedObject: generateFedStatefulSetWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorRemove, "", "", "", ""),
+					Operations: generateOperationsOnFullComponent(OperatorDelete, "", "", "", ""),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -248,33 +188,13 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 
-		"apply imageOverriders to Job(one container), component: full, OriginValue: not-empty, operator: add": {
-			fedObject: generateFedObjWithJob(
-				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
-			),
-			imageOverriders: []fedcorev1a1.ImageOverrider{
-				{
-					Operations: generateOperationsOnFullComponent(OperatorAdd,
-						"temp.io",
-						"temp/echo-server",
-						"0.5",
-						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-				},
-			},
-			expectedOverridePatches: fedcorev1a1.OverridePatches{
-				generatePatch("replace",
-					"/spec/template/spec/containers/0/image",
-					"temp.io/temp/echo-server:0.5@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-			},
-			isErrorExpected: false,
-		},
 		"apply imageOverriders to Job(one container), component: [registry,tag], OriginValue: empty, operator: add": {
-			fedObject: generateFedObjWithJob(
-				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+			fedObject: generateFedJobWithImage(
+				"ealen/echo-server@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnRegistryAndTag(OperatorAdd, "temp.io", "0.5"),
+					Operations: generateOperationsOnRegistryAndTag(OperatorAddIfAbsent, "temp.io", "0.5"),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -285,12 +205,12 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to Job(one container), component: full, operator: replace": {
-			fedObject: generateFedObjWithJob(
+			fedObject: generateFedJobWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -305,12 +225,12 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to Job(one container), component: full, operator: remove": {
-			fedObject: generateFedObjWithJob(
+			fedObject: generateFedJobWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorRemove, "", "", "", ""),
+					Operations: generateOperationsOnFullComponent(OperatorDelete, "", "", "", ""),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -319,33 +239,13 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 
-		"apply imageOverriders to CronJob(one container), component: full, OriginValue: not-empty, operator: add": {
-			fedObject: generateFedObjWithCronJob(
-				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
-			),
-			imageOverriders: []fedcorev1a1.ImageOverrider{
-				{
-					Operations: generateOperationsOnFullComponent(OperatorAdd,
-						"temp.io",
-						"temp/echo-server",
-						"0.5",
-						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-				},
-			},
-			expectedOverridePatches: fedcorev1a1.OverridePatches{
-				generatePatch("replace",
-					"/spec/jobTemplate/spec/template/spec/containers/0/image",
-					"temp.io/temp/echo-server:0.5@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-			},
-			isErrorExpected: false,
-		},
 		"apply imageOverriders to CronJob(one container), component: [registry,tag], OriginValue: empty, operator: add": {
 			fedObject: generateFedObjWithCronJob(
 				"ealen/echo-server@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnRegistryAndTag(OperatorAdd, "temp.io", "0.5"),
+					Operations: generateOperationsOnRegistryAndTag(OperatorAddIfAbsent, "temp.io", "0.5"),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -361,7 +261,7 @@ func Test_parseImageOverriders(t *testing.T) {
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -381,7 +281,7 @@ func Test_parseImageOverriders(t *testing.T) {
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorRemove, "", "", "", ""),
+					Operations: generateOperationsOnFullComponent(OperatorDelete, "", "", "", ""),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -392,33 +292,13 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 
-		"apply imageOverriders to Pod(one container), component: full, OriginValue: not-empty, operator: add": {
-			fedObject: generateFedObjWithPod(
-				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
-			),
-			imageOverriders: []fedcorev1a1.ImageOverrider{
-				{
-					Operations: generateOperationsOnFullComponent(OperatorAdd,
-						"temp.io",
-						"temp/echo-server",
-						"0.5",
-						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-				},
-			},
-			expectedOverridePatches: fedcorev1a1.OverridePatches{
-				generatePatch("replace",
-					"/spec/containers/0/image",
-					"temp.io/temp/echo-server:0.5@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-			},
-			isErrorExpected: false,
-		},
 		"apply imageOverriders to Pod(one container), component: [registry,tag], OriginValue: empty, operator: add": {
-			fedObject: generateFedObjWithPod(
+			fedObject: generateFedPodWithImage(
 				"ealen/echo-server@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnRegistryAndTag(OperatorAdd, "temp.io", "0.5"),
+					Operations: generateOperationsOnRegistryAndTag(OperatorAddIfAbsent, "temp.io", "0.5"),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -429,12 +309,12 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to Pod(one container), component: full, operator: replace": {
-			fedObject: generateFedObjWithPod(
+			fedObject: generateFedPodWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -449,12 +329,12 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to Pod(one container), component: full, operator: remove": {
-			fedObject: generateFedObjWithPod(
+			fedObject: generateFedPodWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorRemove, "", "", "", ""),
+					Operations: generateOperationsOnFullComponent(OperatorDelete, "", "", "", ""),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -464,13 +344,13 @@ func Test_parseImageOverriders(t *testing.T) {
 		},
 		// test replace operation on pod(multiple containers)
 		"apply imageOverriders to Pod(two of three containers), component: full, operator: replace": {
-			fedObject: generateFedObjWithPodWithThreeContainers(
+			fedObject: generateFedPodWithThreeContainersWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ContainerNames: []string{"server-1", "server-2"},
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -488,12 +368,12 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to Pod(three of three containers), component: full, operator: replace": {
-			fedObject: generateFedObjWithPodWithThreeContainers(
+			fedObject: generateFedPodWithThreeContainersWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -521,7 +401,7 @@ func Test_parseImageOverriders(t *testing.T) {
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ContainerNames: []string{"init-server-1", "server-1"},
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -544,7 +424,7 @@ func Test_parseImageOverriders(t *testing.T) {
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -567,38 +447,97 @@ func Test_parseImageOverriders(t *testing.T) {
 			},
 			isErrorExpected: false,
 		},
-
-		// Test specified path scenarios
-		// test operations on specified path(one path)
-		"apply imageOverriders to specified path, component: full, OriginValue: not-empty, operator: add": {
-			fedObject: generateFedObjWithArgoWorkflow(
+		// test replace operation on pod without value
+		"apply imageOverriders to Pod without value, component: [registry,tag], operator: replace": {
+			fedObject: generateFedPodWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					ImagePath: "/spec/templates/0/container/image",
-					Operations: generateOperationsOnFullComponent(OperatorAdd,
+					Operations: generateOperationsOnRegistryAndTag(OperatorOverwrite, "", ""),
+				},
+			},
+			expectedOverridePatches: fedcorev1a1.OverridePatches{
+				generatePatch("replace",
+					"/spec/containers/0/image",
+					"ealen/echo-server@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+			},
+			isErrorExpected: false,
+		},
+		// test replace operation on pod, the origin value of registry is empty
+		"apply imageOverriders to Pod(one container), component: registry, OriginValue: empty, operator: replace": {
+			fedObject: generateFedPodWithImage(
+				"ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+			),
+			imageOverriders: []fedcorev1a1.ImageOverrider{
+				{
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
-						"0.5",
+						"1.0",
 						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
 				generatePatch("replace",
-					"/spec/templates/0/container/image",
-					"temp.io/temp/echo-server:0.5@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+					"/spec/containers/0/image",
+					"temp.io/temp/echo-server:1.0@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
 			},
 			isErrorExpected: false,
 		},
+		// test replace operation on pod, the origin value of tag is empty
+		"apply imageOverriders to Pod(one container), component: tag, OriginValue: empty, operator: replace": {
+			fedObject: generateFedPodWithImage(
+				"docker.io/ealen/echo-server@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+			),
+			imageOverriders: []fedcorev1a1.ImageOverrider{
+				{
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
+						"temp.io",
+						"temp/echo-server",
+						"1.0",
+						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+				},
+			},
+			expectedOverridePatches: fedcorev1a1.OverridePatches{
+				generatePatch("replace",
+					"/spec/containers/0/image",
+					"temp.io/temp/echo-server:1.0@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+			},
+			isErrorExpected: false,
+		},
+		// test replace operation on pod, the origin value of digest is empty
+		"apply imageOverriders to Pod(one container), component: digest, OriginValue: empty, operator: replace": {
+			fedObject: generateFedPodWithImage(
+				"docker.io/ealen/echo-server:latest",
+			),
+			imageOverriders: []fedcorev1a1.ImageOverrider{
+				{
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
+						"temp.io",
+						"temp/echo-server",
+						"1.0",
+						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+				},
+			},
+			expectedOverridePatches: fedcorev1a1.OverridePatches{
+				generatePatch("replace",
+					"/spec/containers/0/image",
+					"temp.io/temp/echo-server:1.0@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+			},
+			isErrorExpected: false,
+		},
+
+		// Test specified path scenarios
+		// test operations on specified path(one path)
 		"apply imageOverriders to specified path, component: [registry,tag], OriginValue: empty, operator: add": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"ealen/echo-server@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ImagePath:  "/spec/templates/0/container/image",
-					Operations: generateOperationsOnRegistryAndTag(OperatorAdd, "temp.io", "0.5"),
+					Operations: generateOperationsOnRegistryAndTag(OperatorAddIfAbsent, "temp.io", "0.5"),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -609,13 +548,13 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to specified path, component: full, operator: replace": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ImagePath: "/spec/templates/0/container/image",
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -630,13 +569,13 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"apply imageOverriders to specified path, component: full, operator: remove": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ImagePath:  "/spec/templates/0/container/image",
-					Operations: generateOperationsOnFullComponent(OperatorRemove, "", "", "", ""),
+					Operations: generateOperationsOnFullComponent(OperatorDelete, "", "", "", ""),
 				},
 			},
 			expectedOverridePatches: fedcorev1a1.OverridePatches{
@@ -646,13 +585,13 @@ func Test_parseImageOverriders(t *testing.T) {
 		},
 		// test replace operations on specified path(two path)
 		"apply imageOverriders to specified paths(two path), component: full, operator: replace": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ImagePath: "/spec/templates/0/container/image",
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"1.0",
@@ -660,7 +599,7 @@ func Test_parseImageOverriders(t *testing.T) {
 				},
 				{
 					ImagePath: "/spec/templates/1/container/image",
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp-two/echo-server",
 						"2.0",
@@ -679,7 +618,7 @@ func Test_parseImageOverriders(t *testing.T) {
 		},
 		// test empty operator, the default operator value should be "replace"
 		"apply imageOverriders to specified path, component: full, operator: empty": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
@@ -701,78 +640,130 @@ func Test_parseImageOverriders(t *testing.T) {
 		},
 
 		// Test error scenarios
+		// test add operation on workloads, the origin value is not empty
+		"apply imageOverriders to Deployment(one container), component: full, OriginValue: not-empty, operator: add": {
+			fedObject: generateFedDeploymentWithImage(
+				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+			),
+			imageOverriders: []fedcorev1a1.ImageOverrider{
+				{
+					Operations: generateOperationsOnFullComponent(OperatorAddIfAbsent,
+						"temp.io",
+						"temp/echo-server",
+						"0.5",
+						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+				},
+			},
+			expectedOverridePatches: nil,
+			isErrorExpected:         true,
+		},
+		"apply imageOverriders to DaemonSet(one container), component: full, OriginValue: not-empty, operator: add": {
+			fedObject: generateFedDaemonSetWithImage(
+				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+			),
+			imageOverriders: []fedcorev1a1.ImageOverrider{
+				{
+					Operations: generateOperationsOnFullComponent(OperatorAddIfAbsent,
+						"temp.io",
+						"temp/echo-server",
+						"0.5",
+						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+				},
+			},
+			expectedOverridePatches: nil,
+			isErrorExpected:         true,
+		},
+		"apply imageOverriders to StatefulSet(one container), component: full, OriginValue: not-empty, operator: add": {
+			fedObject: generateFedStatefulSetWithImage(
+				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+			),
+			imageOverriders: []fedcorev1a1.ImageOverrider{
+				{
+					Operations: generateOperationsOnFullComponent(OperatorAddIfAbsent,
+						"temp.io",
+						"temp/echo-server",
+						"0.5",
+						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+				},
+			},
+			expectedOverridePatches: nil,
+			isErrorExpected:         true,
+		},
+		"apply imageOverriders to Job(one container), component: full, OriginValue: not-empty, operator: add": {
+			fedObject: generateFedJobWithImage(
+				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+			),
+			imageOverriders: []fedcorev1a1.ImageOverrider{
+				{
+					Operations: generateOperationsOnFullComponent(OperatorAddIfAbsent,
+						"temp.io",
+						"temp/echo-server",
+						"0.5",
+						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+				},
+			},
+			expectedOverridePatches: nil,
+			isErrorExpected:         true,
+		},
+		"apply imageOverriders to CronJob(one container), component: full, OriginValue: not-empty, operator: add": {
+			fedObject: generateFedObjWithCronJob(
+				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+			),
+			imageOverriders: []fedcorev1a1.ImageOverrider{
+				{
+					Operations: generateOperationsOnFullComponent(OperatorAddIfAbsent,
+						"temp.io",
+						"temp/echo-server",
+						"0.5",
+						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+				},
+			},
+			expectedOverridePatches: nil,
+			isErrorExpected:         true,
+		},
+		"apply imageOverriders to Pod(one container), component: full, OriginValue: not-empty, operator: add": {
+			fedObject: generateFedPodWithImage(
+				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+			),
+			imageOverriders: []fedcorev1a1.ImageOverrider{
+				{
+					Operations: generateOperationsOnFullComponent(OperatorAddIfAbsent,
+						"temp.io",
+						"temp/echo-server",
+						"0.5",
+						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+				},
+			},
+			expectedOverridePatches: nil,
+			isErrorExpected:         true,
+		},
+		// test add operation on specified path, the origin value is not empty
+		"apply imageOverriders to specified path, component: full, OriginValue: not-empty, operator: add": {
+			fedObject: generateFedArgoWorkflowWithImage(
+				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+			),
+			imageOverriders: []fedcorev1a1.ImageOverrider{
+				{
+					ImagePath: "/spec/templates/0/container/image",
+					Operations: generateOperationsOnFullComponent(OperatorAddIfAbsent,
+						"temp.io",
+						"temp/echo-server",
+						"0.5",
+						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+				},
+			},
+			expectedOverridePatches: nil,
+			isErrorExpected:         true,
+		},
+
 		// test add operation on pod without value
 		"apply imageOverriders to Pod without value, component: full, operator: add": {
-			fedObject: generateFedObjWithPod(
+			fedObject: generateFedPodWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorAdd, "", "", "", ""),
-				},
-			},
-			expectedOverridePatches: nil,
-			isErrorExpected:         true,
-		},
-		// test replace operation on pod without value
-		"apply imageOverriders to Pod without value, component: full, operator: replace": {
-			fedObject: generateFedObjWithPod(
-				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
-			),
-			imageOverriders: []fedcorev1a1.ImageOverrider{
-				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace, "", "", "", ""),
-				},
-			},
-			expectedOverridePatches: nil,
-			isErrorExpected:         true,
-		},
-		// test replace operation on pod, the origin value of registry is empty
-		"apply imageOverriders to Pod(one container), component: registry, OriginValue: empty, operator: replace": {
-			fedObject: generateFedObjWithPod(
-				"ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
-			),
-			imageOverriders: []fedcorev1a1.ImageOverrider{
-				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
-						"temp.io",
-						"temp/echo-server",
-						"1.0",
-						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-				},
-			},
-			expectedOverridePatches: nil,
-			isErrorExpected:         true,
-		},
-		// test replace operation on pod, the origin value of tag is empty
-		"apply imageOverriders to Pod(one container), component: tag, OriginValue: empty, operator: replace": {
-			fedObject: generateFedObjWithPod(
-				"docker.io/ealen/echo-server@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
-			),
-			imageOverriders: []fedcorev1a1.ImageOverrider{
-				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
-						"temp.io",
-						"temp/echo-server",
-						"1.0",
-						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
-				},
-			},
-			expectedOverridePatches: nil,
-			isErrorExpected:         true,
-		},
-		// test replace operation on pod, the origin value of digest is empty
-		"apply imageOverriders to Pod(one container), component: digest, OriginValue: empty, operator: replace": {
-			fedObject: generateFedObjWithPod(
-				"docker.io/ealen/echo-server:latest",
-			),
-			imageOverriders: []fedcorev1a1.ImageOverrider{
-				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
-						"temp.io",
-						"temp/echo-server",
-						"1.0",
-						"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+					Operations: generateOperationsOnFullComponent(OperatorAddIfAbsent, "", "", "", ""),
 				},
 			},
 			expectedOverridePatches: nil,
@@ -780,12 +771,12 @@ func Test_parseImageOverriders(t *testing.T) {
 		},
 		// test apply imageOverriders to unsupported resources without image path
 		"apply imageOverriders to unsupported resources without image path, component: full, operator: replace": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"0.5",
@@ -797,13 +788,13 @@ func Test_parseImageOverriders(t *testing.T) {
 		},
 		// test invalid image path
 		"apply imageOverriders to invalid path, component: full, operator: replace": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ImagePath: "/spec/templates/0/container",
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"1.0",
@@ -814,13 +805,13 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected:         true,
 		},
 		"apply imageOverriders to invalid path(don't have prefix '/'), component: full, operator: replace": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ImagePath: "spec/templates/0/container/image",
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"1.0",
@@ -831,13 +822,13 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected:         true,
 		},
 		"apply imageOverriders to invalid path(index out of range), component: full, operator: replace": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ImagePath: "/spec/templates/2/container/image",
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"1.0",
@@ -848,13 +839,13 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected:         true,
 		},
 		"apply imageOverriders to invalid path(index < 0), component: full, operator: replace": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ImagePath: "/spec/templates/-1/container/image",
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"1.0",
@@ -865,13 +856,13 @@ func Test_parseImageOverriders(t *testing.T) {
 			isErrorExpected:         true,
 		},
 		"apply imageOverriders to invalid path(index not int), component: full, operator: replace": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ImagePath: "/spec/templates/tt/container/image",
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"1.0",
@@ -883,13 +874,13 @@ func Test_parseImageOverriders(t *testing.T) {
 		},
 		// test invalid tag
 		"apply imageOverriders with invalid tag to specified path, component: full, operator: replace": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ImagePath: "/spec/templates/0/container/image",
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"1@0",
@@ -901,13 +892,13 @@ func Test_parseImageOverriders(t *testing.T) {
 		},
 		// test invalid digest
 		"apply imageOverriders with invalid digest to specified path, component: full, operator: replace": {
-			fedObject: generateFedObjWithArgoWorkflow(
+			fedObject: generateFedArgoWorkflowWithImage(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 			),
 			imageOverriders: []fedcorev1a1.ImageOverrider{
 				{
 					ImagePath: "/spec/templates/0/container/image",
-					Operations: generateOperationsOnFullComponent(OperatorReplace,
+					Operations: generateOperationsOnFullComponent(OperatorOverwrite,
 						"temp.io",
 						"temp/echo-server",
 						"1.0",
@@ -931,7 +922,7 @@ func Test_parseImageOverriders(t *testing.T) {
 	}
 }
 
-func generatePatch(op, path, value string) fedcorev1a1.OverridePatch {
+func generatePatch(op, path string, value any) fedcorev1a1.OverridePatch {
 	return fedcorev1a1.OverridePatch{Op: op, Path: path, Value: asJSON(value)}
 }
 
@@ -951,8 +942,8 @@ func generateOperationsOnRegistryAndTag(operator, registry, tag string) []fedcor
 	}
 }
 
-func generateFedObjWithDeployment(image string) *fedcorev1a1.FederatedObject {
-	deploymentTemplate := &unstructured.Unstructured{
+var (
+	basicDeploymentTemplate = &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "apps/v1",
 			"kind":       "Deployment",
@@ -960,25 +951,16 @@ func generateFedObjWithDeployment(image string) *fedcorev1a1.FederatedObject {
 				"name": "deployment-test",
 			},
 			"spec": map[string]interface{}{
-				"replicas": 1,
+				"replicas": int64(1),
 				"template": map[string]interface{}{
 					"spec": map[string]interface{}{
-						"containers": []interface{}{
-							map[string]interface{}{
-								"image": image,
-								"name":  "server",
-							},
-						},
+						"containers": []interface{}{},
 					},
 				},
 			},
 		},
 	}
-	return generateFedObj(deploymentTemplate)
-}
-
-func generateFedObjWithDaemonSet(image string) *fedcorev1a1.FederatedObject {
-	daemonSetTemplate := &unstructured.Unstructured{
+	basicDaemonSetTemplate = &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "apps/v1",
 			"kind":       "DaemonSet",
@@ -986,25 +968,16 @@ func generateFedObjWithDaemonSet(image string) *fedcorev1a1.FederatedObject {
 				"name": "daemonSet-test",
 			},
 			"spec": map[string]interface{}{
-				"replicas": 1,
+				"replicas": int64(1),
 				"template": map[string]interface{}{
 					"spec": map[string]interface{}{
-						"containers": []interface{}{
-							map[string]interface{}{
-								"image": image,
-								"name":  "server",
-							},
-						},
+						"containers": []interface{}{},
 					},
 				},
 			},
 		},
 	}
-	return generateFedObj(daemonSetTemplate)
-}
-
-func generateFedObjWithStatefulSet(image string) *fedcorev1a1.FederatedObject {
-	statefulSetTemplate := &unstructured.Unstructured{
+	basicStatefulSetTemplate = &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "apps/v1",
 			"kind":       "StatefulSet",
@@ -1012,25 +985,16 @@ func generateFedObjWithStatefulSet(image string) *fedcorev1a1.FederatedObject {
 				"name": "statefulSet-test",
 			},
 			"spec": map[string]interface{}{
-				"replicas": 1,
+				"replicas": int64(1),
 				"template": map[string]interface{}{
 					"spec": map[string]interface{}{
-						"containers": []interface{}{
-							map[string]interface{}{
-								"image": image,
-								"name":  "server",
-							},
-						},
+						"containers": []interface{}{},
 					},
 				},
 			},
 		},
 	}
-	return generateFedObj(statefulSetTemplate)
-}
-
-func generateFedObjWithJob(image string) *fedcorev1a1.FederatedObject {
-	jobTemplate := &unstructured.Unstructured{
+	basicJobTemplate = &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "batch/v1",
 			"kind":       "Job",
@@ -1040,22 +1004,13 @@ func generateFedObjWithJob(image string) *fedcorev1a1.FederatedObject {
 			"spec": map[string]interface{}{
 				"template": map[string]interface{}{
 					"spec": map[string]interface{}{
-						"containers": []interface{}{
-							map[string]interface{}{
-								"image": image,
-								"name":  "server",
-							},
-						},
+						"containers": []interface{}{},
 					},
 				},
 			},
 		},
 	}
-	return generateFedObj(jobTemplate)
-}
-
-func generateFedObjWithCronJob(image string) *fedcorev1a1.FederatedObject {
-	cronJobTemplate := &unstructured.Unstructured{
+	basicCronJobTemplate = &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "batch/v1beta1",
 			"kind":       "CronJob",
@@ -1068,12 +1023,7 @@ func generateFedObjWithCronJob(image string) *fedcorev1a1.FederatedObject {
 					"spec": map[string]interface{}{
 						"template": map[string]interface{}{
 							"spec": map[string]interface{}{
-								"containers": []interface{}{
-									map[string]interface{}{
-										"image": image,
-										"name":  "server",
-									},
-								},
+								"containers": []interface{}{},
 							},
 						},
 					},
@@ -1081,11 +1031,7 @@ func generateFedObjWithCronJob(image string) *fedcorev1a1.FederatedObject {
 			},
 		},
 	}
-	return generateFedObj(cronJobTemplate)
-}
-
-func generateFedObjWithPod(image string) *fedcorev1a1.FederatedObject {
-	podTemplate := &unstructured.Unstructured{
+	basicPodTemplate = &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "v1",
 			"kind":       "Pod",
@@ -1093,20 +1039,11 @@ func generateFedObjWithPod(image string) *fedcorev1a1.FederatedObject {
 				"name": "pod-test",
 			},
 			"spec": map[string]interface{}{
-				"containers": []interface{}{
-					map[string]interface{}{
-						"image": image,
-						"name":  "server",
-					},
-				},
+				"containers": []interface{}{},
 			},
 		},
 	}
-	return generateFedObj(podTemplate)
-}
-
-func generateFedObjWithArgoWorkflow(image string) *fedcorev1a1.FederatedObject {
-	podTemplate := &unstructured.Unstructured{
+	basicArgoWorkflowTemplate = &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "argoproj.io/v1alpha1",
 			"kind":       "Workflow",
@@ -1114,61 +1051,91 @@ func generateFedObjWithArgoWorkflow(image string) *fedcorev1a1.FederatedObject {
 				"name": "workflow-test",
 			},
 			"spec": map[string]interface{}{
-				"templates": []interface{}{
-					map[string]interface{}{
-						"container": map[string]interface{}{"image": image},
-					},
-					map[string]interface{}{
-						"container": map[string]interface{}{"image": image},
-					},
-				},
+				"templates": []interface{}{},
 			},
 		},
 	}
+)
 
+func generateFedDeploymentWithImage(image string) *fedcorev1a1.FederatedObject {
+	deployment := basicDeploymentTemplate.DeepCopy()
+	_ = unstructured.SetNestedSlice(deployment.Object, []interface{}{
+		map[string]interface{}{"image": image, "name": "server"},
+	}, "spec", "template", "spec", "containers")
+	return generateFedObj(deployment)
+}
+
+func generateFedDaemonSetWithImage(image string) *fedcorev1a1.FederatedObject {
+	daemonSetTemplate := basicDaemonSetTemplate.DeepCopy()
+	_ = unstructured.SetNestedSlice(daemonSetTemplate.Object, []interface{}{
+		map[string]interface{}{"image": image, "name": "server"},
+	}, "spec", "template", "spec", "containers")
+	return generateFedObj(daemonSetTemplate)
+}
+
+func generateFedStatefulSetWithImage(image string) *fedcorev1a1.FederatedObject {
+	statefulSetTemplate := basicStatefulSetTemplate.DeepCopy()
+	_ = unstructured.SetNestedSlice(statefulSetTemplate.Object, []interface{}{
+		map[string]interface{}{"image": image, "name": "server"},
+	}, "spec", "template", "spec", "containers")
+	return generateFedObj(statefulSetTemplate)
+}
+
+func generateFedJobWithImage(image string) *fedcorev1a1.FederatedObject {
+	jobTemplate := basicJobTemplate.DeepCopy()
+	_ = unstructured.SetNestedSlice(jobTemplate.Object, []interface{}{
+		map[string]interface{}{"image": image, "name": "server"},
+	}, "spec", "template", "spec", "containers")
+	return generateFedObj(jobTemplate)
+}
+
+func generateFedObjWithCronJob(image string) *fedcorev1a1.FederatedObject {
+	cronJobTemplate := basicCronJobTemplate.DeepCopy()
+	_ = unstructured.SetNestedSlice(cronJobTemplate.Object, []interface{}{
+		map[string]interface{}{"image": image, "name": "server"},
+	}, "spec", "jobTemplate", "spec", "template", "spec", "containers")
+	return generateFedObj(cronJobTemplate)
+}
+
+func generateFedPodWithImage(image string) *fedcorev1a1.FederatedObject {
+	podTemplate := basicPodTemplate.DeepCopy()
+	_ = unstructured.SetNestedSlice(podTemplate.Object, []interface{}{
+		map[string]interface{}{"image": image, "name": "server"},
+	}, "spec", "containers")
 	return generateFedObj(podTemplate)
 }
 
-func generateFedObjWithPodWithThreeContainers(image string) *fedcorev1a1.FederatedObject {
-	podTemplate := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "v1",
-			"kind":       "Pod",
-			"metadata": map[string]interface{}{
-				"name": "pod-test",
-			},
-			"spec": map[string]interface{}{
-				"containers": []interface{}{
-					map[string]interface{}{"image": image, "name": "server-1"},
-					map[string]interface{}{"image": image, "name": "server-2"},
-					map[string]interface{}{"image": image, "name": "server-3"},
-				},
-			},
-		},
-	}
+func generateFedArgoWorkflowWithImage(image string) *fedcorev1a1.FederatedObject {
+	argoWorkflowTemplate := basicArgoWorkflowTemplate.DeepCopy()
+	_ = unstructured.SetNestedSlice(argoWorkflowTemplate.Object, []interface{}{
+		map[string]interface{}{"container": map[string]interface{}{"image": image}},
+		map[string]interface{}{"container": map[string]interface{}{"image": image}},
+	}, "spec", "templates")
+	return generateFedObj(argoWorkflowTemplate)
+}
+
+func generateFedPodWithThreeContainersWithImage(image string) *fedcorev1a1.FederatedObject {
+	podTemplate := basicPodTemplate.DeepCopy()
+	_ = unstructured.SetNestedSlice(podTemplate.Object, []interface{}{
+		map[string]interface{}{"image": image, "name": "server-1"},
+		map[string]interface{}{"image": image, "name": "server-2"},
+		map[string]interface{}{"image": image, "name": "server-3"},
+	}, "spec", "containers")
 	return generateFedObj(podTemplate)
 }
 
 func generateFedObjWithPodWithTwoNormalAndTwoInit(image string) *fedcorev1a1.FederatedObject {
-	podTemplate := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "v1",
-			"kind":       "Pod",
-			"metadata": map[string]interface{}{
-				"name": "pod-test",
-			},
-			"spec": map[string]interface{}{
-				"initContainers": []interface{}{
-					map[string]interface{}{"image": image, "name": "init-server-1"},
-					map[string]interface{}{"image": image, "name": "init-server-2"},
-				},
-				"containers": []interface{}{
-					map[string]interface{}{"image": image, "name": "server-1"},
-					map[string]interface{}{"image": image, "name": "server-2"},
-				},
-			},
-		},
-	}
+	podTemplate := basicPodTemplate.DeepCopy()
+	_ = unstructured.SetNestedSlice(podTemplate.Object, []interface{}{
+		map[string]interface{}{"image": image, "name": "init-server-1"},
+		map[string]interface{}{"image": image, "name": "init-server-2"},
+	}, "spec", "initContainers")
+
+	_ = unstructured.SetNestedSlice(podTemplate.Object, []interface{}{
+		map[string]interface{}{"image": image, "name": "server-1"},
+		map[string]interface{}{"image": image, "name": "server-2"},
+	}, "spec", "containers")
+
 	return generateFedObj(podTemplate)
 }
 

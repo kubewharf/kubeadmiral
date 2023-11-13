@@ -65,14 +65,14 @@ spec:
                                           - Digest
                                         type: string
                                       operator:
-                                        description: Operator specifies the operation. If omitted, defaults to "replace". For "add" operation, if the ImageComponent already has a value, it behaves as a "replace" action.
+                                        description: Operator specifies the operation. If omitted, defaults to "overwrite".
                                         enum:
-                                          - add
-                                          - remove
-                                          - replace
+                                          - addIfAbsent
+                                          - overwrite
+                                          - delete
                                         type: string
                                       value:
-                                        description: Value is the value required by the operation.
+                                        description: Value is the value required by the operation. For 'addIfAbsent' Operator, the old value of ImageComponent should be empty, and the Value shouldn't be empty.
                                         type: string
                                     required:
                                       - imageComponent
