@@ -38,10 +38,15 @@ const (
 	OperatorReplace = "replace"
 
 	OperatorAddIfAbsent = "addIfAbsent"
+	OperatorAppend      = "append"
 	OperatorOverwrite   = "overwrite"
 	OperatorDelete      = "delete"
 
-	ImageTarget = "image"
+	ImageTarget       = "image"
+	CommandTarget     = "command"
+	ArgsTarget        = "args"
+	AnnotationsTarget = "annotations"
+	LabelsTarget      = "labels"
 
 	InitContainers = "initContainers"
 	Containers     = "containers"
@@ -250,6 +255,34 @@ func parsePatchesFromOverriders(
 		return nil, fmt.Errorf("failed to parse image overriders: %w", err)
 	} else {
 		patches = append(patches, imagePatches...)
+	}
+
+	// parse patches from command overriders
+	if commandPatches, err := parseEntrypointOverriders(fedObject, overriders.Command, CommandTarget); err != nil {
+		return nil, fmt.Errorf("failed to parse command overriders: %w", err)
+	} else {
+		patches = append(patches, commandPatches...)
+	}
+
+	// parse patches from args overriders
+	if argsPatches, err := parseEntrypointOverriders(fedObject, overriders.Args, ArgsTarget); err != nil {
+		return nil, fmt.Errorf("failed to parse args overriders: %w", err)
+	} else {
+		patches = append(patches, argsPatches...)
+	}
+
+	// parse patches from annotation overriders
+	if annotationsPatches, err := parseStringMapOverriders(fedObject, overriders.Annotations, AnnotationsTarget); err != nil {
+		return nil, fmt.Errorf("failed to parse annotations overriders: %w", err)
+	} else {
+		patches = append(patches, annotationsPatches...)
+	}
+
+	// parse patches from labels overriders
+	if labelsPatches, err := parseStringMapOverriders(fedObject, overriders.Labels, LabelsTarget); err != nil {
+		return nil, fmt.Errorf("failed to parse labels overriders: %w", err)
+	} else {
+		patches = append(patches, labelsPatches...)
 	}
 
 	// parse patches from jsonPatch overriders

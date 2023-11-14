@@ -40,8 +40,77 @@ spec:
                       overriders:
                         description: Overriders specify the overriders to be applied in the target clusters.
                         properties:
+                          annotations:
+                            description: Annotation specifies overriders that apply to the resource annotations.
+                            items:
+                              description: StringMapOverrider represents the rules dedicated to handling resource labels/annotations
+                              properties:
+                                operator:
+                                  description: Operator specifies the operation. If omitted, defaults to "overwrite".
+                                  enum:
+                                    - addIfAbsent
+                                    - overwrite
+                                    - delete
+                                  type: string
+                                value:
+                                  additionalProperties:
+                                    type: string
+                                  description: Value is the value(s) that will be applied to annotations/labels of resource. If Operator is 'addIfAbsent', items in Value (empty is not allowed) will be added in annotations/labels. - For 'addIfAbsent' Operator, the keys in Value cannot conflict with annotations/labels. If Operator is 'overwrite', items in Value which match in annotations/labels will be replaced. If Operator is 'delete', items in Value which match in annotations/labels will be deleted.
+                                  type: object
+                              required:
+                                - value
+                              type: object
+                            type: array
+                          args:
+                            description: Args specifies overriders that apply to the container arguments.
+                            items:
+                              properties:
+                                containerName:
+                                  description: ContainerName targets the specified container or init container in the pod template.
+                                  type: string
+                                operator:
+                                  description: Operator specifies the operation. If omitted, defaults to "overwrite".
+                                  enum:
+                                    - append
+                                    - overwrite
+                                    - delete
+                                  type: string
+                                value:
+                                  description: Value is the value(s) that will be applied to command/args of ContainerName. If Operator is 'append', items in Value (empty is not allowed) will be appended to command/args. If Operator is 'overwrite', current command/args of ContainerName will be completely replaced by Value. If Operator is 'delete', items in Value that match in command/args will be deleted.
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                                - containerName
+                                - value
+                              type: object
+                            type: array
+                          command:
+                            description: Command specifies overriders that apply to the container commands.
+                            items:
+                              properties:
+                                containerName:
+                                  description: ContainerName targets the specified container or init container in the pod template.
+                                  type: string
+                                operator:
+                                  description: Operator specifies the operation. If omitted, defaults to "overwrite".
+                                  enum:
+                                    - append
+                                    - overwrite
+                                    - delete
+                                  type: string
+                                value:
+                                  description: Value is the value(s) that will be applied to command/args of ContainerName. If Operator is 'append', items in Value (empty is not allowed) will be appended to command/args. If Operator is 'overwrite', current command/args of ContainerName will be completely replaced by Value. If Operator is 'delete', items in Value that match in command/args will be deleted.
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                                - containerName
+                                - value
+                              type: object
+                            type: array
                           image:
-                            description: Image specifies the overriders that applies to the image.
+                            description: Image specifies the overriders that apply to the image.
                             items:
                               properties:
                                 containerNames:
@@ -97,6 +166,27 @@ spec:
                                   x-kubernetes-preserve-unknown-fields: true
                               required:
                                 - path
+                              type: object
+                            type: array
+                          labels:
+                            description: Label specifies overriders that apply to the resource labels.
+                            items:
+                              description: StringMapOverrider represents the rules dedicated to handling resource labels/annotations
+                              properties:
+                                operator:
+                                  description: Operator specifies the operation. If omitted, defaults to "overwrite".
+                                  enum:
+                                    - addIfAbsent
+                                    - overwrite
+                                    - delete
+                                  type: string
+                                value:
+                                  additionalProperties:
+                                    type: string
+                                  description: Value is the value(s) that will be applied to annotations/labels of resource. If Operator is 'addIfAbsent', items in Value (empty is not allowed) will be added in annotations/labels. - For 'addIfAbsent' Operator, the keys in Value cannot conflict with annotations/labels. If Operator is 'overwrite', items in Value which match in annotations/labels will be replaced. If Operator is 'delete', items in Value which match in annotations/labels will be deleted.
+                                  type: object
+                              required:
+                                - value
                               type: object
                             type: array
                         type: object
