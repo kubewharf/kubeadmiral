@@ -25,7 +25,6 @@ func GetDefaultEnabledPlugins() *fedcore.EnabledPlugins {
 	filterPlugins := []string{
 		names.APIResources,
 		names.TaintToleration,
-		names.ClusterResourcesFit,
 		names.PlacementFilter,
 		names.ClusterAffinity,
 		names.ClusterReady,
