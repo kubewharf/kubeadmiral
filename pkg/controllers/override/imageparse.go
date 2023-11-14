@@ -58,7 +58,7 @@ func (i *Image) OperateTag(operator, value string) error {
 		return err
 	}
 
-	if operator != OperatorRemove && !utilreference.AnchoredTagRegexp.MatchString(newTag) {
+	if newTag != "" && !utilreference.AnchoredTagRegexp.MatchString(newTag) {
 		return fmt.Errorf("invalid tag format after applying the overrider")
 	}
 
@@ -72,7 +72,7 @@ func (i *Image) OperateDigest(operator, value string) error {
 		return err
 	}
 
-	if operator != OperatorRemove && !utilreference.AnchoredDigestRegexp.MatchString(newDigest) {
+	if newDigest != "" && !utilreference.AnchoredDigestRegexp.MatchString(newDigest) {
 		return fmt.Errorf("invalid digest format after applying the overrider")
 	}
 
@@ -82,23 +82,20 @@ func (i *Image) OperateDigest(operator, value string) error {
 
 func operateImageComponent(oldValue, operator, newValue string) (string, error) {
 	switch operator {
-	case OperatorAdd:
+	case OperatorAddIfAbsent:
 		if newValue == "" {
-			return "", fmt.Errorf("add operation needs value")
+			return "", fmt.Errorf("%s operation needs value", OperatorAddIfAbsent)
+		}
+		if oldValue != "" {
+			return "", fmt.Errorf("%s is not allowed to operate on non-empty value", OperatorAddIfAbsent)
 		}
 		return newValue, nil
-	case OperatorReplace:
-		if newValue == "" {
-			return "", fmt.Errorf("replace operation needs value")
-		}
-		if oldValue == "" {
-			return "", fmt.Errorf("replace is not allowed to operate on empty value")
-		}
+	case OperatorOverwrite:
 		return newValue, nil
-	case OperatorRemove:
+	case OperatorDelete:
 		return "", nil
 	}
-	return "", fmt.Errorf("unsupported operator")
+	return "", fmt.Errorf("unsupported operator: %s", operator)
 }
 
 func (i *Image) String() string {

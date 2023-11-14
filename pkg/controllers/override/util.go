@@ -19,14 +19,32 @@ package override
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/util/clusterselector"
+	podutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
+)
+
+const (
+	OperatorAdd     = "add"
+	OperatorRemove  = "remove"
+	OperatorReplace = "replace"
+
+	OperatorAddIfAbsent = "addIfAbsent"
+	OperatorOverwrite   = "overwrite"
+	OperatorDelete      = "delete"
+
+	ImageTarget = "image"
+
+	InitContainers = "initContainers"
+	Containers     = "containers"
 )
 
 type overridesMap map[string]fedcorev1a1.OverridePatches
@@ -222,12 +240,14 @@ func parsePatchesFromOverriders(
 ) (fedcorev1a1.OverridePatches, error) {
 	patches := make(fedcorev1a1.OverridePatches, 0)
 
+	// parse patches from image overriders
 	if imagePatches, err := parseImageOverriders(fedObject, overriders.Image); err != nil {
 		return nil, fmt.Errorf("failed to parse image overriders: %w", err)
 	} else {
 		patches = append(patches, imagePatches...)
 	}
 
+	// parse patches from jsonPatch overriders
 	if jsonPatches, err := parseJSONPatchOverriders(overriders.JsonPatch); err != nil {
 		return nil, fmt.Errorf("failed to parse jsonPatch overriders: %w", err)
 	} else {
@@ -235,6 +255,26 @@ func parsePatchesFromOverriders(
 	}
 
 	return patches, nil
+}
+
+func getGVKFromFederatedObject(fedObject fedcorev1a1.GenericFederatedObject) (schema.GroupVersionKind, error) {
+	if fedObject == nil {
+		return schema.GroupVersionKind{}, fmt.Errorf("fedObject is nil")
+	}
+	sourceObj, err := fedObject.GetSpec().GetTemplateAsUnstructured()
+	if err != nil {
+		return schema.GroupVersionKind{}, fmt.Errorf("failed to get sourceObj from fedObj: %w", err)
+	}
+	return sourceObj.GetObjectKind().GroupVersionKind(), nil
+}
+
+func generateTargetPathForPodSpec(gvk schema.GroupVersionKind, containerKind, target string, index int) (string, error) {
+	path, ok := podutil.PodSpecPaths[gvk.GroupKind()]
+	if !ok {
+		return "", fmt.Errorf("%w: %s", podutil.ErrUnknownTypeToGetPodSpec, gvk.String())
+	}
+	podSpecPath := "/" + strings.ReplaceAll(path, ".", "/")
+	return fmt.Sprintf("%s/%s/%d/%s", podSpecPath, containerKind, index, target), nil
 }
 
 func parseJSONPatchOverriders(

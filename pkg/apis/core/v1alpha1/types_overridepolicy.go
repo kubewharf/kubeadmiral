@@ -119,13 +119,13 @@ type Operation struct {
 	ImageComponent string `json:"imageComponent"`
 
 	// Operator specifies the operation.
-	// If omitted, defaults to "replace".
-	// For "add" operation, if the ImageComponent already has a value, it behaves as a "replace" action.
-	// +kubebuilder:validation:Enum=add;remove;replace
+	// If omitted, defaults to "overwrite".
+	// +kubebuilder:validation:Enum=addIfAbsent;overwrite;delete
 	// +optional
 	Operator string `json:"operator,omitempty"`
 
 	// Value is the value required by the operation.
+	// For 'addIfAbsent' Operator, the old value of ImageComponent should be empty, and the Value shouldn't be empty.
 	// +optional
 	Value string `json:"value,omitempty"`
 }

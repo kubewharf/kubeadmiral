@@ -23,7 +23,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -31,10 +30,7 @@ import (
 )
 
 const (
-	pathSeparator   = "/"
-	OperatorAdd     = "add"
-	OperatorRemove  = "remove"
-	OperatorReplace = "replace"
+	pathSeparator = "/"
 
 	Registry   = "Registry"
 	Repository = "Repository"
@@ -112,7 +108,7 @@ func parsePatchesFromImagePath(
 	}
 
 	// apply image override
-	newImageValue, err := applyImageOverride(imageValue, imageOverrider)
+	newImageValue, err := applyImageOverrider(imageValue, imageOverrider)
 	if err != nil {
 		return fmt.Errorf("failed to apply image override: %w", err)
 	}
@@ -129,11 +125,10 @@ func parsePatchesFromWorkload(
 	patchMap map[string]string,
 ) error {
 	// get pod spec from fedObj
-	sourceObj, err := fedObject.GetSpec().GetTemplateAsUnstructured()
+	gvk, err := getGVKFromFederatedObject(fedObject)
 	if err != nil {
-		return fmt.Errorf("failed to get sourceObj from fedObj: %w", err)
+		return err
 	}
-	gvk := sourceObj.GetObjectKind().GroupVersionKind()
 	podSpec, err := podutil.GetResourcePodSpec(fedObject, gvk)
 	if err != nil {
 		return fmt.Errorf("failed to get podSpec from sourceObj: %w", err)
@@ -147,29 +142,24 @@ func parsePatchesFromWorkload(
 		}
 	}
 
+	containerKinds := []string{InitContainers, Containers}
 	// process the init containers and containers
 	for i, containers := range [][]corev1.Container{podSpec.InitContainers, podSpec.Containers} {
 		for containerIndex, container := range containers {
 			if len(imageOverrider.ContainerNames) == 0 || specifiedContainers.Has(container.Name) {
-				var imagePath string
-				if i == 0 {
-					if imagePath, err = generateImagePathForPodSpec(gvk, containerIndex, "initContainers"); err != nil {
-						return err
-					}
-				} else {
-					if imagePath, err = generateImagePathForPodSpec(gvk, containerIndex, "containers"); err != nil {
-						return err
-					}
-				}
-
-				imageValue := patchMap[imagePath]
-				if imageValue == "" {
-					imageValue = container.Image
-				}
-
-				newImageValue, err := applyImageOverride(imageValue, imageOverrider)
+				imagePath, err := generateTargetPathForPodSpec(gvk, containerKinds[i], ImageTarget, containerIndex)
 				if err != nil {
-					return fmt.Errorf("failed to apply image override: %w", err)
+					return err
+				}
+
+				imageValue := container.Image
+				if val, ok := patchMap[imagePath]; ok {
+					imageValue = val
+				}
+
+				newImageValue, err := applyImageOverrider(imageValue, imageOverrider)
+				if err != nil {
+					return fmt.Errorf("failed to apply image overrider: %w", err)
 				}
 				patchMap[imagePath] = newImageValue
 			}
@@ -179,8 +169,8 @@ func parsePatchesFromWorkload(
 	return nil
 }
 
-// applyImageOverride applies override to oldImage to generate a new value
-func applyImageOverride(oldImage string, imageOverrider *fedcorev1a1.ImageOverrider) (string, error) {
+// applyImageOverrider applies overriders to oldImage to generate a new value
+func applyImageOverrider(oldImage string, imageOverrider *fedcorev1a1.ImageOverrider) (string, error) {
 	// parse oldImage value into different parts for easier operation
 	newImage, err := ParseImage(oldImage)
 	if err != nil {
@@ -191,9 +181,9 @@ func applyImageOverride(oldImage string, imageOverrider *fedcorev1a1.ImageOverri
 	for _, operation := range imageOverrider.Operations {
 		operator, value, component := operation.Operator, operation.Value, operation.ImageComponent
 
-		// if omitted, defaults to "replace"
+		// if omitted, defaults to "overwrite"
 		if operator == "" {
-			operator = OperatorReplace
+			operator = OperatorOverwrite
 		}
 
 		switch component {
@@ -219,13 +209,4 @@ func applyImageOverride(oldImage string, imageOverrider *fedcorev1a1.ImageOverri
 	}
 
 	return newImage.String(), nil
-}
-
-func generateImagePathForPodSpec(gvk schema.GroupVersionKind, index int, containerKind string) (string, error) {
-	path, ok := podutil.PodSpecPaths[gvk.GroupKind()]
-	if !ok {
-		return "", fmt.Errorf("%w: %s", podutil.ErrUnknownTypeToGetPodSpec, gvk.String())
-	}
-	newPath := "/" + strings.ReplaceAll(path, ".", "/")
-	return fmt.Sprintf("%s/%s/%d/image", newPath, containerKind, index), nil
 }
