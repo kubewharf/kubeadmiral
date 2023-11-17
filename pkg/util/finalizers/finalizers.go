@@ -22,49 +22,36 @@ are Copyright 2023 The KubeAdmiral Authors.
 package finalizers
 
 import (
-	meta "k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // HasFinalizer returns true if the given object has the given finalizer in its ObjectMeta.
-func HasFinalizer(obj runtime.Object, finalizer string) (bool, error) {
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-		return false, err
-	}
-	finalizers := sets.NewString(accessor.GetFinalizers()...)
-	return finalizers.Has(finalizer), nil
+func HasFinalizer(obj metav1.Object, finalizer string) bool {
+	finalizers := sets.New(obj.GetFinalizers()...)
+	return finalizers.Has(finalizer)
 }
 
 // AddFinalizers adds the given finalizers to the given objects ObjectMeta.
 // Returns true if the object was updated.
-func AddFinalizers(obj runtime.Object, newFinalizers sets.String) (bool, error) {
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-		return false, err
-	}
-	oldFinalizers := sets.NewString(accessor.GetFinalizers()...)
+func AddFinalizers(obj metav1.Object, newFinalizers sets.Set[string]) bool {
+	oldFinalizers := sets.New(obj.GetFinalizers()...)
 	if oldFinalizers.IsSuperset(newFinalizers) {
-		return false, nil
+		return false
 	}
 	allFinalizers := oldFinalizers.Union(newFinalizers)
-	accessor.SetFinalizers(allFinalizers.List())
-	return true, nil
+	obj.SetFinalizers(sets.List(allFinalizers))
+	return true
 }
 
 // RemoveFinalizers removes the given finalizers from the given objects ObjectMeta.
 // Returns true if the object was updated.
-func RemoveFinalizers(obj runtime.Object, finalizers sets.String) (bool, error) {
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-		return false, err
-	}
-	oldFinalizers := sets.NewString(accessor.GetFinalizers()...)
+func RemoveFinalizers(obj metav1.Object, finalizers sets.Set[string]) bool {
+	oldFinalizers := sets.New(obj.GetFinalizers()...)
 	if oldFinalizers.Intersection(finalizers).Len() == 0 {
-		return false, nil
+		return false
 	}
 	newFinalizers := oldFinalizers.Difference(finalizers)
-	accessor.SetFinalizers(newFinalizers.List())
-	return true, nil
+	obj.SetFinalizers(sets.List(newFinalizers))
+	return true
 }
