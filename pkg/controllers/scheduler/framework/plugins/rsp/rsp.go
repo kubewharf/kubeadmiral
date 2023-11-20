@@ -48,8 +48,6 @@ const (
 	allocatableResource string = "allocatable"
 )
 
-var ErrNoCPUResource = errors.New("no cpu resource")
-
 type ClusterCapacityWeight struct{}
 
 var _ framework.ReplicasPlugin = &ClusterCapacityWeight{}
@@ -209,7 +207,7 @@ func CalcWeightLimit(
 	for member, resources := range allocatables {
 		resourceQuantity, ok := resources[resourceName]
 		if !ok {
-			err = ErrNoCPUResource
+			err = fmt.Errorf("no %s resource", resourceName)
 			return
 		}
 		weightLimit[member] = int64(math.Round(float64(resourceQuantity.Value()) / sum * sumWeight * supplyLimitRatio))
@@ -244,7 +242,7 @@ func AvailableToPercentage(
 	for member, resources := range clusterAvailables {
 		resourceQuantity, ok := resources[resourceName]
 		if !ok {
-			err = ErrNoCPUResource
+			err = fmt.Errorf("no %s resource", resourceName)
 			return
 		}
 
@@ -295,6 +293,7 @@ func QueryAvailable(clusters []*fedcorev1a1.FederatedCluster) map[string]corev1.
 		available := make(corev1.ResourceList)
 		available[corev1.ResourceCPU] = resource.MustParse("0")
 		available[corev1.ResourceMemory] = resource.MustParse("0")
+		available[framework.ResourceGPU] = resource.MustParse("0")
 		// sum up by resource
 		for resourceName := range cluster.Status.Resources.Available {
 			if val, ok := available[resourceName]; ok {
@@ -316,6 +315,7 @@ func QueryAllocatable(clusters []*fedcorev1a1.FederatedCluster) map[string]corev
 		allocatable := make(corev1.ResourceList)
 		allocatable[corev1.ResourceCPU] = resource.MustParse("0")
 		allocatable[corev1.ResourceMemory] = resource.MustParse("0")
+		allocatable[framework.ResourceGPU] = resource.MustParse("0")
 		// sum up by resource
 		for resourceName := range cluster.Status.Resources.Allocatable {
 			if val, ok := allocatable[resourceName]; ok {

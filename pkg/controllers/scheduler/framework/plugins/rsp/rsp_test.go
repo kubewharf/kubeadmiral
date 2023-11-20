@@ -72,6 +72,25 @@ func makeClusterWithCPU(name string, allocatable, available int) *fedcorev1a1.Fe
 	return cluster
 }
 
+func makeClusterWithGPU(name string, allocatable, available int) *fedcorev1a1.FederatedCluster {
+	cluster := &fedcorev1a1.FederatedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+	}
+	if allocatable >= 0 && available >= 0 {
+		cluster.Status.Resources = fedcorev1a1.Resources{
+			Allocatable: corev1.ResourceList{
+				framework.ResourceGPU: resource.MustParse(strconv.Itoa(allocatable)),
+			},
+			Available: corev1.ResourceList{
+				framework.ResourceGPU: resource.MustParse(strconv.Itoa(available)),
+			},
+		}
+	}
+	return cluster
+}
+
 func TestCalcWeightLimit(t *testing.T) {
 	type args struct {
 		clusters         []*fedcorev1a1.FederatedCluster
@@ -79,12 +98,14 @@ func TestCalcWeightLimit(t *testing.T) {
 	}
 	tests := []struct {
 		name            string
+		resourceName    corev1.ResourceName
 		args            args
 		wantWeightLimit map[string]int64
 		wantErr         assert.ErrorAssertionFunc
 	}{
 		{
-			name: "two clusters have the same resource",
+			name:         "two clusters have the same resource",
+			resourceName: corev1.ResourceCPU,
 			args: args{
 				clusters: []*fedcorev1a1.FederatedCluster{
 					makeClusterWithCPU("cluster1", 100, 0),
@@ -99,7 +120,8 @@ func TestCalcWeightLimit(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "3 clusters have different resource amount",
+			name:         "3 clusters have different resource amount",
+			resourceName: corev1.ResourceCPU,
 			args: args{
 				clusters: []*fedcorev1a1.FederatedCluster{
 					makeClusterWithCPU("cluster1", 3000, 0),
@@ -116,7 +138,8 @@ func TestCalcWeightLimit(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "1 cluster node level info missing",
+			name:         "1 cluster node level info missing",
+			resourceName: corev1.ResourceCPU,
 			args: args{
 				clusters: []*fedcorev1a1.FederatedCluster{
 					makeClusterWithCPU("cluster1", 3000, -1),
@@ -133,7 +156,8 @@ func TestCalcWeightLimit(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "all clusters node level info missing",
+			name:         "all clusters node level info missing",
+			resourceName: corev1.ResourceCPU,
 			args: args{
 				clusters: []*fedcorev1a1.FederatedCluster{
 					makeClusterWithCPU("cluster1", 3000, -1),
@@ -149,10 +173,64 @@ func TestCalcWeightLimit(t *testing.T) {
 			},
 			wantErr: assert.NoError,
 		},
+		{
+			name:         "all cluster nodes have no gpu",
+			resourceName: framework.ResourceGPU,
+			args: args{
+				clusters: []*fedcorev1a1.FederatedCluster{
+					makeClusterWithCPU("cluster1", 3000, 3000),
+					makeClusterWithCPU("cluster2", 7000, 7000),
+					makeClusterWithCPU("cluster3", 3000, 3000),
+				},
+				supplyLimitRatio: 1.0,
+			},
+			wantWeightLimit: map[string]int64{
+				"cluster1": int64(333),
+				"cluster2": int64(333),
+				"cluster3": int64(333),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:         "two cluster nodes have no gpu and one has",
+			resourceName: framework.ResourceGPU,
+			args: args{
+				clusters: []*fedcorev1a1.FederatedCluster{
+					makeClusterWithCPU("cluster1", 3000, 3000),
+					makeClusterWithCPU("cluster2", 7000, 7000),
+					makeClusterWithGPU("cluster3", 3000, 3000),
+				},
+				supplyLimitRatio: 1.0,
+			},
+			wantWeightLimit: map[string]int64{
+				"cluster1": int64(0),
+				"cluster2": int64(0),
+				"cluster3": int64(1000),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:         "two cluster nodes have gpu and one does not",
+			resourceName: framework.ResourceGPU,
+			args: args{
+				clusters: []*fedcorev1a1.FederatedCluster{
+					makeClusterWithCPU("cluster1", 3000, 3000),
+					makeClusterWithGPU("cluster2", 7000, 7000),
+					makeClusterWithGPU("cluster3", 3000, 3000),
+				},
+				supplyLimitRatio: 1.0,
+			},
+			wantWeightLimit: map[string]int64{
+				"cluster1": int64(0),
+				"cluster2": int64(700),
+				"cluster3": int64(300),
+			},
+			wantErr: assert.NoError,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotWeightLimit, err := CalcWeightLimit(tt.args.clusters, corev1.ResourceCPU, tt.args.supplyLimitRatio)
+			gotWeightLimit, err := CalcWeightLimit(tt.args.clusters, tt.resourceName, tt.args.supplyLimitRatio)
 			if !tt.wantErr(t, err, fmt.Sprintf("CalcWeightLimit(%v)", tt.args.clusters)) {
 				return
 			}
@@ -166,24 +244,27 @@ func TestAvailableToPercentage(t *testing.T) {
 		clusterAvailables map[string]corev1.ResourceList
 		weightLimit       map[string]int64
 	}
-	makeArgs := func(clusters ...*fedcorev1a1.FederatedCluster) args {
+	makeArgs := func(resourceName corev1.ResourceName, clusters ...*fedcorev1a1.FederatedCluster) args {
 		return args{
 			clusterAvailables: QueryAvailable(clusters),
 			weightLimit: func() map[string]int64 {
-				weightLimit, _ := CalcWeightLimit(clusters, corev1.ResourceCPU, 1.0)
+				weightLimit, _ := CalcWeightLimit(clusters, resourceName, 1.0)
 				return weightLimit
 			}(),
 		}
 	}
 	tests := []struct {
 		name               string
+		resourceName       corev1.ResourceName
 		args               args
 		wantClusterWeights map[string]int64
 		wantErr            assert.ErrorAssertionFunc
 	}{
 		{
-			name: "test#1",
+			name:         "test#1",
+			resourceName: corev1.ResourceCPU,
 			args: makeArgs(
+				corev1.ResourceCPU,
 				makeClusterWithCPU("cluster1", 100, 50),
 				makeClusterWithCPU("cluster2", 100, 50),
 			),
@@ -194,8 +275,10 @@ func TestAvailableToPercentage(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "test#2",
+			name:         "test#2",
+			resourceName: corev1.ResourceCPU,
 			args: makeArgs(
+				corev1.ResourceCPU,
 				makeClusterWithCPU("cluster1", 100, 40),
 				makeClusterWithCPU("cluster2", 100, 10),
 			),
@@ -207,8 +290,10 @@ func TestAvailableToPercentage(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "empty node level info",
+			name:         "empty node level info",
+			resourceName: corev1.ResourceCPU,
 			args: makeArgs(
+				corev1.ResourceCPU,
 				makeClusterWithCPU("cluster1", -1, -1),
 			),
 			wantClusterWeights: map[string]int64{
@@ -217,8 +302,10 @@ func TestAvailableToPercentage(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "1 cluster node level info missing",
+			name:         "1 cluster node level info missing",
+			resourceName: corev1.ResourceCPU,
 			args: makeArgs(
+				corev1.ResourceCPU,
 				makeClusterWithCPU("cluster1", -1, -1),
 				makeClusterWithCPU("cluster2", 400, 100),
 				makeClusterWithCPU("cluster3", 200, 100),
@@ -231,8 +318,10 @@ func TestAvailableToPercentage(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "all clusters node level info missing",
+			name:         "all clusters node level info missing",
+			resourceName: corev1.ResourceCPU,
 			args: makeArgs(
+				corev1.ResourceCPU,
 				makeClusterWithCPU("cluster1", -1, -1),
 				makeClusterWithCPU("cluster2", -1, 100),
 				makeClusterWithCPU("cluster3", -1, 100),
@@ -244,10 +333,74 @@ func TestAvailableToPercentage(t *testing.T) {
 			},
 			wantErr: assert.NoError,
 		},
+		{
+			name:         "all cluster nodes have no gpu",
+			resourceName: framework.ResourceGPU,
+			args: makeArgs(
+				framework.ResourceGPU,
+				makeClusterWithCPU("cluster1", -1, -1),
+				makeClusterWithCPU("cluster2", -1, 100),
+				makeClusterWithCPU("cluster3", -1, 100),
+			),
+			wantClusterWeights: map[string]int64{
+				"cluster1": int64(333),
+				"cluster2": int64(333),
+				"cluster3": int64(333),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:         "two cluster nodes have no gpu and one has",
+			resourceName: framework.ResourceGPU,
+			args: makeArgs(
+				framework.ResourceGPU,
+				makeClusterWithCPU("cluster1", 3000, 3000),
+				makeClusterWithCPU("cluster2", 7000, 7000),
+				makeClusterWithGPU("cluster3", 3000, 3000),
+			),
+			wantClusterWeights: map[string]int64{
+				"cluster1": int64(0),
+				"cluster2": int64(0),
+				"cluster3": int64(1000),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:         "two cluster nodes have gpu and one does not",
+			resourceName: framework.ResourceGPU,
+			args: makeArgs(
+				framework.ResourceGPU,
+				makeClusterWithCPU("cluster1", 3000, 3000),
+				makeClusterWithGPU("cluster2", 7000, 7000),
+				makeClusterWithGPU("cluster3", 3000, 3000),
+			),
+			wantClusterWeights: map[string]int64{
+				"cluster1": int64(0),
+				"cluster2": int64(700),
+				"cluster3": int64(300),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:         "no nvidia.com/gpu resource",
+			resourceName: framework.ResourceGPU,
+			args: args{
+				clusterAvailables: map[string]corev1.ResourceList{
+					"cluster1": {
+						corev1.ResourceCPU: *resource.NewQuantity(1000, resource.DecimalSI),
+					},
+					"cluster2": {
+						framework.ResourceGPU: *resource.NewQuantity(1000, resource.DecimalSI),
+					},
+				},
+			},
+			wantClusterWeights: map[string]int64{},
+			wantErr:            assert.Error,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotClusterWeights, err := AvailableToPercentage(tt.args.clusterAvailables, corev1.ResourceCPU, tt.args.weightLimit)
+			gotClusterWeights, err := AvailableToPercentage(tt.args.clusterAvailables, tt.resourceName, tt.args.weightLimit)
 			if !tt.wantErr(
 				t,
 				err,
