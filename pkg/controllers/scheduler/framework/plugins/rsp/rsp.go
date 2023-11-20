@@ -98,21 +98,6 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 		schedulingWeights = su.Weights
 	}
 
-	clusterPreferences := map[string]planner.ClusterPreferences{}
-	for _, cluster := range clusters {
-		pref := planner.ClusterPreferences{
-			Weight:      schedulingWeights[cluster.Name],
-			MinReplicas: su.MinReplicas[cluster.Name],
-			MaxReplicas: nil,
-		}
-
-		if maxReplicas, exists := su.MaxReplicas[cluster.Name]; exists {
-			pref.MaxReplicas = pointer.Int64Ptr(maxReplicas)
-		}
-
-		clusterPreferences[cluster.Name] = pref
-	}
-
 	totalReplicas := int64(0)
 	if su.DesiredReplicas != nil {
 		totalReplicas = *su.DesiredReplicas
@@ -125,6 +110,34 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 			continue
 		}
 		currentReplicas[cluster] = totalReplicas
+	}
+
+	clusterPreferences := map[string]planner.ClusterPreferences{}
+	for _, cluster := range clusters {
+		pref := planner.ClusterPreferences{
+			Weight:      schedulingWeights[cluster.Name],
+			MinReplicas: su.MinReplicas[cluster.Name],
+			MaxReplicas: nil,
+		}
+
+		if maxReplicas, exists := su.MaxReplicas[cluster.Name]; exists {
+			pref.MaxReplicas = pointer.Int64(maxReplicas)
+		}
+
+		// if member cluster has untolerated NoSchedule taint, no new replicas will be scheduled to this cluster
+		if _, isUntolerated := framework.FindMatchingUntoleratedTaint(
+			cluster.Spec.Taints,
+			su.Tolerations,
+			func(t *corev1.Taint) bool {
+				return t.Effect == corev1.TaintEffectNoSchedule
+			},
+		); isUntolerated {
+			if pref.MaxReplicas == nil || currentReplicas[cluster.Name] < *pref.MaxReplicas {
+				pref.MaxReplicas = pointer.Int64(currentReplicas[cluster.Name])
+			}
+		}
+
+		clusterPreferences[cluster.Name] = pref
 	}
 
 	estimatedCapacity := map[string]int64{}
