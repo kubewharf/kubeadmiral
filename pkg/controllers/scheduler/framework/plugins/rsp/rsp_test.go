@@ -40,6 +40,15 @@ func NewFederatedCluster(name string) *fedcorev1a1.FederatedCluster {
 	}
 }
 
+func addTaint(cluster *fedcorev1a1.FederatedCluster, key, value string, effect corev1.TaintEffect) *fedcorev1a1.FederatedCluster {
+	cluster.Spec.Taints = []corev1.Taint{
+		{
+			Key: key, Value: value, Effect: effect,
+		},
+	}
+	return cluster
+}
+
 func TestExtractClusterNames(t *testing.T) {
 	clusters := []*fedcorev1a1.FederatedCluster{}
 	names := []string{"foo", "bar"}
@@ -548,6 +557,363 @@ func TestClusterWeights(t *testing.T) {
 	}
 }
 
+func TestNoScheduleTaint(t *testing.T) {
+	tests := []struct {
+		name                 string
+		schedulingUnit       framework.SchedulingUnit
+		clusters             []*fedcorev1a1.FederatedCluster
+		expectedReplicasList framework.ClusterReplicasList
+		expectedResult       *framework.Result
+	}{
+		// scaling up
+		{
+			name: "Static scheduling with weights specified, noScheduleTaint should be respected when scaling up",
+			schedulingUnit: framework.SchedulingUnit{
+				DesiredReplicas: pointer.Int64(18),
+				SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
+				ClusterNames: map[string]struct{}{
+					"cluster1": {},
+					"cluster2": {},
+					"cluster3": {},
+				},
+				CurrentClusters: map[string]*int64{
+					"cluster1": pointer.Int64(2),
+				},
+				Weights: map[string]int64{
+					"cluster1": 2,
+					"cluster2": 3,
+					"cluster3": 5,
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				addTaint(NewFederatedCluster("cluster1"), "a", "b", corev1.TaintEffectNoSchedule),
+				NewFederatedCluster("cluster2"),
+				NewFederatedCluster("cluster3"),
+			},
+			expectedReplicasList: framework.ClusterReplicasList{
+				{
+					Cluster:  addTaint(NewFederatedCluster("cluster1"), "a", "b", corev1.TaintEffectNoSchedule),
+					Replicas: 2,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster2"),
+					Replicas: 6,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster3"),
+					Replicas: 10,
+				},
+			},
+			expectedResult: framework.NewResult(framework.Success),
+		},
+		{
+			name: "Dynamic scheduling with no weights specified, noScheduleTaint should be respected when scaling up",
+			schedulingUnit: framework.SchedulingUnit{
+				DesiredReplicas: pointer.Int64(18),
+				SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
+				CurrentClusters: map[string]*int64{
+					"cluster1": pointer.Int64(2),
+				},
+				ClusterNames: map[string]struct{}{
+					"cluster1": {},
+					"cluster2": {},
+					"cluster3": {},
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				addTaint(
+					makeClusterWithCPU("cluster1", 200, 200),
+					"a", "b", corev1.TaintEffectNoSchedule,
+				),
+				makeClusterWithCPU("cluster2", 300, 300),
+				makeClusterWithCPU("cluster3", 500, 500),
+			},
+			expectedReplicasList: framework.ClusterReplicasList{
+				{
+					Cluster: addTaint(
+						makeClusterWithCPU("cluster1", 200, 200),
+						"a", "b", corev1.TaintEffectNoSchedule,
+					),
+					Replicas: 2,
+				},
+				{
+					Cluster:  makeClusterWithCPU("cluster2", 300, 300),
+					Replicas: 6,
+				},
+				{
+					Cluster:  makeClusterWithCPU("cluster3", 500, 500),
+					Replicas: 10,
+				},
+			},
+			expectedResult: framework.NewResult(framework.Success),
+		},
+		{
+			name: "Static scheduling with some weights specified, noScheduleTaint should be respected when scaling up",
+			schedulingUnit: framework.SchedulingUnit{
+				DesiredReplicas: pointer.Int64(10),
+				SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
+				ClusterNames: map[string]struct{}{
+					"cluster1": {},
+					"cluster2": {},
+					"cluster3": {},
+				},
+				CurrentClusters: map[string]*int64{
+					"cluster1": pointer.Int64(2),
+				},
+				Weights: map[string]int64{
+					"cluster1": 2,
+					"cluster2": 3,
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				addTaint(
+					NewFederatedCluster("cluster1"),
+					"a", "b", corev1.TaintEffectNoSchedule,
+				),
+				NewFederatedCluster("cluster2"),
+				NewFederatedCluster("cluster3"),
+			},
+			expectedReplicasList: framework.ClusterReplicasList{
+				{
+					Cluster: addTaint(
+						NewFederatedCluster("cluster1"),
+						"a", "b", corev1.TaintEffectNoSchedule,
+					),
+					Replicas: 2,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster2"),
+					Replicas: 8,
+				},
+			},
+			expectedResult: framework.NewResult(framework.Success),
+		},
+		{
+			name: "Static scheduling with weights specified(no currentClusters), noScheduleTaint should be respected when scaling up",
+			schedulingUnit: framework.SchedulingUnit{
+				DesiredReplicas: pointer.Int64(8),
+				SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
+				ClusterNames: map[string]struct{}{
+					"cluster1": {},
+					"cluster2": {},
+					"cluster3": {},
+				},
+				Weights: map[string]int64{
+					"cluster1": 2,
+					"cluster2": 3,
+					"cluster3": 5,
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				addTaint(NewFederatedCluster("cluster1"), "a", "b", corev1.TaintEffectNoSchedule),
+				NewFederatedCluster("cluster2"),
+				NewFederatedCluster("cluster3"),
+			},
+			expectedReplicasList: framework.ClusterReplicasList{
+				{
+					Cluster:  NewFederatedCluster("cluster2"),
+					Replicas: 3,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster3"),
+					Replicas: 5,
+				},
+			},
+			expectedResult: framework.NewResult(framework.Success),
+		},
+		// scaling down
+		{
+			name: "Static scheduling with weights specified, noScheduleTaint should be ignored when scaling down",
+			schedulingUnit: framework.SchedulingUnit{
+				DesiredReplicas: pointer.Int64(10),
+				SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
+				ClusterNames: map[string]struct{}{
+					"cluster1": {},
+					"cluster2": {},
+					"cluster3": {},
+				},
+				CurrentClusters: map[string]*int64{
+					"cluster1": pointer.Int64(4),
+					"cluster2": pointer.Int64(6),
+					"cluster3": pointer.Int64(10),
+				},
+				Weights: map[string]int64{
+					"cluster1": 2,
+					"cluster2": 3,
+					"cluster3": 5,
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				addTaint(NewFederatedCluster("cluster1"), "a", "b", corev1.TaintEffectNoSchedule),
+				NewFederatedCluster("cluster2"),
+				NewFederatedCluster("cluster3"),
+			},
+			expectedReplicasList: framework.ClusterReplicasList{
+				{
+					Cluster:  addTaint(NewFederatedCluster("cluster1"), "a", "b", corev1.TaintEffectNoSchedule),
+					Replicas: 2,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster2"),
+					Replicas: 3,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster3"),
+					Replicas: 5,
+				},
+			},
+			expectedResult: framework.NewResult(framework.Success),
+		},
+		{
+			name: "Dynamic scheduling with no weights specified, noScheduleTaint should be ignored when scaling down",
+			schedulingUnit: framework.SchedulingUnit{
+				DesiredReplicas: pointer.Int64(10),
+				SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
+				CurrentClusters: map[string]*int64{
+					"cluster1": pointer.Int64(4),
+					"cluster2": pointer.Int64(6),
+					"cluster3": pointer.Int64(10),
+				},
+				ClusterNames: map[string]struct{}{
+					"cluster1": {},
+					"cluster2": {},
+					"cluster3": {},
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				addTaint(
+					makeClusterWithCPU("cluster1", 200, 200),
+					"a", "b", corev1.TaintEffectNoSchedule,
+				),
+				makeClusterWithCPU("cluster2", 300, 300),
+				makeClusterWithCPU("cluster3", 500, 500),
+			},
+			expectedReplicasList: framework.ClusterReplicasList{
+				{
+					Cluster: addTaint(
+						makeClusterWithCPU("cluster1", 200, 200),
+						"a", "b", corev1.TaintEffectNoSchedule,
+					),
+					Replicas: 2,
+				},
+				{
+					Cluster:  makeClusterWithCPU("cluster2", 300, 300),
+					Replicas: 3,
+				},
+				{
+					Cluster:  makeClusterWithCPU("cluster3", 500, 500),
+					Replicas: 5,
+				},
+			},
+			expectedResult: framework.NewResult(framework.Success),
+		},
+		{
+			name: "Static scheduling with some weights specified, noScheduleTaint should be ignored when scaling down",
+			schedulingUnit: framework.SchedulingUnit{
+				DesiredReplicas: pointer.Int64(5),
+				SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
+				ClusterNames: map[string]struct{}{
+					"cluster1": {},
+					"cluster2": {},
+					"cluster3": {},
+				},
+				CurrentClusters: map[string]*int64{
+					"cluster1": pointer.Int64(4),
+					"cluster2": pointer.Int64(6),
+					"cluster3": pointer.Int64(5),
+				},
+				Weights: map[string]int64{
+					"cluster1": 2,
+					"cluster2": 3,
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				addTaint(
+					NewFederatedCluster("cluster1"),
+					"a", "b", corev1.TaintEffectNoSchedule,
+				),
+				NewFederatedCluster("cluster2"),
+				NewFederatedCluster("cluster3"),
+			},
+			expectedReplicasList: framework.ClusterReplicasList{
+				{
+					Cluster: addTaint(
+						NewFederatedCluster("cluster1"),
+						"a", "b", corev1.TaintEffectNoSchedule,
+					),
+					Replicas: 2,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster2"),
+					Replicas: 3,
+				},
+			},
+			expectedResult: framework.NewResult(framework.Success),
+		},
+		// tolerate taint
+		{
+			name: "Static scheduling with weights specified, noScheduleTaint may be tolerated when scaling up",
+			schedulingUnit: framework.SchedulingUnit{
+				DesiredReplicas: pointer.Int64(17),
+				SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
+				ClusterNames: map[string]struct{}{
+					"cluster1": {},
+					"cluster2": {},
+					"cluster3": {},
+				},
+				CurrentClusters: map[string]*int64{
+					"cluster1": pointer.Int64(2),
+					"cluster2": pointer.Int64(3),
+				},
+				Weights: map[string]int64{
+					"cluster1": 2,
+					"cluster2": 3,
+					"cluster3": 5,
+				},
+				Tolerations: []corev1.Toleration{
+					{Key: "a", Operator: corev1.TolerationOpEqual, Value: "b", Effect: corev1.TaintEffectNoSchedule},
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				addTaint(NewFederatedCluster("cluster1"), "a", "b", corev1.TaintEffectNoSchedule),
+				addTaint(NewFederatedCluster("cluster2"), "c", "d", corev1.TaintEffectNoSchedule),
+				NewFederatedCluster("cluster3"),
+			},
+			expectedReplicasList: framework.ClusterReplicasList{
+				{
+					Cluster:  addTaint(NewFederatedCluster("cluster1"), "a", "b", corev1.TaintEffectNoSchedule),
+					Replicas: 4,
+				},
+				{
+					Cluster:  addTaint(NewFederatedCluster("cluster2"), "c", "d", corev1.TaintEffectNoSchedule),
+					Replicas: 3,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster3"),
+					Replicas: 10,
+				},
+			},
+			expectedResult: framework.NewResult(framework.Success),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rspPlugin := &ClusterCapacityWeight{}
+
+			replicasList, res := rspPlugin.ReplicaScheduling(context.Background(), &tt.schedulingUnit, tt.clusters)
+			assert.Equalf(
+				t,
+				tt.expectedReplicasList,
+				replicasList,
+				"unexpected replicas list, want: %v got %v",
+				tt.expectedReplicasList,
+				replicasList,
+			)
+			assert.Equalf(t, tt.expectedResult, res, "unexpected result, want: %v got %v", tt.expectedResult, res)
+		})
+	}
+}
+
 func TestMinReplicas(t *testing.T) {
 	tests := []struct {
 		name                 string
@@ -663,6 +1029,96 @@ func TestMaxReplicas(t *testing.T) {
 				{
 					Cluster:  NewFederatedCluster("cluster3"),
 					Replicas: 1,
+				},
+			},
+			expectedResult: framework.NewResult(framework.Success),
+		},
+		{
+			name: "MaxReplicas < CurrentReplicas, MaxReplicas and noScheduleTaint are effective at the same time",
+			schedulingUnit: framework.SchedulingUnit{
+				DesiredReplicas: pointer.Int64(10),
+				SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
+				ClusterNames: map[string]struct{}{
+					"cluster1": {},
+					"cluster2": {},
+					"cluster3": {},
+				},
+				MaxReplicas: map[string]int64{
+					"cluster1": 1,
+					"cluster2": 1,
+					"cluster3": 1,
+				},
+				CurrentClusters: map[string]*int64{
+					"cluster1": pointer.Int64(2),
+				},
+				Weights: map[string]int64{
+					"cluster1": 2,
+					"cluster2": 3,
+					"cluster3": 5,
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				addTaint(NewFederatedCluster("cluster1"), "a", "b", corev1.TaintEffectNoSchedule),
+				NewFederatedCluster("cluster2"),
+				NewFederatedCluster("cluster3"),
+			},
+			expectedReplicasList: framework.ClusterReplicasList{
+				{
+					Cluster:  addTaint(NewFederatedCluster("cluster1"), "a", "b", corev1.TaintEffectNoSchedule),
+					Replicas: 1,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster2"),
+					Replicas: 1,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster3"),
+					Replicas: 1,
+				},
+			},
+			expectedResult: framework.NewResult(framework.Success),
+		},
+		{
+			name: "MaxReplicas > CurrentReplicas, MaxReplicas and noScheduleTaint are effective at the same time",
+			schedulingUnit: framework.SchedulingUnit{
+				DesiredReplicas: pointer.Int64(12),
+				SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
+				ClusterNames: map[string]struct{}{
+					"cluster1": {},
+					"cluster2": {},
+					"cluster3": {},
+				},
+				CurrentClusters: map[string]*int64{
+					"cluster1": pointer.Int64(2),
+				},
+				Weights: map[string]int64{
+					"cluster1": 1,
+					"cluster2": 1,
+					"cluster3": 1,
+				},
+				MaxReplicas: map[string]int64{
+					"cluster1": 3,
+					"cluster2": 3,
+					"cluster3": 3,
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				addTaint(NewFederatedCluster("cluster1"), "a", "b", corev1.TaintEffectNoSchedule),
+				NewFederatedCluster("cluster2"),
+				NewFederatedCluster("cluster3"),
+			},
+			expectedReplicasList: framework.ClusterReplicasList{
+				{
+					Cluster:  addTaint(NewFederatedCluster("cluster1"), "a", "b", corev1.TaintEffectNoSchedule),
+					Replicas: 2,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster2"),
+					Replicas: 3,
+				},
+				{
+					Cluster:  NewFederatedCluster("cluster3"),
+					Replicas: 3,
 				},
 			},
 			expectedResult: framework.NewResult(framework.Success),
