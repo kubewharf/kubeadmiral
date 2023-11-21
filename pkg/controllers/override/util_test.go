@@ -17,6 +17,7 @@ limitations under the License.
 package override
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -1339,4 +1340,49 @@ func asJSON(value any) apiextensionsv1.JSON {
 		ret.Raw = data
 	}
 	return ret
+}
+
+func TestConvertOverridesListToMap(t *testing.T) {
+	tests := []struct {
+		name          string
+		overridesList []fedcorev1a1.ClusterReferenceWithPatches
+		expectedMap   overridesMap
+	}{
+		{
+			name:          "overrides is empty",
+			overridesList: nil,
+			expectedMap:   nil,
+		},
+		{
+			name: "overrides is not empty",
+			overridesList: []fedcorev1a1.ClusterReferenceWithPatches{
+				{
+					Cluster: "cluster1",
+					Patches: []fedcorev1a1.OverridePatch{
+						{
+							Op:    "replace",
+							Path:  "/spec/replicas",
+							Value: asJSON(2),
+						},
+					},
+				},
+			},
+			expectedMap: overridesMap{
+				"cluster1": []fedcorev1a1.OverridePatch{
+					{
+						Op:    "replace",
+						Path:  "/spec/replicas",
+						Value: asJSON(2),
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		actualMap := convertOverridesListToMap(tt.overridesList)
+		if !reflect.DeepEqual(tt.expectedMap, actualMap) {
+			t.Errorf("ConvertOverridesListToMap Error, expected: %+v, actual: %+v", tt.expectedMap, actualMap)
+		}
+	}
 }
