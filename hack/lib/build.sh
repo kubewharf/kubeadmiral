@@ -22,6 +22,11 @@ source "${REPO_ROOT}/hack/lib/util.sh"
 
 BUILD_OUTPUT_DIR=${BUILD_OUTPUT_DIR:-"${REPO_ROOT}/output/bin"}
 
+BINARY_TARGET_SOURCE=(
+  kubeadmiral-controller-manager=cmd/controller-manager
+  kubeadmiral-hpa-aggregator=cmd/hpa-aggregator
+)
+
 # This function builds multi-platform binaries for kubeadmiral-controller-manager
 # Args:
 #  $1 - target, the name of the target binary
@@ -32,9 +37,43 @@ BUILD_OUTPUT_DIR=${BUILD_OUTPUT_DIR:-"${REPO_ROOT}/output/bin"}
 #  GOLDFLAGS:    pass to the `-ldflags` parameter of go build
 #  BUILD_FLAGS:  the other flags pass to go build
 function build::build_multiplatform_binaries() {
-  local -r target="${1:-"kubeadmiral-controller-manager"}"
+  local -r target="${1:-"all"}"
   local -r platforms="${2:-"$(go env GOHOSTOS)/$(go env GOHOSTARCH)"}"
   local -r output_dir="${3:-"${BUILD_OUTPUT_DIR}"}"
+
+  IFS="," read -ra platform_array <<< "${platforms}"
+  for platform in "${platform_array[@]}"; do
+    count=0
+    for component in ${BINARY_TARGET_SOURCE[@]};do
+      IFS="=" read -ra info <<< "${component}"
+      if [[ ${target} =~ "all" || ${target} =~ ${info[0]} ]]; then
+        build::build_binary "${info[0]}" "${platform}" "${output_dir}" "${info[1]}"
+        count=$((count + 1))
+      fi
+    done
+
+    if [[ ${count} == 0 ]]; then
+      echo "Target component ${target} not found in [${BINARY_TARGET_SOURCE[@]}]"
+      exit 1
+    fi
+  done
+}
+
+# This function build a single binary for target component
+# Args:
+#  $1 - target, the name of the target binary
+#  $2 - platforms, the array of platforms that need to be compiled, e.g.: linux/amd64,linux/arm64
+#  $3 - output_dir, the output directory for binary
+#  $4 - source_dir, the source code path for binary
+# Environments:
+#  GOPROXY:      it specifies the download address of the dependent package
+#  GOLDFLAGS:    pass to the `-ldflags` parameter of go build
+#  BUILD_FLAGS:  the other flags pass to go build
+function build::build_binary() {
+  local -r target=$1
+  local -r platforms="${2:-"$(go env GOHOSTOS)/$(go env GOHOSTARCH)"}"
+  local -r output_dir="${3:-"${BUILD_OUTPUT_DIR}"}"
+  local -r source_dir=$4
   local -r goldflags="${GOLDFLAGS:-}"
   local -r build_args="${BUILD_FLAGS:-}"
   local cgo_enabled=${CGO_ENABLED:-0}
@@ -44,17 +83,15 @@ function build::build_multiplatform_binaries() {
     cgo_enabled=1
   fi
 
-  IFS="," read -ra platform_array <<< "${platforms}"
-  for platform in "${platform_array[@]}"; do
-    echo "Building ${target} for ${platform}"
-    set -x
-    CGO_ENABLED=${cgo_enabled} GOPROXY=${GOPROXY:-"$(go env GOPROXY)"} GOOS=${platform%/*} GOARCH=${platform##*/} go build \
-      -o "${output_dir}/${platform}/${target}" \
-      -ldflags "${goldflags:-}" \
-      ${build_args:-} \
-      ${REPO_ROOT}/cmd/controller-manager/main.go
-    set +x
-  done
+  echo "Building ${target} for ${platform}"
+  set -x
+  CGO_ENABLED=${cgo_enabled} GOPROXY=${GOPROXY:-"$(go env GOPROXY)"} GOOS=${platform%/*} GOARCH=${platform##*/} go build \
+    -o "${output_dir}/${platform}/${target}" \
+    -ldflags "${goldflags:-}" \
+    ${build_args:-} \
+    ${REPO_ROOT}/${source_dir}/main.go
+  set +x
+  echo ""
 }
 
 # This function builds multi-architecture docker images,

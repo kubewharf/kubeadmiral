@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -58,9 +59,10 @@ type federatedInformerManager struct {
 	shutdown                        bool
 	clusterEventHandlerRegistration cache.ResourceEventHandlerRegistration
 
-	clientHelper        ClusterClientHelper
-	kubeClientGetter    func(*fedcorev1a1.FederatedCluster, *rest.Config) (kubernetes.Interface, error)
-	dynamicClientGetter func(*fedcorev1a1.FederatedCluster, *rest.Config) (dynamic.Interface, error)
+	clientHelper          ClusterClientHelper
+	kubeClientGetter      func(*fedcorev1a1.FederatedCluster, *rest.Config) (kubernetes.Interface, error)
+	dynamicClientGetter   func(*fedcorev1a1.FederatedCluster, *rest.Config) (dynamic.Interface, error)
+	discoveryClientGetter func(*fedcorev1a1.FederatedCluster, *rest.Config) (discovery.DiscoveryInterface, error)
 
 	ftcInformer     fedcorev1a1informers.FederatedTypeConfigInformer
 	clusterInformer fedcorev1a1informers.FederatedClusterInformer
@@ -70,6 +72,8 @@ type federatedInformerManager struct {
 
 	kubeClients        map[string]kubernetes.Interface
 	dynamicClients     map[string]dynamic.Interface
+	discoveryClients   map[string]discovery.DiscoveryInterface
+	restConfigs        map[string]*rest.Config
 	connectionMap      map[string][]byte
 	clusterCancelFuncs map[string]context.CancelFunc
 	informerManagers   map[string]InformerManager
@@ -99,6 +103,8 @@ func NewFederatedInformerManager(
 		clusterEventHandlers:   []*ClusterEventHandler{},
 		kubeClients:            map[string]kubernetes.Interface{},
 		dynamicClients:         map[string]dynamic.Interface{},
+		discoveryClients:       map[string]discovery.DiscoveryInterface{},
+		restConfigs:            map[string]*rest.Config{},
 		connectionMap:          map[string][]byte{},
 		clusterCancelFuncs:     map[string]context.CancelFunc{},
 		informerManagers:       map[string]InformerManager{},
@@ -134,6 +140,9 @@ func NewFederatedInformerManager(
 	}
 	manager.kubeClientGetter = func(_ *fedcorev1a1.FederatedCluster, config *rest.Config) (kubernetes.Interface, error) {
 		return kubernetes.NewForConfig(config)
+	}
+	manager.discoveryClientGetter = func(_ *fedcorev1a1.FederatedCluster, config *rest.Config) (discovery.DiscoveryInterface, error) {
+		return discovery.NewDiscoveryClientForConfig(config)
 	}
 
 	return manager
@@ -238,6 +247,11 @@ func (m *federatedInformerManager) processCluster(
 			return true, fmt.Errorf("failed to get kubernetes client for cluster %s: %w", clusterName, err)
 		}
 
+		clusterDiscoveryClient, err := m.discoveryClientGetter(cluster, clusterRestConfig)
+		if err != nil {
+			return true, fmt.Errorf("failed to get discovery client for cluster %s: %w", clusterName, err)
+		}
+
 		manager := NewInformerManager(
 			clusterDynamicClient,
 			m.ftcInformer,
@@ -261,7 +275,7 @@ func (m *federatedInformerManager) processCluster(
 		}
 
 		factory := informers.NewSharedInformerFactory(clusterKubeClient, 0)
-		addPodInformer(ctx, factory, clusterKubeClient, m.podListerSemaphore, true)
+		addPodInformer(ctx, factory, clusterKubeClient, m.podListerSemaphore, false)
 		factory.Core().V1().Nodes().Informer()
 
 		klog.FromContext(ctx).V(2).Info("Starting new InformerManager for FederatedCluster")
@@ -273,6 +287,8 @@ func (m *federatedInformerManager) processCluster(
 		m.connectionMap[clusterName] = connectionHash
 		m.kubeClients[clusterName] = clusterKubeClient
 		m.dynamicClients[clusterName] = clusterDynamicClient
+		m.discoveryClients[clusterName] = clusterDiscoveryClient
+		m.restConfigs[clusterName] = clusterRestConfig
 		m.clusterCancelFuncs[clusterName] = cancel
 		m.informerManagers[clusterName] = manager
 		m.informerFactories[clusterName] = factory
@@ -313,6 +329,8 @@ func (m *federatedInformerManager) processClusterDeletionUnlocked(ctx context.Co
 	delete(m.connectionMap, clusterName)
 	delete(m.kubeClients, clusterName)
 	delete(m.dynamicClients, clusterName)
+	delete(m.discoveryClients, clusterName)
+	delete(m.restConfigs, clusterName)
 
 	if cancel, ok := m.clusterCancelFuncs[clusterName]; ok {
 		klog.FromContext(ctx).V(2).Info("Stopping InformerManager and SharedInformerFactory for FederatedCluster")
@@ -364,6 +382,20 @@ func (m *federatedInformerManager) GetClusterKubeClient(cluster string) (client 
 	defer m.lock.RUnlock()
 	client, ok := m.kubeClients[cluster]
 	return client, ok
+}
+
+func (m *federatedInformerManager) GetClusterDiscoveryClient(cluster string) (client discovery.DiscoveryInterface, exists bool) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	client, ok := m.discoveryClients[cluster]
+	return client, ok
+}
+
+func (m *federatedInformerManager) GetClusterRestConfig(cluster string) (config *rest.Config, exists bool) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	config, ok := m.restConfigs[cluster]
+	return rest.CopyConfig(config), ok
 }
 
 func (m *federatedInformerManager) GetReadyClusters() ([]*fedcorev1a1.FederatedCluster, error) {

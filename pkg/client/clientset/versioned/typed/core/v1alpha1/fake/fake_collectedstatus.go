@@ -89,7 +89,7 @@ func (c *FakeCollectedStatuses) Update(ctx context.Context, collectedStatus *v1a
 // Delete takes name of the collectedStatus and deletes it. Returns an error if one occurs.
 func (c *FakeCollectedStatuses) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(collectedstatusesResource, c.ns, name), &v1alpha1.CollectedStatus{})
+		Invokes(testing.NewDeleteActionWithOptions(collectedstatusesResource, c.ns, name, opts), &v1alpha1.CollectedStatus{})
 
 	return err
 }

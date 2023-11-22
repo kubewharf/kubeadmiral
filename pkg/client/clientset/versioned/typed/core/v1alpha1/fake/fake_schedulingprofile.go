@@ -83,7 +83,7 @@ func (c *FakeSchedulingProfiles) Update(ctx context.Context, schedulingProfile *
 // Delete takes name of the schedulingProfile and deletes it. Returns an error if one occurs.
 func (c *FakeSchedulingProfiles) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(schedulingprofilesResource, name), &v1alpha1.SchedulingProfile{})
+		Invokes(testing.NewRootDeleteActionWithOptions(schedulingprofilesResource, name, opts), &v1alpha1.SchedulingProfile{})
 	return err
 }
 

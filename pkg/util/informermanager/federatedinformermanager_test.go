@@ -29,6 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
+	fakediscovery "k8s.io/client-go/discovery/fake"
 	dynamicclient "k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes"
@@ -1594,6 +1596,12 @@ func bootstrapFederatedInformerManagerWithFakeClients(
 		config *rest.Config,
 	) (kubernetes.Interface, error) {
 		return fake.NewSimpleClientset(), nil
+	}
+	informerManager.(*federatedInformerManager).discoveryClientGetter = func(
+		cluster *fedcorev1a1.FederatedCluster,
+		config *rest.Config,
+	) (discovery.DiscoveryInterface, error) {
+		return &fakediscovery.FakeDiscovery{}, nil
 	}
 
 	for _, generator := range eventHandlerGenerators {
