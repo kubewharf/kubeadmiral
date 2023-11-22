@@ -86,6 +86,7 @@ func Plan(
 	availableClusters []string,
 	currentReplicaCount map[string]int64,
 	estimatedCapacity map[string]int64,
+	limitedCapacity map[string]int64,
 	replicaSetKey string,
 	avoidDisruption bool,
 	keepUnschedulableReplicas bool,
@@ -120,6 +121,7 @@ func Plan(
 	desiredPlan, desiredOverflow := getDesiredPlan(
 		namedPreferences,
 		estimatedCapacity,
+		limitedCapacity,
 		totalReplicas,
 		keepUnschedulableReplicas,
 	)
@@ -136,6 +138,9 @@ func Plan(
 	currentPlan := make(map[string]int64, len(namedPreferences))
 	for _, preference := range namedPreferences {
 		replicas := currentReplicaCount[preference.clusterName]
+		if capacity, exists := limitedCapacity[preference.clusterName]; exists && capacity < replicas {
+			replicas = capacity
+		}
 		if capacity, exists := estimatedCapacity[preference.clusterName]; exists && capacity < replicas {
 			replicas = capacity
 		}
@@ -211,6 +216,7 @@ func getNamedPreferences(
 func getDesiredPlan(
 	preferences []*namedClusterPreferences,
 	estimatedCapacity map[string]int64,
+	limitedCapacity map[string]int64,
 	totalReplicas int64,
 	keepUnschedulableReplicas bool,
 ) (map[string]int64, map[string]int64) {
@@ -221,6 +227,9 @@ func getDesiredPlan(
 	// Assign each cluster the minimum number of replicas it requested.
 	for _, preference := range preferences {
 		min := minInt64(preference.MinReplicas, remainingReplicas)
+		if capacity, hasCapacity := limitedCapacity[preference.clusterName]; hasCapacity && capacity < min {
+			min = capacity
+		}
 		if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity && capacity < min {
 			overflow[preference.clusterName] = min - capacity
 			min = capacity
@@ -261,6 +270,10 @@ func getDesiredPlan(
 			full := false
 			if preference.MaxReplicas != nil && total > *preference.MaxReplicas {
 				total = *preference.MaxReplicas
+				full = true
+			}
+			if capacity, hasCapacity := limitedCapacity[preference.clusterName]; hasCapacity && total > capacity {
+				total = capacity
 				full = true
 			}
 			if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity && total > capacity {
@@ -330,7 +343,7 @@ func scaleUp(
 		return nil, err
 	}
 	// no estimatedCapacity and hence no overflow
-	replicasToScaleUp, _ := getDesiredPlan(named, nil, scaleUpCount, false)
+	replicasToScaleUp, _ := getDesiredPlan(named, nil, nil, scaleUpCount, false)
 	for cluster, count := range replicasToScaleUp {
 		currentReplicaCount[cluster] += count
 	}
@@ -358,7 +371,7 @@ func scaleDown(
 		return nil, err
 	}
 	// no estimatedCapacity and hence no overflow
-	replicasToScaleDown, _ := getDesiredPlan(named, nil, scaleDownCount, false)
+	replicasToScaleDown, _ := getDesiredPlan(named, nil, nil, scaleDownCount, false)
 	for cluster, count := range replicasToScaleDown {
 		currentReplicaCount[cluster] -= count
 	}

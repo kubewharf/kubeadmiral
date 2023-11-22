@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -54,6 +55,7 @@ type SchedulingUnit struct {
 	// Describes the current scheduling state
 	CurrentClusters map[string]*int64
 	AutoMigration   *AutoMigrationSpec
+	CustomMigration CustomMigrationSpec
 
 	// Controls the scheduling behavior
 	SchedulingMode  fedcorev1a1.SchedulingMode
@@ -80,6 +82,45 @@ type AutoMigrationSpec struct {
 type AutoMigrationInfo struct {
 	// Describes the estimated max number of replicas a cluster can accommodate.
 	EstimatedCapacity map[string]int64 `json:"estimatedCapacity,omitempty"`
+}
+
+type MigrationConfig struct {
+	// Describes the migration configuration for replicas in member clusters.
+	ReplicasMigrations []ReplicasMigration `json:"replicasMigrations,omitempty"`
+	// Describes the migration configuration for workloads in member clusters.
+	WorkloadMigrations []WorkloadMigration `json:"workloadMigrations,omitempty"`
+}
+
+type ReplicasMigration struct {
+	Cluster string `json:"cluster"`
+	// Describes the max number of replicas a cluster can accommodate.
+	// Different from `maxReplicas` in policy, LimitedCapacity is not affected by `avoidDisruption`
+	// and is a constraint that must be satisfied.
+	LimitedCapacity *int64 `json:"limitedCapacity"`
+}
+
+type WorkloadMigration struct {
+	Cluster string `json:"cluster"`
+	// Describes the timestamp after which workloads will no longer be evicted from the cluster.
+	ValidUntil *metav1.Time `json:"validUntil"`
+}
+
+type CustomMigrationSpec struct {
+	Info *CustomMigrationInfo
+}
+
+type CustomMigrationInfo struct {
+	// Describes the max number of replicas a cluster can accommodate.
+	// Different from `maxReplicas` in policy, LimitedCapacity is not affected by `avoidDisruption`
+	// and is a constraint that must be satisfied.
+	LimitedCapacity map[string]int64 `json:"limitedCapacity,omitempty"`
+	// Describes the list of unavailable clusters.
+	UnavailableClusters []UnavailableCluster `json:"unavailableClusters,omitempty"`
+}
+
+type UnavailableCluster struct {
+	Cluster    string      `json:"cluster"`
+	ValidUntil metav1.Time `json:"validUntil"`
 }
 
 // Affinity is a group of affinity scheduling rules.

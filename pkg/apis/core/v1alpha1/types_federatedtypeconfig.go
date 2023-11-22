@@ -53,8 +53,9 @@ type FederatedTypeConfigSpec struct {
 	// The API resource type to be federated.
 	SourceType APIResource `json:"sourceType"`
 
-	// Configuration for StatusAggregation. If left empty, the StatusAggregation feature will be disabled.
+	// Configuration for StatusAggregation.
 	// +optional
+	// +kubebuilder:default:={enabled:true}
 	StatusAggregation *StatusAggregationConfig `json:"statusAggregation,omitempty"`
 	// Configuration for StatusCollection. If left empty, the StatusCollection feature will be disabled.
 	// +optional
@@ -115,6 +116,7 @@ type StatusCollectionConfig struct {
 // StatusAggregationConfig defines the configurations for the StatusAggregation feature.
 type StatusAggregationConfig struct {
 	// Whether or not to enable status aggregation.
+	// +kubebuilder:default:=true
 	Enabled bool `json:"enabled"`
 }
 

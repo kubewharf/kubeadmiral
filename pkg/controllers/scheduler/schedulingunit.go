@@ -94,6 +94,14 @@ func schedulingUnitForFedObject(
 		}
 	}
 
+	info, err := getCustomMigrationInfo(fedObject)
+	if err != nil {
+		return nil, err
+	}
+	schedulingUnit.CustomMigration = framework.CustomMigrationSpec{
+		Info: info,
+	}
+
 	schedulingUnit.AvoidDisruption = getAvoidDisruptionFromPolicy(policy)
 
 	schedulingUnit.SchedulingMode = schedulingMode
@@ -249,6 +257,19 @@ func getAutoMigrationInfo(fedObject fedcorev1a1.GenericFederatedObject) (*framew
 		return nil, err
 	}
 	return autoMigrationInfo, nil
+}
+
+func getCustomMigrationInfo(fedObject fedcorev1a1.GenericFederatedObject) (*framework.CustomMigrationInfo, error) {
+	value, exists := fedObject.GetAnnotations()[common.AppliedMigrationConfigurationAnnotation]
+	if !exists {
+		return nil, nil
+	}
+
+	customMigrationInfo := new(framework.CustomMigrationInfo)
+	if err := json.Unmarshal([]byte(value), customMigrationInfo); err != nil {
+		return nil, err
+	}
+	return customMigrationInfo, nil
 }
 
 func getIsStickyClusterFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) bool {

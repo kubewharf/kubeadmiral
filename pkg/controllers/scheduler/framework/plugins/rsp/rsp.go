@@ -153,6 +153,11 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 		}
 	}
 
+	limitedCapacity := map[string]int64{}
+	if su.CustomMigration.Info != nil && su.CustomMigration.Info.LimitedCapacity != nil {
+		limitedCapacity = su.CustomMigration.Info.LimitedCapacity
+	}
+
 	scheduleResult, overflow, err := planner.Plan(
 		&planner.ReplicaSchedulingPreference{
 			Clusters: clusterPreferences,
@@ -161,6 +166,7 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 		ExtractClusterNames(clusters),
 		currentReplicas,
 		estimatedCapacity,
+		limitedCapacity,
 		su.Key(),
 		su.AvoidDisruption,
 		keepUnschedulableReplicas,

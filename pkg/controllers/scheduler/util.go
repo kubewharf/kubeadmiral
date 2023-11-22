@@ -19,17 +19,19 @@ package scheduler
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	podutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
 	resourceutil "github.com/kubewharf/kubeadmiral/pkg/util/resource"
-	"github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
+	unstructuredutil "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
 
 const (
@@ -56,7 +58,7 @@ func UpdateReplicasOverride(
 	fedObject fedcorev1a1.GenericFederatedObject,
 	result map[string]int64,
 ) (updated bool, err error) {
-	replicasPath := unstructured.ToSlashPath(ftc.Spec.PathDefinition.ReplicasSpec)
+	replicasPath := unstructuredutil.ToSlashPath(ftc.Spec.PathDefinition.ReplicasSpec)
 
 	newOverrides := []fedcorev1a1.ClusterReferenceWithPatches{}
 	for cluster, replicas := range result {
@@ -97,4 +99,99 @@ func getResourceRequest(
 	}
 	resource := resourceutil.GetPodResourceRequests(podSpec)
 	return *framework.NewResource(resource), nil
+}
+
+func getCustomMigrationInfoBytes(
+	existingMigrationConfigBytes string,
+	fedObj fedcorev1a1.GenericFederatedObject,
+	ftc *fedcorev1a1.FederatedTypeConfig,
+) (string, error) {
+	existingMigrationConfig := &framework.MigrationConfig{}
+	err := json.Unmarshal([]byte(existingMigrationConfigBytes), existingMigrationConfig)
+	if err != nil {
+		return "", err
+	}
+
+	err = validateMigrationConfig(existingMigrationConfig, fedObj, ftc)
+	if err != nil {
+		return "", err
+	}
+
+	customMigrationInfo := convertToCustomMigrationInfo(existingMigrationConfig)
+	customMigrationInfoBytes, err := json.Marshal(customMigrationInfo)
+	if err != nil {
+		return "", err
+	}
+
+	return string(customMigrationInfoBytes), nil
+}
+
+func validateMigrationConfig(
+	migrationConfig *framework.MigrationConfig,
+	fedObj fedcorev1a1.GenericFederatedObject,
+	ftc *fedcorev1a1.FederatedTypeConfig,
+) error {
+	clusters := sets.New[string]()
+
+	if len(migrationConfig.ReplicasMigrations) > 0 {
+		sourceObj, err := fedObj.GetSpec().GetTemplateAsUnstructured()
+		if err != nil {
+			return err
+		}
+		value, err := unstructuredutil.GetInt64FromPath(sourceObj, ftc.Spec.PathDefinition.ReplicasSpec, nil)
+		if err != nil || value == nil {
+			return fmt.Errorf("workload does not support the replica migration configurations")
+		}
+	}
+
+	for _, replicasMigration := range migrationConfig.ReplicasMigrations {
+		if replicasMigration.Cluster == "" {
+			return fmt.Errorf("cluster cannot be empty")
+		}
+		if replicasMigration.LimitedCapacity == nil {
+			return fmt.Errorf("limitedCapacity cannot be empty")
+		}
+		if *replicasMigration.LimitedCapacity < 0 {
+			return fmt.Errorf("limitedCapacity cannot be less than zero")
+		}
+		if clusters.Has(replicasMigration.Cluster) {
+			return fmt.Errorf("multiple migration configurations cannot be configured for the same cluster")
+		}
+		clusters.Insert(replicasMigration.Cluster)
+	}
+
+	for _, workloadMigration := range migrationConfig.WorkloadMigrations {
+		if workloadMigration.Cluster == "" {
+			return fmt.Errorf("cluster cannot be empty")
+		}
+		if workloadMigration.ValidUntil == nil {
+			return fmt.Errorf("validUntil cannot be empty")
+		}
+		if clusters.Has(workloadMigration.Cluster) {
+			return fmt.Errorf("multiple migration configurations cannot be configured for the same cluster")
+		}
+		clusters.Insert(workloadMigration.Cluster)
+	}
+
+	return nil
+}
+
+func convertToCustomMigrationInfo(migrationConfig *framework.MigrationConfig) *framework.CustomMigrationInfo {
+	ret := &framework.CustomMigrationInfo{}
+
+	for _, replicasMigration := range migrationConfig.ReplicasMigrations {
+		if ret.LimitedCapacity == nil {
+			ret.LimitedCapacity = make(map[string]int64)
+		}
+		ret.LimitedCapacity[replicasMigration.Cluster] = *replicasMigration.LimitedCapacity
+	}
+
+	for _, workloadMigration := range migrationConfig.WorkloadMigrations {
+		ret.UnavailableClusters = append(ret.UnavailableClusters,
+			framework.UnavailableCluster{Cluster: workloadMigration.Cluster, ValidUntil: *workloadMigration.ValidUntil})
+	}
+	sort.Slice(ret.UnavailableClusters, func(i, j int) bool {
+		return ret.UnavailableClusters[i].Cluster < ret.UnavailableClusters[j].Cluster
+	})
+	return ret
 }

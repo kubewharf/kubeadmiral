@@ -265,11 +265,13 @@ var (
 		scheduler.FollowsObjectAnnotation,
 		common.FollowersAnnotation,
 		common.DisableFollowingAnnotation,
+		common.MigrationConfigurationAnnotation,
 	)
 
 	// List of annotations that should be ignored on the source object
 	ignoredAnnotationSet = sets.New(
 		common.LatestReplicasetDigestsAnnotation,
+		common.AppliedMigrationConfigurationAnnotation,
 	)
 
 	federatedLabelSet = sets.New[string](

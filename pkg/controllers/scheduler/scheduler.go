@@ -361,6 +361,37 @@ func (s *Scheduler) prepareToSchedule(
 ) {
 	logger := klog.FromContext(ctx)
 
+	// update applied migration config
+	// We must update migration configuration before the checking scheduling triggers because
+	// the former is part of the latter.
+
+	existingMigrationConfigBytes, migrationConfigExists := fedObject.GetAnnotations()[common.MigrationConfigurationAnnotation]
+	_, customMigrationInfoExists := fedObject.GetAnnotations()[common.AppliedMigrationConfigurationAnnotation]
+	if !migrationConfigExists {
+		if customMigrationInfoExists {
+			annotations := fedObject.GetAnnotations()
+			delete(annotations, common.AppliedMigrationConfigurationAnnotation)
+			fedObject.SetAnnotations(annotations)
+		}
+	} else {
+		customMigrationInfoBytes, err := getCustomMigrationInfoBytes(existingMigrationConfigBytes, fedObject, ftc)
+		if err != nil {
+			logger.Error(err, "Failed to parse custom migration configuration")
+			s.eventRecorder.Eventf(
+				fedObject,
+				corev1.EventTypeWarning,
+				EventReasonParseMigrationConfiguration,
+				"Failed to parse custom migration configuration: %v",
+				err,
+			)
+		} else {
+			annotations := fedObject.GetAnnotations()
+			annotations[common.AppliedMigrationConfigurationAnnotation] = customMigrationInfoBytes
+			fedObject.SetAnnotations(annotations)
+			logger.V(3).Info("Successfully parsed custom migration configuration")
+		}
+	}
+
 	// check pending controllers
 
 	if ok, err := pendingcontrollers.ControllerDependenciesFulfilled(fedObject, PrefixedGlobalSchedulerName); err != nil {

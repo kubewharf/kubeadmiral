@@ -289,11 +289,6 @@ func (a *StatusAggregator) reconcile(ctx context.Context, key reconcileKey) (sta
 		logger.V(3).Info("StatusAggregation not enabled")
 		return worker.StatusAllOK
 	}
-	plugin := plugins.GetPlugin(key.gvk)
-	if plugin == nil {
-		logger.V(3).Info("Plugin not found")
-		return worker.StatusAllOK
-	}
 
 	a.metrics.Counter(metrics.StatusAggregatorThroughput, 1)
 	logger.V(3).Info("Starting to reconcile")
@@ -347,15 +342,55 @@ func (a *StatusAggregator) reconcile(ctx context.Context, key reconcileKey) (sta
 		return worker.StatusError
 	}
 
-	newObj, needUpdate, err := plugin.AggregateStatuses(ctx, sourceObject, fedObject, clusterObjs, clusterObjsUpToDate)
-	if err != nil {
-		return worker.StatusError
+	needUpdate := false
+	for _, plugin := range plugins.DefaultCommonPlugins {
+		newObj, newNeedUpdate, err := plugin.AggregateStatuses(ctx, sourceObject, fedObject, clusterObjs, clusterObjsUpToDate)
+		if err != nil {
+			return worker.StatusError
+		}
+		sourceObject = newObj
+		needUpdate = needUpdate || newNeedUpdate
 	}
 
 	if needUpdate {
-		logger.V(1).Info("Updating status of source object")
+		logger.V(1).Info("Updating metadata of source object")
 		_, err = a.dynamicClient.Resource(ftc.GetSourceTypeGVR()).Namespace(key.namespace).
-			UpdateStatus(ctx, newObj, metav1.UpdateOptions{})
+			Update(ctx, sourceObject, metav1.UpdateOptions{})
+		if err != nil {
+			if apierrors.IsConflict(err) {
+				return worker.StatusConflict
+			}
+			return worker.StatusError
+		}
+	}
+
+	needUpdate = false
+	plugin := plugins.GetPlugin(key.gvk)
+	if plugin != nil {
+		newObj, newNeedUpdate, err := plugin.AggregateStatuses(ctx, sourceObject, fedObject, clusterObjs, clusterObjsUpToDate)
+		if err != nil {
+			return worker.StatusError
+		}
+		sourceObject = newObj
+		needUpdate = newNeedUpdate
+	}
+
+	if needUpdate {
+		latestSourceObj, err := a.dynamicClient.Resource(ftc.GetSourceTypeGVR()).Namespace(key.namespace).
+			Get(ctx, key.name, metav1.GetOptions{})
+		if err != nil {
+			return worker.StatusError
+		}
+		statusMap, exists, err := unstructured.NestedMap(sourceObject.Object, "status")
+		if err != nil || !exists {
+			return worker.StatusError
+		}
+		err = unstructured.SetNestedMap(latestSourceObj.Object, statusMap, "status")
+		if err != nil {
+			return worker.StatusError
+		}
+		_, err = a.dynamicClient.Resource(ftc.GetSourceTypeGVR()).Namespace(key.namespace).
+			UpdateStatus(ctx, latestSourceObj, metav1.UpdateOptions{})
 		if err != nil {
 			if apierrors.IsConflict(err) {
 				return worker.StatusConflict
