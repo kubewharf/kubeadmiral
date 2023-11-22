@@ -23,17 +23,18 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-CODEGEN_VERSION=${CODEGEN_VERSION:-"v0.19.0"}
+CODEGEN_VERSION=${CODEGEN_VERSION:-"v0.26.6"}
 CONTROLLERGEN_VERSION=${CONTROLLERGEN_VERSION:-"v0.11.1"}
 YQ_VERSION=${YQ_VERSION:-"v4.33.1"}
 
 MODULE_NAME=${MODULE_NAME:-"github.com/kubewharf/kubeadmiral"}
 groups=(
   core/v1alpha1
+  hpaaggregator/v1alpha1
 )
 
 # install code-generator binaries
-go install k8s.io/code-generator/cmd/{client-gen,lister-gen,informer-gen,deepcopy-gen}@${CODEGEN_VERSION}
+go install k8s.io/code-generator/cmd/{client-gen,lister-gen,informer-gen,deepcopy-gen,openapi-gen}@${CODEGEN_VERSION}
 go install sigs.k8s.io/controller-tools/cmd/controller-gen@${CONTROLLERGEN_VERSION}
 go install github.com/mikefarah/yq/v4@${YQ_VERSION}
 
@@ -121,6 +122,29 @@ ${GOBIN}/informer-gen -h ${HEADER_FILE} -o ${OUTPUT_DIR} \
   --output-package=${INFORMER_OUTPUT_PACKAGE} \
   --versioned-clientset-package=${VERSIONED_CLIENTSET_PACKAGE} \
   --listers-package=${LISTER_OUTPUT_PACKAGE} \
+  "$@"
+
+# generate open-api
+OPENAPI_OUTPUT_PACKAGE="${MODULE_NAME}/pkg/client/openapi"
+
+echo "Generating openapi"
+# only hpaaggregator need to generate open-api now
+${GOBIN}/openapi-gen -h ${HEADER_FILE} -o ${OUTPUT_DIR} \
+  --input-dirs="k8s.io/apimachinery/pkg/apis/meta/v1" \
+  --input-dirs="k8s.io/apimachinery/pkg/runtime" \
+  --input-dirs="k8s.io/apimachinery/pkg/version" \
+  --input-dirs="k8s.io/apimachinery/pkg/api/resource" \
+  --input-dirs "k8s.io/metrics/pkg/apis/custom_metrics" \
+  --input-dirs "k8s.io/metrics/pkg/apis/custom_metrics/v1beta1" \
+  --input-dirs "k8s.io/metrics/pkg/apis/custom_metrics/v1beta2" \
+  --input-dirs "k8s.io/metrics/pkg/apis/external_metrics" \
+  --input-dirs "k8s.io/metrics/pkg/apis/external_metrics/v1beta1" \
+  --input-dirs "k8s.io/metrics/pkg/apis/metrics" \
+  --input-dirs "k8s.io/metrics/pkg/apis/metrics/v1beta1" \
+  --input-dirs "k8s.io/api/core/v1" \
+  --input-dirs="${MODULE_NAME}/pkg/apis/hpaaggregator/v1alpha1" \
+  --output-package=${OPENAPI_OUTPUT_PACKAGE} \
+  --output-file-base="zz_generated.openapi" \
   "$@"
 
 # copy files to proper location

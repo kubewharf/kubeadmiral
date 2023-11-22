@@ -94,7 +94,7 @@ func (c *FakeClusterOverridePolicies) UpdateStatus(ctx context.Context, clusterO
 // Delete takes name of the clusterOverridePolicy and deletes it. Returns an error if one occurs.
 func (c *FakeClusterOverridePolicies) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(clusteroverridepoliciesResource, name), &v1alpha1.ClusterOverridePolicy{})
+		Invokes(testing.NewRootDeleteActionWithOptions(clusteroverridepoliciesResource, name, opts), &v1alpha1.ClusterOverridePolicy{})
 	return err
 }
 

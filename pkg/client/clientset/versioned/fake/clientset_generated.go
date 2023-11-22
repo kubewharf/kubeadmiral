@@ -6,6 +6,8 @@ import (
 	clientset "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	corev1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	fakecorev1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1/fake"
+	hpaaggregatorv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/hpaaggregator/v1alpha1"
+	fakehpaaggregatorv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/hpaaggregator/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -58,9 +60,17 @@ func (c *Clientset) Tracker() testing.ObjectTracker {
 	return c.tracker
 }
 
-var _ clientset.Interface = &Clientset{}
+var (
+	_ clientset.Interface = &Clientset{}
+	_ testing.FakeClient  = &Clientset{}
+)
 
 // CoreV1alpha1 retrieves the CoreV1alpha1Client
 func (c *Clientset) CoreV1alpha1() corev1alpha1.CoreV1alpha1Interface {
 	return &fakecorev1alpha1.FakeCoreV1alpha1{Fake: &c.Fake}
+}
+
+// HpaaggregatorV1alpha1 retrieves the HpaaggregatorV1alpha1Client
+func (c *Clientset) HpaaggregatorV1alpha1() hpaaggregatorv1alpha1.HpaaggregatorV1alpha1Interface {
+	return &fakehpaaggregatorv1alpha1.FakeHpaaggregatorV1alpha1{Fake: &c.Fake}
 }

@@ -19,7 +19,7 @@ set -o pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 BUILD_OUTPUT_DIR=${BUILD_OUTPUT_DIR:-"${REPO_ROOT}/output/bin"}
-TARGET_NAME=${TARGET_NAME:-"kubeadmiral-controller-manager"}
+TARGET_NAME=${TARGET_NAME:-"all"}
 source "${REPO_ROOT}/hack/lib/build.sh"
 
 # clean old binaries

@@ -69,7 +69,7 @@ func podListerWatcher(
 			}
 			if enablePodPruning {
 				for i := range pods.Items {
-					prunePod(&pods.Items[i])
+					PrunePod(&pods.Items[i])
 				}
 			}
 			return pods, nil
@@ -103,7 +103,7 @@ func podListerWatcher(
 							return
 						}
 						if pod, ok := event.Object.(*corev1.Pod); ok {
-							prunePod(pod)
+							PrunePod(pod)
 						}
 						proxyCh <- event
 					}
@@ -114,7 +114,7 @@ func podListerWatcher(
 	}
 }
 
-func prunePod(pod *corev1.Pod) {
+func PrunePod(pod *corev1.Pod) {
 	containers := make([]corev1.Container, len(pod.Spec.Containers))
 	initContainers := make([]corev1.Container, len(pod.Spec.InitContainers))
 	for i := range pod.Spec.Containers {
@@ -131,16 +131,24 @@ func prunePod(pod *corev1.Pod) {
 			ResourceVersion:   pod.ResourceVersion,
 			UID:               pod.UID,
 			DeletionTimestamp: pod.DeletionTimestamp,
+			Labels:            pod.Labels,
+			CreationTimestamp: pod.CreationTimestamp,
 		},
 		Spec: corev1.PodSpec{
-			NodeName:       pod.Spec.NodeName,
-			Overhead:       pod.Spec.Overhead,
-			Containers:     containers,
-			InitContainers: initContainers,
+			NodeName:           pod.Spec.NodeName,
+			Overhead:           pod.Spec.Overhead,
+			Containers:         containers,
+			InitContainers:     initContainers,
+			RestartPolicy:      pod.Spec.RestartPolicy,
+			SchedulerName:      pod.Spec.SchedulerName,
+			ServiceAccountName: pod.Spec.ServiceAccountName,
+			HostNetwork:        pod.Spec.HostNetwork,
 		},
 		Status: corev1.PodStatus{
-			Phase:      pod.Status.Phase,
-			Conditions: pod.Status.Conditions,
+			Phase:             pod.Status.Phase,
+			Conditions:        pod.Status.Conditions,
+			PodIP:             pod.Status.PodIP,
+			NominatedNodeName: pod.Status.NominatedNodeName,
 		},
 	}
 }

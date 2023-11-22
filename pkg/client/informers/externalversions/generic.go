@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	v1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	hpaaggregatorv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/hpaaggregator/v1alpha1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
 )
@@ -65,6 +66,10 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().SchedulerPluginWebhookConfigurations().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("schedulingprofiles"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1alpha1().SchedulingProfiles().Informer()}, nil
+
+		// Group=hpaaggregator.kubeadmiral.io, Version=v1alpha1
+	case hpaaggregatorv1alpha1.SchemeGroupVersion.WithResource("externalmetricadaptors"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Hpaaggregator().V1alpha1().ExternalMetricAdaptors().Informer()}, nil
 
 	}
 

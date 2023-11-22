@@ -94,7 +94,7 @@ func (c *FakeClusterFederatedObjects) UpdateStatus(ctx context.Context, clusterF
 // Delete takes name of the clusterFederatedObject and deletes it. Returns an error if one occurs.
 func (c *FakeClusterFederatedObjects) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(clusterfederatedobjectsResource, name), &v1alpha1.ClusterFederatedObject{})
+		Invokes(testing.NewRootDeleteActionWithOptions(clusterfederatedobjectsResource, name, opts), &v1alpha1.ClusterFederatedObject{})
 	return err
 }
 
