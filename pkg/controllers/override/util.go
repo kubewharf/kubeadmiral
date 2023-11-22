@@ -240,6 +240,11 @@ func parsePatchesFromOverriders(
 ) (fedcorev1a1.OverridePatches, error) {
 	patches := make(fedcorev1a1.OverridePatches, 0)
 
+	// it will not work if the overriders field is not set.
+	if overriders == nil {
+		return patches, nil
+	}
+
 	// parse patches from image overriders
 	if imagePatches, err := parseImageOverriders(fedObject, overriders.Image); err != nil {
 		return nil, fmt.Errorf("failed to parse image overriders: %w", err)
