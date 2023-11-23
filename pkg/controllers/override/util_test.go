@@ -825,6 +825,30 @@ func TestParseOverrides(t *testing.T) {
 			},
 			isErrorExpected: false,
 		},
+		"OverrideRule.Overriders is nil - should return no overrides": {
+			policy: &fedcorev1a1.OverridePolicy{
+				Spec: fedcorev1a1.GenericOverridePolicySpec{
+					OverrideRules: []fedcorev1a1.OverrideRule{
+						{
+							TargetClusters: &fedcorev1a1.TargetClusters{
+								Clusters: []string{
+									"cluster1",
+								},
+							},
+						},
+					},
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "cluster1",
+					},
+				},
+			},
+			expectedOverridesMap: make(overridesMap),
+			isErrorExpected:      false,
+		},
 	}
 
 	for testName, testCase := range testCases {
