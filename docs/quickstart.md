@@ -135,6 +135,10 @@ spec:
           protocol: TCP
           name: echo-server
 EOF
+
+$ kubectl get deploy echo-server
+NAME          READY   UP-TO-DATE   AVAILABLE   AGE
+echo-server   0/6     0            0           3s
 ```
 
 ### 3. Create a new propagation policy
@@ -149,6 +153,11 @@ spec:
   schedulingMode: Divide
   clusterSelector: {}
 EOF
+
+$ # pp is a shortname for propagationpolicy
+$ kubectl get pp policy-all-clusters
+NAME                  AGE
+policy-all-clusters   10s
 ```
 
 The newly created propagation policy will propagate resources to all clusters.
@@ -172,95 +181,117 @@ If the KubeAdmiral control plane is working properly, the deployment will be pro
 $ kubectl get deploy echo-server
 
 NAME          READY   UP-TO-DATE   AVAILABLE   AGE
-echo-server   6/6     6            6           10m
+echo-server   6/6     6            6           26s
 ```
 
-We can also view the status of the deployments in each member cluster by checking its `FederatedDeploymentStatus` object.
+We can also view the status of the deployments in each member cluster by checking its `CollectedStatus` object.
 
 ```console
-$ kubectl get fdeploystatus echo-server -oyaml
+$ # Usually the name consists of the resource name and its GroupResource (e.g. echo-server-deployments.apps),
+$ # but sometimes there may be a hash suffix to avoid duplication.
+$ # We can use `get collectedstatus -l apps/v1=Deployment` to get all `CollectedStatus`es for `apps/v1.Deployment`s.
+$ kubectl get collectedstatus -l apps/v1=Deployment | grep echo-server
+echo-server-deployments.apps       57s
 
-apiVersion: types.kubeadmiral.io/v1alpha1
-kind: FederatedDeploymentStatus
+$ kubectl get collectedstatus echo-server-deployments.apps -oyaml
+apiVersion: core.kubeadmiral.io/v1alpha1
+clusters:
+- cluster: kubeadmiral-member-1
+  collectedFields:
+    metadata:
+      creationTimestamp: "2023-11-23T11:09:04Z"
+    spec:
+      replicas: 2
+    status:
+      availableReplicas: 2
+      conditions:
+      - lastTransitionTime: "2023-11-23T11:09:10Z"
+        lastUpdateTime: "2023-11-23T11:09:10Z"
+        message: Deployment has minimum availability.
+        reason: MinimumReplicasAvailable
+        status: "True"
+        type: Available
+      - lastTransitionTime: "2023-11-23T11:09:04Z"
+        lastUpdateTime: "2023-11-23T11:09:12Z"
+        message: ReplicaSet "echo-server-65dcc57996" has successfully progressed.
+        reason: NewReplicaSetAvailable
+        status: "True"
+        type: Progressing
+      observedGeneration: 1
+      readyReplicas: 2
+      replicas: 2
+      updatedReplicas: 2
+- cluster: kubeadmiral-member-2
+  collectedFields:
+    metadata:
+      creationTimestamp: "2023-11-23T11:09:04Z"
+    spec:
+      replicas: 2
+    status:
+      availableReplicas: 2
+      conditions:
+      - lastTransitionTime: "2023-11-23T11:09:09Z"
+        lastUpdateTime: "2023-11-23T11:09:09Z"
+        message: Deployment has minimum availability.
+        reason: MinimumReplicasAvailable
+        status: "True"
+        type: Available
+      - lastTransitionTime: "2023-11-23T11:09:04Z"
+        lastUpdateTime: "2023-11-23T11:09:09Z"
+        message: ReplicaSet "echo-server-65dcc57996" has successfully progressed.
+        reason: NewReplicaSetAvailable
+        status: "True"
+        type: Progressing
+      observedGeneration: 1
+      readyReplicas: 2
+      replicas: 2
+      updatedReplicas: 2
+- cluster: kubeadmiral-member-3
+  collectedFields:
+    metadata:
+      creationTimestamp: "2023-11-23T11:09:04Z"
+    spec:
+      replicas: 2
+    status:
+      availableReplicas: 2
+      conditions:
+      - lastTransitionTime: "2023-11-23T11:09:09Z"
+        lastUpdateTime: "2023-11-23T11:09:09Z"
+        message: Deployment has minimum availability.
+        reason: MinimumReplicasAvailable
+        status: "True"
+        type: Available
+      - lastTransitionTime: "2023-11-23T11:09:04Z"
+        lastUpdateTime: "2023-11-23T11:09:10Z"
+        message: ReplicaSet "echo-server-65dcc57996" has successfully progressed.
+        reason: NewReplicaSetAvailable
+        status: "True"
+        type: Progressing
+      observedGeneration: 1
+      readyReplicas: 2
+      replicas: 2
+      updatedReplicas: 2
+kind: CollectedStatus
+lastUpdateTime: "2023-11-23T11:08:48Z"
 metadata:
-  name: dp
+  annotations:
+    kubeadmiral.io/latest-replicaset-digests: '[]'
+  creationTimestamp: "2023-11-23T11:08:48Z"
+  generation: 6
+  labels:
+    apps/v1: Deployment
+    kubeadmiral.io/propagation-policy-name: policy-all-clusters
+  name: echo-server-deployments.apps
   namespace: default
-clusterStatus:
-- clusterName: kubeadmiral-member-1
-  collectedFields:
-    metadata:
-      creationTimestamp: "2023-03-14T08:02:05Z"
-    spec:
-      replicas: 2
-    status:
-      availableReplicas: 2
-      conditions:
-        - lastTransitionTime: "2023-03-14T08:02:10Z"
-          lastUpdateTime: "2023-03-14T08:02:10Z"
-          message: Deployment has minimum availability.
-          reason: MinimumReplicasAvailable
-          status: "True"
-          type: Available
-        - lastTransitionTime: "2023-03-14T08:02:05Z"
-          lastUpdateTime: "2023-03-14T08:02:10Z"
-          message: ReplicaSet "echo-server-65dcc57996" has successfully progressed.
-          reason: NewReplicaSetAvailable
-          status: "True"
-          type: Progressing
-      observedGeneration: 1
-      readyReplicas: 2
-      replicas: 2
-      updatedReplicas: 2
-- clusterName: kubeadmiral-member-2
-  collectedFields:
-    metadata:
-      creationTimestamp: "2023-03-14T08:02:05Z"
-    spec:
-      replicas: 2
-    status:
-      availableReplicas: 2
-      conditions:
-        - lastTransitionTime: "2023-03-14T08:02:09Z"
-          lastUpdateTime: "2023-03-14T08:02:09Z"
-          message: Deployment has minimum availability.
-          reason: MinimumReplicasAvailable
-          status: "True"
-          type: Available
-        - lastTransitionTime: "2023-03-14T08:02:05Z"
-          lastUpdateTime: "2023-03-14T08:02:09Z"
-          message: ReplicaSet "echo-server-65dcc57996" has successfully progressed.
-          reason: NewReplicaSetAvailable
-          status: "True"
-          type: Progressing
-      observedGeneration: 1
-      readyReplicas: 2
-      replicas: 2
-      updatedReplicas: 2
-- clusterName: kubeadmiral-member-3
-  collectedFields:
-    metadata:
-      creationTimestamp: "2023-03-14T08:02:05Z"
-    spec:
-      replicas: 2
-    status:
-      availableReplicas: 2
-      conditions:
-        - lastTransitionTime: "2023-03-14T08:02:13Z"
-          lastUpdateTime: "2023-03-14T08:02:13Z"
-          message: Deployment has minimum availability.
-          reason: MinimumReplicasAvailable
-          status: "True"
-          type: Available
-        - lastTransitionTime: "2023-03-14T08:02:05Z"
-          lastUpdateTime: "2023-03-14T08:02:13Z"
-          message: ReplicaSet "echo-server-65dcc57996" has successfully progressed.
-          reason: NewReplicaSetAvailable
-          status: "True"
-          type: Progressing
-      observedGeneration: 1
-      readyReplicas: 2
-      replicas: 2
-      updatedReplicas: 2
+  ownerReferences:
+  - apiVersion: core.kubeadmiral.io/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: FederatedObject
+    name: echo-server-deployments.apps
+    uid: a29498af-ad56-484e-92ee-5a967d595d2b
+  resourceVersion: "8333679"
+  uid: 9f1b06b5-5070-45f7-bcdc-4b8e1fa01226
 ```
 
 🎉 We have successfully propagated a deployment using KubeAdmiral.
