@@ -417,17 +417,14 @@ func (c *FederateController) ensureFinalizer(
 ) (*unstructured.Unstructured, error) {
 	logger := klog.FromContext(ctx).WithValues("finalizer", FinalizerFederateController)
 
-	isUpdated, err := finalizersutil.AddFinalizers(sourceObj, sets.NewString(FinalizerFederateController))
-	if err != nil {
-		return nil, fmt.Errorf("failed to add finalizer to source object: %w", err)
-	}
+	isUpdated := finalizersutil.AddFinalizers(sourceObj, sets.New(FinalizerFederateController))
 	if !isUpdated {
 		return sourceObj, nil
 	}
 
 	logger.V(1).Info("Adding finalizer to source object")
 
-	sourceObj, err = c.dynamicClient.Resource(sourceGVR).Namespace(sourceObj.GetNamespace()).Update(
+	sourceObj, err := c.dynamicClient.Resource(sourceGVR).Namespace(sourceObj.GetNamespace()).Update(
 		ctx,
 		sourceObj,
 		metav1.UpdateOptions{},
@@ -446,17 +443,14 @@ func (c *FederateController) removeFinalizer(
 ) (*unstructured.Unstructured, error) {
 	logger := klog.FromContext(ctx).WithValues("finalizer", FinalizerFederateController)
 
-	isUpdated, err := finalizersutil.RemoveFinalizers(sourceObj, sets.NewString(FinalizerFederateController))
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove finalizer from source object: %w", err)
-	}
+	isUpdated := finalizersutil.RemoveFinalizers(sourceObj, sets.New(FinalizerFederateController))
 	if !isUpdated {
 		return sourceObj, nil
 	}
 
 	logger.V(1).Info("Removing finalizer from source object")
 
-	sourceObj, err = c.dynamicClient.Resource(sourceGVR).Namespace(sourceObj.GetNamespace()).Update(
+	sourceObj, err := c.dynamicClient.Resource(sourceGVR).Namespace(sourceObj.GetNamespace()).Update(
 		ctx,
 		sourceObj,
 		metav1.UpdateOptions{},

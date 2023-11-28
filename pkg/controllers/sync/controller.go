@@ -624,12 +624,7 @@ func (s *SyncController) syncToClusters(
 			)
 			continue
 		}
-		hasFinalizer, err := finalizersutil.HasFinalizer(cluster, FinalizerCascadingDelete)
-		if err != nil {
-			shouldRecheckAfterDispatch = true
-			dispatcher.RecordClusterError(fedcorev1a1.FinalizerCheckFailed, clusterName, err)
-			continue
-		}
+		hasFinalizer := finalizersutil.HasFinalizer(cluster, FinalizerCascadingDelete)
 		if !hasFinalizer {
 			// we should not sync before finalizer is added
 			shouldRecheckAfterDispatch = true
@@ -971,9 +966,9 @@ func (s *SyncController) ensureFinalizer(ctx context.Context, fedResource Federa
 	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "finalizer-name", FinalizerSyncController)
 
 	obj := fedResource.Object()
-	isUpdated, err := finalizersutil.AddFinalizers(obj, sets.NewString(FinalizerSyncController))
-	if err != nil || !isUpdated {
-		return err
+	isUpdated := finalizersutil.AddFinalizers(obj, sets.New(FinalizerSyncController))
+	if !isUpdated {
+		return nil
 	}
 
 	keyedLogger.V(1).Info("Adding finalizer to federated object")
@@ -995,9 +990,9 @@ func (s *SyncController) removeFinalizer(ctx context.Context, fedResource Federa
 	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "finalizer-name", FinalizerSyncController)
 
 	obj := fedResource.Object()
-	isUpdated, err := finalizersutil.RemoveFinalizers(obj, sets.NewString(FinalizerSyncController))
-	if err != nil || !isUpdated {
-		return err
+	isUpdated := finalizersutil.RemoveFinalizers(obj, sets.New(FinalizerSyncController))
+	if !isUpdated {
+		return nil
 	}
 
 	keyedLogger.V(1).Info("Removing finalizer from federated object")
@@ -1024,9 +1019,9 @@ func (s *SyncController) ensureClusterFinalizer(ctx context.Context, cluster *fe
 		if err != nil {
 			return err
 		}
-		isUpdated, err := finalizersutil.AddFinalizers(cluster, sets.NewString(FinalizerCascadingDelete))
-		if err != nil || !isUpdated {
-			return err
+		isUpdated := finalizersutil.AddFinalizers(cluster, sets.New(FinalizerCascadingDelete))
+		if !isUpdated {
+			return nil
 		}
 		cluster, err = s.fedClient.CoreV1alpha1().FederatedClusters().Update(ctx, cluster, metav1.UpdateOptions{})
 		return err
@@ -1046,9 +1041,9 @@ func (s *SyncController) removeClusterFinalizer(ctx context.Context, cluster *fe
 		if err != nil {
 			return err
 		}
-		isUpdated, err := finalizersutil.RemoveFinalizers(cluster, sets.NewString(FinalizerCascadingDelete))
-		if err != nil || !isUpdated {
-			return err
+		isUpdated := finalizersutil.RemoveFinalizers(cluster, sets.New(FinalizerCascadingDelete))
+		if !isUpdated {
+			return nil
 		}
 		cluster, err = s.fedClient.CoreV1alpha1().FederatedClusters().Update(ctx, cluster, metav1.UpdateOptions{})
 		return err

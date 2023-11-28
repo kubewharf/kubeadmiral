@@ -132,18 +132,9 @@ func (d *unmanagedDispatcherImpl) Delete(
 		// Avoid mutating the resource in the informer cache
 		clusterObj := clusterObj.DeepCopy()
 
-		needUpdate, err := removeRetainObjectFinalizer(clusterObj)
-		if err != nil {
-			if d.recorder == nil {
-				wrappedErr := d.wrapOperationError(err, clusterName, op)
-				keyedLogger.Error(wrappedErr, "Failed to delete target object in cluster")
-			} else {
-				d.recorder.recordOperationError(ctx, fedcorev1a1.DeletionFailed, clusterName, op, err)
-			}
-			result = false
-			return result
-		}
+		needUpdate := removeRetainObjectFinalizer(clusterObj)
 		if needUpdate {
+			var err error
 			clusterObj, err = client.Resource(d.targetGVR).Namespace(targetName.Namespace).Update(
 				ctx,
 				clusterObj,
@@ -177,7 +168,7 @@ func (d *unmanagedDispatcherImpl) Delete(
 		// To avoid this, we explicitly set the PropagationPolicy to Background like `kubectl delete` does by default.
 		// Ref: https://github.com/kubernetes/kubernetes/pull/65908
 		deletionPropagation := metav1.DeletePropagationBackground
-		err = client.Resource(d.targetGVR).Namespace(targetName.Namespace).Delete(
+		err := client.Resource(d.targetGVR).Namespace(targetName.Namespace).Delete(
 			ctx,
 			targetName.Name,
 			metav1.DeleteOptions{PropagationPolicy: &deletionPropagation},
@@ -218,15 +209,7 @@ func (d *unmanagedDispatcherImpl) RemoveManagedLabel(
 		updateObj := clusterObj.DeepCopy()
 
 		managedlabel.RemoveManagedLabel(updateObj)
-		if _, err := removeRetainObjectFinalizer(updateObj); err != nil {
-			if d.recorder == nil {
-				wrappedErr := d.wrapOperationError(err, clusterName, op)
-				keyedLogger.Error(wrappedErr, "Failed to remove managed label from target object in cluster")
-			} else {
-				d.recorder.recordOperationError(ctx, fedcorev1a1.LabelRemovalFailed, clusterName, op, err)
-			}
-			return false
-		}
+		removeRetainObjectFinalizer(updateObj)
 
 		var err error
 		if _, err = client.Resource(d.targetGVR).Namespace(clusterObj.GetNamespace()).Update(
@@ -258,6 +241,6 @@ func wrapOperationError(err error, operation, targetGVR, targetName, clusterName
 	return errors.Wrapf(err, "Failed to "+eventTemplate, operation, targetGVR, targetName, clusterName)
 }
 
-func removeRetainObjectFinalizer(obj *unstructured.Unstructured) (bool, error) {
-	return finalizers.RemoveFinalizers(obj, sets.NewString(RetainTerminatingObjectFinalizer))
+func removeRetainObjectFinalizer(obj *unstructured.Unstructured) bool {
+	return finalizers.RemoveFinalizers(obj, sets.New(RetainTerminatingObjectFinalizer))
 }

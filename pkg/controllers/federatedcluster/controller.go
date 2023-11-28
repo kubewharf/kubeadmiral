@@ -353,10 +353,7 @@ func (c *FederatedClusterController) ensureFinalizer(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
 ) (*fedcorev1a1.FederatedCluster, error) {
-	updated, err := finalizers.AddFinalizers(cluster, sets.NewString(FinalizerFederatedClusterController))
-	if err != nil {
-		return nil, err
-	}
+	updated := finalizers.AddFinalizers(cluster, sets.New(FinalizerFederatedClusterController))
 
 	if updated {
 		return c.fedClient.CoreV1alpha1().FederatedClusters().Update(ctx, cluster, metav1.UpdateOptions{})

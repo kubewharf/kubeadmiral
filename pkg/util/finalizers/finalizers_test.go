@@ -26,12 +26,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	meta "k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-func newObj(finalizers []string) runtime.Object {
+func newObj(finalizers []string) metav1.Object {
 	pod := corev1.Pod{}
 	pod.ObjectMeta.Finalizers = finalizers
 	return &pod
@@ -39,7 +38,7 @@ func newObj(finalizers []string) runtime.Object {
 
 func TestHasFinalizer(t *testing.T) {
 	testCases := []struct {
-		obj       runtime.Object
+		obj       metav1.Object
 		finalizer string
 		result    bool
 	}{
@@ -75,7 +74,7 @@ func TestHasFinalizer(t *testing.T) {
 		},
 	}
 	for index, test := range testCases {
-		hasFinalizer, _ := HasFinalizer(test.obj, test.finalizer)
+		hasFinalizer := HasFinalizer(test.obj, test.finalizer)
 		assert.Equal(
 			t,
 			hasFinalizer,
@@ -87,52 +86,51 @@ func TestHasFinalizer(t *testing.T) {
 
 func TestAddFinalizers(t *testing.T) {
 	testCases := []struct {
-		obj           runtime.Object
-		finalizers    sets.String
+		obj           metav1.Object
+		finalizers    sets.Set[string]
 		isUpdated     bool
 		newFinalizers []string
 	}{
 		{
 			newObj([]string{}),
-			sets.NewString(),
+			sets.New[string](),
 			false,
 			[]string{},
 		},
 		{
 			newObj([]string{}),
-			sets.NewString("someFinalizer"),
+			sets.New("someFinalizer"),
 			true,
 			[]string{"someFinalizer"},
 		},
 		{
 			newObj([]string{"someFinalizer"}),
-			sets.NewString(),
+			sets.New[string](),
 			false,
 			[]string{"someFinalizer"},
 		},
 		{
 			newObj([]string{"someFinalizer"}),
-			sets.NewString("anotherFinalizer"),
+			sets.New("anotherFinalizer"),
 			true,
 			[]string{"anotherFinalizer", "someFinalizer"},
 		},
 		{
 			newObj([]string{"someFinalizer"}),
-			sets.NewString("someFinalizer"),
+			sets.New("someFinalizer"),
 			false,
 			[]string{"someFinalizer"},
 		},
 	}
 	for index, test := range testCases {
-		isUpdated, _ := AddFinalizers(test.obj, test.finalizers)
+		isUpdated := AddFinalizers(test.obj, test.finalizers)
 		assert.Equal(
 			t,
 			isUpdated,
 			test.isUpdated,
 			fmt.Sprintf("Test case %d failed. Expected isUpdated: %v, actual: %v", index, test.isUpdated, isUpdated),
 		)
-		accessor, _ := meta.Accessor(test.obj)
-		newFinalizers := accessor.GetFinalizers()
+		newFinalizers := test.obj.GetFinalizers()
 		assert.Equal(
 			t,
 			test.newFinalizers,
@@ -149,52 +147,51 @@ func TestAddFinalizers(t *testing.T) {
 
 func TestRemoveFinalizers(t *testing.T) {
 	testCases := []struct {
-		obj           runtime.Object
-		finalizers    sets.String
+		obj           metav1.Object
+		finalizers    sets.Set[string]
 		isUpdated     bool
 		newFinalizers []string
 	}{
 		{
 			newObj([]string{}),
-			sets.NewString(),
+			sets.New[string](),
 			false,
 			[]string{},
 		},
 		{
 			newObj([]string{}),
-			sets.NewString("someFinalizer"),
+			sets.New("someFinalizer"),
 			false,
 			[]string{},
 		},
 		{
 			newObj([]string{"someFinalizer"}),
-			sets.NewString(),
+			sets.New[string](),
 			false,
 			[]string{"someFinalizer"},
 		},
 		{
 			newObj([]string{"someFinalizer"}),
-			sets.NewString("anotherFinalizer"),
+			sets.New("anotherFinalizer"),
 			false,
 			[]string{"someFinalizer"},
 		},
 		{
 			newObj([]string{"someFinalizer", "anotherFinalizer"}),
-			sets.NewString("someFinalizer"),
+			sets.New("someFinalizer"),
 			true,
 			[]string{"anotherFinalizer"},
 		},
 	}
 	for index, test := range testCases {
-		isUpdated, _ := RemoveFinalizers(test.obj, test.finalizers)
+		isUpdated := RemoveFinalizers(test.obj, test.finalizers)
 		assert.Equal(
 			t,
 			isUpdated,
 			test.isUpdated,
 			fmt.Sprintf("Test case %d failed. Expected isUpdated: %v, actual: %v", index, test.isUpdated, isUpdated),
 		)
-		accessor, _ := meta.Accessor(test.obj)
-		newFinalizers := accessor.GetFinalizers()
+		newFinalizers := test.obj.GetFinalizers()
 		assert.Equal(
 			t,
 			test.newFinalizers,

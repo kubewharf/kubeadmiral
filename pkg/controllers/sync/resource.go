@@ -177,9 +177,7 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 			return nil, err
 		}
 
-		if err := addRetainObjectFinalizer(obj); err != nil {
-			return nil, err
-		}
+		addRetainObjectFinalizer(obj)
 	case common.ServiceGVK:
 		if err := dropServiceFields(obj); err != nil {
 			return nil, err
@@ -189,19 +187,14 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 			return nil, err
 		}
 
-		if err := addRetainObjectFinalizer(obj); err != nil {
-			return nil, err
-		}
+		addRetainObjectFinalizer(obj)
 	}
 
 	return obj, nil
 }
 
-func addRetainObjectFinalizer(obj *unstructured.Unstructured) error {
-	if _, err := finalizers.AddFinalizers(obj, sets.NewString(dispatch.RetainTerminatingObjectFinalizer)); err != nil {
-		return err
-	}
-	return nil
+func addRetainObjectFinalizer(obj *unstructured.Unstructured) {
+	finalizers.AddFinalizers(obj, sets.New(dispatch.RetainTerminatingObjectFinalizer))
 }
 
 func dropJobFields(obj *unstructured.Unstructured) error {
