@@ -93,9 +93,12 @@ spec:
                     - version
                   type: object
                 statusAggregation:
-                  description: Configuration for StatusAggregation. If left empty, the StatusAggregation feature will be disabled.
+                  default:
+                    enabled: true
+                  description: Configuration for StatusAggregation.
                   properties:
                     enabled:
+                      default: true
                       description: Whether or not to enable status aggregation.
                       type: boolean
                   required:

@@ -9,6 +9,8 @@ spec:
     pluralName: namespaces
     scope: Cluster
     version: v1
+  statusAggregation:
+    enabled: false
   controllers:
     - - kubeadmiral.io/nsautoprop-controller
     - - kubeadmiral.io/overridepolicy-controller
@@ -42,8 +44,6 @@ spec:
     pluralName: deployments
     scope: Namespaced
     version: v1
-  statusAggregation:
-    enabled: true
   autoMigration:
     enabled: true
   controllers:
@@ -297,8 +297,6 @@ spec:
     pluralName: jobs
     scope: Namespaced
     version: v1
-  statusAggregation:
-    enabled: true
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller

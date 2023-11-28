@@ -26,6 +26,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/apiresources"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusteraffinity"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusterevicted"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusterready"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusterresources"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusterterminating"
@@ -51,6 +52,7 @@ var inTreeRegistry = runtime.Registry{
 	names.ClusterResourcesMostAllocated:      clusterresources.NewClusterResourcesMostAllocated,
 	names.MaxCluster:                         maxcluster.NewMaxCluster,
 	names.ClusterCapacityWeight:              rsp.NewClusterCapacityWeight,
+	names.ClusterEvicted:                     clusterevicted.NewClusterEvicted,
 }
 
 func applyProfile(base *fedcore.EnabledPlugins, profile *fedcorev1a1.SchedulingProfile) {

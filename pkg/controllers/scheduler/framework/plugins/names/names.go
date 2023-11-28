@@ -29,4 +29,5 @@ const (
 	ClusterResourcesMostAllocated      = "ClusterResourcesMostAllocated"
 	MaxCluster                         = "MaxCluster"
 	ClusterCapacityWeight              = "ClusterCapacityWeight"
+	ClusterEvicted                     = "ClusterEvicted"
 )

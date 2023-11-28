@@ -116,6 +116,11 @@ const (
 	TemplateGeneratorMergePatchAnnotation = FederateControllerPrefix + "template-generator-merge-patch"
 
 	LatestReplicasetDigestsAnnotation = DefaultPrefix + "latest-replicaset-digests"
+
+	// MigrationConfigurationAnnotation contains custom migration configuration from users.
+	MigrationConfigurationAnnotation = DefaultPrefix + "migration-configuration"
+	// AppliedMigrationConfigurationAnnotation contains the applied custom migration configuration.
+	AppliedMigrationConfigurationAnnotation = DefaultPrefix + "applied-migration-configuration"
 )
 
 // PropagatedAnnotationKeys and PropagatedLabelKeys are used to store the keys of annotations and labels that are present

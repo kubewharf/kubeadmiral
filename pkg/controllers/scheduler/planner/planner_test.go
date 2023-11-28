@@ -29,11 +29,12 @@ import (
 )
 
 type testCase struct {
-	rsp      map[string]ClusterPreferences
-	replicas int64
-	clusters []string
-	existing map[string]int64
-	capacity map[string]int64
+	rsp             map[string]ClusterPreferences
+	replicas        int64
+	clusters        []string
+	existing        map[string]int64
+	capacity        map[string]int64
+	limitedCapacity map[string]int64
 }
 
 type expectedResult struct {
@@ -75,7 +76,7 @@ func doCheck(
 				Clusters: tc.rsp,
 			},
 			tc.replicas, tc.clusters,
-			existing, estimatedCapacity, "",
+			existing, estimatedCapacity, tc.limitedCapacity, "",
 			avoidDisruption, keepUnschedulableReplicas,
 		)
 
@@ -426,6 +427,38 @@ func TestWithExisting(t *testing.T) {
 		[2]*expectedResult{
 			{plan: map[string]int64{"A": 25, "B": 25}},
 			{plan: map[string]int64{"A": 30, "B": 20}},
+		},
+	)
+
+	doCheckWithExisting(t,
+		&testCase{
+			rsp: map[string]ClusterPreferences{
+				"*": {Weight: 1},
+			},
+			replicas:        50,
+			clusters:        []string{"A", "B"},
+			existing:        map[string]int64{"A": 30},
+			limitedCapacity: map[string]int64{"A": 0},
+		},
+		[2]*expectedResult{
+			{plan: map[string]int64{"A": 0, "B": 50}},
+			{plan: map[string]int64{"A": 0, "B": 50}},
+		},
+	)
+
+	doCheckWithExisting(t,
+		&testCase{
+			rsp: map[string]ClusterPreferences{
+				"*": {Weight: 1},
+			},
+			replicas:        50,
+			clusters:        []string{"A", "B"},
+			existing:        map[string]int64{"A": 30},
+			limitedCapacity: map[string]int64{"A": 10},
+		},
+		[2]*expectedResult{
+			{plan: map[string]int64{"A": 10, "B": 40}},
+			{plan: map[string]int64{"A": 10, "B": 40}},
 		},
 	)
 
