@@ -40,6 +40,7 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/statusaggregator/plugins"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/statusaggregator/plugins/sourcefeedback"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
@@ -342,16 +343,7 @@ func (a *StatusAggregator) reconcile(ctx context.Context, key reconcileKey) (sta
 		return worker.StatusError
 	}
 
-	needUpdate := false
-	for _, plugin := range plugins.DefaultCommonPlugins {
-		newObj, newNeedUpdate, err := plugin.AggregateStatuses(ctx, sourceObject, fedObject, clusterObjs, clusterObjsUpToDate)
-		if err != nil {
-			return worker.StatusError
-		}
-		sourceObject = newObj
-		needUpdate = needUpdate || newNeedUpdate
-	}
-
+	needUpdate := sourcefeedback.PopulateAnnotations(sourceObject, fedObject)
 	if needUpdate {
 		logger.V(1).Info("Updating metadata of source object")
 		_, err = a.dynamicClient.Resource(ftc.GetSourceTypeGVR()).Namespace(key.namespace).

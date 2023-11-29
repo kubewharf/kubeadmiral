@@ -121,6 +121,9 @@ const (
 	MigrationConfigurationAnnotation = DefaultPrefix + "migration-configuration"
 	// AppliedMigrationConfigurationAnnotation contains the applied custom migration configuration.
 	AppliedMigrationConfigurationAnnotation = DefaultPrefix + "applied-migration-configuration"
+	// DryRunAnnotation indicates resource is in dry run process. It will prevent new resources from being dispatched by the sync controller.
+	// It works only when resources have not been propagated to member clusters.
+	DryRunAnnotation = DefaultPrefix + "dry-run"
 )
 
 // PropagatedAnnotationKeys and PropagatedLabelKeys are used to store the keys of annotations and labels that are present

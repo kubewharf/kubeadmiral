@@ -27,7 +27,6 @@ import (
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	plugincommon "github.com/kubewharf/kubeadmiral/pkg/controllers/statusaggregator/plugins/common"
 )
 
 type Plugin interface {
@@ -46,10 +45,6 @@ var pluginsMap = map[schema.GroupVersionKind]Plugin{
 	appsv1.SchemeGroupVersion.WithKind(common.StatefulSetKind): NewSingleClusterPlugin(),
 	batchv1.SchemeGroupVersion.WithKind(common.JobKind):        NewJobPlugin(),
 	corev1.SchemeGroupVersion.WithKind(common.PodKind):         NewPodPlugin(),
-}
-
-var DefaultCommonPlugins = []Plugin{
-	plugincommon.NewMigrationConfigPlugin(),
 }
 
 func GetPlugin(gvk schema.GroupVersionKind) Plugin {

@@ -770,6 +770,15 @@ func (s *Scheduler) applySchedulingResult(
 		}
 	}
 
+	if objectModified {
+		value, err := getSchedulingAnnotationValue(fedObject, result)
+		if err != nil {
+			return false, err
+		}
+		annotations[SchedulingAnnotation] = value
+		annotationsModified = true
+	}
+
 	if annotationsModified {
 		fedObject.SetAnnotations(annotations)
 		objectModified = true

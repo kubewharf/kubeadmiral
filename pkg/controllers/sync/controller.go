@@ -422,6 +422,12 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 		fedResource.RecordError("EnsureFinalizerError", errors.Wrap(err, "Failed to ensure finalizer"))
 		return worker.StatusError
 	}
+
+	if skipSync(fedResource.Object()) {
+		fedResource.RecordEvent("SyncSkipped", "Skip Syncing for %s", fedResource.FederatedName())
+		return worker.StatusAllOK
+	}
+
 	clustersToSync, selectedClusters, err := s.prepareToSync(ctx, fedResource)
 	if err != nil {
 		fedResource.RecordError("PrepareToSyncError", errors.Wrap(err, "Failed to prepare to sync"))
