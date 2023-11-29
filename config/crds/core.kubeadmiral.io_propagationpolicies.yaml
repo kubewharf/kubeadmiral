@@ -149,8 +149,13 @@ spec:
                             format: int64
                             minimum: 0
                             type: integer
+                          priority:
+                            description: A number expressing the priority of the cluster. The higher the value, the higher the priority. When selecting clusters for propagation, clusters with higher priority are preferred. When the Binpack ReplicasStrategy is selected, replicas will be scheduled to clusters with higher priority first.
+                            format: int64
+                            minimum: 0
+                            type: integer
                           weight:
-                            description: A number expressing the preference to put an additional replica to this cluster workload object.
+                            description: A number expressing the preference to put an additional replica to this cluster workload object. It will not take effect when ReplicasStrategy is Binpack.
                             format: int64
                             minimum: 0
                             type: integer
@@ -159,6 +164,13 @@ spec:
                       - cluster
                     type: object
                   type: array
+                replicasStrategy:
+                  default: Spread
+                  description: ReplicasStrategy is the strategy used for scheduling replicas.
+                  enum:
+                    - Binpack
+                    - Spread
+                  type: string
                 reschedulePolicy:
                   default:
                     rescheduleWhen:
