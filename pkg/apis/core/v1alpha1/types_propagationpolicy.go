@@ -67,6 +67,11 @@ type PropagationPolicySpec struct {
 	// SchedulingMode determines the mode used for scheduling.
 	SchedulingMode SchedulingMode `json:"schedulingMode"`
 
+	// ReplicasStrategy is the strategy used for scheduling replicas.
+	// +optional
+	// +kubebuilder:default:=Spread
+	ReplicasStrategy *ReplicasStrategy `json:"replicasStrategy,omitempty"`
+
 	// ClusterSelector is a label query over clusters to consider for scheduling.
 	// An empty or nil ClusterSelector selects everything.
 	// +optional
@@ -120,6 +125,21 @@ const (
 	SchedulingModeDivide SchedulingMode = "Divide"
 )
 
+// ReplicasStrategy is the strategy used by the scheduler when assigning replicas.
+// It will not take effect when SchedulingMode is Duplicate.
+// +kubebuilder:validation:Enum=Binpack;Spread
+type ReplicasStrategy string
+
+const (
+	// ReplicasStrategyBinpack minimizes the number of clusters to schedule replicas,
+	// while considering clusters' capacity during the division.
+	ReplicasStrategyBinpack ReplicasStrategy = "Binpack"
+	// ReplicasStrategySpread spreads the replicas into clusters according to their weights.
+	// If weights are not specified, replicas will be dynamically divided
+	// according to allocatable and available resources of clusters.
+	ReplicasStrategySpread ReplicasStrategy = "Spread"
+)
+
 // DesiredPlacement describes a cluster that a federated object can be propagated to and its propagation preferences.
 type DesiredPlacement struct {
 	// Cluster is the name of the FederatedCluster to propagate to.
@@ -144,9 +164,18 @@ type Preferences struct {
 	MaxReplicas *int64 `json:"maxReplicas,omitempty"`
 
 	// A number expressing the preference to put an additional replica to this cluster workload object.
+	// It will not take effect when ReplicasStrategy is Binpack.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	Weight *int64 `json:"weight,omitempty"`
+
+	// A number expressing the priority of the cluster.
+	// The higher the value, the higher the priority.
+	// When selecting clusters for propagation, clusters with higher priority are preferred.
+	// When the Binpack ReplicasStrategy is selected, replicas will be scheduled to clusters with higher priority first.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	Priority *int64 `json:"priority,omitempty"`
 }
 
 // Preferences regarding auto migration.
