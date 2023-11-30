@@ -30,4 +30,5 @@ const (
 	MaxCluster                         = "MaxCluster"
 	ClusterCapacityWeight              = "ClusterCapacityWeight"
 	ClusterEvicted                     = "ClusterEvicted"
+	PreferenceBinPack                  = "PreferenceBinPack"
 )

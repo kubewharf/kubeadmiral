@@ -27,11 +27,11 @@ import (
 // unschedulable for more than unschedulableThreshold,
 // and a time.Duration representing the time from now
 // when the new unschedulable pod will cross the threshold, if any.
-func countUnschedulablePods(
+func countScheduledAndUnschedulablePods(
 	podList []*corev1.Pod,
 	currentTime time.Time,
 	unschedulableThreshold time.Duration,
-) (unschedulableCount int, nextCrossIn *time.Duration) {
+) (scheduledCount, unschedulableCount int, nextCrossIn *time.Duration) {
 	for _, pod := range podList {
 		if pod.GetDeletionTimestamp() != nil {
 			continue
@@ -39,6 +39,9 @@ func countUnschedulablePods(
 
 		scheduledCondition, isUnschedulable := getPodScheduledCondition(pod)
 		if !isUnschedulable {
+			if scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionTrue {
+				scheduledCount++
+			}
 			continue
 		}
 
@@ -51,8 +54,7 @@ func countUnschedulablePods(
 			nextCrossIn = &crossingThresholdIn
 		}
 	}
-
-	return unschedulableCount, nextCrossIn
+	return scheduledCount, unschedulableCount, nextCrossIn
 }
 
 func getPodScheduledCondition(pod *corev1.Pod) (scheduledCondition *corev1.PodCondition, isUnschedulable bool) {

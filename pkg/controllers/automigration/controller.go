@@ -288,7 +288,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 	// auto-migration controller sets AutoMigrationAnnotation to
 	// feedback auto-migration information back to the scheduler
 
-	var estimatedCapacity map[string]int64
+	var estimatedCapacity, scheduledReplicas map[string]int64
 	var result *worker.Result
 	needsUpdate := false
 	if unschedulableThreshold == nil {
@@ -302,8 +302,8 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 	} else {
 		// Keep the annotation up-to-date if auto migration is enabled.
 		keyedLogger.V(3).Info("Auto migration is enabled")
-		estimatedCapacity, result = c.estimateCapacity(ctx, ftc, clusterObjs, *unschedulableThreshold)
-		autoMigrationInfo := &framework.AutoMigrationInfo{EstimatedCapacity: estimatedCapacity}
+		estimatedCapacity, scheduledReplicas, result = c.estimateCapacity(ctx, ftc, clusterObjs, *unschedulableThreshold)
+		autoMigrationInfo := &framework.AutoMigrationInfo{EstimatedCapacity: estimatedCapacity, ScheduledReplicas: scheduledReplicas}
 
 		// Compare with the existing autoMigration annotation
 		existingAutoMigrationInfo := &framework.AutoMigrationInfo{EstimatedCapacity: nil}
@@ -366,11 +366,12 @@ func (c *Controller) estimateCapacity(
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	clusterObjs []FederatedObject,
 	unschedulableThreshold time.Duration,
-) (map[string]int64, *worker.Result) {
+) (map[string]int64, map[string]int64, *worker.Result) {
 	needsBackoff := false
 	var retryAfter *time.Duration
 
 	estimatedCapacity := make(map[string]int64, len(clusterObjs))
+	scheduledReplicas := make(map[string]int64, len(clusterObjs))
 
 	for _, clusterObj := range clusterObjs {
 		ctx, logger := logging.InjectLoggerValues(ctx, "cluster", clusterObj.ClusterName, "ftc", typeConfig.Name)
@@ -378,7 +379,9 @@ func (c *Controller) estimateCapacity(
 		// This is an optimization to skip pod listing when there are no unschedulable pods.
 		totalReplicas, readyReplicas, err := c.getTotalAndReadyReplicas(typeConfig, clusterObj.Object)
 		if err == nil && totalReplicas == readyReplicas {
-			logger.V(3).Info("No unschedulable pods found, skip estimating capacity")
+			logger.V(3).Info("No unschedulable pods found, skip estimating capacity",
+				"readyReplicas", readyReplicas)
+			scheduledReplicas[clusterObj.ClusterName] = totalReplicas
 			continue
 		}
 
@@ -398,12 +401,15 @@ func (c *Controller) estimateCapacity(
 			continue
 		}
 
-		unschedulable, nextCrossIn := countUnschedulablePods(pods, time.Now(), unschedulableThreshold)
+		scheduled, unschedulable, nextCrossIn := countScheduledAndUnschedulablePods(pods, time.Now(), unschedulableThreshold)
 		logger.V(2).Info("Analyzed pods",
 			"total", len(pods),
 			"desired", desiredReplicas,
+			"scheduled", scheduled,
 			"unschedulable", unschedulable,
 		)
+
+		scheduledReplicas[clusterObj.ClusterName] = int64(scheduled)
 
 		if nextCrossIn != nil && (retryAfter == nil || *nextCrossIn < *retryAfter) {
 			retryAfter = nextCrossIn
@@ -441,7 +447,7 @@ func (c *Controller) estimateCapacity(
 			Backoff:      needsBackoff,
 		}
 	}
-	return estimatedCapacity, result
+	return estimatedCapacity, scheduledReplicas, result
 }
 
 func (c *Controller) getTotalAndReadyReplicas(

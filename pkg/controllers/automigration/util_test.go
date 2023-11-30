@@ -32,12 +32,14 @@ func doCheck(
 	threshold time.Duration,
 	pods []*corev1.Pod,
 	expectedUnschedulable int,
+	expectedScheduled int,
 	expectedNextCrossIn *time.Duration,
 ) {
 	t.Helper()
 	assert := assert.New(t)
 
-	unschedulableCount, nextCrossIn := countUnschedulablePods(pods, now, threshold)
+	scheduledCount, unschedulableCount, nextCrossIn := countScheduledAndUnschedulablePods(pods, now, threshold)
+	assert.Equal(scheduledCount, expectedScheduled)
 	assert.Equal(expectedUnschedulable, unschedulableCount)
 	assert.Equal(expectedNextCrossIn, nextCrossIn)
 }
@@ -56,26 +58,26 @@ func TestCountUnschedulablePods(t *testing.T) {
 		okPod,
 		okPod,
 		okPod,
-	}, 0, nil)
+	}, 0, 3, nil)
 
 	doCheck(t, now, time.Minute, []*corev1.Pod{
 		okPod,
 		okPod,
 		unschedulablePod,
-	}, 1, nil)
+	}, 1, 2, nil)
 
 	doCheck(t, now, time.Minute, []*corev1.Pod{
 		okPod,
 		okPod,
 		crossingIn10s,
-	}, 0, pointer.Duration(10*time.Second))
+	}, 0, 2, pointer.Duration(10*time.Second))
 
 	doCheck(t, now, time.Minute, []*corev1.Pod{
 		okPod,
 		okPod,
 		unschedulablePod,
 		crossingIn20s,
-	}, 1, pointer.Duration(20*time.Second))
+	}, 1, 2, pointer.Duration(20*time.Second))
 
 	doCheck(t, now, time.Minute, []*corev1.Pod{
 		okPod,
@@ -84,7 +86,7 @@ func TestCountUnschedulablePods(t *testing.T) {
 		unschedulablePod,
 		crossingIn10s,
 		crossingIn20s,
-	}, 2, pointer.Duration(10*time.Second))
+	}, 2, 2, pointer.Duration(10*time.Second))
 
 	doCheck(t, now, time.Minute, []*corev1.Pod{
 		okPod,
@@ -93,7 +95,7 @@ func TestCountUnschedulablePods(t *testing.T) {
 		unschedulableTerminatingPod,
 		crossingIn10s,
 		crossingIn20s,
-	}, 1, pointer.Duration(10*time.Second))
+	}, 1, 2, pointer.Duration(10*time.Second))
 }
 
 func newPod(terminating bool, schedulable bool, lastTransitionTimestamp time.Time) *corev1.Pod {

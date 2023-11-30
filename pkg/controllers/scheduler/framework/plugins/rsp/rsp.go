@@ -163,7 +163,7 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 			Clusters: clusterPreferences,
 		},
 		totalReplicas,
-		ExtractClusterNames(clusters),
+		framework.ExtractClusterNames(clusters),
 		currentReplicas,
 		estimatedCapacity,
 		limitedCapacity,
@@ -345,14 +345,6 @@ func QueryAllocatable(clusters []*fedcorev1a1.FederatedCluster) map[string]corev
 			}
 		}
 		ret[cluster.GetName()] = allocatable
-	}
-	return ret
-}
-
-func ExtractClusterNames(clusters []*fedcorev1a1.FederatedCluster) []string {
-	ret := make([]string, len(clusters))
-	for i := range clusters {
-		ret[i] = clusters[i].Name
 	}
 	return ret
 }

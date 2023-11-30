@@ -46,6 +46,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/core"
 	frameworktypes "github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	utilmetrics "github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
@@ -579,7 +580,12 @@ func (s *Scheduler) schedule(
 		return nil, &worker.StatusError
 	}
 
-	framework, err := s.createFramework(schedulingProfile, s.buildFrameworkHandle())
+	var replicasPlugin []string
+	if schedulingUnit.ReplicasStrategy == fedcorev1a1.ReplicasStrategyBinpack {
+		replicasPlugin = []string{names.PreferenceBinPack}
+	}
+
+	framework, err := s.createFramework(schedulingProfile, s.buildFrameworkHandle(), replicasPlugin)
 	if err != nil {
 		logger.Error(err, "Failed to construct scheduling profile")
 		s.eventRecorder.Eventf(

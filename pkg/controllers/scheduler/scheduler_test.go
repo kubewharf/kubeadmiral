@@ -98,7 +98,8 @@ func TestGetSchedulingUnit(t *testing.T) {
 
 	policy := fedcorev1a1.PropagationPolicy{
 		Spec: fedcorev1a1.PropagationPolicySpec{
-			SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+			SchedulingMode:   fedcorev1a1.SchedulingModeDuplicate,
+			ReplicasStrategy: (*fedcorev1a1.ReplicasStrategy)(pointer.String(string(fedcorev1a1.ReplicasStrategySpread))),
 			AutoMigration: &fedcorev1a1.AutoMigration{
 				KeepUnschedulableReplicas: false,
 			},
@@ -150,9 +151,10 @@ func TestGetSchedulingUnit(t *testing.T) {
 			Info:                      nil,
 			KeepUnschedulableReplicas: false,
 		},
-		SchedulingMode:  fedcorev1a1.SchedulingModeDuplicate,
-		StickyCluster:   false,
-		AvoidDisruption: false,
+		SchedulingMode:   fedcorev1a1.SchedulingModeDuplicate,
+		ReplicasStrategy: fedcorev1a1.ReplicasStrategySpread,
+		StickyCluster:    false,
+		AvoidDisruption:  false,
 	}))
 }
 
@@ -167,7 +169,8 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 			name: "scheduling mode override",
 			policy: &fedcorev1a1.PropagationPolicy{
 				Spec: fedcorev1a1.PropagationPolicySpec{
-					SchedulingMode: fedcorev1a1.SchedulingModeDivide,
+					SchedulingMode:   fedcorev1a1.SchedulingModeDivide,
+					ReplicasStrategy: (*fedcorev1a1.ReplicasStrategy)(pointer.String(string(fedcorev1a1.ReplicasStrategySpread))),
 					ClusterSelector: map[string]string{
 						"label": "value1",
 					},
@@ -177,7 +180,8 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 				SchedulingModeAnnotation: string(fedcorev1a1.SchedulingModeDuplicate),
 			},
 			expectedResult: &framework.SchedulingUnit{
-				SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+				SchedulingMode:   fedcorev1a1.SchedulingModeDuplicate,
+				ReplicasStrategy: fedcorev1a1.ReplicasStrategySpread,
 				ClusterSelector: map[string]string{
 					"label": "value1",
 				},
@@ -197,8 +201,9 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 				StickyClusterAnnotation: "false",
 			},
 			expectedResult: &framework.SchedulingUnit{
-				SchedulingMode: DefaultSchedulingMode,
-				StickyCluster:  false,
+				SchedulingMode:   DefaultSchedulingMode,
+				ReplicasStrategy: fedcorev1a1.ReplicasStrategySpread,
+				StickyCluster:    false,
 				ClusterSelector: map[string]string{
 					"label": "value1",
 				},
@@ -218,8 +223,9 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 				ClusterSelectorAnnotations: "{\"override\": \"label\"}",
 			},
 			expectedResult: &framework.SchedulingUnit{
-				SchedulingMode: DefaultSchedulingMode,
-				StickyCluster:  true,
+				SchedulingMode:   DefaultSchedulingMode,
+				ReplicasStrategy: fedcorev1a1.ReplicasStrategySpread,
+				StickyCluster:    true,
 				ClusterSelector: map[string]string{
 					"override": "label",
 				},
@@ -229,7 +235,8 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 			name: "cluster affinity override",
 			policy: &fedcorev1a1.PropagationPolicy{
 				Spec: fedcorev1a1.PropagationPolicySpec{
-					SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+					SchedulingMode:   fedcorev1a1.SchedulingModeDuplicate,
+					ReplicasStrategy: (*fedcorev1a1.ReplicasStrategy)(pointer.String(string(fedcorev1a1.ReplicasStrategySpread))),
 					ClusterSelector: map[string]string{
 						"label": "value1",
 					},
@@ -256,8 +263,9 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 				}`,
 			},
 			expectedResult: &framework.SchedulingUnit{
-				SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
-				StickyCluster:  true,
+				SchedulingMode:   fedcorev1a1.SchedulingModeDuplicate,
+				ReplicasStrategy: fedcorev1a1.ReplicasStrategySpread,
+				StickyCluster:    true,
 				ClusterSelector: map[string]string{
 					"label": "value1",
 				},
@@ -301,8 +309,9 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 				TolerationsAnnotations: "[{\"key\": \"override\", \"operator\": \"Exists\", \"effect\": \"NoSchedule\"}]",
 			},
 			expectedResult: &framework.SchedulingUnit{
-				SchedulingMode: DefaultSchedulingMode,
-				StickyCluster:  true,
+				SchedulingMode:   DefaultSchedulingMode,
+				ReplicasStrategy: fedcorev1a1.ReplicasStrategySpread,
+				StickyCluster:    true,
 				ClusterSelector: map[string]string{
 					"label": "value1",
 				},
@@ -329,7 +338,8 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 				MaxClustersAnnotations: "10",
 			},
 			expectedResult: &framework.SchedulingUnit{
-				SchedulingMode: DefaultSchedulingMode,
+				SchedulingMode:   DefaultSchedulingMode,
+				ReplicasStrategy: fedcorev1a1.ReplicasStrategySpread,
 				ClusterSelector: map[string]string{
 					"label": "value1",
 				},
@@ -371,7 +381,8 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 				]`,
 			},
 			expectedResult: &framework.SchedulingUnit{
-				SchedulingMode: DefaultSchedulingMode,
+				SchedulingMode:   DefaultSchedulingMode,
+				ReplicasStrategy: fedcorev1a1.ReplicasStrategySpread,
 				ClusterSelector: map[string]string{
 					"label": "value1",
 				},
