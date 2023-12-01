@@ -27,18 +27,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-)
-
-// User account keys
-const (
-	ClientCertificateKey    = "client-certificate-data"
-	ClientKeyKey            = "client-key-data"
-	CertificateAuthorityKey = "certificate-authority-data"
-)
-
-// Service account keys
-const (
-	ServiceAccountTokenKey = "service-account-token-data"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
 func BuildClusterConfig(
@@ -52,7 +41,7 @@ func BuildClusterConfig(
 		fedClient,
 		restConfig,
 		fedSystemNamespace,
-		cluster.Spec.UseServiceAccountToken,
+		!cluster.Spec.UseServiceAccountToken,
 	)
 }
 
@@ -69,7 +58,7 @@ func BuildRawClusterConfig(
 		fedClient,
 		restConfig,
 		fedSystemNamespace,
-		false,
+		true,
 	)
 }
 
@@ -78,7 +67,7 @@ func buildClusterConfig(
 	fedClient kubernetes.Interface,
 	restConfig *rest.Config,
 	fedSystemNamespace string,
-	useServiceAccountToken bool,
+	useBootstrap bool,
 ) (*rest.Config, error) {
 	apiEndpoint := cluster.Spec.APIEndpoint
 	if len(apiEndpoint) == 0 {
@@ -107,7 +96,7 @@ func buildClusterConfig(
 		return nil, err
 	}
 
-	err = PopulateAuthDetailsFromSecret(clusterConfig, cluster.Spec.Insecure, secret, useServiceAccountToken)
+	err = PopulateAuthDetailsFromSecret(clusterConfig, cluster.Spec.Insecure, secret, useBootstrap)
 	if err != nil {
 		return nil, fmt.Errorf("cannot build rest config from cluster secret: %w", err)
 	}
@@ -118,45 +107,39 @@ func PopulateAuthDetailsFromSecret(
 	clusterConfig *rest.Config,
 	insecure bool,
 	secret *corev1.Secret,
-	useServiceAccount bool,
+	useBootstrap bool,
 ) error {
-	var exists bool
-
-	if useServiceAccount {
-		serviceAccountToken, exists := secret.Data[ServiceAccountTokenKey]
-		if !exists {
-			return fmt.Errorf("%q data is missing from secret", ServiceAccountTokenKey)
+	if insecure {
+		clusterConfig.Insecure = true
+	} else {
+		// if federatedCluster.Spec.Insecure is false, ca data is required
+		if clusterConfig.CAData = secret.Data[common.ClusterCertificateAuthorityKey]; len(clusterConfig.CAData) == 0 {
+			return fmt.Errorf("%q data is missing from secret and insecure is false", common.ClusterCertificateAuthorityKey)
 		}
-		clusterConfig.BearerToken = string(serviceAccountToken)
+	}
 
-		if insecure {
-			clusterConfig.Insecure = true
-		} else {
-			clusterConfig.CAData, exists = secret.Data[CertificateAuthorityKey]
-			if !exists {
-				return fmt.Errorf("%q data is missing from secret and insecure is false", CertificateAuthorityKey)
-			}
+	// if useBootstrap is true, we will use the client authentication specified by user
+	// else, we will use the token created by admiral
+	if useBootstrap {
+		var bootstrapTokenExist bool
+		clusterConfig.BearerToken, bootstrapTokenExist = getTokenDataFromSecret(secret, common.ClusterBootstrapTokenKey)
+		clusterConfig.CertData, clusterConfig.KeyData = secret.Data[common.ClusterClientCertificateKey], secret.Data[common.ClusterClientKeyKey]
+
+		if !bootstrapTokenExist && (len(clusterConfig.CertData) == 0 || len(clusterConfig.KeyData) == 0) {
+			return fmt.Errorf("the client authentication information is missing from secret, " +
+				"at least token or (certificate, key) information is required")
 		}
 	} else {
-		clusterConfig.CertData, exists = secret.Data[ClientCertificateKey]
-		if !exists {
-			return fmt.Errorf("%q data is missing from secret", ClientCertificateKey)
-		}
-
-		clusterConfig.KeyData, exists = secret.Data[ClientKeyKey]
-		if !exists {
-			return fmt.Errorf("%q data is missing from secret", ClientKeyKey)
-		}
-
-		if insecure {
-			clusterConfig.Insecure = true
-		} else {
-			clusterConfig.CAData, exists = secret.Data[CertificateAuthorityKey]
-			if !exists {
-				return fmt.Errorf("%q data is missing from secret", CertificateAuthorityKey)
-			}
+		var saTokenExist bool
+		if clusterConfig.BearerToken, saTokenExist = getTokenDataFromSecret(secret, common.ClusterServiceAccountTokenKey); !saTokenExist {
+			return fmt.Errorf("%q data is missing from secret", common.ClusterServiceAccountTokenKey)
 		}
 	}
 
 	return nil
+}
+
+func getTokenDataFromSecret(secret *corev1.Secret, tokenKey string) (string, bool) {
+	bootstrapToken := secret.Data[tokenKey]
+	return string(bootstrapToken), len(bootstrapToken) != 0
 }

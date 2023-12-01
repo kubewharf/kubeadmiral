@@ -141,6 +141,7 @@ const (
 	ClusterClientKeyKey            = "client-key-data"
 	ClusterCertificateAuthorityKey = "certificate-authority-data"
 	ClusterServiceAccountTokenKey  = "service-account-token-data"
+	ClusterBootstrapTokenKey       = "bootstrap-token-data"
 )
 
 const (

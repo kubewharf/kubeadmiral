@@ -475,7 +475,7 @@ func (c *FederatedClusterController) getClusterClient(
 		return nil, nil, fmt.Errorf("failed to get cluster secret: %w", err)
 	}
 
-	if err := clusterutil.PopulateAuthDetailsFromSecret(restConfig, cluster.Spec.Insecure, clusterSecret, false); err != nil {
+	if err := clusterutil.PopulateAuthDetailsFromSecret(restConfig, cluster.Spec.Insecure, clusterSecret, true); err != nil {
 		return nil, nil, fmt.Errorf("cluster secret malformed: %w", err)
 	}
 
