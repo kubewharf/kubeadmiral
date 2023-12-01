@@ -304,6 +304,7 @@ var knownSchedulingAnnotations = sets.New(
 	MaxClustersAnnotations,
 	FollowsObjectAnnotation,
 	common.AppliedMigrationConfigurationAnnotation,
+	common.DryRunAnnotation,
 )
 
 func getSchedulingAnnotationsHash(fedObject fedcorev1a1.GenericFederatedObject) (string, error) {
