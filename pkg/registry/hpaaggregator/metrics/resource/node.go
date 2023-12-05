@@ -35,7 +35,12 @@ var _ rest.Lister = &NodeMetrics{}
 var _ rest.Scoper = &NodeMetrics{}
 var _ rest.TableConvertor = &NodeMetrics{}
 
-func NewNodeMetrics(groupResource schema.GroupResource, metrics NodeMetricsGetter, nodeLister v1listers.NodeLister, nodeSelector []labels.Requirement) *NodeMetrics {
+func NewNodeMetrics(
+	groupResource schema.GroupResource,
+	metrics NodeMetricsGetter,
+	nodeLister v1listers.NodeLister,
+	nodeSelector []labels.Requirement,
+) *NodeMetrics {
 	registerIntoLegacyRegistryOnce.Do(func() {
 		err := RegisterAPIMetrics(legacyregistry.Register)
 		if err != nil {
@@ -167,9 +172,4 @@ func (m *NodeMetrics) getMetrics(nodes ...*corev1.Node) ([]metrics.NodeMetrics, 
 // NamespaceScoped implements rest.Scoper interface
 func (m *NodeMetrics) NamespaceScoped() bool {
 	return false
-}
-
-// GetSingularName implements rest.SingularNameProvider interface
-func (m *NodeMetrics) GetSingularName() string {
-	return "node"
 }

@@ -25,7 +25,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -53,10 +52,7 @@ type PodHandler interface {
 type PodREST struct {
 	podLister                cache.GenericLister
 	federatedInformerManager informermanager.FederatedInformerManager
-	scheme                   *runtime.Scheme
 	minRequestTimeout        time.Duration
-
-	tableConvertor rest.TableConvertor
 }
 
 var _ rest.Getter = &PodREST{}
@@ -71,16 +67,12 @@ func NewPodREST(
 ) *PodREST {
 	return &PodREST{
 		federatedInformerManager: f,
-		scheme:                   scheme,
 		podLister:                podLister,
 		minRequestTimeout:        minRequestTimeout,
-		tableConvertor:           tableConvertor,
 	}
 }
 
 func (p *PodREST) Handler(requestInfo *genericapirequest.RequestInfo) (http.Handler, error) {
-	scope := p.newScoper()
-
 	switch requestInfo.Verb {
 	case "get":
 		return handlers.GetResource(p, scope), nil
@@ -91,21 +83,6 @@ func (p *PodREST) Handler(requestInfo *genericapirequest.RequestInfo) (http.Hand
 			Group:    requestInfo.APIGroup,
 			Resource: requestInfo.Resource,
 		}, requestInfo.Verb)
-	}
-}
-
-func (p *PodREST) newScoper() *handlers.RequestScope {
-	return &handlers.RequestScope{
-		Namer: &handlers.ContextBasedNaming{
-			Namer:         runtime.Namer(meta.NewAccessor()),
-			ClusterScoped: false,
-		},
-		Serializer:       codecs,
-		Kind:             corev1.SchemeGroupVersion.WithKind("Pod"),
-		TableConvertor:   p,
-		Convertor:        scheme,
-		MetaGroupVersion: metav1.SchemeGroupVersion,
-		Resource:         corev1.SchemeGroupVersion.WithResource("pods"),
 	}
 }
 
@@ -123,7 +100,7 @@ func (p *PodREST) Get(ctx context.Context, name string, opts *metav1.GetOptions)
 	}
 
 	pod := &api.Pod{}
-	if err := p.scheme.Convert(obj, pod, nil); err != nil {
+	if err := scheme.Convert(obj, pod, nil); err != nil {
 		return nil, fmt.Errorf("failed converting object to Pod: %w", err)
 	}
 	return pod, nil
@@ -150,12 +127,12 @@ func (p *PodREST) List(ctx context.Context, options *metainternalversion.ListOpt
 	if options != nil && options.FieldSelector != nil {
 		field = options.FieldSelector
 	}
-	pods := p.convertAndFilterPodObject(objs, field)
+	pods := convertAndFilterPodObject(objs, field)
 	return &api.PodList{Items: pods}, nil
 }
 
 func (p *PodREST) ConvertToTable(ctx context.Context, object runtime.Object, tableOptions runtime.Object) (*metav1.Table, error) {
-	return p.tableConvertor.ConvertToTable(ctx, object, tableOptions)
+	return tableConvertor.ConvertToTable(ctx, object, tableOptions)
 }
 
 func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
@@ -206,7 +183,7 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 					if pod, ok := event.Object.(*corev1.Pod); ok {
 						aggregatedlister.MakePodUnique(pod, cluster)
 						newPod := &api.Pod{}
-						if err := p.scheme.Convert(pod, newPod, nil); err != nil {
+						if err := scheme.Convert(pod, newPod, nil); err != nil {
 							continue
 						}
 						event.Object = newPod
@@ -219,7 +196,7 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 	return proxyWatcher, nil
 }
 
-func (p *PodREST) convertAndFilterPodObject(objs []runtime.Object, selector fields.Selector) []api.Pod {
+func convertAndFilterPodObject(objs []runtime.Object, selector fields.Selector) []api.Pod {
 	newObjs := make([]api.Pod, 0, len(objs))
 	for _, obj := range objs {
 		pod, ok := obj.(*corev1.Pod)
@@ -231,7 +208,7 @@ func (p *PodREST) convertAndFilterPodObject(objs []runtime.Object, selector fiel
 			continue
 		}
 		newPod := &api.Pod{}
-		if err := p.scheme.Convert(obj, newPod, nil); err != nil {
+		if err := scheme.Convert(obj, newPod, nil); err != nil {
 			continue
 		}
 		newObjs = append(newObjs, *newPod)

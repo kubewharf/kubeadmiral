@@ -148,12 +148,18 @@ func (m *PodMetrics) Get(ctx context.Context, name string, opts *metav1.GetOptio
 	if obj == nil {
 		return &metrics.PodMetrics{}, errors.NewNotFound(corev1.Resource("pods"), fmt.Sprintf("%s/%s", namespace, name))
 	}
-	pod, ok := obj.(*corev1.Pod)
-	if !ok {
-		return nil, fmt.Errorf("unexpected type %T", pod)
+
+	var partialPod *metav1.PartialObjectMetadata
+	switch t := obj.(type) {
+	case *metav1.PartialObjectMetadata:
+		partialPod = t
+	case metav1.Object:
+		partialPod = meta.AsPartialObjectMetadata(t)
+	default:
+		return nil, fmt.Errorf("unexpected type %T", obj)
 	}
 
-	ms, err := m.getMetrics(meta.AsPartialObjectMetadata(pod))
+	ms, err := m.getMetrics(meta.AsPartialObjectMetadata(partialPod))
 	if err != nil {
 		klog.ErrorS(err, "Failed reading pod metrics", "pod", klog.KRef(namespace, name))
 		return nil, fmt.Errorf("failed pod metrics: %w", err)
@@ -208,9 +214,4 @@ func (m *PodMetrics) getMetrics(pods ...runtime.Object) ([]metrics.PodMetrics, e
 // NamespaceScoped implements rest.Scoper interface
 func (m *PodMetrics) NamespaceScoped() bool {
 	return true
-}
-
-// GetSingularName implements rest.SingularNameProvider interface
-func (m *PodMetrics) GetSingularName() string {
-	return "pod"
 }

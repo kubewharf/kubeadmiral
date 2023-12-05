@@ -33,8 +33,6 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"k8s.io/metrics/pkg/apis/custom_metrics"
-	"k8s.io/metrics/pkg/apis/metrics"
 
 	"github.com/kubewharf/kubeadmiral/pkg/apis/hpaaggregator/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
@@ -50,6 +48,8 @@ type REST struct {
 
 	podLister  cache.GenericLister
 	podHandler forward.PodHandler
+
+	forwardHandler forward.ForwardHandler
 
 	logger klog.Logger
 }
@@ -74,6 +74,8 @@ func NewREST(
 		minRequestTimeout,
 	)
 
+	forwardHandler := forward.NewForwardHandler(config)
+
 	resolver := &genericapirequest.RequestInfoFactory{
 		APIPrefixes:          sets.NewString("apis", "api"),
 		GrouplessAPIPrefixes: sets.NewString("api"),
@@ -85,6 +87,7 @@ func NewREST(
 		resolver:                 resolver,
 		podLister:                podLister,
 		podHandler:               podHandler,
+		forwardHandler:           forwardHandler,
 		logger:                   logger,
 	}, nil
 }
@@ -146,7 +149,7 @@ func (r *REST) Connect(ctx context.Context, _ string, _ runtime.Object, resp res
 				proxyHandler, err = r.podHandler.Handler(proxyInfo)
 			default:
 				// TODO: if we provide an API for ResourceMetrics or CustomMetrics, we can serve it directly without proxy
-				proxyHandler, err = forward.NewForwardHandler(proxyInfo, resp, r.restConfig, r.isRequestForHPA(proxyInfo))
+				proxyHandler, err = r.forwardHandler.Handler(proxyInfo, r.isRequestForHPA(proxyInfo))
 			}
 
 			if err != nil {
@@ -190,12 +193,4 @@ func (r *REST) isRequestForHPA(request *genericapirequest.RequestInfo) bool {
 		return true
 	}
 	return false
-}
-
-func isRequestForResourceMetrics(request *genericapirequest.RequestInfo) bool {
-	return request.APIGroup == metrics.GroupName
-}
-
-func isRequestForCustomMetrics(request *genericapirequest.RequestInfo) bool {
-	return request.APIGroup == custom_metrics.GroupName
 }
