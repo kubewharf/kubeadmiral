@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apiserver/pkg/authentication/user"
+	"k8s.io/apiserver/pkg/endpoints/handlers"
 	"k8s.io/apiserver/pkg/endpoints/request"
 	restclient "k8s.io/client-go/rest"
 	apiinstall "k8s.io/kubernetes/pkg/apis/core/install"
@@ -33,6 +36,18 @@ var (
 
 	tableConvertor = printerstorage.TableConvertor{
 		TableGenerator: printers.NewTableGenerator().With(printersinternal.AddHandlers),
+	}
+	scope = &handlers.RequestScope{
+		Namer: &handlers.ContextBasedNaming{
+			Namer:         runtime.Namer(meta.NewAccessor()),
+			ClusterScoped: false,
+		},
+		Serializer:       codecs,
+		Kind:             corev1.SchemeGroupVersion.WithKind("Pod"),
+		TableConvertor:   tableConvertor,
+		Convertor:        scheme,
+		MetaGroupVersion: metav1.SchemeGroupVersion,
+		Resource:         corev1.SchemeGroupVersion.WithResource("pods"),
 	}
 )
 

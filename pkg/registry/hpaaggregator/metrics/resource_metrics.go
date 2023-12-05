@@ -27,7 +27,7 @@ import (
 	"k8s.io/metrics/pkg/apis/metrics"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
-	resource2 "github.com/kubewharf/kubeadmiral/pkg/registry/hpaaggregator/metrics/resource"
+	"github.com/kubewharf/kubeadmiral/pkg/registry/hpaaggregator/metrics/resource"
 )
 
 // BuildResourceMetrics constructs APIGroupInfo the metrics.k8s.io API group using the given getters.
@@ -35,13 +35,13 @@ func BuildResourceMetrics(
 	scheme *runtime.Scheme,
 	parameterCodec runtime.ParameterCodec,
 	codecs serializer.CodecFactory,
-	m resource2.MetricsGetter,
+	m resource.MetricsGetter,
 	podMetadataLister cache.GenericLister,
 	nodeLister corev1.NodeLister,
 	nodeSelector []labels.Requirement,
 ) genericapiserver.APIGroupInfo {
-	node := resource2.NewNodeMetrics(metrics.Resource("nodemetrics"), m, nodeLister, nodeSelector)
-	pod := resource2.NewPodMetrics(metrics.Resource("podmetrics"), m, podMetadataLister)
+	node := resource.NewNodeMetrics(metrics.Resource("nodemetrics"), m, nodeLister, nodeSelector)
+	pod := resource.NewPodMetrics(metrics.Resource("podmetrics"), m, podMetadataLister)
 
 	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(metrics.GroupName, scheme, parameterCodec, codecs)
 	metricsServerResources := map[string]rest.Storage{

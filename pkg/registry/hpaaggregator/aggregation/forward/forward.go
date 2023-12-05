@@ -30,8 +30,8 @@ import (
 	"k8s.io/apiserver/pkg/audit"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	"k8s.io/apiserver/pkg/endpoints/request"
-	"k8s.io/apiserver/pkg/registry/rest"
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -56,21 +56,28 @@ const (
 	headerAuditID = "Audit-ID"
 )
 
-func NewForwardHandler(
-	info *request.RequestInfo,
-	r rest.Responder,
-	adminConfig *restclient.Config,
-	isHPA bool,
-) (http.Handler, error) {
+type ForwardHandler interface {
+	Handler(info *request.RequestInfo, isHPA bool) (http.Handler, error)
+}
+
+type forwardHandler struct {
+	config *restclient.Config
+}
+
+func NewForwardHandler(config *restclient.Config) ForwardHandler {
+	return &forwardHandler{config: config}
+}
+
+func (f *forwardHandler) Handler(info *request.RequestInfo, isHPA bool) (http.Handler, error) {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		adminConfig, err := NewConfigWithImpersonate(req.Context(), adminConfig)
+		config, err := NewConfigWithImpersonate(req.Context(), f.config)
 		if err != nil {
 			responsewriters.InternalError(rw, req, err)
 			return
 		}
 
 		// we use admin config and ImpersonateUser to forward
-		proxyRoundTripper, err := restclient.TransportFor(adminConfig)
+		proxyRoundTripper, err := restclient.TransportFor(config)
 		if err != nil {
 			responsewriters.InternalError(rw, req, errors.New("failed to new transport"))
 			return
@@ -91,7 +98,7 @@ func NewForwardHandler(
 			}
 		}
 
-		location, err := url.Parse(adminConfig.Host)
+		location, err := url.Parse(config.Host)
 		if err != nil {
 			responsewriters.InternalError(rw, req, errors.New("failed to get location"))
 			return
@@ -103,7 +110,7 @@ func NewForwardHandler(
 		defer cancelFn()
 
 		handler := proxy.NewUpgradeAwareHandler(
-			location, proxyRoundTripper, true, false, proxy.NewErrorResponder(r))
+			location, proxyRoundTripper, true, false, &responder{info: info, user: config.Impersonate})
 		handler.UseLocationHost = true
 
 		handler.ServeHTTP(rw, newReq)
@@ -143,4 +150,14 @@ func NewRequestForProxy(
 	}
 
 	return newReq, cancelFn
+}
+
+type responder struct {
+	info *request.RequestInfo
+	user restclient.ImpersonationConfig
+}
+
+func (r *responder) Error(w http.ResponseWriter, req *http.Request, err error) {
+	klog.ErrorS(err, "Error while proxying request", "request-info", r.info, "user", r.user)
+	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
