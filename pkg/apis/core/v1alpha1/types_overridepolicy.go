@@ -84,14 +84,68 @@ type TargetClusters struct {
 // Overriders contains a list of override patches.
 // The order in which the override patches take effect is:
 // - Image
+// - Command
+// - Args
+// - Annotations
+// - Labels
 // - JsonPatch
 type Overriders struct {
-	// Image specifies the overriders that applies to the image.
+	// Image specifies the overriders that apply to the image.
 	// +optional
 	Image []ImageOverrider `json:"image,omitempty"`
+
+	// Command specifies overriders that apply to the container commands.
+	// +optional
+	Command []EntrypointOverrider `json:"command,omitempty"`
+
+	// Args specifies overriders that apply to the container arguments.
+	// +optional
+	Args []EntrypointOverrider `json:"args,omitempty"`
+
+	// Annotation specifies overriders that apply to the resource annotations.
+	// +optional
+	Annotations []StringMapOverrider `json:"annotations,omitempty"`
+
+	// Label specifies overriders that apply to the resource labels.
+	// +optional
+	Labels []StringMapOverrider `json:"labels,omitempty"`
+
 	// JsonPatch specifies overriders in a syntax similar to RFC6902 JSON Patch.
 	// +optional
 	JsonPatch []JsonPatchOverrider `json:"jsonpatch,omitempty"`
+}
+
+type EntrypointOverrider struct {
+	// ContainerName targets the specified container or init container in the pod template.
+	ContainerName string `json:"containerName"`
+
+	// Operator specifies the operation.
+	// If omitted, defaults to "overwrite".
+	// +kubebuilder:validation:Enum=append;overwrite;delete
+	// +optional
+	Operator string `json:"operator,omitempty"`
+
+	// Value is the value(s) that will be applied to command/args of ContainerName.
+	// If Operator is 'append', items in Value (empty is not allowed) will be appended to command/args.
+	// If Operator is 'overwrite', current command/args of ContainerName will be completely replaced by Value.
+	// If Operator is 'delete', items in Value that match in command/args will be deleted.
+	Value []string `json:"value"`
+}
+
+// StringMapOverrider represents the rules dedicated to handling resource labels/annotations
+type StringMapOverrider struct {
+	// Operator specifies the operation.
+	// If omitted, defaults to "overwrite".
+	// +kubebuilder:validation:Enum=addIfAbsent;overwrite;delete
+	// +optional
+	Operator string `json:"operator,omitempty"`
+
+	// Value is the value(s) that will be applied to annotations/labels of resource.
+	// If Operator is 'addIfAbsent', items in Value (empty is not allowed) will be added in annotations/labels.
+	//   - For 'addIfAbsent' Operator, the keys in Value cannot conflict with annotations/labels.
+	// If Operator is 'overwrite', items in Value which match in annotations/labels will be replaced.
+	// If Operator is 'delete', items in Value which match in annotations/labels will be deleted.
+	Value map[string]string `json:"value"`
 }
 
 type ImageOverrider struct {

@@ -849,6 +849,295 @@ func TestParseOverrides(t *testing.T) {
 			expectedOverridesMap: make(overridesMap),
 			isErrorExpected:      false,
 		},
+		"multiple clusters multiple Overrides(image, command, args, annotations, labels, jsonPatch)" +
+			"- should return overrides for each cluster in order": {
+			fedObject: generateFedObjWithPodWithTwoNormalAndTwoInit(
+				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+			policy: &fedcorev1a1.OverridePolicy{
+				Spec: fedcorev1a1.GenericOverridePolicySpec{
+					OverrideRules: []fedcorev1a1.OverrideRule{
+						{
+							TargetClusters: &fedcorev1a1.TargetClusters{
+								// should match all clusters
+								ClusterSelector: map[string]string{},
+							},
+							Overriders: &fedcorev1a1.Overriders{
+								Image: []fedcorev1a1.ImageOverrider{
+									{
+										ContainerNames: []string{"server-1"},
+										Operations: generateOperationsOnFullComponent(
+											OperatorOverwrite,
+											"all.cluster.io",
+											"all-cluster/echo-server",
+											"all",
+											"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+									},
+								},
+								Command: []fedcorev1a1.EntrypointOverrider{
+									generateEntrypointOverrider("server-1", OperatorAppend, "/bin/bash", "sleep 15"),
+									generateEntrypointOverrider("init-server-1", OperatorAppend, "/bin/bash", "sleep 15"),
+									generateEntrypointOverrider("server-1", OperatorDelete, "sleep 15"),
+								},
+								Args: []fedcorev1a1.EntrypointOverrider{
+									generateEntrypointOverrider("server-1", OperatorAppend, "-a", "-b"),
+									generateEntrypointOverrider("init-server-1", OperatorAppend, "-a", "-b"),
+									generateEntrypointOverrider("server-1", OperatorOverwrite, "-c", "-d"),
+								},
+								Annotations: []fedcorev1a1.StringMapOverrider{
+									generateStringMapOverrider(OperatorAddIfAbsent, map[string]string{
+										"abc": "xxx",
+										"def": "xxx",
+									}),
+									generateStringMapOverrider(OperatorDelete, map[string]string{
+										"def": "xxx",
+									}),
+								},
+								Labels: []fedcorev1a1.StringMapOverrider{
+									generateStringMapOverrider(OperatorAddIfAbsent, map[string]string{
+										"abc": "xxx",
+										"def": "xxx",
+									}),
+									generateStringMapOverrider(OperatorOverwrite, map[string]string{
+										"def": "test",
+									}),
+								},
+								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
+									{
+										Operator: "add",
+										Path:     "/a/b",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`1`),
+										},
+									},
+									{
+										Operator: "replace",
+										Path:     "/aa/bb",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`["banana","mango"]`),
+										},
+									},
+								},
+							},
+						},
+						{
+							TargetClusters: &fedcorev1a1.TargetClusters{
+								Clusters: []string{
+									"cluster1",
+								},
+							},
+							Overriders: &fedcorev1a1.Overriders{
+								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
+									{
+										Operator: "replace",
+										Path:     "/c/d",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`1`),
+										},
+									},
+									{
+										Operator: "replace",
+										Path:     "/cc/dd",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`{"key":"value"}`),
+										},
+									},
+								},
+								Image: []fedcorev1a1.ImageOverrider{
+									{
+										ContainerNames: []string{"server-1"},
+										Operations: generateOperationsOnFullComponent(
+											OperatorOverwrite,
+											"cluster.one.io",
+											"cluster-one/echo-server",
+											"one",
+											"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+									},
+								},
+							},
+						},
+						{
+							TargetClusters: &fedcorev1a1.TargetClusters{
+								Clusters: []string{
+									"cluster2",
+								},
+							},
+							Overriders: &fedcorev1a1.Overriders{
+								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
+									{
+										Operator: "remove",
+										Path:     "/e/f",
+									},
+									{
+										Operator: "add",
+										Path:     "/ee/ff",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`"some string"`),
+										},
+									},
+								},
+								Image: []fedcorev1a1.ImageOverrider{
+									{
+										ContainerNames: []string{"server-1"},
+										Operations: generateOperationsOnFullComponent(
+											OperatorOverwrite,
+											"cluster.two.io",
+											"cluster-two/echo-server",
+											"two",
+											"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			clusters: []*fedcorev1a1.FederatedCluster{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "cluster1",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "cluster2",
+					},
+				},
+			},
+			expectedOverridesMap: overridesMap{
+				"cluster1": fedcorev1a1.OverridePatches{
+					// patches from overrideRules which apply to all clusters
+					// image
+					generatePatch(
+						OperatorReplace,
+						"/spec/containers/0/image",
+						"all.cluster.io/all-cluster/echo-server:all@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+					),
+					// command
+					generatePatch("replace",
+						"/spec/containers/0/command",
+						[]string{"/bin/bash"},
+					),
+					generatePatch("replace",
+						"/spec/initContainers/0/command",
+						[]string{"/bin/bash", "sleep 15"},
+					),
+					// args
+					generatePatch("replace",
+						"/spec/containers/0/args",
+						[]string{"-c", "-d"},
+					),
+					generatePatch("replace",
+						"/spec/initContainers/0/args",
+						[]string{"-a", "-b"},
+					),
+					// annotations
+					generatePatch("replace",
+						"/metadata/annotations",
+						map[string]string{"abc": "xxx"},
+					),
+					// labels
+					generatePatch("replace",
+						"/metadata/labels",
+						map[string]string{"abc": "xxx", "def": "test"},
+					),
+					// jsonPatch
+					{
+						Op:    "add",
+						Path:  "/a/b",
+						Value: asJSON(float64(1)),
+					},
+					{
+						Op:    "replace",
+						Path:  "/aa/bb",
+						Value: asJSON([]interface{}{"banana", "mango"}),
+					},
+					// patches from overrideRules which apply to cluster-1
+					// image
+					generatePatch(
+						OperatorReplace,
+						"/spec/containers/0/image",
+						"cluster.one.io/cluster-one/echo-server:one@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+					),
+					// jsonPatch
+					{
+						Op:    "replace",
+						Path:  "/c/d",
+						Value: asJSON(float64(1)),
+					},
+					{
+						Op:   "replace",
+						Path: "/cc/dd",
+						Value: asJSON(map[string]interface{}{
+							"key": "value",
+						}),
+					},
+				},
+				"cluster2": fedcorev1a1.OverridePatches{
+					// patches from overrideRules which apply to all clusters
+					// image
+					generatePatch(
+						OperatorReplace,
+						"/spec/containers/0/image",
+						"all.cluster.io/all-cluster/echo-server:all@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+					),
+					// command
+					generatePatch("replace",
+						"/spec/containers/0/command",
+						[]string{"/bin/bash"},
+					),
+					generatePatch("replace",
+						"/spec/initContainers/0/command",
+						[]string{"/bin/bash", "sleep 15"},
+					),
+					// args
+					generatePatch("replace",
+						"/spec/containers/0/args",
+						[]string{"-c", "-d"},
+					),
+					generatePatch("replace",
+						"/spec/initContainers/0/args",
+						[]string{"-a", "-b"},
+					),
+					// annotations
+					generatePatch("replace",
+						"/metadata/annotations",
+						map[string]string{"abc": "xxx"},
+					),
+					// labels
+					generatePatch("replace",
+						"/metadata/labels",
+						map[string]string{"abc": "xxx", "def": "test"},
+					),
+					// jsonPatch
+					{
+						Op:    "add",
+						Path:  "/a/b",
+						Value: asJSON(float64(1)),
+					},
+					{
+						Op:    "replace",
+						Path:  "/aa/bb",
+						Value: asJSON([]interface{}{"banana", "mango"}),
+					},
+					// patches from overrideRules which apply to cluster-2
+					generatePatch(
+						OperatorReplace,
+						"/spec/containers/0/image",
+						"cluster.two.io/cluster-two/echo-server:two@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
+					),
+					{
+						Op:   "remove",
+						Path: "/e/f",
+					},
+					{
+						Op:    "add",
+						Path:  "/ee/ff",
+						Value: asJSON("some string"),
+					},
+				},
+			},
+			isErrorExpected: false,
+		},
 	}
 
 	for testName, testCase := range testCases {
