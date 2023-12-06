@@ -63,7 +63,7 @@ function codegen::join() {
 
 # generate manifests
 echo "Generating manifests"
-${GOBIN}/controller-gen crd paths=$(codegen::join ";" "${INPUT_DIRS[@]}") output:crd:artifacts:config=config/crds
+${GOBIN}/controller-gen crd paths=$(codegen::join ";" "${INPUT_BASE}/${groups[0]}") output:crd:artifacts:config=config/crds
 
 # patch CRDs with no-federate annotation
 for crd_file in config/crds/*.yaml; do

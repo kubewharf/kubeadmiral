@@ -3,17 +3,12 @@
 package fake
 
 import (
-	v1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/hpaaggregator/v1alpha1"
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
 )
 
 type FakeHpaaggregatorV1alpha1 struct {
 	*testing.Fake
-}
-
-func (c *FakeHpaaggregatorV1alpha1) ExternalMetricAdaptors(namespace string) v1alpha1.ExternalMetricAdaptorInterface {
-	return &FakeExternalMetricAdaptors{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

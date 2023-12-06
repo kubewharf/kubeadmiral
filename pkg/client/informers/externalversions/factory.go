@@ -9,7 +9,6 @@ import (
 
 	versioned "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	core "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core"
-	hpaaggregator "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/hpaaggregator"
 	internalinterfaces "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/internalinterfaces"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -229,13 +228,8 @@ type SharedInformerFactory interface {
 	InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer
 
 	Core() core.Interface
-	Hpaaggregator() hpaaggregator.Interface
 }
 
 func (f *sharedInformerFactory) Core() core.Interface {
 	return core.New(f, f.namespace, f.tweakListOptions)
-}
-
-func (f *sharedInformerFactory) Hpaaggregator() hpaaggregator.Interface {
-	return hpaaggregator.New(f, f.namespace, f.tweakListOptions)
 }

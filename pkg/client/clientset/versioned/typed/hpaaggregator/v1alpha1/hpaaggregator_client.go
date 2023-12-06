@@ -12,16 +12,11 @@ import (
 
 type HpaaggregatorV1alpha1Interface interface {
 	RESTClient() rest.Interface
-	ExternalMetricAdaptorsGetter
 }
 
 // HpaaggregatorV1alpha1Client is used to interact with features provided by the hpaaggregator.kubeadmiral.io group.
 type HpaaggregatorV1alpha1Client struct {
 	restClient rest.Interface
-}
-
-func (c *HpaaggregatorV1alpha1Client) ExternalMetricAdaptors(namespace string) ExternalMetricAdaptorInterface {
-	return newExternalMetricAdaptors(c, namespace)
 }
 
 // NewForConfig creates a new HpaaggregatorV1alpha1Client for the given config.
