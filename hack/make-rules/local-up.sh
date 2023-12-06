@@ -130,6 +130,7 @@ echo "Waiting for the meta cluster to be ready..."
 util::check_clusters_ready "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}"
 
 kind load docker-image "ghcr.io/kubewharf/kubeadmiral-controller-manager:latest" --name="${META_CLUSTER_NAME}"
+kind load docker-image "ghcr.io/kubewharf/kubeadmiral-hpa-aggregator:latest" --name="${META_CLUSTER_NAME}"
 
 # 4. Install the KubeAdmiral control-plane components
 bash "${REPO_ROOT}/hack/make-rules/deploy-kubeadmiral.sh" "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}" "${HOST_CLUSTER_KUBECONFIG}"
@@ -157,6 +158,13 @@ function print_success() {
   for i in $(seq 1 "${NUM_MEMBER_CLUSTERS}"); do
       echo -e "  export KUBECONFIG=${MEMBER_CLUSTER_KUBECONFIG_PREFIX}-${i}.config"
   done
+
+  echo -e "\nTo play with hpa-aggregator in KubeAdmiral, run:"
+  echo -e "  export KUBECONFIG=${HOST_CLUSTER_KUBECONFIG}"
+  echo -e "  kubectl config use-context hpa-aggregator && kubectl get hpa # change context to hpa-aggregator"
+  echo -e "  kubectl config use-context ${HOST_CLUSTER_CONTEXT} # back to KubeAdmiral control-plane context"
+
+  echo -e "\nEnjoy your trip!\n"
 }
 
 print_success

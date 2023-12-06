@@ -20,7 +20,6 @@ const (
 	APIResources                       = "APIResources"
 	TaintToleration                    = "TaintToleration"
 	ClusterReady                       = "ClusterReady"
-	ClusterTerminating                 = "ClusterTerminating"
 	ClusterResourcesFit                = "ClusterResourcesFit"
 	PlacementFilter                    = "PlacementFilter"
 	ClusterAffinity                    = "ClusterAffinity"
