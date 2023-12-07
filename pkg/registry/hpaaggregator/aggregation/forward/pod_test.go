@@ -125,6 +125,7 @@ func (pl fakePodLister) List(selector labels.Selector) (ret []runtime.Object, er
 	}
 	return res, nil
 }
+
 func (pl fakePodLister) Get(name string) (runtime.Object, error) {
 	if pl.err != nil {
 		return nil, pl.err
@@ -136,10 +137,12 @@ func (pl fakePodLister) Get(name string) (runtime.Object, error) {
 	}
 	return nil, nil
 }
+
 func (pl fakePodLister) ByNamespace(namespace string) cache.GenericNamespaceLister {
 	return pl
 }
 
+//nolint:containedctx
 func TestPodREST_Get(t *testing.T) {
 	p1, p2 := newPod("default", "test")
 
@@ -206,6 +209,7 @@ func TestPodREST_Get(t *testing.T) {
 	}
 }
 
+//nolint:containedctx
 func TestPodREST_List(t *testing.T) {
 	p1, p2 := newPod("default", "test")
 

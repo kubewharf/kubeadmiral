@@ -88,9 +88,9 @@ func Test_forwardHandler_Handler(t *testing.T) {
 	isHPA := false
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isHPA && !strings.Contains(r.URL.Query().Get(labelSelectorQueryKey), labelSelectorQueryValue) {
-			w.WriteHeader(500)
+			w.WriteHeader(http.StatusInternalServerError)
 		}
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer ts.Close()
 

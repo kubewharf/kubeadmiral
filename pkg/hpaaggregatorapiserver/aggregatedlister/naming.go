@@ -31,8 +31,10 @@ import (
 // MaxHashLength is maxLength of uint32
 const MaxHashLength = 10
 
-const ClusterNameAnnotationKey = common.DefaultPrefix + "cluster"
-const RawNameAnnotationKey = common.DefaultPrefix + "raw-name"
+const (
+	ClusterNameAnnotationKey = common.DefaultPrefix + "cluster"
+	RawNameAnnotationKey     = common.DefaultPrefix + "raw-name"
+)
 
 func GenUniqueName(cluster, rawName string) string {
 	return naming.GenerateFederatedObjectName(cluster, rawName)

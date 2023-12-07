@@ -54,9 +54,11 @@ type REST struct {
 	logger klog.Logger
 }
 
-var _ rest.Storage = &REST{}
-var _ rest.Scoper = &REST{}
-var _ rest.Connecter = &REST{}
+var (
+	_ rest.Storage   = &REST{}
+	_ rest.Scoper    = &REST{}
+	_ rest.Connecter = &REST{}
+)
 
 var proxyMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 
@@ -159,7 +161,6 @@ func (r *REST) Connect(ctx context.Context, _ string, _ runtime.Object, resp res
 			proxyHandler.ServeHTTP(rw, req)
 		},
 	), nil
-
 }
 
 // NewConnectOptions returns an empty options object that will be used to pass

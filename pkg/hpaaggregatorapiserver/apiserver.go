@@ -17,7 +17,6 @@ limitations under the License.
 package hpaaggregatorapiserver
 
 import (
-	"context"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/internalversion"
@@ -32,7 +31,6 @@ import (
 	dynamicclient "k8s.io/client-go/dynamic"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	autoscalinginstall "k8s.io/kubernetes/pkg/apis/autoscaling/install"
 	apiinstall "k8s.io/kubernetes/pkg/apis/core/install"
@@ -219,16 +217,4 @@ func (c completedConfig) New() (*Server, error) {
 	}
 
 	return s, nil
-}
-
-func (e *ExtraConfig) Run(ctx context.Context) {
-	e.FedInformerFactory.Start(ctx.Done())
-	e.FederatedInformerManager.Start(ctx)
-
-	if !cache.WaitForNamedCacheSync("hpa-aggregator", ctx.Done(), e.FederatedInformerManager.HasSynced) {
-		klog.Error("Timed out waiting for cache sync")
-		return
-	}
-	klog.Info("FederatedInformerManager started")
-	return
 }

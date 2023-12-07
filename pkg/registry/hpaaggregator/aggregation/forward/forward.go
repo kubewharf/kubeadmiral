@@ -38,6 +38,7 @@ const (
 	labelSelectorQueryKey   = "labelSelector"
 	labelSelectorQueryValue = "kubeadmiral.io/centralized-hpa-enabled=true"
 
+	//nolint:lll
 	// taken from https://github.com/kubernetes/kubernetes/blob/release-1.27/staging/src/k8s.io/kube-aggregator/pkg/apiserver/handler_proxy.go#L47
 	aggregatedDiscoveryTimeout = 5 * time.Second
 

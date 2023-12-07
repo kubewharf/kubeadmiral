@@ -18,7 +18,7 @@ package aggregatedlister
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 
@@ -81,5 +81,5 @@ func (n *NodeLister) Get(name string) (*corev1.Node, error) {
 			}
 		}
 	}
-	return nil, errors.NewNotFound(corev1.Resource("node"), name)
+	return nil, apierrors.NewNotFound(corev1.Resource("node"), name)
 }

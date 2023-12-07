@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -39,8 +39,10 @@ type PodNamespaceLister struct {
 	federatedInformerManager informermanager.FederatedInformerManager
 }
 
-var _ cache.GenericLister = &PodLister{}
-var _ cache.GenericNamespaceLister = &PodNamespaceLister{}
+var (
+	_ cache.GenericLister          = &PodLister{}
+	_ cache.GenericNamespaceLister = &PodNamespaceLister{}
+)
 
 func NewPodLister(informer informermanager.FederatedInformerManager) *PodLister {
 	return &PodLister{federatedInformerManager: informer}
@@ -72,7 +74,7 @@ func (p *PodLister) List(selector labels.Selector) (ret []runtime.Object, err er
 func (p *PodLister) Get(name string) (runtime.Object, error) {
 	items := strings.Split(name, "/")
 	if len(items) != 2 {
-		return nil, errors.NewBadRequest(fmt.Sprintf("invalid name %q", name))
+		return nil, apierrors.NewBadRequest(fmt.Sprintf("invalid name %q", name))
 	}
 	return p.ByNamespace(items[0]).Get(items[1])
 }
@@ -127,5 +129,5 @@ func (p *PodNamespaceLister) Get(name string) (runtime.Object, error) {
 			}
 		}
 	}
-	return nil, errors.NewNotFound(corev1.Resource("pod"), name)
+	return nil, apierrors.NewNotFound(corev1.Resource("pod"), name)
 }

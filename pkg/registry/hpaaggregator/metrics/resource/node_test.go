@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The KubeAdmiral Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -12,6 +12,10 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+This file may have been modified by The KubeAdmiral Authors
+("KubeAdmiral Modifications"). All KubeAdmiral Modifications
+are Copyright 2023 The KubeAdmiral Authors.
 */
 
 package resource
@@ -24,14 +28,13 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/component-base/metrics/testutil"
 	"k8s.io/metrics/pkg/apis/metrics"
@@ -237,6 +240,7 @@ func (pl fakeNodeLister) List(selector labels.Selector) ([]*corev1.Node, error) 
 	}
 	return res, nil
 }
+
 func (pl fakeNodeLister) Get(name string) (*corev1.Node, error) {
 	if pl.err != nil {
 		return nil, pl.err
@@ -255,6 +259,7 @@ type fakeNodeMetricsGetter struct {
 
 var _ NodeMetricsGetter = (*fakeNodeMetricsGetter)(nil)
 
+//nolint:goconst
 func (mp fakeNodeMetricsGetter) GetNodeMetrics(nodes ...*corev1.Node) ([]metrics.NodeMetrics, error) {
 	ms := make([]metrics.NodeMetrics, 0, len(nodes))
 	for _, node := range nodes {

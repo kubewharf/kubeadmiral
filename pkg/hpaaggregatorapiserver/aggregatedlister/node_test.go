@@ -22,7 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -78,7 +78,7 @@ func TestNodeLister_Get(t *testing.T) {
 				name: "fake",
 			},
 			want:    nil,
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool { return errors.IsNotFound(err) },
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool { return apierrors.IsNotFound(err) },
 		},
 	}
 	for _, tt := range tests {
@@ -229,6 +229,7 @@ func (nl fakeNodeLister) List(selector labels.Selector) (ret []*corev1.Node, err
 	}
 	return res, nil
 }
+
 func (nl fakeNodeLister) Get(name string) (*corev1.Node, error) {
 	if nl.err != nil {
 		return nil, nl.err

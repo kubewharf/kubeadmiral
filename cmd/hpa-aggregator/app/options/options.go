@@ -52,7 +52,7 @@ import (
 	hpaaggregatorv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/hpaaggregator/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
-	fedopenapi "github.com/kubewharf/kubeadmiral/pkg/client/openapi"
+	fedopenapi "github.com/kubewharf/kubeadmiral/pkg/client/openapi/hpaaggregator"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	apiserver "github.com/kubewharf/kubeadmiral/pkg/hpaaggregatorapiserver"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
@@ -95,7 +95,6 @@ func NewOptions() *Options {
 	return o
 }
 
-//nolint:lll
 func (o *Options) AddFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&o.Master, "master", "",
 		"The address of the host Kubernetes cluster.")
@@ -103,11 +102,6 @@ func (o *Options) AddFlags(flags *pflag.FlagSet) {
 		"The maximum QPS from each Kubernetes client.")
 	flags.IntVar(&o.KubeAPIBurst, "kube-api-burst", 1000,
 		"The maximum burst for throttling requests from each Kubernetes client.")
-
-	//flags.Int64Var(&o.MaxPodListers, "max-pod-listers", 0, "The maximum number of concurrent pod listing requests to member clusters. "+
-	//	"A non-positive number means unlimited, but may increase the instantaneous memory usage.")
-	//flags.BoolVar(&o.EnablePodPruning, "enable-pod-pruning", false, "Enable pod pruning for pod informer. "+
-	//	"Enabling this can reduce memory usage of the pod informer, but will disable pod propagation.")
 
 	flags.BoolVar(&o.DisableResourceMetrics, "disable-resource-metrics", false,
 		"Whether to disable resource metrics provider")
@@ -143,7 +137,7 @@ func (o *Options) Config() (*apiserver.Config, error) {
 		nil,
 		[]net.IP{netutils.ParseIPSloppy("127.0.0.1")},
 	); err != nil {
-		return nil, fmt.Errorf("error creating self-signed certificates: %v", err)
+		return nil, fmt.Errorf("error creating self-signed certificates: %w", err)
 	}
 
 	o.RecommendedOptions.ExtraAdmissionInitializers = func(c *genericapiserver.RecommendedConfig) ([]admission.PluginInitializer, error) {

@@ -22,7 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
-	corev1 "k8s.io/client-go/listers/core/v1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/metrics/pkg/apis/metrics"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
@@ -37,7 +37,7 @@ func BuildResourceMetrics(
 	codecs serializer.CodecFactory,
 	m resource.MetricsGetter,
 	podMetadataLister cache.GenericLister,
-	nodeLister corev1.NodeLister,
+	nodeLister corev1listers.NodeLister,
 	nodeSelector []labels.Requirement,
 ) genericapiserver.APIGroupInfo {
 	node := resource.NewNodeMetrics(metrics.Resource("nodemetrics"), m, nodeLister, nodeSelector)

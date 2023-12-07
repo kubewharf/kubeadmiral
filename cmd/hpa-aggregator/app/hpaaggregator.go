@@ -26,7 +26,7 @@ import (
 
 // Run starts a new HPAAggregatorServer given Options
 func Run(ctx context.Context, opts *options.Options) error {
-	config, err := opts.Config()
+	config, err := opts.Config() //nolint:contextcheck
 	if err != nil {
 		return err
 	}
@@ -36,12 +36,15 @@ func Run(ctx context.Context, opts *options.Options) error {
 		return err
 	}
 
-	server.GenericAPIServer.AddPostStartHookOrDie("start-hpa-aggregator-server-informers", func(context genericapiserver.PostStartHookContext) error {
-		config.GenericConfig.SharedInformerFactory.Start(context.StopCh)
-		config.ExtraConfig.Run(ctx)
-		return nil
-	})
-	server.GenericAPIServer.AddReadyzChecks()
+	server.GenericAPIServer.AddPostStartHookOrDie(
+		"start-hpa-aggregator-server-informers",
+		func(context genericapiserver.PostStartHookContext) error {
+			config.GenericConfig.SharedInformerFactory.Start(context.StopCh)
+			config.ExtraConfig.FedInformerFactory.Start(ctx.Done())
+			config.ExtraConfig.FederatedInformerManager.Start(ctx)
+			return nil
+		},
+	)
 
 	return server.GenericAPIServer.PrepareRun().Run(ctx.Done())
 }

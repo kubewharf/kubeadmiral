@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	_ "net/http/pprof"
 	"os"
 
 	"github.com/spf13/pflag"
@@ -43,5 +42,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	signals.SetupSignalHandler(cancel)
 
-	app.Run(ctx, opts)
+	if err := app.Run(ctx, opts); err != nil {
+		klog.ErrorS(err, "Failed to run app")
+	}
 }

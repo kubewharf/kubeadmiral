@@ -12,6 +12,10 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+This file may have been modified by The KubeAdmiral Authors
+("KubeAdmiral Modifications"). All KubeAdmiral Modifications
+are Copyright 2023 The KubeAdmiral Authors.
 */
 
 package resource
@@ -28,8 +32,6 @@ func TestNodeList_ConvertToTable(t *testing.T) {
 
 	// execute
 	got, err := r.List(genericapirequest.NewContext(), nil)
-
-	// assert
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -60,8 +62,6 @@ func TestPodList_ConvertToTable(t *testing.T) {
 
 	// execute
 	got, err := r.List(genericapirequest.NewContext(), nil)
-
-	// assert
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
