@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The KubeAdmiral Authors.
+Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -12,6 +12,10 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+This file may have been modified by The KubeAdmiral Authors
+("KubeAdmiral Modifications"). All KubeAdmiral Modifications
+are Copyright 2023 The KubeAdmiral Authors.
 */
 
 package resource
@@ -22,7 +26,7 @@ import (
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,12 +49,14 @@ type PodMetrics struct {
 	podLister     cache.GenericLister
 }
 
-var _ rest.KindProvider = &PodMetrics{}
-var _ rest.Storage = &PodMetrics{}
-var _ rest.Getter = &PodMetrics{}
-var _ rest.Lister = &PodMetrics{}
-var _ rest.TableConvertor = &PodMetrics{}
-var _ rest.Scoper = &PodMetrics{}
+var (
+	_ rest.KindProvider   = &PodMetrics{}
+	_ rest.Storage        = &PodMetrics{}
+	_ rest.Getter         = &PodMetrics{}
+	_ rest.Lister         = &PodMetrics{}
+	_ rest.TableConvertor = &PodMetrics{}
+	_ rest.Scoper         = &PodMetrics{}
+)
 
 func NewPodMetrics(groupResource schema.GroupResource, metrics PodMetricsGetter, podLister cache.GenericLister) *PodMetrics {
 	registerIntoLegacyRegistryOnce.Do(func() {
@@ -140,7 +146,7 @@ func (m *PodMetrics) Get(ctx context.Context, name string, opts *metav1.GetOptio
 
 	obj, err := m.podLister.ByNamespace(namespace).Get(name)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// return not-found errors directly
 			return &metrics.PodMetrics{}, err
 		}
@@ -148,7 +154,7 @@ func (m *PodMetrics) Get(ctx context.Context, name string, opts *metav1.GetOptio
 		return &metrics.PodMetrics{}, fmt.Errorf("failed getting pod: %w", err)
 	}
 	if obj == nil {
-		return &metrics.PodMetrics{}, errors.NewNotFound(corev1.Resource("pods"), fmt.Sprintf("%s/%s", namespace, name))
+		return &metrics.PodMetrics{}, apierrors.NewNotFound(corev1.Resource("pods"), fmt.Sprintf("%s/%s", namespace, name))
 	}
 
 	var partialPod *metav1.PartialObjectMetadata
@@ -167,7 +173,7 @@ func (m *PodMetrics) Get(ctx context.Context, name string, opts *metav1.GetOptio
 		return nil, fmt.Errorf("failed pod metrics: %w", err)
 	}
 	if len(ms) == 0 {
-		return nil, errors.NewNotFound(m.groupResource, fmt.Sprintf("%s/%s", namespace, name))
+		return nil, apierrors.NewNotFound(m.groupResource, fmt.Sprintf("%s/%s", namespace, name))
 	}
 	return &ms[0], nil
 }

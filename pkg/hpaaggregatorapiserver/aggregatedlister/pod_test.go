@@ -22,7 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -54,7 +54,7 @@ func TestPodLister_Get(t *testing.T) {
 				name: "aa",
 			},
 			want:    nil,
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool { return errors.IsBadRequest(err) },
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool { return apierrors.IsBadRequest(err) },
 		},
 		{
 			name: "normal",
@@ -214,7 +214,7 @@ func TestPodNamespaceLister_Get(t *testing.T) {
 				name: "fake",
 			},
 			want:    nil,
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool { return errors.IsNotFound(err) },
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool { return apierrors.IsNotFound(err) },
 		},
 	}
 	for _, tt := range tests {
@@ -376,6 +376,7 @@ func (pl fakePodLister) List(selector labels.Selector) (ret []*corev1.Pod, err e
 	}
 	return res, nil
 }
+
 func (pl fakePodLister) Get(name string) (*corev1.Pod, error) {
 	if pl.err != nil {
 		return nil, pl.err
@@ -387,6 +388,7 @@ func (pl fakePodLister) Get(name string) (*corev1.Pod, error) {
 	}
 	return nil, nil
 }
+
 func (pl fakePodLister) Pods(namespace string) corev1listers.PodNamespaceLister {
 	return pl
 }

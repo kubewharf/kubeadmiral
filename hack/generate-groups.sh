@@ -143,7 +143,7 @@ ${GOBIN}/openapi-gen -h ${HEADER_FILE} -o ${OUTPUT_DIR} \
   --input-dirs "k8s.io/metrics/pkg/apis/metrics/v1beta1" \
   --input-dirs "k8s.io/api/core/v1" \
   --input-dirs="${MODULE_NAME}/pkg/apis/hpaaggregator/v1alpha1" \
-  --output-package=${OPENAPI_OUTPUT_PACKAGE} \
+  --output-package="${OPENAPI_OUTPUT_PACKAGE}/hpaaggregator" \
   --output-file-base="zz_generated.openapi" \
   "$@"
 

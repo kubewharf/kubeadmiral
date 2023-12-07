@@ -27,7 +27,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
+	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
@@ -51,12 +51,15 @@ type FakeLister struct {
 }
 
 func (f *FakeFederatedInformerManager) AddEventHandlerGenerator(generator *informermanager.EventHandlerGenerator) error {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 
-func (f *FakeFederatedInformerManager) GetResourceLister(gvk schema.GroupVersionKind, cluster string) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool) {
-	//TODO implement me
+func (f *FakeFederatedInformerManager) GetResourceLister(
+	gvk schema.GroupVersionKind,
+	cluster string,
+) (lister cache.GenericLister, informerSynced cache.InformerSynced, exists bool) {
+	// TODO implement me
 	panic("implement me")
 }
 
@@ -66,37 +69,41 @@ func (f *FakeFederatedInformerManager) GetClusterDynamicClient(cluster string) (
 }
 
 func (f *FakeFederatedInformerManager) GetClusterKubeClient(cluster string) (client kubernetes.Interface, exists bool) {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 
 func (f *FakeFederatedInformerManager) GetClusterRestConfig(cluster string) (config *rest.Config, exists bool) {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 
 func (f *FakeFederatedInformerManager) AddPodEventHandler(handler *informermanager.ResourceEventHandlerWithClusterFuncs) {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 
-func (f *FakeFederatedInformerManager) GetPodLister(cluster string) (lister corev1listers.PodLister, informerSynced cache.InformerSynced, exists bool) {
+func (f *FakeFederatedInformerManager) GetPodLister(
+	cluster string,
+) (lister corev1listers.PodLister, informerSynced cache.InformerSynced, exists bool) {
 	l, exists := f.PodListers[cluster]
 	return l.PodLister, func() bool { return l.Synced }, exists
 }
 
-func (f *FakeFederatedInformerManager) GetNodeLister(cluster string) (lister corev1listers.NodeLister, informerSynced cache.InformerSynced, exists bool) {
+func (f *FakeFederatedInformerManager) GetNodeLister(
+	cluster string,
+) (lister corev1listers.NodeLister, informerSynced cache.InformerSynced, exists bool) {
 	l, exists := f.NodeListers[cluster]
 	return l.NodeLister, func() bool { return l.Synced }, exists
 }
 
-func (f *FakeFederatedInformerManager) GetFederatedTypeConfigLister() v1alpha1.FederatedTypeConfigLister {
-	//TODO implement me
+func (f *FakeFederatedInformerManager) GetFederatedTypeConfigLister() fedcorev1a1listers.FederatedTypeConfigLister {
+	// TODO implement me
 	panic("implement me")
 }
 
-func (f *FakeFederatedInformerManager) GetFederatedClusterLister() v1alpha1.FederatedClusterLister {
-	//TODO implement me
+func (f *FakeFederatedInformerManager) GetFederatedClusterLister() fedcorev1a1listers.FederatedClusterLister {
+	// TODO implement me
 	panic("implement me")
 }
 
@@ -105,7 +112,7 @@ func (f *FakeFederatedInformerManager) GetReadyClusters() ([]*fedcorev1a1.Federa
 }
 
 func (f *FakeFederatedInformerManager) GetJoinedClusters() ([]*fedcorev1a1.FederatedCluster, error) {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 
@@ -114,7 +121,7 @@ func (f *FakeFederatedInformerManager) HasSynced() bool {
 }
 
 func (f *FakeFederatedInformerManager) AddClusterEventHandlers(handlers ...*informermanager.ClusterEventHandler) error {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 

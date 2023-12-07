@@ -26,6 +26,7 @@ import (
 	restclient "k8s.io/client-go/rest"
 )
 
+//nolint:containedctx
 func TestNewConfigWithImpersonate(t *testing.T) {
 	user := &user.DefaultInfo{
 		Name:   "test",

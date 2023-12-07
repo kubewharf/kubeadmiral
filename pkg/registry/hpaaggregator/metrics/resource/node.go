@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The KubeAdmiral Authors.
+Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -12,6 +12,10 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+This file may have been modified by The KubeAdmiral Authors
+("KubeAdmiral Modifications"). All KubeAdmiral Modifications
+are Copyright 2023 The KubeAdmiral Authors.
 */
 
 package resource
@@ -22,7 +26,7 @@ import (
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metav1beta1 "k8s.io/apimachinery/pkg/apis/meta/v1beta1"
@@ -30,7 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/registry/rest"
-	v1listers "k8s.io/client-go/listers/core/v1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/klog/v2"
 	"k8s.io/metrics/pkg/apis/metrics"
@@ -40,21 +44,23 @@ import (
 type NodeMetrics struct {
 	groupResource schema.GroupResource
 	metrics       NodeMetricsGetter
-	nodeLister    v1listers.NodeLister
+	nodeLister    corev1listers.NodeLister
 	nodeSelector  []labels.Requirement
 }
 
-var _ rest.KindProvider = &NodeMetrics{}
-var _ rest.Storage = &NodeMetrics{}
-var _ rest.Getter = &NodeMetrics{}
-var _ rest.Lister = &NodeMetrics{}
-var _ rest.Scoper = &NodeMetrics{}
-var _ rest.TableConvertor = &NodeMetrics{}
+var (
+	_ rest.KindProvider   = &NodeMetrics{}
+	_ rest.Storage        = &NodeMetrics{}
+	_ rest.Getter         = &NodeMetrics{}
+	_ rest.Lister         = &NodeMetrics{}
+	_ rest.Scoper         = &NodeMetrics{}
+	_ rest.TableConvertor = &NodeMetrics{}
+)
 
 func NewNodeMetrics(
 	groupResource schema.GroupResource,
 	metrics NodeMetricsGetter,
-	nodeLister v1listers.NodeLister,
+	nodeLister corev1listers.NodeLister,
 	nodeSelector []labels.Requirement,
 ) *NodeMetrics {
 	registerIntoLegacyRegistryOnce.Do(func() {
@@ -129,7 +135,7 @@ func (m *NodeMetrics) nodes(ctx context.Context, options *metainternalversion.Li
 func (m *NodeMetrics) Get(ctx context.Context, name string, opts *metav1.GetOptions) (runtime.Object, error) {
 	node, err := m.nodeLister.Get(name)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// return not-found errors directly
 			return nil, err
 		}
@@ -137,7 +143,7 @@ func (m *NodeMetrics) Get(ctx context.Context, name string, opts *metav1.GetOpti
 		return nil, fmt.Errorf("failed getting node: %w", err)
 	}
 	if node == nil {
-		return nil, errors.NewNotFound(m.groupResource, name)
+		return nil, apierrors.NewNotFound(m.groupResource, name)
 	}
 	ms, err := m.getMetrics(node)
 	if err != nil {
@@ -145,7 +151,7 @@ func (m *NodeMetrics) Get(ctx context.Context, name string, opts *metav1.GetOpti
 		return nil, fmt.Errorf("failed reading node metrics: %w", err)
 	}
 	if len(ms) == 0 {
-		return nil, errors.NewNotFound(m.groupResource, name)
+		return nil, apierrors.NewNotFound(m.groupResource, name)
 	}
 	return &ms[0], nil
 }

@@ -60,7 +60,7 @@ func Test_metricsGetter_GetNodeMetrics(t *testing.T) {
 
 		result := metrics.NodeMetrics{}
 		aggregatedlister.MakeObjectUnique(m, cluster)
-		metricsv1beta1.Convert_v1beta1_NodeMetrics_To_metrics_NodeMetrics(m, &result, nil)
+		_ = metricsv1beta1.Convert_v1beta1_NodeMetrics_To_metrics_NodeMetrics(m, &result, nil)
 		nodeMetrics[i] = result
 	}
 
@@ -133,7 +133,7 @@ func Test_metricsGetter_GetPodMetrics(t *testing.T) {
 
 		result := metrics.PodMetrics{}
 		aggregatedlister.MakeObjectUnique(m, cluster)
-		metricsv1beta1.Convert_v1beta1_PodMetrics_To_metrics_PodMetrics(m, &result, nil)
+		_ = metricsv1beta1.Convert_v1beta1_PodMetrics_To_metrics_PodMetrics(m, &result, nil)
 		podMetrics[i] = result
 	}
 
@@ -166,10 +166,7 @@ func Test_metricsGetter_GetPodMetrics(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &metricsGetter{
-				federatedInformerManager: tt.fields.federatedInformerManager,
-				logger:                   tt.fields.logger,
-			}
+			m := NewMetricsGetter(tt.fields.federatedInformerManager, tt.fields.logger)
 			got, err := m.GetPodMetrics(tt.args.pods...)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetPodMetrics() error = %v, wantErr %v", err, tt.wantErr)
@@ -189,16 +186,17 @@ func Test_metricsGetter_GetPodMetrics(t *testing.T) {
 	}
 }
 
-func Test_nodeMetricsConverter(t *testing.T) {
+func Test_metricsConverter(t *testing.T) {
 	type args struct {
 		uns         *unstructured.Unstructured
 		clusterName string
 	}
 	tests := []struct {
-		name    string
-		args    args
-		want    metrics.NodeMetrics
-		wantErr bool
+		name     string
+		args     args
+		wantNode metrics.NodeMetrics
+		wantPod  metrics.PodMetrics
+		wantErr  bool
 	}{
 		{
 			name: "normal",
@@ -206,7 +204,17 @@ func Test_nodeMetricsConverter(t *testing.T) {
 				uns:         &unstructured.Unstructured{Object: map[string]interface{}{"window": "10s"}},
 				clusterName: "cluster1",
 			},
-			want: metrics.NodeMetrics{
+			wantNode: metrics.NodeMetrics{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster1-",
+					Annotations: map[string]string{
+						aggregatedlister.ClusterNameAnnotationKey: "cluster1",
+						aggregatedlister.RawNameAnnotationKey:     "",
+					},
+				},
+				Window: metav1.Duration{Duration: 10 * time.Second},
+			},
+			wantPod: metrics.PodMetrics{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cluster1-",
 					Annotations: map[string]string{
@@ -221,57 +229,22 @@ func Test_nodeMetricsConverter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := nodeMetricsConverter(tt.args.uns, tt.args.clusterName)
+			node, err := nodeMetricsConverter(tt.args.uns, tt.args.clusterName)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("nodeMetricsConverter() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("nodeMetricsConverter() got = %v, want %v", got, tt.want)
+			if !reflect.DeepEqual(node, tt.wantNode) {
+				t.Errorf("nodeMetricsConverter() got = %v, want %v", node, tt.wantNode)
 			}
-		})
-	}
-}
 
-func Test_podMetricsConverter(t *testing.T) {
-	type args struct {
-		uns         *unstructured.Unstructured
-		clusterName string
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    metrics.PodMetrics
-		wantErr bool
-	}{
-		{
-			name: "normal",
-			args: args{
-				uns:         &unstructured.Unstructured{Object: map[string]interface{}{"window": "10s"}},
-				clusterName: "cluster1",
-			},
-			want: metrics.PodMetrics{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "cluster1-",
-					Annotations: map[string]string{
-						aggregatedlister.ClusterNameAnnotationKey: "cluster1",
-						aggregatedlister.RawNameAnnotationKey:     "",
-					},
-				},
-				Window: metav1.Duration{Duration: 10 * time.Second},
-			},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := podMetricsConverter(tt.args.uns, tt.args.clusterName)
+			pod, err := podMetricsConverter(tt.args.uns, tt.args.clusterName)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("podMetricsConverter() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("podMetricsConverter() got = %v, want %v", got, tt.want)
+			if !reflect.DeepEqual(pod, tt.wantPod) {
+				t.Errorf("podMetricsConverter() got = %v, want %v", pod, tt.wantPod)
 			}
 		})
 	}
@@ -282,7 +255,7 @@ func newClusters(num int) ([]*fedcorev1a1.FederatedCluster, map[string]dynamic.I
 	clients := make(map[string]dynamic.Interface)
 
 	s := runtime.NewScheme()
-	k8sscheme.AddToScheme(s)
+	_ = k8sscheme.AddToScheme(s)
 	metricsinstall.Install(s)
 
 	for i := 0; i < num; i++ {

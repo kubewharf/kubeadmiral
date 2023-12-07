@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -55,10 +56,12 @@ type PodREST struct {
 	minRequestTimeout        time.Duration
 }
 
-var _ rest.Getter = &PodREST{}
-var _ rest.Lister = &PodREST{}
-var _ rest.Watcher = &PodREST{}
-var _ PodHandler = &PodREST{}
+var (
+	_ rest.Getter  = &PodREST{}
+	_ rest.Lister  = &PodREST{}
+	_ rest.Watcher = &PodREST{}
+	_ PodHandler   = &PodREST{}
+)
 
 func NewPodREST(
 	f informermanager.FederatedInformerManager,
@@ -150,6 +153,7 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 	}
 
 	// TODO: support cluster addition and deletion during the watch
+	var lock sync.Mutex
 	watchClusters := sets.Set[string]{}
 	proxyCh := make(chan watch.Event)
 	proxyWatcher := watch.NewProxyWatcher(proxyCh)
@@ -174,6 +178,9 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 					return
 				case event, ok := <-watcher.ResultChan():
 					if !ok {
+						lock.Lock()
+						defer lock.Unlock()
+
 						watchClusters.Delete(cluster)
 						if watchClusters.Len() == 0 {
 							close(proxyCh)

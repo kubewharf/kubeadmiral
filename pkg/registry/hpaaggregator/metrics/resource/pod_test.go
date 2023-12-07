@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The KubeAdmiral Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -12,6 +12,10 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+This file may have been modified by The KubeAdmiral Authors
+("KubeAdmiral Modifications"). All KubeAdmiral Modifications
+are Copyright 2023 The KubeAdmiral Authors.
 */
 
 package resource
@@ -24,8 +28,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
@@ -33,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/client-go/tools/cache"
@@ -49,8 +52,12 @@ func TestPodList(t *testing.T) {
 		wantError   bool
 	}{
 		{
-			name:     "Normal",
-			wantPods: []apitypes.NamespacedName{{Name: "pod1", Namespace: "other"}, {Name: "pod2", Namespace: "other"}, {Name: "pod3", Namespace: "testValue"}},
+			name: "Normal",
+			wantPods: []apitypes.NamespacedName{
+				{Name: "pod1", Namespace: "other"},
+				{Name: "pod2", Namespace: "other"},
+				{Name: "pod3", Namespace: "testValue"},
+			},
 		},
 		{
 			name: "Empty response",
@@ -254,6 +261,7 @@ func (pl fakePodLister) List(selector labels.Selector) (ret []runtime.Object, er
 	}
 	return res, nil
 }
+
 func (pl fakePodLister) Get(name string) (runtime.Object, error) {
 	if pl.err != nil {
 		return nil, pl.err
@@ -274,6 +282,7 @@ func (pl fakePodLister) Get(name string) (runtime.Object, error) {
 	}
 	return nil, nil
 }
+
 func (pl fakePodLister) ByNamespace(namespace string) cache.GenericNamespaceLister {
 	return pl
 }
@@ -284,6 +293,7 @@ type fakePodMetricsGetter struct {
 
 var _ PodMetricsGetter = (*fakePodMetricsGetter)(nil)
 
+//nolint:goconst
 func (mp fakePodMetricsGetter) GetPodMetrics(pods ...*metav1.PartialObjectMetadata) ([]metrics.PodMetrics, error) {
 	ms := make([]metrics.PodMetrics, 0, len(pods))
 	for _, pod := range pods {
@@ -304,7 +314,10 @@ func (mp fakePodMetricsGetter) GetPodMetrics(pods ...*metav1.PartialObjectMetada
 				Timestamp:  metav1.Time{Time: mp.now},
 				Window:     metav1.Duration{Duration: 2000},
 				Containers: []metrics.ContainerMetrics{
-					{Name: "metric2", Usage: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20m"), corev1.ResourceMemory: resource.MustParse("15Mi")}},
+					{Name: "metric2", Usage: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("20m"),
+						corev1.ResourceMemory: resource.MustParse("15Mi"),
+					}},
 				},
 			})
 		case pod.Name == "pod3" && pod.Namespace == "testValue":
@@ -313,7 +326,10 @@ func (mp fakePodMetricsGetter) GetPodMetrics(pods ...*metav1.PartialObjectMetada
 				Timestamp:  metav1.Time{Time: mp.now},
 				Window:     metav1.Duration{Duration: 3000},
 				Containers: []metrics.ContainerMetrics{
-					{Name: "metric3", Usage: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20m"), corev1.ResourceMemory: resource.MustParse("25Mi")}},
+					{Name: "metric3", Usage: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("20m"),
+						corev1.ResourceMemory: resource.MustParse("25Mi"),
+					}},
 				},
 			})
 		}
