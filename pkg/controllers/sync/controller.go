@@ -423,9 +423,12 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 		return worker.StatusError
 	}
 
-	if skipSync(fedResource.Object()) {
-		fedResource.RecordEvent("SyncSkipped", "Skip Syncing for %s", fedResource.FederatedName())
-		return worker.StatusAllOK
+	if fedResource.Object().GetAnnotations()[common.DryRunAnnotation] == common.AnnotationValueTrue {
+		if len(fedResource.Object().GetStatus().Clusters) == 0 {
+			fedResource.RecordEvent("DryRunWorked", "Dry run worked for %s", fedResource.FederatedName())
+			return worker.StatusAllOK
+		}
+		fedResource.RecordEvent("DryRunSkipped", "Dry run skipped because resource has been propagated")
 	}
 
 	clustersToSync, selectedClusters, err := s.prepareToSync(ctx, fedResource)
