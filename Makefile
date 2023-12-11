@@ -5,6 +5,7 @@ BUILD_FLAGS ?=
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 GOPROXY ?= $(shell go env GOPROXY)
+# target component, available target: all, kubeadmiral-controller-manager, kubeadmiral-hpa-aggregator
 TARGET_NAME ?= all
 DEBUG_TARGET_NAME ?= $(TARGET_NAME)_debug
 
@@ -61,6 +62,12 @@ dev-clean:
 # Run the kubeadmiral-controller-manager component with sane defaults for development.
 .PHONY: dev-run
 dev-run:
+ifeq ($(TARGET_NAME), all)
+	$(eval DEBUG_TARGET_NAME = kubeadmiral-controller-manager_debug)
+else ifeq ($(TARGET_NAME), kubeadmiral-hpa-aggregator)
+	@echo "kubeadmiral-hpa-aggregator needs certificates form apiserver, do not support dev-run now"
+	@exit -1
+endif
 	./output/bin/$(GOOS)/$(GOARCH)/$(DEBUG_TARGET_NAME) \
 		--enable-leader-elect=false \
 		--worker-count=5 \
