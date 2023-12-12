@@ -42,7 +42,7 @@ import (
 	"k8s.io/klog/v2"
 	api "k8s.io/kubernetes/pkg/apis/core"
 
-	"github.com/kubewharf/kubeadmiral/pkg/hpaaggregatorapiserver/aggregatedlister"
+	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
@@ -188,7 +188,7 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 						return
 					}
 					if pod, ok := event.Object.(*corev1.Pod); ok {
-						aggregatedlister.MakePodUnique(pod, cluster)
+						clusterobject.MakePodUnique(pod, cluster)
 						newPod := &api.Pod{}
 						if err := scheme.Convert(pod, newPod, nil); err != nil {
 							continue

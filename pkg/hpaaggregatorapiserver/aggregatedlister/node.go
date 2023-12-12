@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 
+	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
@@ -51,7 +52,7 @@ func (n *NodeLister) List(selector labels.Selector) (ret []*corev1.Node, err err
 		}
 		for i := range nodes {
 			node := nodes[i].DeepCopy()
-			MakeObjectUnique(node, cluster.Name)
+			clusterobject.MakeObjectUnique(node, cluster.Name)
 			ret = append(ret, node)
 		}
 	}
@@ -64,7 +65,7 @@ func (n *NodeLister) Get(name string) (*corev1.Node, error) {
 		return nil, err
 	}
 
-	for _, cluster := range GetPossibleClusters(clusters, name) {
+	for _, cluster := range clusterobject.GetPossibleClusters(clusters, name) {
 		nodeLister, nodesSynced, exists := n.federatedInformerManager.GetNodeLister(cluster)
 		if !exists || !nodesSynced() {
 			continue
@@ -74,9 +75,9 @@ func (n *NodeLister) Get(name string) (*corev1.Node, error) {
 			continue
 		}
 		for i := range nodes {
-			if name == GenUniqueName(cluster, nodes[i].Name) {
+			if name == clusterobject.GenUniqueName(cluster, nodes[i].Name) {
 				node := nodes[i].DeepCopy()
-				MakeObjectUnique(node, cluster)
+				clusterobject.MakeObjectUnique(node, cluster)
 				return node, nil
 			}
 		}

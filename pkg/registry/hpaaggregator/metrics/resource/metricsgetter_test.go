@@ -38,7 +38,7 @@ import (
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	"github.com/kubewharf/kubeadmiral/pkg/hpaaggregatorapiserver/aggregatedlister"
+	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	fakeinformermanager "github.com/kubewharf/kubeadmiral/pkg/util/informermanager/fake"
 )
@@ -55,11 +55,11 @@ func Test_metricsGetter_GetNodeMetrics(t *testing.T) {
 		cluster := fmt.Sprintf("cluster-%d", i)
 		n, m := newNode(cluster)
 
-		aggregatedlister.MakeObjectUnique(n, cluster)
+		clusterobject.MakeObjectUnique(n, cluster)
 		nodes[i] = n
 
 		result := metrics.NodeMetrics{}
-		aggregatedlister.MakeObjectUnique(m, cluster)
+		clusterobject.MakeObjectUnique(m, cluster)
 		_ = metricsv1beta1.Convert_v1beta1_NodeMetrics_To_metrics_NodeMetrics(m, &result, nil)
 		nodeMetrics[i] = result
 	}
@@ -128,11 +128,11 @@ func Test_metricsGetter_GetPodMetrics(t *testing.T) {
 		cluster := fmt.Sprintf("cluster-%d", i)
 		p, m := newPod("default", cluster)
 
-		aggregatedlister.MakePodUnique(p, cluster)
+		clusterobject.MakePodUnique(p, cluster)
 		pods[i] = meta.AsPartialObjectMetadata(p)
 
 		result := metrics.PodMetrics{}
-		aggregatedlister.MakeObjectUnique(m, cluster)
+		clusterobject.MakeObjectUnique(m, cluster)
 		_ = metricsv1beta1.Convert_v1beta1_PodMetrics_To_metrics_PodMetrics(m, &result, nil)
 		podMetrics[i] = result
 	}
@@ -208,8 +208,8 @@ func Test_metricsConverter(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cluster1-",
 					Annotations: map[string]string{
-						aggregatedlister.ClusterNameAnnotationKey: "cluster1",
-						aggregatedlister.RawNameAnnotationKey:     "",
+						clusterobject.ClusterNameAnnotationKey: "cluster1",
+						clusterobject.RawNameAnnotationKey:     "",
 					},
 				},
 				Window: metav1.Duration{Duration: 10 * time.Second},
@@ -218,8 +218,8 @@ func Test_metricsConverter(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cluster1-",
 					Annotations: map[string]string{
-						aggregatedlister.ClusterNameAnnotationKey: "cluster1",
-						aggregatedlister.RawNameAnnotationKey:     "",
+						clusterobject.ClusterNameAnnotationKey: "cluster1",
+						clusterobject.RawNameAnnotationKey:     "",
 					},
 				},
 				Window: metav1.Duration{Duration: 10 * time.Second},
