@@ -74,7 +74,7 @@ type ScoreExtensions interface {
 type SelectPlugin interface {
 	Plugin
 
-	SelectClusters(context.Context, *SchedulingUnit, ClusterScoreList) ([]*fedcorev1a1.FederatedCluster, *Result)
+	SelectClusters(context.Context, *SchedulingUnit, ClusterScoreList) (ClusterScoreList, *Result)
 }
 
 type ReplicasPlugin interface {

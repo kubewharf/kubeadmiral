@@ -203,7 +203,7 @@ func (p *WebhookPlugin) SelectClusters(
 	ctx context.Context,
 	su *framework.SchedulingUnit,
 	clusterScores framework.ClusterScoreList,
-) ([]*fedcorev1a1.FederatedCluster, *framework.Result) {
+) (framework.ClusterScoreList, *framework.Result) {
 	if p.selectPath == "" {
 		return nil, framework.NewResult(framework.Error, "select is not supported by the webhook")
 	}
@@ -216,9 +216,9 @@ func (p *WebhookPlugin) SelectClusters(
 		ClusterScores:  []schedwebhookv1a1.ClusterScore{},
 	}
 
-	clusterMap := map[string]*fedcorev1a1.FederatedCluster{}
+	clusterMap := map[string]framework.ClusterScore{}
 	for _, score := range clusterScores {
-		clusterMap[score.Cluster.Name] = score.Cluster
+		clusterMap[score.Cluster.Name] = score
 
 		req.ClusterScores = append(req.ClusterScores, schedwebhookv1a1.ClusterScore{
 			Cluster: *score.Cluster,
@@ -235,7 +235,7 @@ func (p *WebhookPlugin) SelectClusters(
 		return nil, framework.NewResult(framework.Error, resp.Error)
 	}
 
-	selectedClusters := []*fedcorev1a1.FederatedCluster{}
+	var selectedClusters framework.ClusterScoreList
 	for _, clusterName := range resp.SelectedClusterNames {
 		if cluster, ok := clusterMap[clusterName]; ok {
 			selectedClusters = append(selectedClusters, cluster)
