@@ -29,7 +29,7 @@ import (
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
-	"github.com/kubewharf/kubeadmiral/pkg/hpaaggregatorapiserver/aggregatedlister"
+	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
@@ -59,8 +59,8 @@ func (m *metricsGetter) GetPodMetrics(pods ...*metav1.PartialObjectMetadata) ([]
 	}
 	clusters := make(map[string][]common.QualifiedName, len(pods))
 	for _, pod := range pods {
-		cluster := pod.Annotations[aggregatedlister.ClusterNameAnnotationKey]
-		rawName := pod.Annotations[aggregatedlister.RawNameAnnotationKey]
+		cluster := pod.Annotations[clusterobject.ClusterNameAnnotationKey]
+		rawName := pod.Annotations[clusterobject.RawNameAnnotationKey]
 		if cluster != "" && rawName != "" {
 			clusters[cluster] = append(clusters[cluster], common.QualifiedName{
 				Namespace: pod.Namespace,
@@ -123,8 +123,8 @@ func (m *metricsGetter) GetNodeMetrics(nodes ...*corev1.Node) ([]metrics.NodeMet
 	}
 	clusters := make(map[string][]string, len(nodes))
 	for _, node := range nodes {
-		cluster := node.Annotations[aggregatedlister.ClusterNameAnnotationKey]
-		rawName := node.Annotations[aggregatedlister.RawNameAnnotationKey]
+		cluster := node.Annotations[clusterobject.ClusterNameAnnotationKey]
+		rawName := node.Annotations[clusterobject.RawNameAnnotationKey]
 		if cluster != "" && rawName != "" {
 			clusters[cluster] = append(clusters[cluster], rawName)
 		}
@@ -181,7 +181,7 @@ func podMetricsConverter(uns *unstructured.Unstructured, clusterName string) (me
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(uns.Object, metric); err != nil {
 		return result, err
 	}
-	aggregatedlister.MakeObjectUnique(metric, clusterName)
+	clusterobject.MakeObjectUnique(metric, clusterName)
 	if err := metricsv1beta1.Convert_v1beta1_PodMetrics_To_metrics_PodMetrics(metric, &result, nil); err != nil {
 		return result, err
 	}
@@ -194,7 +194,7 @@ func nodeMetricsConverter(uns *unstructured.Unstructured, clusterName string) (m
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(uns.Object, metric); err != nil {
 		return result, err
 	}
-	aggregatedlister.MakeObjectUnique(metric, clusterName)
+	clusterobject.MakeObjectUnique(metric, clusterName)
 	if err := metricsv1beta1.Convert_v1beta1_NodeMetrics_To_metrics_NodeMetrics(metric, &result, nil); err != nil {
 		return result, err
 	}

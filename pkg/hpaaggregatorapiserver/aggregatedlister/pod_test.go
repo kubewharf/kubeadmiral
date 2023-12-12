@@ -29,6 +29,7 @@ import (
 	corev1listers "k8s.io/client-go/listers/core/v1"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	fakeinformermanager "github.com/kubewharf/kubeadmiral/pkg/util/informermanager/fake"
 )
@@ -90,7 +91,7 @@ func TestPodLister_List(t *testing.T) {
 	for i := range pods {
 		name := fmt.Sprintf("cluster-%d", i)
 		pod := newPod("default", name)
-		MakePodUnique(pod, name)
+		clusterobject.MakePodUnique(pod, name)
 		pods[i] = pod
 	}
 
@@ -176,7 +177,7 @@ func TestPodNamespaceLister_Get(t *testing.T) {
 	for i := range pods {
 		name := fmt.Sprintf("cluster-%d", i)
 		pod := newPod("default", name)
-		MakePodUnique(pod, name)
+		clusterobject.MakePodUnique(pod, name)
 		pods[i] = pod
 	}
 
@@ -242,7 +243,7 @@ func TestPodNamespaceLister_List(t *testing.T) {
 	for i := range pods {
 		name := fmt.Sprintf("cluster-%d", i)
 		pod := newPod("default", name)
-		MakePodUnique(pod, name)
+		clusterobject.MakePodUnique(pod, name)
 		pods[i] = pod
 	}
 

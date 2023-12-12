@@ -39,6 +39,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/custom-metrics-apiserver/pkg/provider"
 
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
@@ -113,6 +115,8 @@ func (c *CustomMetricsProvider) GetMetricByName(
 		"gr", info.GroupResource.String(),
 		"metrics", info.Metric,
 	)
+
+	// TODO: support get pod metrics for unique pod
 
 	var wg sync.WaitGroup
 	var lock sync.Mutex
@@ -235,6 +239,14 @@ func (c *CustomMetricsProvider) GetMetricBySelector(
 			if err = converter.Scheme().Convert(metrics, m, nil); err != nil {
 				logger.V(4).Info("Failed to convert metric list", "err", err)
 				return
+			}
+
+			// adapt to aggregated pod list
+			if gvk == common.PodGVK {
+				for i := range m.Items {
+					m.Items[i].DescribedObject.Name =
+						clusterobject.GenUniqueName(cluster, m.Items[i].DescribedObject.Name)
+				}
 			}
 
 			lock.Lock()

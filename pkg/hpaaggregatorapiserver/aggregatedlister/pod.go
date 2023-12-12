@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
@@ -64,7 +65,7 @@ func (p *PodLister) List(selector labels.Selector) (ret []runtime.Object, err er
 		}
 		for i := range pods {
 			pod := pods[i].DeepCopy()
-			MakePodUnique(pod, cluster.Name)
+			clusterobject.MakePodUnique(pod, cluster.Name)
 			ret = append(ret, pod)
 		}
 	}
@@ -99,7 +100,7 @@ func (p *PodNamespaceLister) List(selector labels.Selector) (ret []runtime.Objec
 		}
 		for i := range pods {
 			pod := pods[i].DeepCopy()
-			MakePodUnique(pod, cluster.Name)
+			clusterobject.MakePodUnique(pod, cluster.Name)
 			ret = append(ret, pod)
 		}
 	}
@@ -112,7 +113,7 @@ func (p *PodNamespaceLister) Get(name string) (runtime.Object, error) {
 		return nil, err
 	}
 
-	for _, cluster := range GetPossibleClusters(clusters, name) {
+	for _, cluster := range clusterobject.GetPossibleClusters(clusters, name) {
 		podLister, podsSynced, exists := p.federatedInformerManager.GetPodLister(cluster)
 		if !exists || !podsSynced() {
 			continue
@@ -122,9 +123,9 @@ func (p *PodNamespaceLister) Get(name string) (runtime.Object, error) {
 			continue
 		}
 		for i := range pods {
-			if name == GenUniqueName(cluster, pods[i].Name) {
+			if name == clusterobject.GenUniqueName(cluster, pods[i].Name) {
 				pod := pods[i].DeepCopy()
-				MakePodUnique(pod, cluster)
+				clusterobject.MakePodUnique(pod, cluster)
 				return pod, nil
 			}
 		}

@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 	fakeinformermanager "github.com/kubewharf/kubeadmiral/pkg/util/informermanager/fake"
 )
@@ -41,7 +42,7 @@ func TestNodeLister_Get(t *testing.T) {
 	for i := range nodes {
 		name := fmt.Sprintf("cluster-%d", i)
 		node := newNode(name)
-		MakeObjectUnique(node, name)
+		clusterobject.MakeObjectUnique(node, name)
 		nodes[i] = node
 	}
 
@@ -103,7 +104,7 @@ func TestNodeLister_List(t *testing.T) {
 	for i := range nodes {
 		name := fmt.Sprintf("cluster-%d", i)
 		node := newNode(name)
-		MakeObjectUnique(node, name)
+		clusterobject.MakeObjectUnique(node, name)
 		nodes[i] = node
 	}
 
