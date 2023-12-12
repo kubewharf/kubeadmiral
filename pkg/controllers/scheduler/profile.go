@@ -34,6 +34,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/placement"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/preferencebinpack"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/prioritysort"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/rsp"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/tainttoleration"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/runtime"
@@ -55,6 +56,7 @@ var inTreeRegistry = runtime.Registry{
 	names.ClusterCapacityWeight:              rsp.NewClusterCapacityWeight,
 	names.ClusterEvicted:                     clusterevicted.NewClusterEvicted,
 	names.PreferenceBinPack:                  preferencebinpack.NewPreferenceBinPack,
+	names.PrioritySort:                       prioritysort.NewPrioritySort,
 }
 
 func applyProfile(base *fedcore.EnabledPlugins, profile *fedcorev1a1.SchedulingProfile) {

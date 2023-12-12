@@ -142,6 +142,12 @@ func schedulingUnitForFedObject(
 		schedulingUnit.Weights = weightsOverride
 	}
 
+	schedulingUnit.Priorities = getPrioritiesFromPolicy(policy)
+	prioritiesOverride, exists := getPrioritiesFromObject(fedObject)
+	if exists {
+		schedulingUnit.Priorities = prioritiesOverride
+	}
+
 	schedulingUnit.Affinity = getAffinityFromPolicy(policy)
 	affinityOverride, exists := getAffinityFromObject(fedObject)
 	if exists {
@@ -497,7 +503,7 @@ func getWeightsFromObject(object fedcorev1a1.GenericFederatedObject) (map[string
 	if err != nil {
 		klog.Errorf(
 			"Failed to unmarshal placements annotation (%s) on fed object %s with err %s",
-			TolerationsAnnotations,
+			PlacementsAnnotations,
 			object.GetName(),
 			err,
 		)
@@ -524,6 +530,66 @@ func getWeightsFromObject(object fedcorev1a1.GenericFederatedObject) (map[string
 	}
 
 	return weights, true
+}
+
+func getPrioritiesFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[string]int64 {
+	if policy.GetSpec().Placements == nil {
+		return nil
+	}
+
+	priorities := map[string]int64{}
+	for _, placement := range policy.GetSpec().Placements {
+		if placement.Preferences.Priority != nil {
+			priorities[placement.Cluster] = *placement.Preferences.Priority
+		}
+	}
+
+	return priorities
+}
+
+func getPrioritiesFromObject(object fedcorev1a1.GenericFederatedObject) (map[string]int64, bool) {
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		return nil, false
+	}
+
+	annotation, exists := annotations[PlacementsAnnotations]
+	if !exists {
+		return nil, false
+	}
+
+	var placements []fedcorev1a1.DesiredPlacement
+	err := json.Unmarshal([]byte(annotation), &placements)
+	if err != nil {
+		klog.Errorf(
+			"Failed to unmarshal placements annotation (%s) on fed object %s with err %s",
+			PlacementsAnnotations,
+			object.GetName(),
+			err,
+		)
+		return nil, false
+	}
+
+	priorities := map[string]int64{}
+	for _, placement := range placements {
+		if placement.Preferences.Priority != nil {
+			priorities[placement.Cluster] = *placement.Preferences.Priority
+		}
+	}
+
+	// we need to do additional validation vs getting from policy which relies on CRD validation by apiserver
+	for _, priority := range priorities {
+		if priority < 0 {
+			klog.Errorf(
+				"Invalid value for placements annotation (%s) on fed object %s: negative priority found",
+				PlacementsAnnotations,
+				object.GetName(),
+			)
+			return nil, false
+		}
+	}
+
+	return priorities, true
 }
 
 func getMinReplicasFromPolicy(policy fedcorev1a1.GenericPropagationPolicy) map[string]int64 {

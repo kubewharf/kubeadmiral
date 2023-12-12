@@ -20,7 +20,6 @@ import (
 	"context"
 	"sort"
 
-	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 )
@@ -43,10 +42,9 @@ func (pl *MaxCluster) SelectClusters(
 	ctx context.Context,
 	su *framework.SchedulingUnit,
 	clusterScoreList framework.ClusterScoreList,
-) ([]*fedcorev1a1.FederatedCluster, *framework.Result) {
-	clusters := make([]*fedcorev1a1.FederatedCluster, 0)
+) (framework.ClusterScoreList, *framework.Result) {
 	if su.MaxClusters != nil && *su.MaxClusters < 0 {
-		return clusters, framework.NewResult(framework.Unschedulable, MaxClusterErrReason)
+		return nil, framework.NewResult(framework.Unschedulable, MaxClusterErrReason)
 	}
 
 	sort.Slice(clusterScoreList, func(i, j int) bool {
@@ -58,9 +56,5 @@ func (pl *MaxCluster) SelectClusters(
 		length = int(*su.MaxClusters)
 	}
 
-	for i := 0; i < length; i++ {
-		clusters = append(clusters, clusterScoreList[i].Cluster)
-	}
-
-	return clusters, framework.NewResult(framework.Success)
+	return clusterScoreList[:length], framework.NewResult(framework.Success)
 }

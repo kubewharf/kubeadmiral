@@ -72,6 +72,7 @@ type SchedulingUnit struct {
 	MinReplicas     map[string]int64
 	MaxReplicas     map[string]int64
 	Weights         map[string]int64
+	Priorities      map[string]int64
 }
 
 type AutoMigrationSpec struct {

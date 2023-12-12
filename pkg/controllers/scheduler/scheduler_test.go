@@ -368,14 +368,16 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 						"preferences": {
 							"minReplicas": 5,
 							"maxReplicas": 10,
-							"weight": 2
+							"weight": 2,
+							"priority": 2
 						}
 					},
 					{
 						"cluster": "cluster2",
 						"preferences": {
 							"minReplicas": 2,
-							"weight": 1
+							"weight": 1,
+							"priority": 1
 						}
 					}
 				]`,
@@ -399,6 +401,10 @@ func TestGetSchedulingUnitWithAnnotationOverrides(t *testing.T) {
 					"cluster1": 10,
 				},
 				Weights: map[string]int64{
+					"cluster1": 2,
+					"cluster2": 1,
+				},
+				Priorities: map[string]int64{
 					"cluster1": 2,
 					"cluster2": 1,
 				},

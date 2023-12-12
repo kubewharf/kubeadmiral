@@ -81,6 +81,24 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 			expectedResult:  framework.NewResult(framework.Success),
 		},
 		{
+			name: "2 clusters, duplicate scheduling mode, nil replicas, same score",
+			su: &framework.SchedulingUnit{
+				SchedulingMode: fedcorev1a1.SchedulingModeDuplicate,
+			},
+			clusterScoreList: framework.ClusterScoreList{
+				{
+					Cluster: makeCluster("abc"),
+					Score:   2,
+				},
+				{
+					Cluster: makeCluster("fun"),
+					Score:   2,
+				},
+			},
+			expectedCluster: []string{"abc", "fun"},
+			expectedResult:  framework.NewResult(framework.Success),
+		},
+		{
 			name: "1 cluster, divide scheduling mode, 5 replicas",
 			su: &framework.SchedulingUnit{
 				SchedulingMode:  fedcorev1a1.SchedulingModeDivide,
@@ -267,8 +285,8 @@ func TestMaxClusterSelectClusters(t *testing.T) {
 				t.Errorf("expected select cluster length does not match: %d, want: %d", len(gotList), len(test.expectedCluster))
 			}
 			for i := range gotList {
-				if gotList[i].Name != test.expectedCluster[i] {
-					t.Errorf("Unexpected select cluster: %s, want: %s", gotList[i].Name, test.expectedCluster[i])
+				if gotList[i].Cluster.Name != test.expectedCluster[i] {
+					t.Errorf("Unexpected select cluster: %s, want: %s", gotList[i].Cluster.Name, test.expectedCluster[i])
 				}
 			}
 		})

@@ -31,4 +31,5 @@ const (
 	ClusterCapacityWeight              = "ClusterCapacityWeight"
 	ClusterEvicted                     = "ClusterEvicted"
 	PreferenceBinPack                  = "PreferenceBinPack"
+	PrioritySort                       = "PrioritySort"
 )

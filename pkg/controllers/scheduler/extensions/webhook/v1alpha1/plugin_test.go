@@ -326,11 +326,11 @@ func TestSelect(t *testing.T) {
 		su *framework.SchedulingUnit
 
 		// result
-		expectedClusters []*fedcorev1a1.FederatedCluster
+		expectedClusters framework.ClusterScoreList
 	}{
 		"webhook selects clusters": {
 			su:               getSampleSchedulingUnit(),
-			expectedClusters: clusters[:2],
+			expectedClusters: clusterScores[:2],
 		},
 		"webhook returns 200 response with error": {
 			webhookErrors: webhookErrors{
@@ -359,7 +359,7 @@ func TestSelect(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			selectedClusterNames := make([]string, 0, len(tc.expectedClusters))
 			for _, cluster := range tc.expectedClusters {
-				selectedClusterNames = append(selectedClusterNames, cluster.Name)
+				selectedClusterNames = append(selectedClusterNames, cluster.Cluster.Name)
 			}
 
 			doTest(

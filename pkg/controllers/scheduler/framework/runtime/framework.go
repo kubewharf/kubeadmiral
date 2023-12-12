@@ -235,9 +235,10 @@ func (f *frameworkImpl) RunSelectClustersPlugin(
 			clusters = append(clusters, clusterScore.Cluster)
 		}
 		result = framework.NewResult(framework.Success)
+		return clusters, result
 	}
 	for _, plugin := range f.selectPlugins {
-		clusters, result = plugin.SelectClusters(ctx, schedulingUnit, clusterScores)
+		newClusterScores, result := plugin.SelectClusters(ctx, schedulingUnit, clusterScores)
 		if !result.IsSuccess() {
 			msg := fmt.Sprintf(
 				"plugin %q failed to select clusters for schedulingUnit %s: %v",
@@ -246,9 +247,13 @@ func (f *frameworkImpl) RunSelectClustersPlugin(
 				result.Message(),
 			)
 			klog.Error(msg)
-			return clusters, framework.NewResult(framework.Error, msg)
+			return nil, framework.NewResult(framework.Error, msg)
 		}
-		return clusters, result
+		clusterScores = newClusterScores
+	}
+
+	for _, clusterScore := range clusterScores {
+		clusters = append(clusters, clusterScore.Cluster)
 	}
 	return clusters, result
 }

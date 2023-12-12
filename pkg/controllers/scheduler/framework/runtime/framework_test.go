@@ -91,7 +91,7 @@ func (*fakeSelectPlugin) SelectClusters(
 	context.Context,
 	*framework.SchedulingUnit,
 	framework.ClusterScoreList,
-) ([]*fedcorev1a1.FederatedCluster, *framework.Result) {
+) (framework.ClusterScoreList, *framework.Result) {
 	panic("unimplemented")
 }
 
