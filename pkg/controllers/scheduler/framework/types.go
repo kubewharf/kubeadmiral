@@ -58,9 +58,10 @@ type SchedulingUnit struct {
 	CustomMigration CustomMigrationSpec
 
 	// Controls the scheduling behavior
-	SchedulingMode  fedcorev1a1.SchedulingMode
-	StickyCluster   bool
-	AvoidDisruption bool
+	SchedulingMode   fedcorev1a1.SchedulingMode
+	ReplicasStrategy fedcorev1a1.ReplicasStrategy
+	StickyCluster    bool
+	AvoidDisruption  bool
 
 	// Used to filter/select clusters
 	ClusterSelector map[string]string
@@ -82,6 +83,7 @@ type AutoMigrationSpec struct {
 type AutoMigrationInfo struct {
 	// Describes the estimated max number of replicas a cluster can accommodate.
 	EstimatedCapacity map[string]int64 `json:"estimatedCapacity,omitempty"`
+	ScheduledReplicas map[string]int64 `json:"scheduledReplicas,omitempty"`
 }
 
 type MigrationConfig struct {

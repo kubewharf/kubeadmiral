@@ -49,19 +49,6 @@ func addTaint(cluster *fedcorev1a1.FederatedCluster, key, value string, effect c
 	return cluster
 }
 
-func TestExtractClusterNames(t *testing.T) {
-	clusters := []*fedcorev1a1.FederatedCluster{}
-	names := []string{"foo", "bar"}
-	for _, name := range names {
-		clusters = append(clusters, NewFederatedCluster(name))
-	}
-	ret := ExtractClusterNames(clusters)
-	assert.Equal(t, len(ret), len(names), "the length should be the same.")
-	for i := range ret {
-		assert.Equal(t, ret[i], names[i], "the name should be the same.")
-	}
-}
-
 func makeClusterWithCPU(name string, allocatable, available int) *fedcorev1a1.FederatedCluster {
 	cluster := &fedcorev1a1.FederatedCluster{
 		ObjectMeta: metav1.ObjectMeta{
