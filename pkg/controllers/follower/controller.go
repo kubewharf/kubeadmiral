@@ -353,7 +353,8 @@ func (c *Controller) inferFollowers(
 	sourceGK schema.GroupKind,
 	fedObj fedcorev1a1.GenericFederatedObject,
 ) (sets.Set[FollowerReference], error) {
-	if fedObj.GetAnnotations()[common.EnableFollowerSchedulingAnnotation] != common.AnnotationValueTrue {
+	if fedObj.GetAnnotations()[common.EnableFollowerSchedulingAnnotation] != common.AnnotationValueTrue ||
+		fedObj.GetAnnotations()[common.NoSchedulingAnnotation] == common.AnnotationValueTrue || skipSync(fedObj) {
 		// follower scheduling is not enabled
 		return nil, nil
 	}

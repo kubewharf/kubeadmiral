@@ -21,8 +21,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
 func TestGetFollowersFromPod(t *testing.T) {
@@ -312,4 +316,22 @@ func TestGetFollowersFromPod(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Equal(expectedFollowers, followers)
+}
+
+func Test_skipSync(t *testing.T) {
+	federatedObject := &fedcorev1a1.FederatedObject{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{common.DryRunAnnotation: common.AnnotationValueTrue},
+		},
+	}
+	assert.True(t, skipSync(federatedObject))
+	federatedObject.GetAnnotations()[common.DryRunAnnotation] = common.AnnotationValueFalse
+	assert.False(t, skipSync(federatedObject))
+	federatedObject.GetAnnotations()[common.DryRunAnnotation] = common.AnnotationValueTrue
+	federatedObject.GetStatus().Clusters = []fedcorev1a1.PropagationStatus{
+		{
+			Cluster: "cluster1",
+		},
+	}
+	assert.False(t, skipSync(federatedObject))
 }
