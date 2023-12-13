@@ -31,11 +31,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
-	api "k8s.io/kubernetes/pkg/apis/core"
 )
 
 func TestPodREST_convertAndFilterPodObject(t *testing.T) {
-	p1, p2 := newPod("default", "test")
+	p1 := newPod("default", "test")
 
 	type args struct {
 		objs     []runtime.Object
@@ -44,31 +43,31 @@ func TestPodREST_convertAndFilterPodObject(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want []api.Pod
+		want []corev1.Pod
 	}{
 		{
 			name: "1 pod",
 			args: args{
-				objs:     []runtime.Object{&p2},
+				objs:     []runtime.Object{&p1},
 				selector: fields.Everything(),
 			},
-			want: []api.Pod{p1},
+			want: []corev1.Pod{p1},
 		},
 		{
 			name: "2 obj, 1 pod",
 			args: args{
-				objs:     []runtime.Object{&corev1.Node{}, &p2},
+				objs:     []runtime.Object{&corev1.Node{}, &p1},
 				selector: fields.Everything(),
 			},
-			want: []api.Pod{p1},
+			want: []corev1.Pod{p1},
 		},
 		{
 			name: "1 pod, with selector",
 			args: args{
-				objs:     []runtime.Object{&corev1.Node{}, &p2},
+				objs:     []runtime.Object{&corev1.Node{}, &p1},
 				selector: fields.ParseSelectorOrDie("metadata.name=test"),
 			},
-			want: []api.Pod{p1},
+			want: []corev1.Pod{p1},
 		},
 	}
 	for _, tt := range tests {
@@ -81,17 +80,8 @@ func TestPodREST_convertAndFilterPodObject(t *testing.T) {
 	}
 }
 
-func newPod(ns, name string) (api.Pod, corev1.Pod) {
-	p1 := api.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: ns,
-			Labels:    map[string]string{ns: name},
-		},
-		Spec: api.PodSpec{SecurityContext: &api.PodSecurityContext{}}, // used for convert
-	}
-
-	p2 := corev1.Pod{
+func newPod(ns, name string) corev1.Pod {
+	p1 := corev1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Pod",
 			APIVersion: corev1.SchemeGroupVersion.String(),
@@ -104,7 +94,7 @@ func newPod(ns, name string) (api.Pod, corev1.Pod) {
 		Spec: corev1.PodSpec{SecurityContext: &corev1.PodSecurityContext{}}, // used for convert
 	}
 
-	return p1, p2
+	return p1
 }
 
 // fakes both PodLister and PodNamespaceLister at once
@@ -144,7 +134,7 @@ func (pl fakePodLister) ByNamespace(namespace string) cache.GenericNamespaceList
 
 //nolint:containedctx
 func TestPodREST_Get(t *testing.T) {
-	p1, p2 := newPod("default", "test")
+	p1 := newPod("default", "test")
 
 	type args struct {
 		ctx  context.Context
@@ -160,7 +150,7 @@ func TestPodREST_Get(t *testing.T) {
 	}{
 		{
 			name:      "get pod",
-			podLister: fakePodLister{data: []*corev1.Pod{&p2}},
+			podLister: fakePodLister{data: []*corev1.Pod{&p1}},
 			args: args{
 				ctx:  context.Background(),
 				name: "test",
@@ -211,7 +201,7 @@ func TestPodREST_Get(t *testing.T) {
 
 //nolint:containedctx
 func TestPodREST_List(t *testing.T) {
-	p1, p2 := newPod("default", "test")
+	p1 := newPod("default", "test")
 
 	type args struct {
 		ctx     context.Context
@@ -226,36 +216,36 @@ func TestPodREST_List(t *testing.T) {
 	}{
 		{
 			name:      "list pod",
-			podLister: fakePodLister{data: []*corev1.Pod{&p2}},
+			podLister: fakePodLister{data: []*corev1.Pod{&p1}},
 			args: args{
 				ctx:     context.Background(),
 				options: nil,
 			},
-			want:    &api.PodList{Items: []api.Pod{p1}},
+			want:    &corev1.PodList{Items: []corev1.Pod{p1}},
 			wantErr: false,
 		},
 		{
 			name:      "list pod with label selector",
-			podLister: fakePodLister{data: []*corev1.Pod{&p2}},
+			podLister: fakePodLister{data: []*corev1.Pod{&p1}},
 			args: args{
 				ctx: context.Background(),
 				options: &metainternalversion.ListOptions{
 					LabelSelector: labels.SelectorFromSet(map[string]string{"default": "test"}),
 				},
 			},
-			want:    &api.PodList{Items: []api.Pod{p1}},
+			want:    &corev1.PodList{Items: []corev1.Pod{p1}},
 			wantErr: false,
 		},
 		{
 			name:      "list pod with field selector",
-			podLister: fakePodLister{data: []*corev1.Pod{&p2}},
+			podLister: fakePodLister{data: []*corev1.Pod{&p1}},
 			args: args{
 				ctx: context.Background(),
 				options: &metainternalversion.ListOptions{
 					FieldSelector: fields.ParseSelectorOrDie("metadata.name=test"),
 				},
 			},
-			want:    &api.PodList{Items: []api.Pod{p1}},
+			want:    &corev1.PodList{Items: []corev1.Pod{p1}},
 			wantErr: false,
 		},
 		{

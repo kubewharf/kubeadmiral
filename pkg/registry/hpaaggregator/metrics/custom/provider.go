@@ -244,8 +244,8 @@ func (c *CustomMetricsProvider) GetMetricBySelector(
 			// adapt to aggregated pod list
 			if gvk == common.PodGVK {
 				for i := range m.Items {
-					m.Items[i].DescribedObject.Name =
-						clusterobject.GenUniqueName(cluster, m.Items[i].DescribedObject.Name)
+					m.Items[i].DescribedObject.Name = clusterobject.GenUniqueName(
+						cluster, m.Items[i].DescribedObject.Name)
 				}
 			}
 
