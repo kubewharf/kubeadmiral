@@ -40,7 +40,6 @@ import (
 	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	api "k8s.io/kubernetes/pkg/apis/core"
 
 	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
@@ -102,15 +101,11 @@ func (p *PodREST) Get(ctx context.Context, name string, opts *metav1.GetOptions)
 		return nil, fmt.Errorf("failed getting pod: %w", err)
 	}
 
-	pod := &api.Pod{}
-	if err := scheme.Convert(obj, pod, nil); err != nil {
-		return nil, fmt.Errorf("failed converting object to Pod: %w", err)
-	}
-	return pod, nil
+	return obj, nil
 }
 
 func (p *PodREST) NewList() runtime.Object {
-	return &api.PodList{}
+	return &corev1.PodList{}
 }
 
 func (p *PodREST) List(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
@@ -131,7 +126,7 @@ func (p *PodREST) List(ctx context.Context, options *metainternalversion.ListOpt
 		field = options.FieldSelector
 	}
 	pods := convertAndFilterPodObject(objs, field)
-	return &api.PodList{Items: pods}, nil
+	return &corev1.PodList{Items: pods}, nil
 }
 
 func (p *PodREST) ConvertToTable(ctx context.Context, object runtime.Object, tableOptions runtime.Object) (*metav1.Table, error) {
@@ -189,11 +184,7 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 					}
 					if pod, ok := event.Object.(*corev1.Pod); ok {
 						clusterobject.MakePodUnique(pod, cluster)
-						newPod := &api.Pod{}
-						if err := scheme.Convert(pod, newPod, nil); err != nil {
-							continue
-						}
-						event.Object = newPod
+						event.Object = pod
 					}
 					proxyCh <- event
 				}
@@ -203,8 +194,8 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 	return proxyWatcher, nil
 }
 
-func convertAndFilterPodObject(objs []runtime.Object, selector fields.Selector) []api.Pod {
-	newObjs := make([]api.Pod, 0, len(objs))
+func convertAndFilterPodObject(objs []runtime.Object, selector fields.Selector) []corev1.Pod {
+	newObjs := make([]corev1.Pod, 0, len(objs))
 	for _, obj := range objs {
 		pod, ok := obj.(*corev1.Pod)
 		if !ok {
@@ -214,11 +205,8 @@ func convertAndFilterPodObject(objs []runtime.Object, selector fields.Selector) 
 		if !selector.Matches(fields) {
 			continue
 		}
-		newPod := &api.Pod{}
-		if err := scheme.Convert(obj, newPod, nil); err != nil {
-			continue
-		}
-		newObjs = append(newObjs, *newPod)
+
+		newObjs = append(newObjs, *pod)
 	}
 	return newObjs
 }

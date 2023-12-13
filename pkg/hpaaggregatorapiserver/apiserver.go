@@ -32,8 +32,6 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
-	autoscalinginstall "k8s.io/kubernetes/pkg/apis/autoscaling/install"
-	apiinstall "k8s.io/kubernetes/pkg/apis/core/install"
 	cminstall "k8s.io/metrics/pkg/apis/custom_metrics/install"
 	eminstall "k8s.io/metrics/pkg/apis/external_metrics/install"
 	metricsinstall "k8s.io/metrics/pkg/apis/metrics/install"
@@ -44,11 +42,11 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/apis/hpaaggregator/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	fedinformers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions"
-	"github.com/kubewharf/kubeadmiral/pkg/hpaaggregatorapiserver/aggregatedlister"
 	"github.com/kubewharf/kubeadmiral/pkg/registry/hpaaggregator/aggregation"
 	"github.com/kubewharf/kubeadmiral/pkg/registry/hpaaggregator/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/registry/hpaaggregator/metrics/custom"
 	"github.com/kubewharf/kubeadmiral/pkg/registry/hpaaggregator/metrics/resource"
+	"github.com/kubewharf/kubeadmiral/pkg/util/aggregatedlister"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
@@ -64,8 +62,6 @@ var (
 
 func init() {
 	install.Install(Scheme)
-	apiinstall.Install(Scheme)
-	autoscalinginstall.Install(Scheme)
 	metricsinstall.Install(Scheme)
 	cminstall.Install(Scheme)
 	eminstall.Install(Scheme)
