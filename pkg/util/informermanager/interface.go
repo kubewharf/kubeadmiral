@@ -55,7 +55,7 @@ type ResourceEventHandlerWithClusterFuncs struct {
 }
 
 // OnAdd calls AddFunc if it's not nil.
-func (p *ResourceEventHandlerWithClusterFuncs) OnAdd(obj interface{}) {
+func (p *ResourceEventHandlerWithClusterFuncs) OnAdd(obj interface{}, isInitialize bool) {
 	if p.AddFunc != nil {
 		p.AddFunc(obj, p.clusterName)
 	}
