@@ -229,13 +229,10 @@ func (o *CommandJoinOption) checkClusterJoined() error {
 
 func (o *CommandJoinOption) Join() error {
 	// create a Secret
-	ch := make(chan bool, 1)
-	if err := o.createSecret(ch); err != nil {
+	if err := o.createSecret(); err != nil {
 		return err
 	}
 	fmt.Printf("Secret: %s/%s created\n", o.Namespace, o.Cluster)
-
-	<-ch
 
 	// create a FederatedCluster
 	if err := o.createFederatedCluster(); err != nil {
@@ -246,7 +243,7 @@ func (o *CommandJoinOption) Join() error {
 	return nil
 }
 
-func (o *CommandJoinOption) createSecret(ch chan bool) error {
+func (o *CommandJoinOption) createSecret() error {
 	secret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind: "Opaque",
@@ -264,7 +261,6 @@ func (o *CommandJoinOption) createSecret(ch chan bool) error {
 	}
 
 	_, err := o.FedK8sClientSet.CoreV1().Secrets(o.Namespace).Create(context.TODO(), secret, metav1.CreateOptions{})
-	ch <- true
 	if err != nil {
 		return err
 	}
