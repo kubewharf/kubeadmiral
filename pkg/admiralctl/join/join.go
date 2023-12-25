@@ -104,7 +104,6 @@ func NewCmdJoin(f util.Factory, parentCommand string) *cobra.Command {
 			if err := opts.Join(); err != nil {
 				return err
 			}
-			fmt.Printf("The kubeconfig path is: %v\n", opts.ClusterKubeConfig)
 			return nil
 		},
 	}
