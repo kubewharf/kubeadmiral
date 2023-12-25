@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/federalize"
+	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/join"
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/options"
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/util"
 	"github.com/spf13/cobra"
@@ -50,12 +51,14 @@ func NewDefaultAdmiralctlCommand() *cobra.Command {
 	// Prevent klog errors about logging before parsing.
 	_ = flag.CommandLine.Parse(nil)
 	f := util.NewFactory(defaultConfigFlags)
+
 	ioStreams := genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}
 	groups := templates.CommandGroups{
 		{
 			Message: "Resource Management Commands:",
 			Commands: []*cobra.Command{
 				federalize.NewCmdFederalize(f, cliName),
+				join.NewCmdJoin(f, cliName),
 			},
 		},
 	}
