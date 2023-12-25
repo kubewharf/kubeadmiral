@@ -46,6 +46,7 @@ const (
 	SyncControllerName                     = "sync"
 	AutoMigrationControllerName            = "auto-migration"
 	StatusAggregatorControllerName         = "status-aggregator"
+	FederatedHPAControllerName             = "federated-hpa"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
@@ -60,6 +61,7 @@ var knownControllers = map[string]controllermanager.StartControllerFunc{
 	FollowerControllerName:                 startFollowerController,
 	AutoMigrationControllerName:            startAutoMigrationController,
 	StatusAggregatorControllerName:         startStatusAggregatorController,
+	FederatedHPAControllerName:             startFederatedHPAController,
 }
 
 var controllersDisabledByDefault = sets.New[string]()

@@ -175,33 +175,14 @@ func (c *Controller) enqueueFederatedObjectsForFTC(ftc *fedcorev1a1.FederatedTyp
 
 	logger.V(2).Info("Enqueue federated objects for FTC")
 
-	allObjects := []fedcorev1a1.GenericFederatedObject{}
-	fedObjects, err := c.fedObjectInformer.Lister().List(labels.Everything())
+	allObjects, err := fedobjectadapters.ListAllFedObjsForFTC(ftc, c.fedObjectInformer, c.clusterFedObjectInformer)
 	if err != nil {
-		c.logger.Error(err, "Failed to enqueue FederatedObjects for override policy")
+		c.logger.Error(err, "Failed to list objects for FTC")
 		return
-	}
-	for _, obj := range fedObjects {
-		allObjects = append(allObjects, obj)
-	}
-	clusterFedObjects, err := c.clusterFedObjectInformer.Lister().List(labels.Everything())
-	if err != nil {
-		c.logger.Error(err, "Failed to enqueue ClusterFederatedObjects for override policy")
-		return
-	}
-	for _, obj := range clusterFedObjects {
-		allObjects = append(allObjects, obj)
 	}
 
 	for _, obj := range allObjects {
-		sourceMetadata, err := obj.GetSpec().GetTemplateMetadata()
-		if err != nil {
-			c.logger.Error(err, "Failed to get source metadata from FederatedObject, will not enqueue")
-			continue
-		}
-		if sourceMetadata.GroupVersionKind() == ftc.GetSourceTypeGVK() {
-			c.worker.Enqueue(common.NewQualifiedName(obj))
-		}
+		c.worker.Enqueue(common.NewQualifiedName(obj))
 	}
 }
 

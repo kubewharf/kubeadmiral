@@ -116,6 +116,10 @@ const (
 	TemplateGeneratorMergePatchAnnotation = FederateControllerPrefix + "template-generator-merge-patch"
 
 	LatestReplicasetDigestsAnnotation = DefaultPrefix + "latest-replicaset-digests"
+
+	HPAScaleTargetRefPath = DefaultPrefix + "scale-target-ref-path"
+
+	CentralizedHPAEnableKey = DefaultPrefix + "centralized-hpa-enabled"
 )
 
 // PropagatedAnnotationKeys and PropagatedLabelKeys are used to store the keys of annotations and labels that are present
@@ -144,21 +148,22 @@ const (
 	PodResource        = "pods"
 	ReplicaSetResource = "replicasets"
 
-	NamespaceKind             = "Namespace"
-	DeploymentKind            = "Deployment"
-	StatefulSetKind           = "StatefulSet"
-	DaemonSetKind             = "DaemonSet"
-	JobKind                   = "Job"
-	CronJobKind               = "CronJob"
-	ConfigMapKind             = "ConfigMap"
-	SecretKind                = "Secret"
-	ServiceKind               = "Service"
-	ServiceAccountKind        = "ServiceAccount"
-	IngressKind               = "Ingress"
-	PersistentVolumeKind      = "PersistentVolume"
-	PersistentVolumeClaimKind = "PersistentVolumeClaim"
-	PodKind                   = "Pod"
-	ReplicaSetKind            = "ReplicaSet"
+	NamespaceKind               = "Namespace"
+	DeploymentKind              = "Deployment"
+	StatefulSetKind             = "StatefulSet"
+	DaemonSetKind               = "DaemonSet"
+	JobKind                     = "Job"
+	CronJobKind                 = "CronJob"
+	ConfigMapKind               = "ConfigMap"
+	SecretKind                  = "Secret"
+	ServiceKind                 = "Service"
+	ServiceAccountKind          = "ServiceAccount"
+	IngressKind                 = "Ingress"
+	PersistentVolumeKind        = "PersistentVolume"
+	PersistentVolumeClaimKind   = "PersistentVolumeClaim"
+	PodKind                     = "Pod"
+	ReplicaSetKind              = "ReplicaSet"
+	HorizontalPodAutoscalerKind = "HorizontalPodAutoscaler"
 )
 
 var (

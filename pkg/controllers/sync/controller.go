@@ -409,7 +409,11 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 		keyedLogger.Error(err, "Failed to get pending controllers")
 		return worker.StatusError
 	}
-	if len(pendingControllers) > 0 {
+	isCentralizedHPAObject, err := isCentralizedHPAObject(ctx, fedResource.Object())
+	if err != nil {
+		return worker.StatusError
+	}
+	if len(pendingControllers) > 0 && !isCentralizedHPAObject {
 		// upstream controllers have not finished processing, we wait for our turn
 		return worker.StatusAllOK
 	}
@@ -422,7 +426,7 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 		fedResource.RecordError("EnsureFinalizerError", errors.Wrap(err, "Failed to ensure finalizer"))
 		return worker.StatusError
 	}
-	clustersToSync, selectedClusters, err := s.prepareToSync(ctx, fedResource)
+	clustersToSync, selectedClusters, err := s.prepareToSync(ctx, fedResource, isCentralizedHPAObject)
 	if err != nil {
 		fedResource.RecordError("PrepareToSyncError", errors.Wrap(err, "Failed to prepare to sync"))
 		return worker.StatusError
@@ -440,6 +444,7 @@ func (s *SyncController) reconcile(ctx context.Context, federatedName common.Qua
 func (s *SyncController) prepareToSync(
 	ctx context.Context,
 	fedResource FederatedResource,
+	isCentralizedHPAObject bool,
 ) (
 	requireSync []*fedcorev1a1.FederatedCluster,
 	selectedClusters sets.Set[string],
@@ -465,6 +470,9 @@ func (s *SyncController) prepareToSync(
 	}
 
 	selectedClusterNames := fedResource.ComputePlacement(clusters)
+	if isCentralizedHPAObject {
+		selectedClusterNames = nil
+	}
 	pendingCreateClusters := selectedClusterNames.Clone()
 	status := fedResource.Object().GetStatus()
 	for _, cluster := range status.Clusters {

@@ -21,9 +21,11 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1client "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
+	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
 )
 
@@ -153,4 +155,33 @@ func Delete(
 	} else {
 		return fedv1a1Client.FederatedObjects(namespace).Delete(ctx, name, opts)
 	}
+}
+
+func ListAllFedObjsForFTC(
+	ftc *fedcorev1a1.FederatedTypeConfig,
+	fedObjectLister fedcorev1a1informers.FederatedObjectInformer,
+	clusterFedObjectLister fedcorev1a1informers.ClusterFederatedObjectInformer,
+) ([]fedcorev1a1.GenericFederatedObject, error) {
+	allObjects := []fedcorev1a1.GenericFederatedObject{}
+	labelsSet := labels.Set{ftc.GetSourceTypeGVK().GroupVersion().String(): ftc.GetSourceTypeGVK().Kind}
+
+	if ftc.GetSourceType().Namespaced {
+		fedObjects, err := fedObjectLister.Lister().List(labels.SelectorFromSet(labelsSet))
+		if err != nil {
+			return nil, err
+		}
+		for _, obj := range fedObjects {
+			allObjects = append(allObjects, obj)
+		}
+	} else {
+		clusterFedObjects, err := clusterFedObjectLister.Lister().List(labels.SelectorFromSet(labelsSet))
+		if err != nil {
+			return nil, err
+		}
+		for _, obj := range clusterFedObjects {
+			allObjects = append(allObjects, obj)
+		}
+	}
+
+	return allObjects, nil
 }
