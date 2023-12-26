@@ -91,7 +91,7 @@ func NewCmdJoin(f util.Factory, parentCommand string) *cobra.Command {
 	opts := CommandJoinOption{}
 
 	cmd := &cobra.Command{
-		Use:                   "join <RESOURCE_NAME> --cluster-kubeconfig <CLUSTER_KUBECONFIG_PATH>",
+		Use:                   "join <FCLUSTER_NAME> --cluster-kubeconfig <CLUSTER_KUBECONFIG_PATH>",
 		Short:                 "join clusters to Kubeadmiral control plane",
 		Long:                  joinLongDesc,
 		Example:               fmt.Sprintf(joinExample, parentCommand),
@@ -127,7 +127,7 @@ func (o *CommandJoinOption) Preflight(f util.Factory, args []string) error {
 
 	o.Namespace = common.DefaultFedSystemNamespace
 
-	clusterFactory, err := util.NewClusterFactoryByKubeConfig(o.ClusterKubeConfig, o.ClusterContext)
+	clusterFactory, err := util.NewClusterFactoryByKubeConfigNoPassword(o.ClusterKubeConfig, o.ClusterContext)
 	if err != nil {
 		return err
 	}

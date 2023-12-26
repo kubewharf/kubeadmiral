@@ -88,3 +88,11 @@ func NewClusterFactoryByKubeConfig(clusterKubeConfig, clusterContext string) (cm
 	configFlags.Context = &clusterContext
 	return cmdutil.NewFactory(configFlags), nil
 }
+
+// NewClusterFactoryByKubeConfigNoPassword create a new ClusterFactory by KubeConfig without password
+func NewClusterFactoryByKubeConfigNoPassword(clusterKubeConfig, clusterContext string) (cmdutil.Factory, error) {
+	configFlags := genericclioptions.NewConfigFlags(true)
+	configFlags.KubeConfig = &clusterKubeConfig
+	configFlags.Context = &clusterContext
+	return cmdutil.NewFactory(configFlags), nil
+}
