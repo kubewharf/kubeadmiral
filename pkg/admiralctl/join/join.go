@@ -13,6 +13,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	applycorev1 "k8s.io/client-go/applyconfigurations/core/v1"
+	applymetav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/util/templates"
 )
@@ -75,6 +77,8 @@ type CommandJoinOption struct {
 	ClusterK8sClientSet *kubernetes.Clientset
 	FedK8sClientSet     *kubernetes.Clientset
 	FedClientSet        *fedclient.Clientset
+
+	FieldManager string
 }
 
 // AddFlags adds flags for a specified FlagSet.
@@ -243,13 +247,16 @@ func (o *CommandJoinOption) Join() error {
 }
 
 func (o *CommandJoinOption) createSecret() error {
-	secret := &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind: "Opaque",
+	kindString := "Secret"
+	APIVersionString := "v1"
+	secret := &applycorev1.SecretApplyConfiguration{
+		TypeMetaApplyConfiguration: applymetav1.TypeMetaApplyConfiguration{
+			Kind:       &kindString,
+			APIVersion: &APIVersionString,
 		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      o.Cluster,
-			Namespace: o.Namespace,
+		ObjectMetaApplyConfiguration: &applymetav1.ObjectMetaApplyConfiguration{
+			Name:      &o.Cluster,
+			Namespace: &o.Namespace,
 		},
 		Data: map[string][]byte{
 			common.ClusterCertificateAuthorityKey: o.CAData,
@@ -259,7 +266,10 @@ func (o *CommandJoinOption) createSecret() error {
 		},
 	}
 
-	_, err := o.FedK8sClientSet.CoreV1().Secrets(o.Namespace).Create(context.TODO(), secret, metav1.CreateOptions{})
+	_, err := o.FedK8sClientSet.CoreV1().Secrets(o.Namespace).Apply(context.TODO(), secret,
+		metav1.ApplyOptions{
+			FieldManager: "kubectl-client-side-apply",
+		})
 	if err != nil {
 		return err
 	}
