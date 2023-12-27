@@ -96,7 +96,7 @@ func TestCommandJoinOption_Preflight(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			assert := assert.New(t)
-			err := testCase.option.Preflight(util.NewFactory(defaultConfigFlags), testCase.args)
+			err := testCase.option.ToOptions(util.NewFactory(defaultConfigFlags), testCase.args)
 			assert.Equal(testCase.expectedErr, err)
 		})
 	}
