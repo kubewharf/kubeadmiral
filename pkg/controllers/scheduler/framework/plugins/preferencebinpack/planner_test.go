@@ -321,6 +321,48 @@ func Test_getDesiredPlan(t *testing.T) {
 			},
 			desiredOverflow: map[string]int64{},
 		},
+		{
+			name: "2 clusters with capacity < minReplicas",
+			args: args{
+				preferences: []*namedClusterPreferences{
+					{
+						clusterName: "A",
+						ClusterPreferences: ClusterPreferences{
+							MinReplicas: 2,
+						},
+					},
+					{
+						clusterName: "B",
+						ClusterPreferences: ClusterPreferences{
+							MinReplicas: 2,
+						},
+					},
+					{
+						clusterName: "C",
+						ClusterPreferences: ClusterPreferences{
+							MinReplicas: 2,
+						},
+					},
+				},
+				estimatedCapacity: map[string]int64{
+					"A": 2,
+					"B": 0,
+					"C": 0,
+				},
+				limitedCapacity: nil,
+				totalReplicas:   10,
+			},
+			desiredPlan: map[string]int64{
+				"A": 2,
+				"B": 0,
+				"C": 0,
+			},
+			desiredOverflow: map[string]int64{
+				"A": 8,
+				"B": 8,
+				"C": 8,
+			},
+		},
 	}
 
 	for _, tt := range tests {
