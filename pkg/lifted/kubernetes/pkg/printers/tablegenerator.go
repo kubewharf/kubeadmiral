@@ -62,8 +62,10 @@ type HumanReadableGenerator struct {
 	handlerMap map[reflect.Type]*handlerEntry
 }
 
-var _ TableGenerator = &HumanReadableGenerator{}
-var _ PrintHandler = &HumanReadableGenerator{}
+var (
+	_ TableGenerator = &HumanReadableGenerator{}
+	_ PrintHandler   = &HumanReadableGenerator{}
+)
 
 // NewTableGenerator creates a HumanReadableGenerator suitable for calling GenerateTable().
 func NewTableGenerator() *HumanReadableGenerator {
@@ -130,10 +132,12 @@ func (h *HumanReadableGenerator) GenerateTable(obj runtime.Object, options Gener
 
 // TableHandler adds a print handler with a given set of columns to HumanReadableGenerator instance.
 // See ValidateRowPrintHandlerFunc for required method signature.
+//
+//nolint:forbidigo
 func (h *HumanReadableGenerator) TableHandler(columnDefinitions []metav1.TableColumnDefinition, printFunc interface{}) error {
 	printFuncValue := reflect.ValueOf(printFunc)
 	if err := ValidateRowPrintHandlerFunc(printFuncValue); err != nil {
-		utilruntime.HandleError(fmt.Errorf("unable to register print function: %v", err))
+		utilruntime.HandleError(fmt.Errorf("unable to register print function: %w", err))
 		return err
 	}
 	entry := &handlerEntry{

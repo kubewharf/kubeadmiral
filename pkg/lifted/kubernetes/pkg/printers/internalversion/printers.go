@@ -29,7 +29,7 @@ import (
 	"strconv"
 	"time"
 
-	apiv1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/duration"
@@ -45,6 +45,8 @@ const NodeUnreachablePodReason = "NodeLost"
 
 // AddHandlers adds print handlers for default Kubernetes types dealing with internal versions.
 // TODO: handle errors from Handler
+//
+//nolint:lll
 func AddHandlers(h printers.PrintHandler) {
 	podColumnDefinitions := []metav1.TableColumnDefinition{
 		{Name: "Name", Type: "string", Format: "name", Description: metav1.ObjectMeta{}.SwaggerDoc()["name"]},
@@ -52,13 +54,13 @@ func AddHandlers(h printers.PrintHandler) {
 		{Name: "Status", Type: "string", Description: "The aggregate status of the containers in this pod."},
 		{Name: "Restarts", Type: "string", Description: "The number of times the containers in this pod have been restarted and when the last container in this pod has restarted."},
 		{Name: "Age", Type: "string", Description: metav1.ObjectMeta{}.SwaggerDoc()["creationTimestamp"]},
-		{Name: "IP", Type: "string", Priority: 1, Description: apiv1.PodStatus{}.SwaggerDoc()["podIP"]},
-		{Name: "Node", Type: "string", Priority: 1, Description: apiv1.PodSpec{}.SwaggerDoc()["nodeName"]},
-		{Name: "Nominated Node", Type: "string", Priority: 1, Description: apiv1.PodStatus{}.SwaggerDoc()["nominatedNodeName"]},
-		{Name: "Readiness Gates", Type: "string", Priority: 1, Description: apiv1.PodSpec{}.SwaggerDoc()["readinessGates"]},
+		{Name: "IP", Type: "string", Priority: 1, Description: corev1.PodStatus{}.SwaggerDoc()["podIP"]},
+		{Name: "Node", Type: "string", Priority: 1, Description: corev1.PodSpec{}.SwaggerDoc()["nodeName"]},
+		{Name: "Nominated Node", Type: "string", Priority: 1, Description: corev1.PodStatus{}.SwaggerDoc()["nominatedNodeName"]},
+		{Name: "Readiness Gates", Type: "string", Priority: 1, Description: corev1.PodSpec{}.SwaggerDoc()["readinessGates"]},
 	}
-	h.TableHandler(podColumnDefinitions, printPodList)
-	h.TableHandler(podColumnDefinitions, printPod)
+	_ = h.TableHandler(podColumnDefinitions, printPodList)
+	_ = h.TableHandler(podColumnDefinitions, printPod)
 }
 
 // translateTimestampSince returns the elapsed time since timestamp in
@@ -71,12 +73,13 @@ func translateTimestampSince(timestamp metav1.Time) string {
 	return duration.HumanDuration(time.Since(timestamp.Time))
 }
 
+//nolint:lll
 var (
-	podSuccessConditions = []metav1.TableRowCondition{{Type: metav1.RowCompleted, Status: metav1.ConditionTrue, Reason: string(apiv1.PodSucceeded), Message: "The pod has completed successfully."}}
-	podFailedConditions  = []metav1.TableRowCondition{{Type: metav1.RowCompleted, Status: metav1.ConditionTrue, Reason: string(apiv1.PodFailed), Message: "The pod failed."}}
+	podSuccessConditions = []metav1.TableRowCondition{{Type: metav1.RowCompleted, Status: metav1.ConditionTrue, Reason: string(corev1.PodSucceeded), Message: "The pod has completed successfully."}}
+	podFailedConditions  = []metav1.TableRowCondition{{Type: metav1.RowCompleted, Status: metav1.ConditionTrue, Reason: string(corev1.PodFailed), Message: "The pod failed."}}
 )
 
-func printPodList(podList *apiv1.PodList, options printers.GenerateOptions) ([]metav1.TableRow, error) {
+func printPodList(podList *corev1.PodList, options printers.GenerateOptions) ([]metav1.TableRow, error) {
 	rows := make([]metav1.TableRow, 0, len(podList.Items))
 	for i := range podList.Items {
 		r, err := printPod(&podList.Items[i], options)
@@ -88,7 +91,8 @@ func printPodList(podList *apiv1.PodList, options printers.GenerateOptions) ([]m
 	return rows, nil
 }
 
-func printPod(pod *apiv1.Pod, options printers.GenerateOptions) ([]metav1.TableRow, error) {
+//nolint
+func printPod(pod *corev1.Pod, options printers.GenerateOptions) ([]metav1.TableRow, error) {
 	restarts := 0
 	totalContainers := len(pod.Spec.Containers)
 	readyContainers := 0
@@ -101,8 +105,8 @@ func printPod(pod *apiv1.Pod, options printers.GenerateOptions) ([]metav1.TableR
 
 	// If the Pod carries {type:PodScheduled, reason:WaitingForGates}, set reason to 'SchedulingGated'.
 	for _, condition := range pod.Status.Conditions {
-		if condition.Type == apiv1.PodScheduled && condition.Reason == apiv1.PodReasonSchedulingGated {
-			reason = apiv1.PodReasonSchedulingGated
+		if condition.Type == corev1.PodScheduled && condition.Reason == corev1.PodReasonSchedulingGated {
+			reason = corev1.PodReasonSchedulingGated
 		}
 	}
 
@@ -111,9 +115,9 @@ func printPod(pod *apiv1.Pod, options printers.GenerateOptions) ([]metav1.TableR
 	}
 
 	switch pod.Status.Phase {
-	case apiv1.PodSucceeded:
+	case corev1.PodSucceeded:
 		row.Conditions = podSuccessConditions
-	case apiv1.PodFailed:
+	case corev1.PodFailed:
 		row.Conditions = podFailedConditions
 	}
 
@@ -227,7 +231,7 @@ func printPod(pod *apiv1.Pod, options printers.GenerateOptions) ([]metav1.TableR
 				conditionType := readinessGate.ConditionType
 				for _, condition := range pod.Status.Conditions {
 					if condition.Type == conditionType {
-						if condition.Status == apiv1.ConditionTrue {
+						if condition.Status == corev1.ConditionTrue {
 							trueConditions++
 						}
 						break
@@ -242,9 +246,9 @@ func printPod(pod *apiv1.Pod, options printers.GenerateOptions) ([]metav1.TableR
 	return []metav1.TableRow{row}, nil
 }
 
-func hasPodReadyCondition(conditions []apiv1.PodCondition) bool {
+func hasPodReadyCondition(conditions []corev1.PodCondition) bool {
 	for _, condition := range conditions {
-		if condition.Type == apiv1.PodReady && condition.Status == apiv1.ConditionTrue {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
 			return true
 		}
 	}

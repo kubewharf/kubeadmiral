@@ -29,27 +29,28 @@ import (
 	"testing"
 	"time"
 
-	apiv1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
 
 	"github.com/kubewharf/kubeadmiral/pkg/lifted/kubernetes/pkg/printers"
 )
 
+//nolint:lll
 func TestPrintPod(t *testing.T) {
 	tests := []struct {
-		pod    apiv1.Pod
+		pod    corev1.Pod
 		expect []metav1.TableRow
 	}{
 		{
 			// Test name, num of containers, restarts, container ready status
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test1"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
 					Phase: "podPhase",
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 						{RestartCount: 3},
 					},
 				},
@@ -58,14 +59,14 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test container error overwrites pod phase
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test2"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
 					Phase: "podPhase",
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
-						{State: apiv1.ContainerState{Waiting: &apiv1.ContainerStateWaiting{Reason: "ContainerWaitingReason"}}, RestartCount: 3},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
+						{State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerWaitingReason"}}, RestartCount: 3},
 					},
 				},
 			},
@@ -73,14 +74,14 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test the same as the above but with Terminated state and the first container overwrites the rest
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test3"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
 					Phase: "podPhase",
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{State: apiv1.ContainerState{Waiting: &apiv1.ContainerStateWaiting{Reason: "ContainerWaitingReason"}}, RestartCount: 3},
-						{State: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{Reason: "ContainerTerminatedReason"}}, RestartCount: 3},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerWaitingReason"}}, RestartCount: 3},
+						{State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "ContainerTerminatedReason"}}, RestartCount: 3},
 					},
 				},
 			},
@@ -88,13 +89,13 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test ready is not enough for reporting running
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test4"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
 					Phase: "podPhase",
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 						{Ready: true, RestartCount: 3},
 					},
 				},
@@ -103,14 +104,14 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test ready is not enough for reporting running
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test5"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
 					Reason: "podReason",
 					Phase:  "podPhase",
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 						{Ready: true, RestartCount: 3},
 					},
 				},
@@ -119,15 +120,15 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test pod has 2 containers, one is running and the other is completed, w/o ready condition
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test6"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
 					Phase:  "Running",
 					Reason: "",
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{Reason: "Completed", ExitCode: 0}}},
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Completed", ExitCode: 0}}},
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 					},
 				},
 			},
@@ -135,18 +136,18 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test pod has 2 containers, one is running and the other is completed, with ready condition
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test6"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
 					Phase:  "Running",
 					Reason: "",
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{Reason: "Completed", ExitCode: 0}}},
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Completed", ExitCode: 0}}},
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 					},
-					Conditions: []apiv1.PodCondition{
-						{Type: apiv1.PodReady, Status: apiv1.ConditionTrue, LastProbeTime: metav1.Time{Time: time.Now()}},
+					Conditions: []corev1.PodCondition{
+						{Type: corev1.PodReady, Status: corev1.ConditionTrue, LastProbeTime: metav1.Time{Time: time.Now()}},
 					},
 				},
 			},
@@ -154,24 +155,24 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test pod has 1 init container restarting and 1 container not running
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test7"},
-				Spec:       apiv1.PodSpec{InitContainers: make([]apiv1.Container, 1), Containers: make([]apiv1.Container, 1)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{InitContainers: make([]corev1.Container, 1), Containers: make([]corev1.Container, 1)},
+				Status: corev1.PodStatus{
 					Phase: "podPhase",
-					InitContainerStatuses: []apiv1.ContainerStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready:                false,
 							RestartCount:         3,
-							State:                apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}},
-							LastTerminationState: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-10 * time.Second))}},
+							State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+							LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-10 * time.Second))}},
 						},
 					},
-					ContainerStatuses: []apiv1.ContainerStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready:        false,
 							RestartCount: 0,
-							State:        apiv1.ContainerState{Waiting: &apiv1.ContainerStateWaiting{}},
+							State:        corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{}},
 						},
 					},
 				},
@@ -180,27 +181,27 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test pod has 2 init containers, one restarting and the other not running, and 1 container not running
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test8"},
-				Spec:       apiv1.PodSpec{InitContainers: make([]apiv1.Container, 2), Containers: make([]apiv1.Container, 1)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{InitContainers: make([]corev1.Container, 2), Containers: make([]corev1.Container, 1)},
+				Status: corev1.PodStatus{
 					Phase: "podPhase",
-					InitContainerStatuses: []apiv1.ContainerStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready:                false,
 							RestartCount:         3,
-							State:                apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}},
-							LastTerminationState: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-10 * time.Second))}},
+							State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+							LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-10 * time.Second))}},
 						},
 						{
 							Ready: false,
-							State: apiv1.ContainerState{Waiting: &apiv1.ContainerStateWaiting{}},
+							State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{}},
 						},
 					},
-					ContainerStatuses: []apiv1.ContainerStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready: false,
-							State: apiv1.ContainerState{Waiting: &apiv1.ContainerStateWaiting{}},
+							State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{}},
 						},
 					},
 				},
@@ -209,27 +210,27 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test pod has 2 init containers, one completed without restarts and the other restarting, and 1 container not running
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test9"},
-				Spec:       apiv1.PodSpec{InitContainers: make([]apiv1.Container, 2), Containers: make([]apiv1.Container, 1)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{InitContainers: make([]corev1.Container, 2), Containers: make([]corev1.Container, 1)},
+				Status: corev1.PodStatus{
 					Phase: "podPhase",
-					InitContainerStatuses: []apiv1.ContainerStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready: false,
-							State: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{}},
+							State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{}},
 						},
 						{
 							Ready:                false,
 							RestartCount:         3,
-							State:                apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}},
-							LastTerminationState: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-10 * time.Second))}},
+							State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+							LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-10 * time.Second))}},
 						},
 					},
-					ContainerStatuses: []apiv1.ContainerStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready: false,
-							State: apiv1.ContainerState{Waiting: &apiv1.ContainerStateWaiting{}},
+							State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{}},
 						},
 					},
 				},
@@ -238,29 +239,29 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test pod has 2 init containers, one completed with restarts and the other restarting, and 1 container not running
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test10"},
-				Spec:       apiv1.PodSpec{InitContainers: make([]apiv1.Container, 2), Containers: make([]apiv1.Container, 1)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{InitContainers: make([]corev1.Container, 2), Containers: make([]corev1.Container, 1)},
+				Status: corev1.PodStatus{
 					Phase: "podPhase",
-					InitContainerStatuses: []apiv1.ContainerStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready:                false,
 							RestartCount:         2,
-							State:                apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{}},
-							LastTerminationState: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-2 * time.Minute))}},
+							State:                corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{}},
+							LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-2 * time.Minute))}},
 						},
 						{
 							Ready:                false,
 							RestartCount:         3,
-							State:                apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}},
-							LastTerminationState: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-10 * time.Second))}},
+							State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+							LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-10 * time.Second))}},
 						},
 					},
-					ContainerStatuses: []apiv1.ContainerStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready: false,
-							State: apiv1.ContainerState{Waiting: &apiv1.ContainerStateWaiting{}},
+							State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{}},
 						},
 					},
 				},
@@ -269,25 +270,25 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test pod has 1 init container completed with restarts and one container restarting
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test11"},
-				Spec:       apiv1.PodSpec{InitContainers: make([]apiv1.Container, 1), Containers: make([]apiv1.Container, 1)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{InitContainers: make([]corev1.Container, 1), Containers: make([]corev1.Container, 1)},
+				Status: corev1.PodStatus{
 					Phase: "Running",
-					InitContainerStatuses: []apiv1.ContainerStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready:                false,
 							RestartCount:         2,
-							State:                apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{}},
-							LastTerminationState: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-2 * time.Minute))}},
+							State:                corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{}},
+							LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-2 * time.Minute))}},
 						},
 					},
-					ContainerStatuses: []apiv1.ContainerStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready:                false,
 							RestartCount:         4,
-							State:                apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}},
-							LastTerminationState: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-20 * time.Second))}},
+							State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+							LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-20 * time.Second))}},
 						},
 					},
 				},
@@ -296,17 +297,17 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test pod has 1 container that restarted 5d ago
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test12"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 1)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 1)},
+				Status: corev1.PodStatus{
 					Phase: "Running",
-					ContainerStatuses: []apiv1.ContainerStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready:                true,
 							RestartCount:         3,
-							State:                apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}},
-							LastTerminationState: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-5 * 24 * time.Hour))}},
+							State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+							LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-5 * 24 * time.Hour))}},
 						},
 					},
 				},
@@ -315,22 +316,22 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test pod has 2 containers, one has never restarted and the other has restarted 10d ago
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test13"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
 					Phase: "Running",
-					ContainerStatuses: []apiv1.ContainerStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready:        true,
 							RestartCount: 0,
-							State:        apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}},
+							State:        corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
 						},
 						{
 							Ready:                true,
 							RestartCount:         3,
-							State:                apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}},
-							LastTerminationState: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-10 * 24 * time.Hour))}},
+							State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+							LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-10 * 24 * time.Hour))}},
 						},
 					},
 				},
@@ -339,23 +340,23 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test pod has 2 containers, one restarted 5d ago and the other restarted 20d ago
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test14"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
 					Phase: "Running",
-					ContainerStatuses: []apiv1.ContainerStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
 						{
 							Ready:                true,
 							RestartCount:         6,
-							State:                apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}},
-							LastTerminationState: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-5 * 24 * time.Hour))}},
+							State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+							LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-5 * 24 * time.Hour))}},
 						},
 						{
 							Ready:                true,
 							RestartCount:         3,
-							State:                apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}},
-							LastTerminationState: apiv1.ContainerState{Terminated: &apiv1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-20 * 24 * time.Hour))}},
+							State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+							LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(time.Now().Add(-20 * 24 * time.Hour))}},
 						},
 					},
 				},
@@ -364,21 +365,21 @@ func TestPrintPod(t *testing.T) {
 		},
 		{
 			// Test PodScheduled condition with reason WaitingForGates
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test15"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
 					Phase: "podPhase",
-					Conditions: []apiv1.PodCondition{
+					Conditions: []corev1.PodCondition{
 						{
-							Type:   apiv1.PodScheduled,
-							Status: apiv1.ConditionFalse,
-							Reason: apiv1.PodReasonSchedulingGated,
+							Type:   corev1.PodScheduled,
+							Status: corev1.ConditionFalse,
+							Reason: corev1.PodReasonSchedulingGated,
 						},
 					},
 				},
 			},
-			[]metav1.TableRow{{Cells: []interface{}{"test15", "0/2", apiv1.PodReasonSchedulingGated, "0", "<unknown>"}}},
+			[]metav1.TableRow{{Cells: []interface{}{"test15", "0/2", corev1.PodReasonSchedulingGated, "0", "<unknown>"}}},
 		},
 	}
 
@@ -396,48 +397,49 @@ func TestPrintPod(t *testing.T) {
 	}
 }
 
+//nolint:lll
 func TestPrintPodwide(t *testing.T) {
 	condition1 := "condition1"
 	condition2 := "condition2"
 	condition3 := "condition3"
 	tests := []struct {
-		pod    apiv1.Pod
+		pod    corev1.Pod
 		expect []metav1.TableRow
 	}{
 		{
 			// Test when the NodeName and PodIP are not none
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test1"},
-				Spec: apiv1.PodSpec{
-					Containers: make([]apiv1.Container, 2),
+				Spec: corev1.PodSpec{
+					Containers: make([]corev1.Container, 2),
 					NodeName:   "test1",
-					ReadinessGates: []apiv1.PodReadinessGate{
+					ReadinessGates: []corev1.PodReadinessGate{
 						{
-							ConditionType: apiv1.PodConditionType(condition1),
+							ConditionType: corev1.PodConditionType(condition1),
 						},
 						{
-							ConditionType: apiv1.PodConditionType(condition2),
+							ConditionType: corev1.PodConditionType(condition2),
 						},
 						{
-							ConditionType: apiv1.PodConditionType(condition3),
+							ConditionType: corev1.PodConditionType(condition3),
 						},
 					},
 				},
-				Status: apiv1.PodStatus{
-					Conditions: []apiv1.PodCondition{
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
 						{
-							Type:   apiv1.PodConditionType(condition1),
-							Status: apiv1.ConditionFalse,
+							Type:   corev1.PodConditionType(condition1),
+							Status: corev1.ConditionFalse,
 						},
 						{
-							Type:   apiv1.PodConditionType(condition2),
-							Status: apiv1.ConditionTrue,
+							Type:   corev1.PodConditionType(condition2),
+							Status: corev1.ConditionTrue,
 						},
 					},
 					Phase:  "podPhase",
-					PodIPs: []apiv1.PodIP{{IP: "1.1.1.1"}},
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+					PodIPs: []corev1.PodIP{{IP: "1.1.1.1"}},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 						{RestartCount: 3},
 					},
 					NominatedNodeName: "node1",
@@ -447,38 +449,38 @@ func TestPrintPodwide(t *testing.T) {
 		},
 		{
 			// Test when the NodeName and PodIP are not none
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test1"},
-				Spec: apiv1.PodSpec{
-					Containers: make([]apiv1.Container, 2),
+				Spec: corev1.PodSpec{
+					Containers: make([]corev1.Container, 2),
 					NodeName:   "test1",
-					ReadinessGates: []apiv1.PodReadinessGate{
+					ReadinessGates: []corev1.PodReadinessGate{
 						{
-							ConditionType: apiv1.PodConditionType(condition1),
+							ConditionType: corev1.PodConditionType(condition1),
 						},
 						{
-							ConditionType: apiv1.PodConditionType(condition2),
+							ConditionType: corev1.PodConditionType(condition2),
 						},
 						{
-							ConditionType: apiv1.PodConditionType(condition3),
+							ConditionType: corev1.PodConditionType(condition3),
 						},
 					},
 				},
-				Status: apiv1.PodStatus{
-					Conditions: []apiv1.PodCondition{
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
 						{
-							Type:   apiv1.PodConditionType(condition1),
-							Status: apiv1.ConditionFalse,
+							Type:   corev1.PodConditionType(condition1),
+							Status: corev1.ConditionFalse,
 						},
 						{
-							Type:   apiv1.PodConditionType(condition2),
-							Status: apiv1.ConditionTrue,
+							Type:   corev1.PodConditionType(condition2),
+							Status: corev1.ConditionTrue,
 						},
 					},
 					Phase:  "podPhase",
-					PodIPs: []apiv1.PodIP{{IP: "1.1.1.1"}, {IP: "2001:db8::"}},
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+					PodIPs: []corev1.PodIP{{IP: "1.1.1.1"}, {IP: "2001:db8::"}},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 						{RestartCount: 3},
 					},
 					NominatedNodeName: "node1",
@@ -488,17 +490,17 @@ func TestPrintPodwide(t *testing.T) {
 		},
 		{
 			// Test when the NodeName and PodIP are none
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test2"},
-				Spec: apiv1.PodSpec{
-					Containers: make([]apiv1.Container, 2),
+				Spec: corev1.PodSpec{
+					Containers: make([]corev1.Container, 2),
 					NodeName:   "",
 				},
-				Status: apiv1.PodStatus{
+				Status: corev1.PodStatus{
 					Phase: "podPhase",
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
-						{State: apiv1.ContainerState{Waiting: &apiv1.ContainerStateWaiting{Reason: "ContainerWaitingReason"}}, RestartCount: 3},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
+						{State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerWaitingReason"}}, RestartCount: 3},
 					},
 				},
 			},
@@ -521,41 +523,41 @@ func TestPrintPodwide(t *testing.T) {
 }
 
 func TestPrintPodConditions(t *testing.T) {
-	runningPod := &apiv1.Pod{
+	runningPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "test1", Labels: map[string]string{"a": "1", "b": "2"}},
-		Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-		Status: apiv1.PodStatus{
+		Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+		Status: corev1.PodStatus{
 			Phase: "Running",
-			ContainerStatuses: []apiv1.ContainerStatus{
-				{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 				{RestartCount: 3},
 			},
 		},
 	}
-	succeededPod := &apiv1.Pod{
+	succeededPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "test1", Labels: map[string]string{"a": "1", "b": "2"}},
-		Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-		Status: apiv1.PodStatus{
+		Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+		Status: corev1.PodStatus{
 			Phase: "Succeeded",
-			ContainerStatuses: []apiv1.ContainerStatus{
-				{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 				{RestartCount: 3},
 			},
 		},
 	}
-	failedPod := &apiv1.Pod{
+	failedPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "test2", Labels: map[string]string{"b": "2"}},
-		Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-		Status: apiv1.PodStatus{
+		Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+		Status: corev1.PodStatus{
 			Phase: "Failed",
-			ContainerStatuses: []apiv1.ContainerStatus{
-				{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 				{RestartCount: 3},
 			},
 		},
 	}
 	tests := []struct {
-		pod    *apiv1.Pod
+		pod    *corev1.Pod
 		expect []metav1.TableRow
 	}{
 		// Should not have TableRowCondition
@@ -602,33 +604,34 @@ func TestPrintPodConditions(t *testing.T) {
 	}
 }
 
+//nolint:lll
 func TestPrintPodList(t *testing.T) {
 	tests := []struct {
-		pods   apiv1.PodList
+		pods   corev1.PodList
 		expect []metav1.TableRow
 	}{
 		// Test podList's pod: name, num of containers, restarts, container ready status
 		{
-			apiv1.PodList{
-				Items: []apiv1.Pod{
+			corev1.PodList{
+				Items: []corev1.Pod{
 					{
 						ObjectMeta: metav1.ObjectMeta{Name: "test1"},
-						Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-						Status: apiv1.PodStatus{
+						Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+						Status: corev1.PodStatus{
 							Phase: "podPhase",
-							ContainerStatuses: []apiv1.ContainerStatus{
-								{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
-								{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+							ContainerStatuses: []corev1.ContainerStatus{
+								{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
+								{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 							},
 						},
 					},
 					{
 						ObjectMeta: metav1.ObjectMeta{Name: "test2"},
-						Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 1)},
-						Status: apiv1.PodStatus{
+						Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 1)},
+						Status: corev1.PodStatus{
 							Phase: "podPhase",
-							ContainerStatuses: []apiv1.ContainerStatus{
-								{Ready: true, RestartCount: 1, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+							ContainerStatuses: []corev1.ContainerStatus{
+								{Ready: true, RestartCount: 1, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 							},
 						},
 					},
@@ -640,7 +643,6 @@ func TestPrintPodList(t *testing.T) {
 
 	for _, test := range tests {
 		rows, err := printPodList(&test.pods, printers.GenerateOptions{})
-
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -655,18 +657,18 @@ func TestPrintPodList(t *testing.T) {
 
 func TestPrintNonTerminatedPod(t *testing.T) {
 	tests := []struct {
-		pod    apiv1.Pod
+		pod    corev1.Pod
 		expect []metav1.TableRow
 	}{
 		{
 			// Test pod phase Running should be printed
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test1"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
-					Phase: apiv1.PodRunning,
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 						{RestartCount: 3},
 					},
 				},
@@ -676,13 +678,13 @@ func TestPrintNonTerminatedPod(t *testing.T) {
 		},
 		{
 			// Test pod phase Pending should be printed
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test2"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
-					Phase: apiv1.PodPending,
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 						{RestartCount: 3},
 					},
 				},
@@ -692,13 +694,13 @@ func TestPrintNonTerminatedPod(t *testing.T) {
 		},
 		{
 			// Test pod phase Unknown should be printed
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test3"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
-					Phase: apiv1.PodUnknown,
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodUnknown,
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 						{RestartCount: 3},
 					},
 				},
@@ -708,13 +710,13 @@ func TestPrintNonTerminatedPod(t *testing.T) {
 		},
 		{
 			// Test pod phase Succeeded should be printed
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test4"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
-					Phase: apiv1.PodSucceeded,
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodSucceeded,
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 						{RestartCount: 3},
 					},
 				},
@@ -729,13 +731,13 @@ func TestPrintNonTerminatedPod(t *testing.T) {
 		},
 		{
 			// Test pod phase Failed shouldn't be printed
-			apiv1.Pod{
+			corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test5"},
-				Spec:       apiv1.PodSpec{Containers: make([]apiv1.Container, 2)},
-				Status: apiv1.PodStatus{
-					Phase: apiv1.PodFailed,
-					ContainerStatuses: []apiv1.ContainerStatus{
-						{Ready: true, RestartCount: 3, State: apiv1.ContainerState{Running: &apiv1.ContainerStateRunning{}}},
+				Spec:       corev1.PodSpec{Containers: make([]corev1.Container, 2)},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodFailed,
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 						{Ready: true, RestartCount: 3},
 					},
 				},
