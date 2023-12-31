@@ -11,13 +11,45 @@ import (
 	utilpointer "k8s.io/utils/pointer"
 )
 
-func TestCommandJoinOption_Preflight(t *testing.T) {
+func TestCommandJoinOption_ToOptions(t *testing.T) {
 	testCases := []struct {
 		name        string
 		option      CommandJoinOption
 		args        []string
 		expectedErr error
 	}{
+		// error test
+		{
+			name: "no fcluster name",
+			option: CommandJoinOption{
+				ClusterKubeConfig: "/home/jzd/.kube/config",
+				ClusterContext:    "",
+				UseServiceAccount: true,
+			},
+			args:        []string{},
+			expectedErr: fmt.Errorf("command line input format error"),
+		},
+	}
+
+	defaultConfigFlags := genericclioptions.NewConfigFlags(true).WithDiscoveryBurst(300).WithDiscoveryQPS(50.0)
+	defaultConfigFlags.KubeConfig = utilpointer.String("/home/jzd/.kube/kubeadmiral/kubeadmiral.config")
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			assert := assert.New(t)
+			err := testCase.option.ToOptions(util.NewFactory(defaultConfigFlags), testCase.args)
+			assert.Equal(testCase.expectedErr, err)
+		})
+	}
+}
+
+func TestCommandJoinOption_Validate(t *testing.T) {
+	testCases := []struct {
+		name        string
+		option      CommandJoinOption
+		args        []string
+		expectedErr error
+	}{
+		// normal test
 		{
 			name: "normal test, UseServiceAccount=true",
 			option: CommandJoinOption{
@@ -39,16 +71,6 @@ func TestCommandJoinOption_Preflight(t *testing.T) {
 			expectedErr: nil,
 		},
 		// error test
-		{
-			name: "no fcluster name",
-			option: CommandJoinOption{
-				ClusterKubeConfig: "/home/jzd/.kube/config",
-				ClusterContext:    "",
-				UseServiceAccount: true,
-			},
-			args:        []string{},
-			expectedErr: fmt.Errorf("command line input format error"),
-		},
 		{
 			name: "UseServiceAccount=false, but no BearerToken",
 			option: CommandJoinOption{
@@ -96,7 +118,8 @@ func TestCommandJoinOption_Preflight(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			assert := assert.New(t)
-			err := testCase.option.ToOptions(util.NewFactory(defaultConfigFlags), testCase.args)
+			_ = testCase.option.ToOptions(util.NewFactory(defaultConfigFlags), testCase.args)
+			err := testCase.option.Validate()
 			assert.Equal(testCase.expectedErr, err)
 		})
 	}
