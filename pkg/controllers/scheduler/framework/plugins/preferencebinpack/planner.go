@@ -213,7 +213,7 @@ func getDesiredPlan(
 			total = capacity
 		}
 		if capacity, hasCapacity := estimatedCapacity[preference.clusterName]; hasCapacity && total > capacity {
-			overflow[preference.clusterName] += total - capacity
+			overflow[preference.clusterName] = framework.MaxInt64(total-capacity, overflow[preference.clusterName])
 			total = capacity
 		}
 
