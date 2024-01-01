@@ -9,7 +9,6 @@ import (
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -79,9 +78,12 @@ type CommandJoinOption struct {
 	FedClientSet        *fedclient.Clientset
 }
 
-// AddFlags adds flags for a specified FlagSet
-func (o *CommandJoinOption) AddFlags(flags *pflag.FlagSet) {
+// AddFlags adds command line flags to the given cobra.Command.
+func (o *CommandJoinOption) AddFlags(cmd *cobra.Command) {
+	flags := cmd.Flags()
+
 	flags.StringVar(&o.ClusterKubeConfig, "cluster-kubeconfig", "", "Path of the member cluster's kubeconfig.")
+	cmd.MarkFlagRequired("cluster-kubeconfig")
 	flags.StringVar(&o.ClusterContext, "cluster-context", "", "Context name of member cluster in kubeconfig.")
 	flags.StringVar(&o.Host, "api-endpoint", "", "api-endpoint of the member cluster.")
 	flags.BoolVar(&o.UseServiceAccount, "use-service-account", true,
@@ -113,9 +115,7 @@ func NewCmdJoin(f util.Factory, parentCommand string) *cobra.Command {
 		},
 	}
 
-	flag := cmd.Flags()
-	o.AddFlags(flag)
-	cmd.MarkFlagRequired("cluster-kubeconfig")
+	o.AddFlags(cmd)
 
 	return cmd
 }
