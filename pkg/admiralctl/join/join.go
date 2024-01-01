@@ -46,7 +46,7 @@ type CommandJoinOption struct {
 	// Cluster is the name of member cluster
 	Cluster string
 
-	// Namespace is the kubeadmiral namespace where the resources will be created, corresponding to common.DefaultFedSystemNamespace
+	// Namespace is the kube-admiral-system namespace, corresponding to common.DefaultFedSystemNamespace
 	Namespace string
 
 	// ClusterContext is context name of member cluster in kubeconfig
@@ -244,6 +244,7 @@ func (o *CommandJoinOption) Join() error {
 		return err
 	}
 
+	fmt.Printf("Cluster: %s joined\n", o.Cluster)
 	return nil
 }
 
