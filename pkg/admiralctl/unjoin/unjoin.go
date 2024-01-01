@@ -6,6 +6,7 @@ import (
 
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/util"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -30,6 +31,9 @@ type CommandUnjoinOption struct {
 	// Cluster is the name of member cluster
 	Cluster string
 
+	// Namespace is the kube-admiral-system namespace, corresponding to common.DefaultFedSystemNamespace
+	Namespace string
+
 	FedK8sClientSet *kubernetes.Clientset
 	FedClientSet    *fedclient.Clientset
 }
@@ -51,6 +55,9 @@ func NewCmdJoin(f util.Factory, parentCommand string) *cobra.Command {
 			if err := o.Validate(); err != nil {
 				return err
 			}
+			if err := o.Unjoin(); err != nil {
+				return err
+			}
 			return nil
 		},
 	}
@@ -65,6 +72,8 @@ func (o *CommandUnjoinOption) ToOptions(f util.Factory, args []string) error {
 	}
 
 	o.Cluster = args[0]
+
+	o.Namespace = common.DefaultFedSystemNamespace
 
 	fedRESTConfig, err := f.ToRESTConfig()
 	if err != nil {
@@ -98,4 +107,37 @@ func (o *CommandUnjoinOption) checkClusterJoined() error {
 	}
 
 	return fmt.Errorf("the cluster has not joined the kubeadmiral federation")
+}
+
+func (o *CommandUnjoinOption) Unjoin() error {
+	if err := o.deleteFederatedCluster(); err != nil {
+		return err
+	}
+
+	if err := o.deleteSecret(); err != nil {
+		return err
+	}
+
+	fmt.Printf("Cluster: %s unjoined\n", o.Cluster)
+	return nil
+}
+
+// delete the FederatedCluster
+func (o *CommandUnjoinOption) deleteFederatedCluster() error {
+	if err := o.FedClientSet.CoreV1alpha1().FederatedClusters().Delete(context.TODO(), o.Cluster, metav1.DeleteOptions{}); err != nil {
+		return err
+	}
+
+	fmt.Printf("FederatedCluster: %s deleted\n", o.Cluster)
+	return nil
+}
+
+// delete the secret
+func (o *CommandUnjoinOption) deleteSecret() error {
+	if err := o.FedK8sClientSet.CoreV1().Secrets(o.Namespace).Delete(context.TODO(), o.Cluster, metav1.DeleteOptions{}); err != nil {
+		return err
+	}
+
+	fmt.Printf("Secret: %s/%s deleted\n", o.Namespace, o.Cluster)
+	return nil
 }
