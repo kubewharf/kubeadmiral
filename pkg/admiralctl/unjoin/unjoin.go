@@ -1,11 +1,13 @@
 package unjoin
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/util"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	"github.com/spf13/cobra"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/util/templates"
 )
@@ -46,6 +48,9 @@ func NewCmdJoin(f util.Factory, parentCommand string) *cobra.Command {
 			if err := o.ToOptions(f, args); err != nil {
 				return err
 			}
+			if err := o.Validate(); err != nil {
+				return err
+			}
 			return nil
 		},
 	}
@@ -69,4 +74,28 @@ func (o *CommandUnjoinOption) ToOptions(f util.Factory, args []string) error {
 	o.FedClientSet = fedclient.NewForConfigOrDie(fedRESTConfig)
 
 	return nil
+}
+
+// Validate verifies whether the options are valid and whether the unjoining is valid.
+func (o *CommandUnjoinOption) Validate() error {
+	if err := o.checkClusterJoined(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// check whether the cluster has joined kubeadmiral federation
+func (o *CommandUnjoinOption) checkClusterJoined() error {
+	fedClusters, err := o.FedClientSet.CoreV1alpha1().FederatedClusters().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	for _, fedCluster := range fedClusters.Items {
+		if fedCluster.Name == o.Cluster {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("the cluster has not joined the kubeadmiral federation")
 }
