@@ -4,8 +4,9 @@ import (
 	"fmt"
 
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/util"
+	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/util/templates"
 )
 
@@ -24,11 +25,11 @@ var (
 
 // CommandUnjoinOption holds all command options for unjoin
 type CommandUnjoinOption struct {
-}
+	// Cluster is the name of member cluster
+	Cluster string
 
-// AddFlags adds flags for a specified FlagSet
-func (o *CommandUnjoinOption) AddFlags(flags *pflag.FlagSet) {
-
+	FedK8sClientSet *kubernetes.Clientset
+	FedClientSet    *fedclient.Clientset
 }
 
 func NewCmdJoin(f util.Factory, parentCommand string) *cobra.Command {
@@ -42,12 +43,30 @@ func NewCmdJoin(f util.Factory, parentCommand string) *cobra.Command {
 		SilenceUsage:          true,
 		DisableFlagsInUseLine: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := o.ToOptions(f, args); err != nil {
+				return err
+			}
 			return nil
 		},
 	}
 
-	flag := cmd.Flags()
-	o.AddFlags(flag)
-
 	return cmd
+}
+
+// ToOptions converts from CLI inputs to runtime options
+func (o *CommandUnjoinOption) ToOptions(f util.Factory, args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("command line input format error")
+	}
+
+	o.Cluster = args[0]
+
+	fedRESTConfig, err := f.ToRESTConfig()
+	if err != nil {
+		return err
+	}
+	o.FedK8sClientSet = kubernetes.NewForConfigOrDie(fedRESTConfig)
+	o.FedClientSet = fedclient.NewForConfigOrDie(fedRESTConfig)
+
+	return nil
 }

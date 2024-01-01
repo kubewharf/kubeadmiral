@@ -8,6 +8,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/federalize"
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/join"
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/options"
+	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/unjoin"
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/util"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -59,6 +60,7 @@ func NewDefaultAdmiralctlCommand() *cobra.Command {
 			Commands: []*cobra.Command{
 				federalize.NewCmdFederalize(f, cliName),
 				join.NewCmdJoin(f, cliName),
+				unjoin.NewCmdJoin(f, cliName),
 			},
 		},
 	}
