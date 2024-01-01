@@ -114,10 +114,6 @@ func (o *CommandUnjoinOption) Unjoin() error {
 		return err
 	}
 
-	if err := o.deleteSecret(); err != nil {
-		return err
-	}
-
 	fmt.Printf("Cluster: %s unjoined\n", o.Cluster)
 	return nil
 }
@@ -129,15 +125,5 @@ func (o *CommandUnjoinOption) deleteFederatedCluster() error {
 	}
 
 	fmt.Printf("FederatedCluster: %s deleted\n", o.Cluster)
-	return nil
-}
-
-// delete the secret
-func (o *CommandUnjoinOption) deleteSecret() error {
-	if err := o.FedK8sClientSet.CoreV1().Secrets(o.Namespace).Delete(context.TODO(), o.Cluster, metav1.DeleteOptions{}); err != nil {
-		return err
-	}
-
-	fmt.Printf("Secret: %s/%s deleted\n", o.Namespace, o.Cluster)
 	return nil
 }
