@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/federalize"
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/join"
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/options"
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/unjoin"
@@ -58,7 +57,6 @@ func NewDefaultAdmiralctlCommand() *cobra.Command {
 		{
 			Message: "Resource Management Commands:",
 			Commands: []*cobra.Command{
-				federalize.NewCmdFederalize(f, cliName),
 				join.NewCmdJoin(f, cliName),
 				unjoin.NewCmdJoin(f, cliName),
 			},
