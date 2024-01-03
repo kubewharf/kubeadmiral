@@ -72,4 +72,6 @@ const (
 	AutoMigrationThroughput                        = "auto_migration_throughput"
 	FederateControllerLatency                      = "federate_controller_latency"
 	FederateControllerThroughput                   = "federate_controller_throughput"
+	FederateHPAControllerLatency                   = "federate_hpa_controller_latency"
+	FederateHPAControllerThroughput                = "federate_hpa_controller_throughput"
 )

@@ -1,8 +1,8 @@
 [files]
-extend-exclude = ["go.mod", "go.sum", "config/crds/"]
+extend-exclude = ["go.mod", "go.sum", "config/crds/", "pkg/client/openapi/"]
 
 [default]
-extend-ignore-re = ["shortName=[a-z]+"]
+extend-ignore-re = ["shortName=[a-z]+", "Creater:.*misspell"]
 
 [default.extend-identifiers]
 ANDed = "ANDed"

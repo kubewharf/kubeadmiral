@@ -22,11 +22,16 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 source "${REPO_ROOT}/hack/lib/build.sh"
 source "${REPO_ROOT}/hack/lib/util.sh"
 
+components=(
+  kubeadmiral-controller-manager
+  kubeadmiral-hpa-aggregator
+)
+
 REGISTRY=${REGISTRY:-"ghcr.io/kubewharf"}
-COMPENT_NAME="kubeadmiral-controller-manager"
 TAG=${TAG:-"unknown"}
 DOCKERFILE_PATH=${DOCKERFILE_PATH:-"${REPO_ROOT}/hack/dockerfiles/Dockerfile"}
 ARCHS=${ARCHS:-"$(go env GOARCH)"}
+TARGET_NAME=${TARGET_NAME:-"all"}
 
 # append ‘linux/’ string at the beginning of each arch_array element
 IFS="," read -ra arch_array <<< "${ARCHS}"
@@ -38,11 +43,22 @@ GOPROXY=${GOPROXY:-$(go env GOPROXY)}
 REGION=${REGION:-""}
 DOCKER_BUILD_ARGS="${DOCKER_BUILD_ARGS:-} --build-arg GOPROXY=${GOPROXY} --build-arg REGION=${REGION}"
 
+build_count=0
 if [[ ${#arch_array[@]} -gt 1 ]]; then
   # If you build images for multiple platforms at one time, the image tag will be added with the architecture name.
   for arch in ${arch_array[@]}; do
-    build::build_images "${REGISTRY}/${COMPENT_NAME}:${TAG}-${arch}" ${DOCKERFILE_PATH} "linux/${arch}" ${OUTPUT_TYPE} "${DOCKER_BUILD_ARGS}"
+    for component in "${components[@]}"; do
+      if [[ ${TARGET_NAME} =~ "all" || ${TARGET_NAME} =~ ${component} ]]; then
+        build_args="${DOCKER_BUILD_ARGS} --build-arg COMPENT=${component}"
+        build::build_images "${REGISTRY}/${component}:${TAG}-${arch}" ${DOCKERFILE_PATH} "linux/${arch}" ${OUTPUT_TYPE} "${build_args}"
+      fi
+    done
   done
 else
-  build::build_images "${REGISTRY}/${COMPENT_NAME}:${TAG}" ${DOCKERFILE_PATH} "${PLATFORMS}" ${OUTPUT_TYPE} "${DOCKER_BUILD_ARGS}"
+  for component in "${components[@]}"; do
+    if [[ ${TARGET_NAME} =~ "all" || ${TARGET_NAME} =~ ${component} ]]; then
+      build_args="${DOCKER_BUILD_ARGS} --build-arg COMPENT=${component}"
+      build::build_images "${REGISTRY}/${component}:${TAG}" ${DOCKERFILE_PATH} "${PLATFORMS}" ${OUTPUT_TYPE} "${build_args}"
+    fi
+  done
 fi

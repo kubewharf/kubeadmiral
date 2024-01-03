@@ -94,7 +94,7 @@ func (c *FakeFederatedClusters) UpdateStatus(ctx context.Context, federatedClust
 // Delete takes name of the federatedCluster and deletes it. Returns an error if one occurs.
 func (c *FakeFederatedClusters) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(federatedclustersResource, name), &v1alpha1.FederatedCluster{})
+		Invokes(testing.NewRootDeleteActionWithOptions(federatedclustersResource, name, opts), &v1alpha1.FederatedCluster{})
 	return err
 }
 

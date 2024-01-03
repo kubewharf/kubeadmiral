@@ -5,7 +5,8 @@ BUILD_FLAGS ?=
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 GOPROXY ?= $(shell go env GOPROXY)
-TARGET_NAME ?= kubeadmiral-controller-manager
+# target component, available target: all, kubeadmiral-controller-manager, kubeadmiral-hpa-aggregator
+TARGET_NAME ?= all
 DEBUG_TARGET_NAME ?= $(TARGET_NAME)_debug
 
 # image information
@@ -26,10 +27,14 @@ all: build
 #   BUILD_PLATFORMS: platforms to build. e.g.: linux/amd64,darwin/amd64. The default value is the host platform.
 #
 # Example:
-#   # compile kubeadmiral-controller-manager with the host platform
+#   # compile all binaries with the host platform
 #   make build
-#   # compile kubeadmiral-controller-manager with specified platforms
+#   # compile all binaries with specified platforms
 #   make build BUILD_PLATFORMS=linux/amd64,darwin/amd64
+#   # compile kubeadmiral-controller-manager with the host platform
+#   make build TARGET_NAME=kubeadmiral-controller-manager
+#   # compile kubeadmiral-controller-manager with specified platforms
+#   make build TARGET_NAME=kubeadmiral-controller-manager BUILD_PLATFORMS=linux/amd64,darwin/amd64
 .PHONY: build
 build:
 	BUILD_FLAGS="$(BUILD_FLAGS)" TARGET_NAME="$(TARGET_NAME)" GOPROXY="$(GOPROXY)" bash hack/make-rules/build.sh
@@ -57,6 +62,12 @@ dev-clean:
 # Run the kubeadmiral-controller-manager component with sane defaults for development.
 .PHONY: dev-run
 dev-run:
+ifeq ($(TARGET_NAME), all)
+	$(eval DEBUG_TARGET_NAME = kubeadmiral-controller-manager_debug)
+else ifeq ($(TARGET_NAME), kubeadmiral-hpa-aggregator)
+	@echo "kubeadmiral-hpa-aggregator needs certificates form apiserver, do not support dev-run now"
+	@exit -1
+endif
 	./output/bin/$(GOOS)/$(GOARCH)/$(DEBUG_TARGET_NAME) \
 		--enable-leader-elect=false \
 		--worker-count=5 \
@@ -111,7 +122,8 @@ local-up:
 .PHONY: images
 images:
 	REGISTRY=$(REGISTRY) TAG=$(TAG) ARCHS=$(ARCHS) GOPROXY=$(GOPROXY) REGION=$(REGION) \
-		DOCKER_BUILD_ARGS="$(DOCKER_BUILD_ARGS)" DOCKERFILE_PATH="$(DOCKERFILE_PATH)" bash hack/make-rules/build-images.sh
+		DOCKER_BUILD_ARGS="$(DOCKER_BUILD_ARGS)" DOCKERFILE_PATH="$(DOCKERFILE_PATH)" \
+		TARGET_NAME="$(TARGET_NAME)" bash hack/make-rules/build-images.sh
 
 # Clean built binaries
 .PHONY: clean

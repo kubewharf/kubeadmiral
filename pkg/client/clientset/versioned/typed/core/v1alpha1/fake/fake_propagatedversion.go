@@ -101,7 +101,7 @@ func (c *FakePropagatedVersions) UpdateStatus(ctx context.Context, propagatedVer
 // Delete takes name of the propagatedVersion and deletes it. Returns an error if one occurs.
 func (c *FakePropagatedVersions) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(propagatedversionsResource, c.ns, name), &v1alpha1.PropagatedVersion{})
+		Invokes(testing.NewDeleteActionWithOptions(propagatedversionsResource, c.ns, name, opts), &v1alpha1.PropagatedVersion{})
 
 	return err
 }

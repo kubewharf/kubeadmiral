@@ -53,7 +53,7 @@ type followerAnnotationElement struct {
 	Name  string `json:"name"`
 }
 
-func getFollowersFromAnnotation(
+func GetFollowersFromAnnotation(
 	fedObject fedcorev1a1.GenericFederatedObject,
 ) (sets.Set[FollowerReference], error) {
 	annotation := fedObject.GetAnnotations()[common.FollowersAnnotation]

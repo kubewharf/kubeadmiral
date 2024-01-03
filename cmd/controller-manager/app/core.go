@@ -27,6 +27,7 @@ import (
 	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedhpa"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/follower"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
@@ -251,6 +252,7 @@ func startFollowerController(
 		controllerCtx.KubeClientset,
 		controllerCtx.FedClientset,
 		controllerCtx.InformerManager,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedTypeConfigs(),
 		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedObjects(),
 		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterFederatedObjects(),
 		controllerCtx.Metrics,
@@ -316,4 +318,29 @@ func startStatusAggregatorController(
 	go statusAggregatorController.Run(ctx)
 
 	return statusAggregatorController, nil
+}
+
+func startFederatedHPAController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	federatedHPAController, err := federatedhpa.NewFederatedHPAController(
+		controllerCtx.KubeClientset,
+		controllerCtx.FedClientset,
+		controllerCtx.DynamicClientset,
+		controllerCtx.InformerManager,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().PropagationPolicies(),
+		controllerCtx.FedInformerFactory.Core().V1alpha1().ClusterPropagationPolicies(),
+		controllerCtx.Metrics,
+		klog.Background(),
+		controllerCtx.WorkerCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating federated-hpa controller: %w", err)
+	}
+
+	go federatedHPAController.Run(ctx)
+
+	return federatedHPAController, nil
 }

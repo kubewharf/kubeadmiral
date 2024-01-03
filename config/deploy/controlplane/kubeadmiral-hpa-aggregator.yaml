@@ -1,0 +1,159 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubeadmiral-hpa-aggregator
+  namespace: kubeadmiral-system
+  labels:
+    app: kubeadmiral-hpa-aggregator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubeadmiral-hpa-aggregator
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: kubeadmiral-hpa-aggregator
+    spec:
+      automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - kubeadmiral-hpa-aggregator
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - command:
+            - /kubeadmiral-hpa-aggregator
+            - --bind-address=0.0.0.0
+            - --client-ca-file=/etc/kubeadmiral/pki/ca.crt
+            - --requestheader-allowed-names=front-proxy-client
+            - --requestheader-client-ca-file=/etc/kubeadmiral/pki/front-proxy-ca.crt
+            - --requestheader-extra-headers-prefix=X-Remote-Extra-
+            - --requestheader-group-headers=X-Remote-Group
+            - --requestheader-username-headers=X-Remote-User
+            - --tls-cert-file=/etc/kubeadmiral/pki/apiserver.crt
+            - --tls-private-key-file=/etc/kubeadmiral/pki/apiserver.key
+            - --secure-port=443
+            - --kubeconfig=/etc/kubeconfig
+            - --authentication-kubeconfig=/etc/kubeconfig
+            - --authorization-kubeconfig=/etc/kubeconfig
+            - --kube-api-burst=100
+            - --kube-api-qps=50
+            - --feature-gates=APIPriorityAndFairness=false
+            - --klog-v=4
+          name: kubeadmiral-hpa-aggregator
+          image: ghcr.io/kubewharf/kubeadmiral-hpa-aggregator:latest
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 8
+            httpGet:
+              path: /livez
+              port: 443
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 15
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: 443
+              scheme: HTTPS
+            periodSeconds: 1
+            successThreshold: 1
+            timeoutSeconds: 15
+          resources:
+            requests:
+              cpu: 250m
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - mountPath: /etc/kubeadmiral/pki
+              name: kubeadmiral-certs
+              readOnly: true
+            - mountPath: /etc/kubeconfig
+              subPath: kubeconfig
+              name: kubeconfig
+        - command:
+            - kube-controller-manager
+            - --allocate-node-cidrs=true
+            - --authentication-kubeconfig=/etc/hpa-kubeconfig
+            - --authorization-kubeconfig=/etc/hpa-kubeconfig
+            - --bind-address=0.0.0.0
+            - --client-ca-file=/etc/kubeadmiral/pki/ca.crt
+            - --cluster-cidr=10.244.0.0/16
+            - --cluster-name=kubeadmiral
+            - --cluster-signing-cert-file=/etc/kubeadmiral/pki/ca.crt
+            - --cluster-signing-key-file=/etc/kubeadmiral/pki/ca.key
+            - --controllers=horizontalpodautoscaling
+            - --kubeconfig=/etc/hpa-kubeconfig
+            - --leader-elect=true
+            - --leader-elect-resource-name=hpa-controller
+            - --requestheader-client-ca-file=/etc/kubeadmiral/pki/front-proxy-ca.crt
+            - --root-ca-file=/etc/kubeadmiral/pki/ca.crt
+            - --service-cluster-ip-range=10.96.0.0/12
+            - --service-account-private-key-file=/etc/kubeadmiral/pki/kubeadmiral.key
+            - --use-service-account-credentials=true
+            - --v=4
+          image: registry.k8s.io/kube-controller-manager:v1.20.15
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 8
+            httpGet:
+              path: /healthz
+              port: 10257
+              scheme: HTTPS
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 15
+          name: hpa-controller
+          resources:
+            requests:
+              cpu: 200m
+          volumeMounts:
+            - mountPath: /etc/kubeadmiral/pki
+              name: kubeadmiral-certs
+              readOnly: true
+            - mountPath: /etc/hpa-kubeconfig
+              subPath: hpa-kubeconfig
+              name: kubeconfig
+      dnsPolicy: ClusterFirstWithHostNet
+      restartPolicy: Always
+      tolerations:
+        - effect: NoExecute
+          operator: Exists
+      volumes:
+        - name: kubeadmiral-certs
+          secret:
+            secretName: kubeadmiral-cert-secret
+        - name: kubeconfig
+          secret:
+            secretName: kubeconfig
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubeadmiral-hpa-aggregator
+  namespace: kubeadmiral-system
+  labels:
+    app: kubeadmiral-hpa-aggregator
+    apiserver: "true"
+spec:
+  ports:
+    - port: 443
+      protocol: TCP
+      targetPort: 443
+  selector:
+    app: kubeadmiral-hpa-aggregator

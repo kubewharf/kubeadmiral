@@ -1,0 +1,102 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubeadmiral-hpa-aggregator
+  namespace: kube-admiral-system
+spec:
+  externalName: kubeadmiral-hpa-aggregator
+  ports:
+    - port: 443
+      protocol: TCP
+      targetPort: 443
+  sessionAffinity: None
+  type: ExternalName
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  labels:
+    apiserver: "true"
+    app: kubeadmiral-hpa-aggregator
+  name: v1beta1.metrics.k8s.io
+spec:
+  group: metrics.k8s.io
+  groupPriorityMinimum: 2000
+  insecureSkipTLSVerify: true
+  service:
+    name: kubeadmiral-hpa-aggregator
+    namespace: kube-admiral-system
+    port: 443
+  version: v1beta1
+  versionPriority: 1
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  labels:
+    apiserver: "true"
+    app: kubeadmiral-hpa-aggregator
+  name: v1beta1.custom.metrics.k8s.io
+spec:
+  group: custom.metrics.k8s.io
+  groupPriorityMinimum: 2000
+  insecureSkipTLSVerify: true
+  service:
+    name: kubeadmiral-hpa-aggregator
+    namespace: kube-admiral-system
+    port: 443
+  version: v1beta1
+  versionPriority: 1
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  labels:
+    apiserver: "true"
+    app: kubeadmiral-hpa-aggregator
+  name: v1alpha1.hpaaggregator.kubeadmiral.io
+spec:
+  group: hpaaggregator.kubeadmiral.io
+  groupPriorityMinimum: 2000
+  insecureSkipTLSVerify: true
+  service:
+    name: kubeadmiral-hpa-aggregator
+    namespace: kube-admiral-system
+    port: 443
+  version: v1alpha1
+  versionPriority: 1
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: admiral-system:controller:horizontal-pod-autoscaler
+rules:
+  - apiGroups:
+      - hpaaggregator.kubeadmiral.io
+    resources:
+      - '*'
+    verbs:
+      - '*'
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admiral-system:controller:horizontal-pod-autoscaler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admiral-system:controller:horizontal-pod-autoscaler
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: system:controller:horizontal-pod-autoscaler
+  - kind: ServiceAccount
+    name: horizontal-pod-autoscaler
+    namespace: kube-system

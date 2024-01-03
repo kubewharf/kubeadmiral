@@ -166,6 +166,7 @@ type FederatedInformerManager interface {
 	GetClusterDynamicClient(cluster string) (client dynamic.Interface, exists bool)
 	// Returns a kubernetes client for the given cluster if it exists. The client for each cluster will eventually exist.
 	GetClusterKubeClient(cluster string) (client kubernetes.Interface, exists bool)
+	GetClusterRestConfig(cluster string) (config *rest.Config, exists bool)
 
 	// Register EventHandlers for each pod informer of cluster.
 	AddPodEventHandler(handler *ResourceEventHandlerWithClusterFuncs)

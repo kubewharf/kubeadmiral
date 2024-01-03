@@ -83,7 +83,7 @@ func (c *FakeSchedulerPluginWebhookConfigurations) Update(ctx context.Context, s
 // Delete takes name of the schedulerPluginWebhookConfiguration and deletes it. Returns an error if one occurs.
 func (c *FakeSchedulerPluginWebhookConfigurations) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(schedulerpluginwebhookconfigurationsResource, name), &v1alpha1.SchedulerPluginWebhookConfiguration{})
+		Invokes(testing.NewRootDeleteActionWithOptions(schedulerpluginwebhookconfigurationsResource, name, opts), &v1alpha1.SchedulerPluginWebhookConfiguration{})
 	return err
 }
 

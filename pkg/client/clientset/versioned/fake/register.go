@@ -4,6 +4,7 @@ package fake
 
 import (
 	corev1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	hpaaggregatorv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/hpaaggregator/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -16,6 +17,7 @@ var codecs = serializer.NewCodecFactory(scheme)
 
 var localSchemeBuilder = runtime.SchemeBuilder{
 	corev1alpha1.AddToScheme,
+	hpaaggregatorv1alpha1.AddToScheme,
 }
 
 // AddToScheme adds all types of this clientset into the given scheme. This allows composition
