@@ -54,20 +54,32 @@ func (pl *ClusterResourcesMostAllocated) Score(
 
 	var score, weightSum int64
 	// most allocated score favors nodes with most requested resources.
-	// It calculates the percentage of memory and CPU requested by pods scheduled on the node, and prioritizes
+	// It calculates the percentage of memory, CPU, GPU or other non-build-in
+	// requested resource by pods scheduled on the cluster, and
 	// based on the maximum of the average of the fraction of requested to capacity.
 	// Details:
-	// (cpu((capacity-sum(requested))*100/capacity) * cpu_weight +
-	// memory((capacity-sum(requested))*100/capacity) * memory_weight) / (cpu_weight + memory_weight)
+	// (cpu((sum(requested))*100/capacity) * cpu_weight +
+	// memory((sum(requested))*100/capacity) * memory_weight) / (cpu_weight + memory_weight)
 	// Or with gpu
-	// (cpu((capacity-sum(requested))*100/capacity) * cpu_weight +
-	// memory((capacity-sum(requested))*100/capacity) * memory_weight +
-	// gpu((capacity-sum(requested))*100/capacity) * gpu_weight) / (cpu_weight + memory_weight + gpu_weight)
+	// (cpu((sum(requested))*100/capacity) * cpu_weight +
+	// memory((sum(requested))*100/capacity) * memory_weight +
+	// gpu((sum(requested))*100/capacity) * gpu_weight) / (cpu_weight + memory_weight + gpu_weight)
+	//
+	// For any other non-build-in resource, we provided a default weight, eg:
+	// a pod requests 'foo.com/bar1' and 'foo.com/bar2', the result will be:
+	// (cpu((sum(requested))*100/capacity) * cpu_weight +
+	// memory((sum(requested))*100/capacity) * memory_weight +
+	// bar1((sum(requested))*100/capacity) * DefaultRatio +
+	// bar2((sum(requested))*100/capacity) * DefaultRatio) / (cpu_weight + memory_weight + DefaultRatio * 2)
 	for _, resource := range resources {
 		resourceScore := mostRequestedScore(requested[resource], allocatable[resource])
-		weight := framework.DefaultRequestedRatioResources[resource]
-		score += resourceScore * weight
-		weightSum += weight
+		if weight, ok := framework.DefaultRequestedRatioResources[resource]; ok {
+			score += resourceScore * weight
+			weightSum += weight
+		} else {
+			score += resourceScore * framework.DefaultRatio
+			weightSum += framework.DefaultRatio
+		}
 	}
 
 	if weightSum == 0 {

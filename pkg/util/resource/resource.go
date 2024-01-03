@@ -40,6 +40,13 @@ func MaxResources(src, dst corev1.ResourceList) {
 	}
 }
 
+// MergeResources merges the src ResourceList into the dst ResourceList
+func MergeResources(src, dst corev1.ResourceList) {
+	for k, v := range src {
+		dst[k] = v.DeepCopy()
+	}
+}
+
 // podResourceRequest = max(sum(podSpec.Containers), podSpec.InitContainers...) + overHead
 func GetPodResourceRequests(podSpec *corev1.PodSpec) corev1.ResourceList {
 	reqs := make(corev1.ResourceList)

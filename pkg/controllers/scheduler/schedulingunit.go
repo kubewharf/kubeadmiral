@@ -35,6 +35,7 @@ func schedulingUnitForFedObject(
 	typeConfig *fedcorev1a1.FederatedTypeConfig,
 	fedObject fedcorev1a1.GenericFederatedObject,
 	policy fedcorev1a1.GenericPropagationPolicy,
+	enableKatalystSupport bool,
 ) (*framework.SchedulingUnit, error) {
 	template, err := fedObject.GetSpec().GetTemplateAsUnstructured()
 	if err != nil {
@@ -170,12 +171,18 @@ func schedulingUnitForFedObject(
 	if err != nil {
 		return nil, err
 	}
-	gpuResourceRequest := &framework.Resource{}
+	// now we only consider the resource request of gpu and katalyst resources
 	if resourceRequest.HasScalarResource(framework.ResourceGPU) {
-		gpuResourceRequest.SetScalar(framework.ResourceGPU, resourceRequest.ScalarResources[framework.ResourceGPU])
+		schedulingUnit.ResourceRequest.SetScalar(framework.ResourceGPU, resourceRequest.ScalarResources[framework.ResourceGPU])
 	}
-	// now we only consider the resource request of gpu
-	schedulingUnit.ResourceRequest = *gpuResourceRequest
+	if enableKatalystSupport {
+		if res := framework.GetKatalystResources(&resourceRequest); len(res) != 0 {
+			for name, quantity := range res {
+				schedulingUnit.ResourceRequest.SetScalar(name, quantity)
+			}
+		}
+		schedulingUnit.EnableKatalystSupport = true
+	}
 
 	return schedulingUnit, nil
 }

@@ -25,22 +25,29 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apiextv1b1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster/plugins"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
+	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
+	"github.com/kubewharf/kubeadmiral/pkg/util/resource"
 )
 
 const (
@@ -60,7 +67,165 @@ const (
 	ClusterReachableMsg       = "Cluster is reachable"
 	ClusterNotReachableReason = "ClusterNotReachable"
 	ClusterNotReachableMsg    = "Cluster is not reachable"
+
+	maxHealthCheckTimeout = 30 * time.Second
 )
+
+type resourceCollector struct {
+	name          string
+	plugin        plugins.Plugin
+	hasSynceds    map[schema.GroupVersionResource]cache.InformerSynced
+	dynamicLister map[schema.GroupVersionResource]cache.GenericLister
+
+	allocatable, available corev1.ResourceList
+}
+
+func (c *FederatedClusterController) getExternalResourceCollectors(
+	cluster *fedcorev1a1.FederatedCluster,
+) (resourceCollectors []resourceCollector) {
+	pluginMaps, err := plugins.ResolvePlugins(cluster.Annotations)
+	if err != nil {
+		c.logger.V(4).Info("Failed to get cluster plugins", "cluster", cluster.Name, "err", err)
+		return nil
+	}
+
+	clusterKey, _ := informermanager.DefaultClusterConnectionHash(cluster)
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	if factory := c.externalClusterResourceInformers[string(clusterKey)]; factory != nil {
+		for pluginName, plugin := range pluginMaps {
+			rc := resourceCollector{
+				name:          pluginName,
+				plugin:        plugin,
+				hasSynceds:    map[schema.GroupVersionResource]cache.InformerSynced{},
+				dynamicLister: map[schema.GroupVersionResource]cache.GenericLister{},
+			}
+
+			for gvr := range plugin.ClusterResourcesToCollect() {
+				rc.hasSynceds[gvr] = factory.ForResource(gvr).Informer().HasSynced
+				rc.dynamicLister[gvr] = factory.ForResource(gvr).Lister()
+			}
+			resourceCollectors = append(resourceCollectors, rc)
+		}
+	}
+
+	return resourceCollectors
+}
+
+func (c *FederatedClusterController) addOrUpdateExternalClusterResourceInformers(
+	cluster *fedcorev1a1.FederatedCluster,
+) {
+	key, _ := informermanager.DefaultClusterConnectionHash(cluster)
+	clusterKey := string(key)
+
+	pluginMaps, err := plugins.ResolvePlugins(cluster.Annotations)
+	if err != nil {
+		c.logger.V(4).Info("Failed to get cluster plugins", "cluster", cluster.Name, "err", err)
+		return
+	}
+	if len(pluginMaps) == 0 {
+		c.removeExternalClusterResourceInformers(cluster.Name)
+		return
+	}
+	pluginsHash := plugins.PluginsHash(pluginMaps)
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	if old, exist := c.clusterConnectionHashes[cluster.Name]; exist {
+		// Connection and plugins are unchanged, do nothing
+		if old == clusterKey && c.enabledClusterResourcePluginHashes[cluster.Name] == pluginsHash {
+			return
+		}
+		// Otherwise, delete old informer since the connection has changed.
+		// We use the same context for a cluster, so if the plugins changed,
+		// we have to rebuild the informer.
+		if cancel := c.externalClusterResourceInformerCancelFuncs[old]; cancel != nil {
+			cancel()
+		}
+		delete(c.externalClusterResourceInformers, old)
+		delete(c.externalClusterResourceInformerCancelFuncs, old)
+	}
+
+	client, ok := c.federatedInformerManager.GetClusterDynamicClient(cluster.Name)
+	if !ok {
+		return
+	}
+	informer := dynamicinformer.NewDynamicSharedInformerFactory(client, 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	for _, plugin := range pluginMaps {
+		for gvr := range plugin.ClusterResourcesToCollect() {
+			informer.ForResource(gvr)
+		}
+	}
+	informer.Start(ctx.Done())
+
+	c.clusterConnectionHashes[cluster.Name] = clusterKey
+	c.enabledClusterResourcePluginHashes[cluster.Name] = pluginsHash
+	c.externalClusterResourceInformers[clusterKey] = informer
+	c.externalClusterResourceInformerCancelFuncs[clusterKey] = cancel
+}
+
+func (c *FederatedClusterController) removeExternalClusterResourceInformers(clusterName string) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	key := c.clusterConnectionHashes[clusterName]
+	if cancel := c.externalClusterResourceInformerCancelFuncs[key]; cancel != nil {
+		cancel()
+	}
+
+	delete(c.clusterConnectionHashes, clusterName)
+	delete(c.enabledClusterResourcePluginHashes, clusterName)
+	delete(c.externalClusterResourceInformers, key)
+	delete(c.externalClusterResourceInformerCancelFuncs, key)
+}
+
+func collectExternalClusterResources(
+	ctx context.Context,
+	availableNodes []*corev1.Node,
+	pods []*corev1.Pod,
+	resourceCollectors []resourceCollector,
+) {
+	wg := sync.WaitGroup{}
+	for i, collector := range resourceCollectors {
+		wg.Add(1)
+		go func(i int, collector resourceCollector) {
+			defer wg.Done()
+
+			ctx, logger := logging.InjectLoggerValues(ctx, "plugin", collector.name)
+			ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+
+			hasSynceds := make([]cache.InformerSynced, 0, len(collector.hasSynceds))
+			names := make([]string, 0, len(collector.hasSynceds))
+			for gvr, synced := range collector.hasSynceds {
+				hasSynceds = append(hasSynceds, synced)
+				names = append(names, gvr.String())
+			}
+			if !cache.WaitForCacheSync(ctxWithTimeout.Done(), hasSynceds...) {
+				logger.V(4).Info("Timeout waiting for informers sync",
+					"informers", strings.Join(names, ";"))
+				return
+			}
+
+			allocatable, available, err := collector.plugin.CollectClusterResources(
+				ctx,
+				availableNodes,
+				pods,
+				plugins.ClusterHandle{DynamicLister: collector.dynamicLister},
+			)
+			if err != nil {
+				logger.V(4).Info("Failed to collect cluster resources", "err", err)
+				return
+			}
+			resourceCollectors[i].allocatable = allocatable
+			resourceCollectors[i].available = available
+		}(i, collector)
+	}
+	wg.Wait()
+}
 
 func (c *FederatedClusterController) collectIndividualClusterStatus(
 	ctx context.Context,
@@ -91,7 +256,11 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	cluster = cluster.DeepCopy()
 	conditionTime := metav1.Now()
 
-	offlineStatus, readyStatus := checkReadyByHealthz(ctx, discoveryClient)
+	timeout := c.clusterHealthCheckConfig.Period / 2
+	if timeout > maxHealthCheckTimeout {
+		timeout = maxHealthCheckTimeout
+	}
+	offlineStatus, readyStatus := checkReadyByHealthz(ctx, discoveryClient, timeout)
 	var readyReason, readyMessage string
 	switch readyStatus {
 	case corev1.ConditionTrue:
@@ -114,6 +283,7 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 			podsSynced,
 			nodeLister,
 			nodesSynced,
+			c.getExternalResourceCollectors(cluster),
 		); err != nil {
 			logger.Error(err, "Failed to update cluster resources")
 			readyStatus = corev1.ConditionFalse
@@ -167,10 +337,11 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 func checkReadyByHealthz(
 	ctx context.Context,
 	clusterDiscoveryClient discovery.DiscoveryInterface,
+	timeout time.Duration,
 ) (offline, ready corev1.ConditionStatus) {
 	logger := klog.FromContext(ctx)
 
-	body, err := clusterDiscoveryClient.RESTClient().Get().AbsPath("/healthz").Timeout(30 * time.Second).Do(ctx).Raw()
+	body, err := clusterDiscoveryClient.RESTClient().Get().AbsPath("/healthz").Timeout(timeout).Do(ctx).Raw()
 	if err != nil {
 		logger.Error(err, "Cluster health check failed")
 		return corev1.ConditionTrue, corev1.ConditionUnknown
@@ -193,10 +364,11 @@ func (c *FederatedClusterController) updateClusterResources(
 	podsSynced cache.InformerSynced,
 	nodeLister corev1listers.NodeLister,
 	nodesSynced cache.InformerSynced,
+	resourceCollectors []resourceCollector,
 ) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if !cache.WaitForCacheSync(ctx.Done(), podsSynced, nodesSynced) {
+	if !cache.WaitForCacheSync(ctxWithTimeout.Done(), podsSynced, nodesSynced) {
 		return fmt.Errorf("timeout waiting for node and pod informer sync")
 	}
 
@@ -210,13 +382,21 @@ func (c *FederatedClusterController) updateClusterResources(
 	}
 
 	schedulableNodes := int64(0)
+	availableNodes := make([]*corev1.Node, 0, len(nodes))
 	for _, node := range nodes {
 		if isNodeSchedulable(node) && !c.isNodeFiltered(node) {
 			schedulableNodes++
+			availableNodes = append(availableNodes, node)
 		}
 	}
+	allocatable, available := c.aggregateResources(availableNodes, pods)
 
-	allocatable, available := c.aggregateResources(nodes, pods)
+	collectExternalClusterResources(ctx, availableNodes, pods, resourceCollectors)
+	for _, collector := range resourceCollectors {
+		resource.MergeResources(collector.allocatable, allocatable)
+		resource.MergeResources(collector.available, available)
+	}
+
 	clusterStatus.Resources = fedcorev1a1.Resources{
 		SchedulableNodes: &schedulableNodes,
 		Allocatable:      allocatable,

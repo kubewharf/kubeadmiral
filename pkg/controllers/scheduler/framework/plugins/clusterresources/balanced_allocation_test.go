@@ -134,6 +134,28 @@ func TestClusterResourcesBalancedAllocation(t *testing.T) {
 			},
 			name: "nothing scheduled, resources requested, differently sized machines",
 		},
+		{
+			// Cluster1 scores on 0-100 scale
+			// CPU Fraction: 6000 / 10000 = 60%
+			// Memory Fraction: 5000 / 10000 = 50%
+			// foo.bar/any Fraction: 4000 / 10000 = 40%
+			// Cluster1 Score: (1 - sqrt((0.1 * 0.1 + 0.1 * 0.1)/3)) * 100 = 91
+			// Cluster2 scores on 0-100 scale
+			// CPU Fraction: 6000 / 15000 = 40%
+			// Memory Fraction: 5000 / 10000 = 50%
+			// foo.bar/any Fraction: 4000 / 20000 = 20%
+			// Cluster2 Score: (1 - sqrt((0.0333 * 0.0333 + 0.1333 * 0.1333 + 0.1667 *  0.1667)/3)) * 100 = 87
+			su: schedulingUnitWithResourceName(makeSchedulingUnit("su4", 6000, 5000), "foo.bar/any", 4000),
+			clusters: []*fedcorev1a1.FederatedCluster{
+				clusterWithResourceName(makeCluster("cluster1", 10000, 10000, 10000, 10000), "foo.bar/any", 10000, 10000),
+				clusterWithResourceName(makeCluster("cluster2", 15000, 10000, 15000, 10000), "foo.bar/any", 20000, 20000),
+			},
+			expectedList: []framework.ClusterScore{
+				{Cluster: clusterWithResourceName(makeCluster("cluster1", 10000, 10000, 10000, 10000), "foo.bar/any", 10000, 10000), Score: 91},
+				{Cluster: clusterWithResourceName(makeCluster("cluster2", 15000, 10000, 15000, 10000), "foo.bar/any", 20000, 20000), Score: 87},
+			},
+			name: "nothing scheduled, resources requested with external resource, differently sized machines, external resource fraction differs",
+		},
 	}
 
 	p, _ := NewClusterResourcesBalancedAllocation(nil)

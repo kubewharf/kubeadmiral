@@ -183,6 +183,12 @@ func getComponentConfig(opts *options.Options) (*controllercontext.ComponentConf
 	componentConfig := &controllercontext.ComponentConfig{
 		ClusterJoinTimeout:       opts.ClusterJoinTimeout,
 		MemberObjectEnqueueDelay: opts.MemberObjectEnqueueDelay,
+		EnableKatalystSupport:    opts.EnableKatalystSupport,
+		ClusterHealthCheckPeriod: opts.ClusterHealthCheckPeriod,
+	}
+
+	if opts.ClusterHealthCheckPeriod < options.MinClusterHealthCheckPeriod {
+		return nil, fmt.Errorf("cluster health check period must be at least %s", options.MinClusterHealthCheckPeriod)
 	}
 
 	if opts.NSAutoPropExcludeRegexp != "" {

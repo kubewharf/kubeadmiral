@@ -29,6 +29,8 @@ import (
 
 const (
 	DefaultPort = 11257
+
+	MinClusterHealthCheckPeriod = 15 * time.Second
 )
 
 type Options struct {
@@ -64,6 +66,9 @@ type Options struct {
 	PrometheusQuantiles map[string]string
 
 	ResourceAggregationNodeFilter []string
+
+	EnableKatalystSupport    bool
+	ClusterHealthCheckPeriod time.Duration
 }
 
 func NewOptions() *Options {
@@ -152,6 +157,22 @@ func (o *Options) AddFlags(flags *pflag.FlagSet, allControllers []string, disabl
 		"Nodes matching the provided label selector are excluded from resource aggregation. "+
 			"If the flag is provided multiple times, "+
 			"nodes are excluded as long as at least one of the selectors is matched.",
+	)
+
+	flags.BoolVar(
+		&o.EnableKatalystSupport,
+		"enable-katalyst-support",
+		false,
+		"Enable katalyst support in the cluster controller and scheduler. Enabling this, cluster controller "+
+			"will collect katalyst CNR resource into FederatedCluster if katalyst plugin was enabled in its "+
+			"annotations, and the scheduler will enable KatalystResourcesExist filter and support split replicas "+
+			"by katalyst resources.",
+	)
+	flags.DurationVar(
+		&o.ClusterHealthCheckPeriod,
+		"cluster-health-check-period",
+		time.Second*30,
+		"The period of health check for member clusters. The minimum value is "+MinClusterHealthCheckPeriod.String()+".",
 	)
 }
 

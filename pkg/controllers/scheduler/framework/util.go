@@ -26,8 +26,10 @@ import (
 	"math"
 	"strings"
 
+	katalystconsts "github.com/kubewharf/katalyst-api/pkg/consts"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -35,6 +37,12 @@ import (
 
 const (
 	ResourceGPU = corev1.ResourceName("nvidia.com/gpu")
+)
+
+var katalystResourceNames = sets.New(
+	katalystconsts.ReclaimedResourceMilliCPU,
+	katalystconsts.ReclaimedResourceMemory,
+	katalystconsts.ResourceNetBandwidth,
 )
 
 // For each of these resources, a pod that doesn't request the resource explicitly
@@ -65,6 +73,9 @@ const (
 
 // DefaultRequestedRatioResources is an empirical value derived from practice.
 var DefaultRequestedRatioResources = ResourceToWeightMap{corev1.ResourceMemory: 1, corev1.ResourceCPU: 1, ResourceGPU: 4}
+
+// DefaultRatio as the ratio of any unknown requested resources
+var DefaultRatio int64 = 1
 
 type (
 	ResourceToValueMap  map[corev1.ResourceName]int64
@@ -260,6 +271,16 @@ func (r *Resource) HasScalarResource(name corev1.ResourceName) bool {
 		return true
 	}
 	return false
+}
+
+func GetKatalystResources(r *Resource) map[corev1.ResourceName]int64 {
+	res := make(map[corev1.ResourceName]int64)
+	for name, quantity := range r.ScalarResources {
+		if katalystResourceNames.Has(name) {
+			res[name] = quantity
+		}
+	}
+	return res
 }
 
 // resourceRequest = max(sum(podSpec.Containers), podSpec.InitContainers) + overHead

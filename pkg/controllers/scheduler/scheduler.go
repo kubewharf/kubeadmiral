@@ -97,6 +97,8 @@ type Scheduler struct {
 
 	algorithm core.ScheduleAlgorithm
 
+	enableKatalystSupport bool
+
 	metrics stats.Metrics
 	logger  klog.Logger
 }
@@ -120,6 +122,7 @@ func NewScheduler(
 	metrics stats.Metrics,
 	logger klog.Logger,
 	workerCount int,
+	enableKatalystSupport bool,
 ) (*Scheduler, error) {
 	s := &Scheduler{
 		fedClient:                        fedClient,
@@ -135,6 +138,7 @@ func NewScheduler(
 		webhookPlugins:                   sync.Map{},
 		metrics:                          metrics,
 		logger:                           logger.WithValues("controller", SchedulerName),
+		enableKatalystSupport:            enableKatalystSupport,
 	}
 
 	s.eventRecorder = eventsink.NewDefederatingRecorderMux(kubeClient, SchedulerName, 6)
@@ -567,7 +571,7 @@ func (s *Scheduler) schedule(
 		common.NewQualifiedName(policy).String(),
 	)
 
-	schedulingUnit, err := schedulingUnitForFedObject(ftc, fedObject, policy)
+	schedulingUnit, err := schedulingUnitForFedObject(ftc, fedObject, policy, s.enableKatalystSupport)
 	if err != nil {
 		logger.Error(err, "Failed to get scheduling unit")
 		s.eventRecorder.Eventf(

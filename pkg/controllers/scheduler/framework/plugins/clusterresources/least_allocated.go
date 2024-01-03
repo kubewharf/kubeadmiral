@@ -54,7 +54,8 @@ func (pl *ClusterResourcesLeastAllocated) Score(
 
 	var score, weightSum int64
 	// least allocated score favors cluster with fewer requested resources.
-	// It calculates the percentage of memory and CPU requested by pods scheduled on the cluster, and
+	// It calculates the percentage of memory, CPU, GPU or other non-build-in
+	// requested resource by pods scheduled on the cluster, and
 	// prioritizes based on the minimum of the average of the fraction of requested to capacity.
 	//
 	// Details:
@@ -64,11 +65,22 @@ func (pl *ClusterResourcesLeastAllocated) Score(
 	// (cpu((capacity-sum(requested))*100/capacity) * cpu_weight +
 	// memory((capacity-sum(requested))*100/capacity) * memory_weight +
 	// gpu((capacity-sum(requested))*100/capacity) * gpu_weight) / (cpu_weight + memory_weight + gpu_weight)
+	//
+	// For any other non-build-in resource, we provided a default weight, eg:
+	// a pod requests 'foo.com/bar1' and 'foo.com/bar2', the result will be:
+	// (cpu((capacity-sum(requested))*100/capacity) * cpu_weight +
+	// memory((capacity-sum(requested))*100/capacity) * memory_weight +
+	// bar1((capacity-sum(requested))*100/capacity) * DefaultRatio +
+	// bar2((capacity-sum(requested))*100/capacity) * DefaultRatio) / (cpu_weight + memory_weight + DefaultRatio * 2)
 	for _, resource := range resources {
 		resourceScore := leastRequestedScore(requested[resource], allocatable[resource])
-		weight := framework.DefaultRequestedRatioResources[resource]
-		score += resourceScore * weight
-		weightSum += weight
+		if weight, ok := framework.DefaultRequestedRatioResources[resource]; ok {
+			score += resourceScore * weight
+			weightSum += weight
+		} else {
+			score += resourceScore * framework.DefaultRatio
+			weightSum += framework.DefaultRatio
+		}
 	}
 
 	if weightSum == 0 {
