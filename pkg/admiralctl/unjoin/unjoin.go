@@ -90,6 +90,11 @@ func (o *CommandUnjoinOption) Validate() error {
 	if err := o.checkClusterJoined(); err != nil {
 		return err
 	}
+
+	if err := o.checkSecretExists(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -106,7 +111,17 @@ func (o *CommandUnjoinOption) checkClusterJoined() error {
 		}
 	}
 
-	return fmt.Errorf("the cluster has not joined the kubeadmiral federation")
+	return fmt.Errorf("cluster: %s has not joined kubeadmiral federation", o.Cluster)
+}
+
+// check whether the secret exists
+func (o *CommandUnjoinOption) checkSecretExists() error {
+	_, err := o.FedK8sClientSet.CoreV1().Secrets(o.Namespace).Get(context.TODO(), o.Cluster, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("secret: %s/%s does not exist", o.Namespace, o.Cluster)
+	}
+
+	return nil
 }
 
 func (o *CommandUnjoinOption) Unjoin() error {
