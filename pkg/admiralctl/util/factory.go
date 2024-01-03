@@ -83,14 +83,6 @@ func NewFactory(kubeConfigFlags *genericclioptions.ConfigFlags) Factory {
 
 // NewClusterFactoryByKubeConfig create a new ClusterFactory by KubeConfig
 func NewClusterFactoryByKubeConfig(clusterKubeConfig, clusterContext string) (cmdutil.Factory, error) {
-	configFlags := genericclioptions.NewConfigFlags(true).WithDeprecatedPasswordFlag()
-	configFlags.KubeConfig = &clusterKubeConfig
-	configFlags.Context = &clusterContext
-	return cmdutil.NewFactory(configFlags), nil
-}
-
-// NewClusterFactoryByKubeConfigNoPassword create a new ClusterFactory by KubeConfig without password
-func NewClusterFactoryByKubeConfigNoPassword(clusterKubeConfig, clusterContext string) (cmdutil.Factory, error) {
 	configFlags := genericclioptions.NewConfigFlags(true)
 	configFlags.KubeConfig = &clusterKubeConfig
 	configFlags.Context = &clusterContext

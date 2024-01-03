@@ -132,7 +132,7 @@ func (o *CommandJoinOption) ToOptions(f util.Factory, args []string) error {
 
 	o.Namespace = common.DefaultFedSystemNamespace
 
-	clusterFactory, err := util.NewClusterFactoryByKubeConfigNoPassword(o.ClusterKubeConfig, o.ClusterContext)
+	clusterFactory, err := util.NewClusterFactoryByKubeConfig(o.ClusterKubeConfig, o.ClusterContext)
 	if err != nil {
 		return err
 	}

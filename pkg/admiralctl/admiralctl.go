@@ -3,10 +3,8 @@ package admiralctl
 import (
 	"flag"
 	"fmt"
-	"os"
 
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/join"
-	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/options"
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/unjoin"
 	"github.com/kubewharf/kubeadmiral/pkg/admiralctl/util"
 	"github.com/spf13/cobra"
@@ -52,7 +50,7 @@ func NewDefaultAdmiralctlCommand() *cobra.Command {
 	_ = flag.CommandLine.Parse(nil)
 	f := util.NewFactory(defaultConfigFlags)
 
-	ioStreams := genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}
+	// ioStreams := genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}
 	groups := templates.CommandGroups{
 		{
 			Message: "Resource Management Commands:",
@@ -63,8 +61,7 @@ func NewDefaultAdmiralctlCommand() *cobra.Command {
 		},
 	}
 	groups.Add(rootCmd)
-	filters := []string{"options"}
-	rootCmd.AddCommand(options.NewCmdOptions(cliName, ioStreams.Out))
+	filters := []string{""}
 	templates.ActsAsRootCommand(rootCmd, filters, groups...)
 
 	return rootCmd
