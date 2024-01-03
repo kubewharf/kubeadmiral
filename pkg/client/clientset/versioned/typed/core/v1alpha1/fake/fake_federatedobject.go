@@ -101,7 +101,7 @@ func (c *FakeFederatedObjects) UpdateStatus(ctx context.Context, federatedObject
 // Delete takes name of the federatedObject and deletes it. Returns an error if one occurs.
 func (c *FakeFederatedObjects) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(federatedobjectsResource, c.ns, name), &v1alpha1.FederatedObject{})
+		Invokes(testing.NewDeleteActionWithOptions(federatedobjectsResource, c.ns, name, opts), &v1alpha1.FederatedObject{})
 
 	return err
 }

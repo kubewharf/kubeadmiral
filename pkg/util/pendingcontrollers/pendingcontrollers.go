@@ -78,7 +78,7 @@ func SetPendingControllers(
 	return updated, err
 }
 
-func getDownstreamControllers(allControllers PendingControllers, current string) PendingControllers {
+func GetDownstreamControllers(allControllers PendingControllers, current string) PendingControllers {
 	for i, controllerGroup := range allControllers {
 		for _, controller := range controllerGroup {
 			if controller == current {
@@ -115,7 +115,7 @@ func UpdatePendingControllers(
 	}
 
 	if shouldSetDownstream {
-		restPendingControllers = getDownstreamControllers(allControllers, toRemove)
+		restPendingControllers = GetDownstreamControllers(allControllers, toRemove)
 	}
 
 	newPendingControllers := make(PendingControllers, 0, 1+len(restPendingControllers))
