@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	corev1listers "k8s.io/client-go/listers/core/v1"
@@ -68,13 +69,14 @@ type federatedInformerManager struct {
 	eventHandlerGenerators []*EventHandlerGenerator
 	clusterEventHandlers   []*ClusterEventHandler
 
-	kubeClients        map[string]kubernetes.Interface
-	dynamicClients     map[string]dynamic.Interface
-	restConfigs        map[string]*rest.Config
-	connectionMap      map[string][]byte
-	clusterCancelFuncs map[string]context.CancelFunc
-	informerManagers   map[string]InformerManager
-	informerFactories  map[string]informers.SharedInformerFactory
+	kubeClients              map[string]kubernetes.Interface
+	dynamicClients           map[string]dynamic.Interface
+	restConfigs              map[string]*rest.Config
+	connectionMap            map[string][]byte
+	clusterCancelFuncs       map[string]context.CancelFunc
+	informerManagers         map[string]InformerManager
+	informerFactories        map[string]informers.SharedInformerFactory
+	dynamicInformerFactories map[string]dynamicinformer.DynamicSharedInformerFactory
 
 	queue              workqueue.RateLimitingInterface
 	podListerSemaphore *semaphore.Weighted
@@ -82,6 +84,10 @@ type federatedInformerManager struct {
 
 	podEventHandlers      []*ResourceEventHandlerWithClusterFuncs
 	podEventRegistrations map[string]map[*ResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration
+
+	resourceEventHandlers map[schema.GroupVersionResource][]*FilteringResourceEventHandlerWithClusterFuncs
+	//nolint:lll
+	resourceEventRegistrations map[schema.GroupVersionResource]map[string]map[*FilteringResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration
 }
 
 func NewFederatedInformerManager(
@@ -90,21 +96,22 @@ func NewFederatedInformerManager(
 	clusterInformer fedcorev1a1informers.FederatedClusterInformer,
 ) FederatedInformerManager {
 	manager := &federatedInformerManager{
-		lock:                   sync.RWMutex{},
-		started:                false,
-		shutdown:               false,
-		clientHelper:           clientHelper,
-		ftcInformer:            ftcInformer,
-		clusterInformer:        clusterInformer,
-		eventHandlerGenerators: []*EventHandlerGenerator{},
-		clusterEventHandlers:   []*ClusterEventHandler{},
-		kubeClients:            map[string]kubernetes.Interface{},
-		dynamicClients:         map[string]dynamic.Interface{},
-		restConfigs:            map[string]*rest.Config{},
-		connectionMap:          map[string][]byte{},
-		clusterCancelFuncs:     map[string]context.CancelFunc{},
-		informerManagers:       map[string]InformerManager{},
-		informerFactories:      map[string]informers.SharedInformerFactory{},
+		lock:                     sync.RWMutex{},
+		started:                  false,
+		shutdown:                 false,
+		clientHelper:             clientHelper,
+		ftcInformer:              ftcInformer,
+		clusterInformer:          clusterInformer,
+		eventHandlerGenerators:   []*EventHandlerGenerator{},
+		clusterEventHandlers:     []*ClusterEventHandler{},
+		kubeClients:              map[string]kubernetes.Interface{},
+		dynamicClients:           map[string]dynamic.Interface{},
+		restConfigs:              map[string]*rest.Config{},
+		connectionMap:            map[string][]byte{},
+		clusterCancelFuncs:       map[string]context.CancelFunc{},
+		informerManagers:         map[string]InformerManager{},
+		informerFactories:        map[string]informers.SharedInformerFactory{},
+		dynamicInformerFactories: map[string]dynamicinformer.DynamicSharedInformerFactory{},
 		queue: workqueue.NewRateLimitingQueue(
 			workqueue.NewItemExponentialFailureRateLimiter(100*time.Millisecond, 10*time.Second),
 		),
@@ -112,6 +119,9 @@ func NewFederatedInformerManager(
 		initialClusters:       sets.New[string](),
 		podEventHandlers:      []*ResourceEventHandlerWithClusterFuncs{},
 		podEventRegistrations: map[string]map[*ResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{},
+		resourceEventHandlers: map[schema.GroupVersionResource][]*FilteringResourceEventHandlerWithClusterFuncs{},
+		//nolint:lll
+		resourceEventRegistrations: map[schema.GroupVersionResource]map[string]map[*FilteringResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{},
 	}
 
 	var err error
@@ -265,12 +275,20 @@ func (m *federatedInformerManager) processCluster(
 		factory := informers.NewSharedInformerFactory(clusterKubeClient, 0)
 		addPodInformer(ctx, factory, clusterKubeClient, m.podListerSemaphore, false)
 		factory.Core().V1().Nodes().Informer()
+		factory.Core().V1().Services().Informer()
+		factory.Discovery().V1beta1().EndpointSlices().Informer()
+
+		dynamicInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(clusterDynamicClient, 0)
+		dynamicInformerFactory.ForResource(common.ServiceExportGVR)
 
 		klog.FromContext(ctx).V(2).Info("Starting new InformerManager for FederatedCluster")
 		manager.Start(ctx)
 
 		klog.FromContext(ctx).V(2).Info("Starting new SharedInformerFactory for FederatedCluster")
 		factory.Start(ctx.Done())
+
+		klog.FromContext(ctx).V(2).Info("Starting new DynamicInformerFactory for FederatedCluster")
+		dynamicInformerFactory.Start(ctx.Done())
 
 		m.connectionMap[clusterName] = connectionHash
 		m.kubeClients[clusterName] = clusterKubeClient
@@ -279,7 +297,21 @@ func (m *federatedInformerManager) processCluster(
 		m.clusterCancelFuncs[clusterName] = cancel
 		m.informerManagers[clusterName] = manager
 		m.informerFactories[clusterName] = factory
+		m.dynamicInformerFactories[clusterName] = dynamicInformerFactory
 		m.podEventRegistrations[clusterName] = map[*ResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{}
+		//nolint:lll
+		if m.resourceEventRegistrations[common.EndpointSliceGVR] == nil {
+			//nolint:lll
+			m.resourceEventRegistrations[common.EndpointSliceGVR] = map[string]map[*FilteringResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{}
+		}
+		//nolint:lll
+		m.resourceEventRegistrations[common.EndpointSliceGVR][clusterName] = map[*FilteringResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{}
+		if m.resourceEventRegistrations[common.ServiceExportGVR] == nil {
+			//nolint:lll
+			m.resourceEventRegistrations[common.ServiceExportGVR] = map[string]map[*FilteringResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{}
+		}
+		//nolint:lll
+		m.resourceEventRegistrations[common.ServiceExportGVR][clusterName] = map[*FilteringResourceEventHandlerWithClusterFuncs]cache.ResourceEventHandlerRegistration{}
 	}
 
 	if m.initialClusters.Has(cluster.Name) {
@@ -299,6 +331,31 @@ func (m *federatedInformerManager) processCluster(
 			copied := handler.copyWithClusterName(clusterName)
 			if r, err := factory.Core().V1().Pods().Informer().AddEventHandler(copied); err == nil {
 				registrations[handler] = r
+			}
+		}
+	}
+
+	dynamicFactory := m.dynamicInformerFactories[clusterName]
+	for gvr := range m.resourceEventHandlers {
+		if m.resourceEventRegistrations[gvr] == nil {
+			continue
+		}
+		gvrRegistrations := m.resourceEventRegistrations[gvr][clusterName]
+		if gvrRegistrations == nil {
+			continue
+		}
+		for _, handler := range m.resourceEventHandlers[gvr] {
+			if gvrRegistrations[handler] == nil {
+				copied := handler.copyWithClusterName(clusterName)
+				if gvr == common.EndpointSliceGVR {
+					if r, err := factory.Discovery().V1beta1().EndpointSlices().Informer().AddEventHandler(copied); err == nil {
+						gvrRegistrations[handler] = r
+					}
+				} else {
+					if r, err := dynamicFactory.ForResource(gvr).Informer().AddEventHandler(copied); err == nil {
+						gvrRegistrations[handler] = r
+					}
+				}
 			}
 		}
 	}
@@ -324,8 +381,12 @@ func (m *federatedInformerManager) processClusterDeletionUnlocked(ctx context.Co
 	}
 	delete(m.informerManagers, clusterName)
 	delete(m.informerFactories, clusterName)
+	delete(m.dynamicInformerFactories, clusterName)
 	delete(m.clusterCancelFuncs, clusterName)
 	delete(m.podEventRegistrations, clusterName)
+	for gvr := range m.resourceEventRegistrations {
+		delete(m.resourceEventRegistrations[gvr], clusterName)
+	}
 
 	m.initialClusters.Delete(clusterName)
 
@@ -429,6 +490,43 @@ func (m *federatedInformerManager) GetNodeLister(
 	}
 
 	return factory.Core().V1().Nodes().Lister(), factory.Core().V1().Nodes().Informer().HasSynced, true
+}
+
+func (m *federatedInformerManager) AddResourceEventHandler(
+	gvr schema.GroupVersionResource,
+	handler *FilteringResourceEventHandlerWithClusterFuncs,
+) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	m.resourceEventHandlers[gvr] = append(m.resourceEventHandlers[gvr], handler)
+}
+
+func (m *federatedInformerManager) GetResourceListerFromFactory(
+	gvr schema.GroupVersionResource, cluster string,
+) (lister interface{}, informerSynced cache.InformerSynced, exists bool) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	factory, ok := m.informerFactories[cluster]
+	if !ok {
+		return nil, nil, false
+	}
+
+	dynamicFactory, ok := m.dynamicInformerFactories[cluster]
+	if !ok {
+		return nil, nil, false
+	}
+
+	if gvr == common.ServiceGVR {
+		return factory.Core().V1().Services().Lister(), factory.Core().V1().Services().Informer().HasSynced, true
+	}
+	if gvr == common.EndpointSliceGVR {
+		return factory.Discovery().V1beta1().EndpointSlices().Lister(), factory.Discovery().V1beta1().EndpointSlices().Informer().HasSynced, true
+	}
+
+	return dynamicFactory.ForResource(gvr).Lister(),
+		dynamicFactory.ForResource(gvr).Informer().HasSynced, true
 }
 
 func (m *federatedInformerManager) AddPodEventHandler(handler *ResourceEventHandlerWithClusterFuncs) {

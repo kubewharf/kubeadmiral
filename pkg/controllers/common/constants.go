@@ -24,6 +24,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1b1 "k8s.io/api/discovery/v1beta1"
+	mcsv1alpha1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
+
+	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
 const (
@@ -128,6 +132,8 @@ const (
 	HPAScaleTargetRefPath = DefaultPrefix + "scale-target-ref-path"
 
 	CentralizedHPAEnableKey = DefaultPrefix + "centralized-hpa-enabled"
+
+	DerivedServiceAnnotation = DefaultPrefix + "derived-service"
 )
 
 // PropagatedAnnotationKeys and PropagatedLabelKeys are used to store the keys of annotations and labels that are present
@@ -149,13 +155,16 @@ const (
 )
 
 const (
-	NamespaceResource  = "namespaces"
-	DeploymentResource = "deployments"
-	DaemonSetResource  = "daemonsets"
-	ConfigMapResource  = "configmaps"
-	SecretResource     = "secrets"
-	PodResource        = "pods"
-	ReplicaSetResource = "replicasets"
+	NamespaceResource     = "namespaces"
+	DeploymentResource    = "deployments"
+	DaemonSetResource     = "daemonsets"
+	ConfigMapResource     = "configmaps"
+	SecretResource        = "secrets"
+	PodResource           = "pods"
+	ReplicaSetResource    = "replicasets"
+	ServiceResource       = "services"
+	ServiceExportResource = "serviceexports"
+	EndpointSliceResource = "endpointslices"
 
 	NamespaceKind               = "Namespace"
 	DeploymentKind              = "Deployment"
@@ -173,6 +182,10 @@ const (
 	PodKind                     = "Pod"
 	ReplicaSetKind              = "ReplicaSet"
 	HorizontalPodAutoscalerKind = "HorizontalPodAutoscaler"
+	ServiceExportKind           = "ServiceExport"
+	ServiceImportKind           = "ServiceImport"
+	EndpointSliceKind           = "EndpointSlice"
+	FederatedObjectKind         = "FederatedObject"
 )
 
 var (
@@ -183,6 +196,11 @@ var (
 	PodGVK                   = corev1.SchemeGroupVersion.WithKind(PodKind)
 
 	JobGVK = batchv1.SchemeGroupVersion.WithKind(JobKind)
+
+	ServiceExportGVK   = mcsv1alpha1.SchemeGroupVersion.WithKind(ServiceExportKind)
+	ServiceImportGVK   = mcsv1alpha1.SchemeGroupVersion.WithKind(ServiceImportKind)
+	EndpointSliceGVK   = discoveryv1b1.SchemeGroupVersion.WithKind(EndpointSliceKind)
+	FederatedObjectGVK = fedcorev1a1.SchemeGroupVersion.WithKind(FederatedObjectKind)
 )
 
 var (
@@ -190,10 +208,14 @@ var (
 	ConfigMapGVR = corev1.SchemeGroupVersion.WithResource(ConfigMapResource)
 	SecretGVR    = corev1.SchemeGroupVersion.WithResource(SecretResource)
 	PodGVR       = corev1.SchemeGroupVersion.WithResource(PodResource)
+	ServiceGVR   = corev1.SchemeGroupVersion.WithResource(ServiceResource)
 
 	DeploymentGVR = appsv1.SchemeGroupVersion.WithResource(DeploymentResource)
 	DaemonSetGVR  = appsv1.SchemeGroupVersion.WithResource(DaemonSetResource)
 	ReplicaSetGVR = appsv1.SchemeGroupVersion.WithResource(ReplicaSetResource)
+
+	ServiceExportGVR = mcsv1alpha1.SchemeGroupVersion.WithResource(ServiceExportResource)
+	EndpointSliceGVR = discoveryv1b1.SchemeGroupVersion.WithResource(EndpointSliceResource)
 )
 
 // MaxFederatedObjectNameLength defines the max length of a federated object name.
@@ -202,4 +224,8 @@ var (
 // https://github.com/kubernetes/kubernetes/blob/a17149e/staging/src/k8s.io/apiextensions-apiserver/pkg/registry/customresource/validator.go#L61
 //
 //nolint:lll
-const MaxFederatedObjectNameLength = 253
+const (
+	MaxFederatedObjectNameLength = 253
+	MaxEndpointSliceNameLength   = 253
+	MaxLabelValueLength          = 63
+)

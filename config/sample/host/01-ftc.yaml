@@ -422,3 +422,45 @@ spec:
     fields:
       - metadata.creationTimestamp
       - status
+---
+apiVersion: core.kubeadmiral.io/v1alpha1
+kind: FederatedTypeConfig
+metadata:
+  name: serviceimports.multicluster.x-k8s.io
+spec:
+  sourceType:
+    kind: ServiceImport
+    pluralName: serviceimports
+    scope: Namespaced
+    version: v1alpha1
+    group: multicluster.x-k8s.io
+  controllers:
+    - - kubeadmiral.io/global-scheduler
+    - - kubeadmiral.io/overridepolicy-controller
+---
+apiVersion: core.kubeadmiral.io/v1alpha1
+kind: FederatedTypeConfig
+metadata:
+  name: serviceexports.multicluster.x-k8s.io
+spec:
+  sourceType:
+    kind: ServiceExport
+    pluralName: serviceexports
+    scope: Namespaced
+    version: v1alpha1
+    group: multicluster.x-k8s.io
+  controllers:
+    - - kubeadmiral.io/global-scheduler
+    - - kubeadmiral.io/overridepolicy-controller
+---
+apiVersion: core.kubeadmiral.io/v1alpha1
+kind: FederatedTypeConfig
+metadata:
+  name: endpointslices.discovery.k8s.io
+spec:
+  sourceType:
+    kind: EndpointSlice
+    pluralName: endpointslices
+    scope: Namespaced
+    version: v1beta1
+    group: discovery.k8s.io

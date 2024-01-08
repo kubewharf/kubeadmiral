@@ -30,6 +30,7 @@ require (
 	sigs.k8s.io/controller-runtime v0.14.1
 	sigs.k8s.io/custom-metrics-apiserver v1.27.0
 	sigs.k8s.io/kind v0.17.0
+	sigs.k8s.io/mcs-api v0.1.0
 )
 
 require (

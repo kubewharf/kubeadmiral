@@ -153,9 +153,103 @@ func TestGenerateFederatedObjectName(t *testing.T) {
 				tt.want,
 				GenerateFederatedObjectName(tt.args.objectName, tt.args.ftcName),
 				"GenerateFederatedObjectName(%v, %v)",
-				tt.args.ftcName,
 				tt.args.objectName,
+				tt.args.ftcName,
 			)
+		})
+	}
+}
+
+func TestGenerateImportedEndpointSliceName(t *testing.T) {
+	tests := []struct {
+		name              string
+		endpointSliceName string
+		cluster           string
+		want              string
+	}{
+		{
+			name:              "generate imported endpointSlice",
+			endpointSliceName: "serve-94gdd",
+			cluster:           "member-1",
+			want:              "imported-member-1-serve-94gdd",
+		},
+		{
+			name:              "generate imported endpointSlice with long name",
+			endpointSliceName: strings.Repeat("foo", 80),
+			cluster:           "member-123",
+			want:              "imported-member-123-" + strings.Repeat("foo", 74) + "-4267687316",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(
+				t,
+				tt.want,
+				GenerateImportedEndpointSliceName(tt.endpointSliceName, tt.cluster),
+				"GenerateFederatedObjectName(%v, %v)",
+				tt.endpointSliceName,
+				tt.cluster,
+			)
+		})
+	}
+}
+
+func TestGenerateDerivedSvcFedObjName(t *testing.T) {
+	tests := []struct {
+		name        string
+		serviceName string
+		want        string
+	}{
+		{
+			name:        "generate derived service federated object",
+			serviceName: "serve",
+			want:        "derived-serve-services",
+		},
+		{
+			name:        "generate derived service federated object with long name",
+			serviceName: strings.Repeat("foo", 80),
+			want:        "derived-" + strings.Repeat("foo", 78) + "-1019150234",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(
+				t,
+				tt.want,
+				GenerateDerivedSvcFedObjName(tt.serviceName),
+				"GenerateDerivedSvcFedObjName(%v)",
+				tt.serviceName,
+			)
+		})
+	}
+}
+
+func Test_GenerateSourceClusterValue(t *testing.T) {
+	tests := []struct {
+		name        string
+		clusterName string
+		value       string
+	}{
+		{
+			name:        "cluster name less than 63",
+			clusterName: "kubeadmiral-member-1",
+			value:       "kubeadmiral-member-1",
+		},
+		{
+			name:        "cluster name more than 63",
+			clusterName: strings.Repeat("test", 80),
+			value:       strings.Repeat("test", 13) + "t-988422597",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val := GenerateSourceClusterValue(tt.clusterName)
+			if val != tt.value {
+				t.Errorf("GenerateSourceClusterValue() want %s, but got %s", tt.value, val)
+			}
 		})
 	}
 }

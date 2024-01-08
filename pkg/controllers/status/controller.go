@@ -579,6 +579,11 @@ func (s *StatusController) clusterStatuses(
 		if !exist {
 			continue
 		}
+		// If one of fedObject and clusterObj is a derived service and the other is not,
+		// the obtained clusterObj does not correspond to fedObj, and we do not need to handle it.
+		if util.IsDerivedService(fedObject.GetAnnotations()) != util.IsDerivedService(clusterObj.GetAnnotations()) {
+			continue
+		}
 
 		collectedFields := map[string]interface{}{}
 		failedFields := []string{}

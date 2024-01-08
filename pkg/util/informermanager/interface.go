@@ -42,6 +42,58 @@ type EventHandlerGenerator struct {
 	Generator func(ftc *fedcorev1a1.FederatedTypeConfig) cache.ResourceEventHandler
 }
 
+type FilteringResourceEventHandlerWithClusterFuncs struct {
+	FilterFunc func(obj interface{}, cluster string) bool
+	Handler    ResourceEventHandlerWithClusterFuncs
+}
+
+// OnAdd calls the nested handler only if the filter succeeds
+func (p *FilteringResourceEventHandlerWithClusterFuncs) OnAdd(obj interface{}) {
+	if !p.FilterFunc(obj, p.Handler.clusterName) {
+		return
+	}
+	p.Handler.OnAdd(obj)
+}
+
+// OnUpdate ensures the proper handler is called depending on whether the filter matches
+func (p *FilteringResourceEventHandlerWithClusterFuncs) OnUpdate(oldObj, newObj interface{}) {
+	newer := p.FilterFunc(newObj, p.Handler.clusterName)
+	older := p.FilterFunc(oldObj, p.Handler.clusterName)
+	switch {
+	case newer && older:
+		p.Handler.OnUpdate(oldObj, newObj)
+	case newer && !older:
+		p.Handler.OnAdd(newObj)
+	case !newer && older:
+		p.Handler.OnDelete(oldObj)
+	default:
+		// do nothing
+	}
+}
+
+// OnDelete calls the nested handler only if the filter succeeds
+func (p *FilteringResourceEventHandlerWithClusterFuncs) OnDelete(obj interface{}) {
+	if !p.FilterFunc(obj, p.Handler.clusterName) {
+		return
+	}
+	p.Handler.OnDelete(obj)
+}
+
+// copyWithClusterName returns a copy of FilteringResourceEventHandlerWithClusterFuncs with given cluster name
+func (p *FilteringResourceEventHandlerWithClusterFuncs) copyWithClusterName(
+	clusterName string,
+) *FilteringResourceEventHandlerWithClusterFuncs {
+	return &FilteringResourceEventHandlerWithClusterFuncs{
+		FilterFunc: p.FilterFunc,
+		Handler: ResourceEventHandlerWithClusterFuncs{
+			clusterName: clusterName,
+			AddFunc:     p.Handler.AddFunc,
+			UpdateFunc:  p.Handler.UpdateFunc,
+			DeleteFunc:  p.Handler.DeleteFunc,
+		},
+	}
+}
+
 // ResourceEventHandlerWithClusterFuncs is an adaptor to let you easily specify as many or
 // as few of the notification functions as you want while still implementing
 // ResourceEventHandler.  This adapter does not remove the prohibition against
@@ -172,6 +224,10 @@ type FederatedInformerManager interface {
 	AddPodEventHandler(handler *ResourceEventHandlerWithClusterFuncs)
 	GetPodLister(cluster string) (lister corev1listers.PodLister, informerSynced cache.InformerSynced, exists bool)
 	GetNodeLister(cluster string) (lister corev1listers.NodeLister, informerSynced cache.InformerSynced, exists bool)
+
+	AddResourceEventHandler(gvr schema.GroupVersionResource, handler *FilteringResourceEventHandlerWithClusterFuncs)
+	//nolint:lll
+	GetResourceListerFromFactory(gvr schema.GroupVersionResource, cluster string) (lister interface{}, informerSynced cache.InformerSynced, exists bool)
 
 	// Returns the FederatedTypeConfig lister used by the FederatedInformerManager.
 	GetFederatedTypeConfigLister() fedcorev1a1listers.FederatedTypeConfigLister

@@ -52,6 +52,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/dispatch"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/status"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
@@ -596,6 +597,14 @@ func (s *SyncController) syncToClusters(
 			}
 		}
 
+		if clusterObj != nil {
+			// If one of fedObject and clusterObj is a derived service and the other is not,
+			// the obtained clusterObj does not correspond to fedObj and should be set to nil.
+			if util.IsDerivedService(fedResource.Object().GetAnnotations()) != util.IsDerivedService(clusterObj.GetAnnotations()) {
+				clusterObj = nil
+			}
+		}
+
 		// If cascading deletion is triggered, wait for reconcileClusterForCascadingDeletion to perform the deletion operation.
 		// If the delete operation has not been performed, federatedObject's status will be updated to WaitingForCascadingDeletion.
 		if isCascadingDeletionTriggered {
@@ -823,7 +832,7 @@ func (s *SyncController) ensureRemovalFromClusters(ctx context.Context, fedResou
 	keyedLogger := klog.FromContext(ctx)
 
 	remainingClusters := []string{}
-	ok, err := s.handleDeletionInClusters(
+	clustersNoNeedHandleDeletion, ok, err := s.handleDeletionInClusters(
 		ctx,
 		fedResource,
 		func(dispatcher dispatch.UnmanagedDispatcher, clusterName string, clusterObj *unstructured.Unstructured) {
@@ -842,7 +851,7 @@ func (s *SyncController) ensureRemovalFromClusters(ctx context.Context, fedResou
 			V(2).Info("Waiting for resources managed by this federated object to be removed from some clusters")
 		return true, nil
 	}
-	err = s.checkObjectRemovedFromAllClusters(ctx, fedResource)
+	err = s.checkObjectRemovedFromAllClusters(ctx, fedResource, clustersNoNeedHandleDeletion)
 	if err != nil {
 		return false, errors.Wrapf(err, "failed to verify that managed resources no longer exist in any cluster")
 	}
@@ -856,7 +865,11 @@ func (s *SyncController) ensureRemovalFromClusters(ctx context.Context, fedResou
 // present or labeled as managed.  The checks are performed without
 // the informer to cover the possibility that the resources have not
 // yet been cached.
-func (s *SyncController) checkObjectRemovedFromAllClusters(ctx context.Context, fedResource FederatedResource) error {
+func (s *SyncController) checkObjectRemovedFromAllClusters(
+	ctx context.Context,
+	fedResource FederatedResource,
+	clustersNoNeedHandleDeletion sets.Set[string],
+) error {
 	keyedLogger := klog.FromContext(ctx)
 	syncedClusters, syncedClusterNames, err := s.getSyncedClusters(fedResource)
 	if err != nil {
@@ -873,6 +886,9 @@ func (s *SyncController) checkObjectRemovedFromAllClusters(ctx context.Context, 
 	for _, cluster := range syncedClusters {
 		if !clusterutil.IsClusterReady(&cluster.Status) {
 			unreadyClusters = append(unreadyClusters, cluster.Name)
+			continue
+		}
+		if clustersNoNeedHandleDeletion.Has(cluster.Name) {
 			continue
 		}
 		dispatcher.CheckRemovedOrUnlabeled(ctx, cluster.Name)
@@ -896,15 +912,16 @@ func (s *SyncController) handleDeletionInClusters(
 	ctx context.Context,
 	fedResource FederatedResource,
 	deletionFunc func(dispatcher dispatch.UnmanagedDispatcher, clusterName string, clusterObj *unstructured.Unstructured),
-) (bool, error) {
+) (sets.Set[string], bool, error) {
 	keyedLogger := klog.FromContext(ctx)
 	targetGVK := fedResource.TargetGVK()
 	targetGVR := fedResource.TargetGVR()
 	targetQualifiedName := fedResource.TargetName()
+	clustersNoNeedHandleDeletion := sets.Set[string]{}
 
 	syncedClusters, syncedClusterNames, err := s.getSyncedClusters(fedResource)
 	if err != nil {
-		return false, err
+		return clustersNoNeedHandleDeletion, false, err
 	}
 
 	keyedLogger.V(4).Info("Handle deletion in clusters", "clusters", strings.Join(syncedClusterNames, ","))
@@ -934,6 +951,13 @@ func (s *SyncController) handleDeletionInClusters(
 			continue
 		}
 		if clusterObj == nil {
+			clustersNoNeedHandleDeletion.Insert(clusterName)
+			continue
+		}
+		// If one of fedObject and clusterObj is a derived service and the other is not,
+		// the obtained clusterObj does not correspond to fedObj, and we do not need handle deletion.
+		if util.IsDerivedService(fedResource.Object().GetAnnotations()) != util.IsDerivedService(clusterObj.GetAnnotations()) {
+			clustersNoNeedHandleDeletion.Insert(clusterName)
 			continue
 		}
 
@@ -941,18 +965,19 @@ func (s *SyncController) handleDeletionInClusters(
 	}
 	ok, timeoutErr := dispatcher.Wait()
 	if timeoutErr != nil {
-		return false, timeoutErr
+		return clustersNoNeedHandleDeletion, false, timeoutErr
 	}
 	if len(retrievalFailureClusters) > 0 {
-		return false, errors.Errorf(
+		return clustersNoNeedHandleDeletion, false, errors.Errorf(
 			"failed to retrieve a managed resource for the following cluster(s): %s",
 			strings.Join(retrievalFailureClusters, ", "),
 		)
 	}
 	if len(unreadyClusters) > 0 {
-		return false, errors.Errorf("the following clusters were not ready: %s", strings.Join(unreadyClusters, ", "))
+		return clustersNoNeedHandleDeletion, false,
+			errors.Errorf("the following clusters were not ready: %s", strings.Join(unreadyClusters, ", "))
 	}
-	return ok, nil
+	return clustersNoNeedHandleDeletion, ok, nil
 }
 
 func (s *SyncController) getSyncedClusters(

@@ -1,3 +1,4 @@
 zz_generated* linguist-generated=true
 pkg/client linguist-generated=true
-config/crds/*.yaml linguist-generated=true
+config/crds/bases/core_kubeadmiral_io/*.yaml linguist-generated=true
+config/crds/bases/multicluster_x-k8s_io/*.yaml linguist-generated=true
