@@ -33,14 +33,14 @@ func (pp *PropagationPolicy) GetStatus() *PropagationPolicyStatus {
 	return &pp.Status
 }
 
-func (pp *ClusterPropagationPolicy) GetSpec() *PropagationPolicySpec {
-	return &pp.Spec
+func (cpp *ClusterPropagationPolicy) GetSpec() *PropagationPolicySpec {
+	return &cpp.Spec
 }
 
 func (cpp *ClusterPropagationPolicy) GetRefCountedStatus() *GenericRefCountedStatus {
 	return &cpp.Status.GenericRefCountedStatus
 }
 
-func (pp *ClusterPropagationPolicy) GetStatus() *PropagationPolicyStatus {
-	return &pp.Status
+func (cpp *ClusterPropagationPolicy) GetStatus() *PropagationPolicyStatus {
+	return &cpp.Status
 }
