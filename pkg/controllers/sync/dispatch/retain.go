@@ -470,6 +470,18 @@ func retainContainers(desiredContainers, clusterContainers []interface{}) error 
 }
 
 func retainContainer(desiredContainer, clusterContainer map[string]interface{}) error {
+	resources, exists, err := unstructured.NestedFieldNoCopy(clusterContainer, "resources")
+	if err != nil {
+		return err
+	}
+	if exists {
+		if err = unstructured.SetNestedField(desiredContainer, resources, "resources"); err != nil {
+			return err
+		}
+	} else {
+		unstructured.RemoveNestedField(desiredContainer, "resources")
+	}
+
 	if _, _, exists := findServiceAccountVolumeMount(desiredContainer); !exists {
 		if volumeMnt, idx, exists := findServiceAccountVolumeMount(clusterContainer); exists {
 			// The logic for retaining service account volume mounts is the same as retaining service account volumes.

@@ -21,6 +21,7 @@ are Copyright 2023 The KubeAdmiral Authors.
 package dispatch
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/onsi/gomega"
@@ -198,6 +199,74 @@ func TestMergeStringMaps(t *testing.T) {
 
 			merged := mergeStringMaps(testCase.template, testCase.observed, testCase.lastPropagated)
 			g.Expect(merged).To(gomega.Equal(testCase.expected))
+		})
+	}
+}
+
+func Test_retainContainer(t *testing.T) {
+	type args struct {
+		desiredContainer map[string]interface{}
+		clusterContainer map[string]interface{}
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "retain nil resources",
+			args: args{
+				desiredContainer: map[string]interface{}{
+					"name": "container-1",
+					"resources": map[string]interface{}{
+						"cpu":    "500m",
+						"memory": "512Mi",
+					}},
+				clusterContainer: map[string]interface{}{
+					"name": "container-1",
+				},
+			},
+		},
+		{
+			name: "retain empty resources",
+			args: args{
+				desiredContainer: map[string]interface{}{
+					"name": "container-1",
+					"resources": map[string]interface{}{
+						"cpu":    "500m",
+						"memory": "512Mi",
+					}},
+				clusterContainer: map[string]interface{}{
+					"name":      "container-1",
+					"resources": map[string]interface{}{}},
+			},
+		},
+		{
+			name: "retain non-empty resources",
+			args: args{
+				desiredContainer: map[string]interface{}{
+					"name": "container-1",
+					"resources": map[string]interface{}{
+						"cpu":    "500m",
+						"memory": "512Mi",
+					}},
+				clusterContainer: map[string]interface{}{
+					"name": "container-1",
+					"resources": map[string]interface{}{
+						"cpu":    "100m",
+						"memory": "100Mi",
+					}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := retainContainer(tt.args.desiredContainer, tt.args.clusterContainer); (err != nil) != tt.wantErr {
+				t.Errorf("retainContainer() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !reflect.DeepEqual(tt.args.desiredContainer, tt.args.clusterContainer) {
+				t.Errorf("retainContainer did not retain the resources field correctly")
+			}
 		})
 	}
 }
