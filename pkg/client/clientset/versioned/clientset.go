@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	aggregatedv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/aggregatedapiserver/v1alpha1"
 	corev1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	hpaaggregatorv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/hpaaggregator/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
@@ -15,6 +16,7 @@ import (
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
+	AggregatedV1alpha1() aggregatedv1alpha1.AggregatedV1alpha1Interface
 	CoreV1alpha1() corev1alpha1.CoreV1alpha1Interface
 	HpaaggregatorV1alpha1() hpaaggregatorv1alpha1.HpaaggregatorV1alpha1Interface
 }
@@ -22,8 +24,14 @@ type Interface interface {
 // Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
+	aggregatedV1alpha1    *aggregatedv1alpha1.AggregatedV1alpha1Client
 	coreV1alpha1          *corev1alpha1.CoreV1alpha1Client
 	hpaaggregatorV1alpha1 *hpaaggregatorv1alpha1.HpaaggregatorV1alpha1Client
+}
+
+// AggregatedV1alpha1 retrieves the AggregatedV1alpha1Client
+func (c *Clientset) AggregatedV1alpha1() aggregatedv1alpha1.AggregatedV1alpha1Interface {
+	return c.aggregatedV1alpha1
 }
 
 // CoreV1alpha1 retrieves the CoreV1alpha1Client
@@ -80,6 +88,10 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 
 	var cs Clientset
 	var err error
+	cs.aggregatedV1alpha1, err = aggregatedv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	if err != nil {
+		return nil, err
+	}
 	cs.coreV1alpha1, err = corev1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
 		return nil, err
@@ -109,6 +121,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
+	cs.aggregatedV1alpha1 = aggregatedv1alpha1.New(c)
 	cs.coreV1alpha1 = corev1alpha1.New(c)
 	cs.hpaaggregatorV1alpha1 = hpaaggregatorv1alpha1.New(c)
 

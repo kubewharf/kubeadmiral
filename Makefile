@@ -67,6 +67,9 @@ ifeq ($(TARGET_NAME), all)
 else ifeq ($(TARGET_NAME), kubeadmiral-hpa-aggregator)
 	@echo "kubeadmiral-hpa-aggregator needs certificates form apiserver, do not support dev-run now"
 	@exit -1
+else ifeq ($(TARGET_NAME), kubeadmiral-aggregated-apiserver)
+	@echo "kubeadmiral-aggregated-apiserver needs certificates form apiserver, do not support dev-run now"
+	@exit -1
 endif
 	./output/bin/$(GOOS)/$(GOARCH)/$(DEBUG_TARGET_NAME) \
 		--enable-leader-elect=false \

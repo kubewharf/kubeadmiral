@@ -3,6 +3,7 @@
 package fake
 
 import (
+	aggregatedv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/aggregatedapiserver/v1alpha1"
 	corev1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	hpaaggregatorv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/hpaaggregator/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,6 +17,7 @@ var scheme = runtime.NewScheme()
 var codecs = serializer.NewCodecFactory(scheme)
 
 var localSchemeBuilder = runtime.SchemeBuilder{
+	aggregatedv1alpha1.AddToScheme,
 	corev1alpha1.AddToScheme,
 	hpaaggregatorv1alpha1.AddToScheme,
 }
