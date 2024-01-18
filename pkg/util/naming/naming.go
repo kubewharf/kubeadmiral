@@ -27,6 +27,11 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 )
 
+const (
+	endpointSlicePrefix  = "imported"
+	derivedServicePrefix = "derived"
+)
+
 // The functions in this file are exposed as variables to allow them
 // to be overridden for testing purposes. Simulated scale testing
 // requires being able to change the namespace of target resources
@@ -71,6 +76,40 @@ func GenerateFederatedObjectName(objectName, ftcName string) string {
 	}
 
 	return federatedName
+}
+
+// GenerateImportedEndpointSliceName generates an imported endpointSlice name from endpointSlice name in member clusters.
+func GenerateImportedEndpointSliceName(endpointSliceName string, cluster string) string {
+	importedEpsName := fmt.Sprintf("%s-%s-%s", endpointSlicePrefix, cluster, endpointSliceName)
+
+	if len(importedEpsName) > common.MaxEndpointSliceNameLength {
+		nameHash := fmt.Sprint(fnvHashFunc(importedEpsName))
+		importedEpsName = fmt.Sprintf("%s-%s", importedEpsName[:common.MaxEndpointSliceNameLength-len(nameHash)-1], nameHash)
+	}
+
+	return importedEpsName
+}
+
+// GenerateDerivedSvcFedObjName generates a federated object name whose template is a derived service.
+func GenerateDerivedSvcFedObjName(serviceName string) string {
+	derivedSvcFedObjName := fmt.Sprintf("%s-%s-%s", derivedServicePrefix, serviceName, "services")
+
+	if len(derivedSvcFedObjName) > common.MaxFederatedObjectNameLength {
+		nameHash := fmt.Sprint(fnvHashFunc(derivedSvcFedObjName))
+		derivedSvcFedObjName = fmt.Sprintf("%s-%s", derivedSvcFedObjName[:common.MaxFederatedObjectNameLength-len(nameHash)-1], nameHash)
+	}
+
+	return derivedSvcFedObjName
+}
+
+// GenerateSourceClusterValue generates the value of source cluster label.
+func GenerateSourceClusterValue(clusterName string) string {
+	if len(clusterName) > common.MaxLabelValueLength {
+		nameHash := fmt.Sprint(fnvHashFunc(clusterName))
+		clusterName = fmt.Sprintf("%s-%s", clusterName[:common.MaxLabelValueLength-len(nameHash)-1], nameHash)
+	}
+
+	return clusterName
 }
 
 // transformObjectName will transform the object name as follows:

@@ -47,6 +47,8 @@ const (
 	AutoMigrationControllerName            = "auto-migration"
 	StatusAggregatorControllerName         = "status-aggregator"
 	FederatedHPAControllerName             = "federated-hpa"
+	ServiceExportControllerName            = "serviceexport"
+	ServiceImportControllerName            = "serviceimport"
 )
 
 var knownControllers = map[string]controllermanager.StartControllerFunc{
@@ -62,6 +64,8 @@ var knownControllers = map[string]controllermanager.StartControllerFunc{
 	AutoMigrationControllerName:            startAutoMigrationController,
 	StatusAggregatorControllerName:         startStatusAggregatorController,
 	FederatedHPAControllerName:             startFederatedHPAController,
+	ServiceExportControllerName:            startServiceExportController,
+	ServiceImportControllerName:            startServiceImportController,
 }
 
 var controllersDisabledByDefault = sets.New[string]()

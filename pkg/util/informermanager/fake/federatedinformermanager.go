@@ -83,6 +83,21 @@ func (f *FakeFederatedInformerManager) AddPodEventHandler(handler *informermanag
 	panic("implement me")
 }
 
+func (f *FakeFederatedInformerManager) AddResourceEventHandler(
+	gvr schema.GroupVersionResource,
+	handler *informermanager.FilteringResourceEventHandlerWithClusterFuncs,
+) {
+	// TODO implement me
+	panic("implement me")
+}
+
+func (f *FakeFederatedInformerManager) GetResourceListerFromFactory(
+	gvr schema.GroupVersionResource, cluster string,
+) (lister interface{}, informerSynced cache.InformerSynced, exists bool) {
+	// TODO implement me
+	panic("implement me")
+}
+
 func (f *FakeFederatedInformerManager) GetPodLister(
 	cluster string,
 ) (lister corev1listers.PodLister, informerSynced cache.InformerSynced, exists bool) {

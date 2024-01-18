@@ -29,6 +29,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedhpa"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/follower"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/mcs"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/nsautoprop"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/override"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/policyrc"
@@ -343,4 +344,47 @@ func startFederatedHPAController(
 	go federatedHPAController.Run(ctx)
 
 	return federatedHPAController, nil
+}
+
+func startServiceExportController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	serviceExportController, err := mcs.NewServiceExportController(
+		controllerCtx.KubeClientset,
+		controllerCtx.KubeInformerFactory.Discovery().V1beta1().EndpointSlices(),
+		controllerCtx.FederatedInformerManager,
+		klog.Background(),
+		controllerCtx.Metrics,
+		controllerCtx.WorkerCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating serviceexport controller: %w", err)
+	}
+
+	go serviceExportController.Run(ctx)
+
+	return serviceExportController, nil
+}
+
+func startServiceImportController(
+	ctx context.Context,
+	controllerCtx *controllercontext.Context,
+) (controllermanager.Controller, error) {
+	serviceImportController, err := mcs.NewServiceImportController(
+		controllerCtx.KubeClientset,
+		controllerCtx.KubeInformerFactory.Discovery().V1beta1().EndpointSlices(),
+		controllerCtx.FedClientset,
+		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedObjects(),
+		controllerCtx.Metrics,
+		klog.Background(),
+		controllerCtx.WorkerCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating serviceimport controller: %w", err)
+	}
+
+	go serviceImportController.Run(ctx)
+
+	return serviceImportController, nil
 }

@@ -55,7 +55,7 @@ func (k workerKey) QualifiedName() common.QualifiedName {
 	}
 }
 
-func templateForSourceObject(
+func TemplateForSourceObject(
 	sourceObj *unstructured.Unstructured,
 	annotations, labels map[string]string,
 ) *unstructured.Unstructured {
@@ -119,7 +119,7 @@ func newFederatedObjectForSourceObject(
 
 	// Generate the FederatedObject's template and update the FederatedObject.
 
-	templateObject := templateForSourceObject(sourceObj, templateAnnotations, templateLabels)
+	templateObject := TemplateForSourceObject(sourceObj, templateAnnotations, templateLabels)
 	rawTemplate, err := templateObject.MarshalJSON()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal template: %w", err)
@@ -185,7 +185,7 @@ func updateFederatedObjectForSourceObject(
 	// Generate the FederatedObject's template and compare it to the template in the FederatedObject, updating the
 	// FederatedObject if necessary.
 
-	targetTemplate := templateForSourceObject(sourceObject, templateAnnotations, templateLabels)
+	targetTemplate := TemplateForSourceObject(sourceObject, templateAnnotations, templateLabels)
 	foundTemplate := &unstructured.Unstructured{}
 	if err := foundTemplate.UnmarshalJSON(fedObject.GetSpec().Template.Raw); err != nil {
 		return false, fmt.Errorf("failed to unmarshal template from federated object: %w", err)

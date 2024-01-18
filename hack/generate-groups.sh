@@ -63,10 +63,10 @@ function codegen::join() {
 
 # generate manifests
 echo "Generating manifests"
-${GOBIN}/controller-gen crd paths=$(codegen::join ";" "${INPUT_BASE}/${groups[0]}") output:crd:artifacts:config=config/crds
+${GOBIN}/controller-gen crd paths=$(codegen::join ";" "${INPUT_BASE}/${groups[0]}") output:crd:artifacts:config=config/crds/bases/core_kubeadmiral_io
 
 # patch CRDs with no-federate annotation
-for crd_file in config/crds/*.yaml; do
+for crd_file in config/crds/bases/core_kubeadmiral_io/*.yaml; do
   yq eval -i ".metadata.annotations[\"${NO_FEDERATED_ANNOTATION}\"] = \"true\"" "${crd_file}"
 done
 
@@ -76,7 +76,7 @@ for patch_file in config/crds/patches/*.sh; do
     continue
   fi
 
-  crd_file="config/crds/$(basename "${patch_file}" .sh)".yaml
+  crd_file="config/crds/bases/core_kubeadmiral_io/$(basename "${patch_file}" .sh)".yaml
   if [[ ! -f "$crd_file" ]]; then
     echo "CRD patch file $patch_file does not have a corresponding CRD file" >&2
     exit 1

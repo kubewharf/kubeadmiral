@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
+	mcsv1alpha1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedclient "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
@@ -1552,6 +1553,8 @@ func bootstrapFederatedInformerManagerWithFakeClients(
 	err = appsv1.AddToScheme(scheme)
 	g.Expect(err).ToNot(gomega.HaveOccurred())
 	err = fedcorev1a1.AddToScheme(scheme)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	err = mcsv1alpha1.AddToScheme(scheme)
 	g.Expect(err).ToNot(gomega.HaveOccurred())
 
 	fedObjects := []runtime.Object{}
