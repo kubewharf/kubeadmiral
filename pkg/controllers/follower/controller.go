@@ -365,7 +365,7 @@ func (c *Controller) inferFollowers(
 	fedObj fedcorev1a1.GenericFederatedObject,
 ) (sets.Set[FollowerReference], error) {
 	if fedObj.GetAnnotations()[common.EnableFollowerSchedulingAnnotation] != common.AnnotationValueTrue ||
-		fedObj.GetAnnotations()[common.NoSchedulingAnnotation] == common.AnnotationValueTrue || skipSync(fedObj) {
+		fedObj.GetAnnotations()[common.NoSchedulingAnnotation] == common.AnnotationValueTrue || SkipSync(fedObj) {
 		// follower scheduling is not enabled
 		return nil, nil
 	}

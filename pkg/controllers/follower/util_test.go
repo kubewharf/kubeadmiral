@@ -324,14 +324,14 @@ func Test_skipSync(t *testing.T) {
 			Annotations: map[string]string{common.DryRunAnnotation: common.AnnotationValueTrue},
 		},
 	}
-	assert.True(t, skipSync(federatedObject))
+	assert.True(t, SkipSync(federatedObject))
 	federatedObject.GetAnnotations()[common.DryRunAnnotation] = common.AnnotationValueFalse
-	assert.False(t, skipSync(federatedObject))
+	assert.False(t, SkipSync(federatedObject))
 	federatedObject.GetAnnotations()[common.DryRunAnnotation] = common.AnnotationValueTrue
 	federatedObject.GetStatus().Clusters = []fedcorev1a1.PropagationStatus{
 		{
 			Cluster: "cluster1",
 		},
 	}
-	assert.False(t, skipSync(federatedObject))
+	assert.False(t, SkipSync(federatedObject))
 }

@@ -144,7 +144,7 @@ func getFollowersFromPod(
 	return followers
 }
 
-func skipSync(federatedObject fedcorev1a1.GenericFederatedObject) bool {
+func SkipSync(federatedObject fedcorev1a1.GenericFederatedObject) bool {
 	// if workloads have been propagated to member clusters,
 	// sync is always not skipped.
 	if len(federatedObject.GetStatus().Clusters) > 0 {
