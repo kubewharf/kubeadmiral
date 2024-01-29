@@ -24,7 +24,7 @@ source "${REPO_ROOT}"/hack/lib/dev-up.sh
 KUBECONFIG_DIR=${KUBECONFIG_DIR:-"${HOME}/.kube/kubeadmiral"}
 HOST_CLUSTER_NAME=${HOST_CLUSTER_NAME:-"kubeadmiral-host"}
 MEMBER_CLUSTER_NAME=${MEMBER_CLUSTER_NAME:-"kubeadmiral-member"}
-MANIFEST_DIR=${MANIFEST_DIR:-"${REPO_ROOT}/config/crds"}
+MANIFEST_DIR=${MANIFEST_DIR:-"${REPO_ROOT}/config/crds/bases/core_kubeadmiral_io"}
 CONFIG_DIR=${CONFIG_DIR:-"${REPO_ROOT}/config/sample/host"}
 NUM_MEMBER_CLUSTERS=${NUM_MEMBER_CLUSTERS:-"3"}
 CLUSTER_PROVIDER=${CLUSTER_PROVIDER:-"kwok"}

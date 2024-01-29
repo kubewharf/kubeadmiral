@@ -151,7 +151,7 @@ then
   exit 1
 fi
 
-MANIFEST_DIR=${MANIFEST_DIR:-"${REPO_ROOT}/config/crds"}
+MANIFEST_DIR=${MANIFEST_DIR:-"${REPO_ROOT}/config/crds/bases/core_kubeadmiral_io"}
 CONFIG_DIR=${CONFIG_DIR:-"${REPO_ROOT}/config/sample/host"}
 kubectl --kubeconfig="${HOST_CLUSTER_KUBECONFIG}" --context="${HOST_CLUSTER_CONTEXT}" create -f "${MANIFEST_DIR}"
 kubectl --kubeconfig="${HOST_CLUSTER_KUBECONFIG}" --context="${HOST_CLUSTER_CONTEXT}" create -f "${CONFIG_DIR}"
