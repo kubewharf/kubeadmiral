@@ -221,8 +221,10 @@ func Test_retainContainer(t *testing.T) {
 				desiredContainer: map[string]interface{}{
 					"name": "container-1",
 					"resources": map[string]interface{}{
-						"cpu":    "500m",
-						"memory": "512Mi",
+						"requests": map[string]interface{}{
+							"cpu":    "500m",
+							"memory": "512Mi",
+						},
 					},
 				},
 				clusterContainer: map[string]interface{}{
@@ -236,8 +238,10 @@ func Test_retainContainer(t *testing.T) {
 				desiredContainer: map[string]interface{}{
 					"name": "container-1",
 					"resources": map[string]interface{}{
-						"cpu":    "500m",
-						"memory": "512Mi",
+						"requests": map[string]interface{}{
+							"cpu":    "500m",
+							"memory": "512Mi",
+						},
 					},
 				},
 				clusterContainer: map[string]interface{}{
@@ -252,15 +256,19 @@ func Test_retainContainer(t *testing.T) {
 				desiredContainer: map[string]interface{}{
 					"name": "container-1",
 					"resources": map[string]interface{}{
-						"cpu":    "500m",
-						"memory": "512Mi",
+						"requests": map[string]interface{}{
+							"cpu":    "500m",
+							"memory": "512Mi",
+						},
 					},
 				},
 				clusterContainer: map[string]interface{}{
 					"name": "container-1",
 					"resources": map[string]interface{}{
-						"cpu":    "100m",
-						"memory": "100Mi",
+						"requests": map[string]interface{}{
+							"cpu":    "100m",
+							"memory": "100Mi",
+						},
 					},
 				},
 			},
