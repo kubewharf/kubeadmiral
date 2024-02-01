@@ -41,6 +41,7 @@ import (
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/federate"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/follower"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/util/eventsink"
 	"github.com/kubewharf/kubeadmiral/pkg/util/fedobjectadapters"
@@ -68,11 +69,25 @@ type ServiceImportController struct {
 	fedObjectInformer     fedcorev1a1informers.FederatedObjectInformer
 	fedClient             fedclient.Interface
 
-	worker worker.ReconcileWorker[common.QualifiedName]
+	worker worker.ReconcileWorker[fedObjKey]
 
 	eventRecorder record.EventRecorder
 	logger        klog.Logger
 	metrics       stats.Metrics
+}
+
+type fedObjKey struct {
+	qualifiedName common.QualifiedName
+	sourceObjKind string
+	sourceObjName string
+}
+
+func newFedObjKey(fedObj fedcorev1a1.GenericFederatedObject, sourceObjKind string) fedObjKey {
+	return fedObjKey{
+		qualifiedName: common.NewQualifiedName(fedObj),
+		sourceObjName: fedObj.GetOwnerReferences()[0].Name,
+		sourceObjKind: sourceObjKind,
+	}
 }
 
 func (c *ServiceImportController) IsControllerReady() bool {
@@ -104,7 +119,7 @@ func NewServiceImportController(
 		eventRecorder: eventsink.NewDefederatingRecorderMux(kubeClient, ServiceImportControllerName, 6),
 	}
 
-	c.worker = worker.NewReconcileWorker[common.QualifiedName](
+	c.worker = worker.NewReconcileWorker[fedObjKey](
 		ServiceImportControllerName,
 		c.reconcile,
 		worker.RateLimiterOptions{},
@@ -112,68 +127,49 @@ func NewServiceImportController(
 		metrics,
 	)
 
-	federatedObjectHandler := cache.FilteringResourceEventHandler{
+	federatedObjectHandler := cache.ResourceEventHandlerFuncs{
 		// Only need to handle fedObj whose template is ServiceImport or EndpointSlice
 		// For endpointSlice fedObj, only need to handle add event
-		FilterFunc: func(obj interface{}) bool {
-			switch t := obj.(type) {
-			case fedcorev1a1.GenericFederatedObject:
-				template, err := t.GetSpec().GetTemplateAsUnstructured()
-				if err != nil {
-					return false
-				}
-				if template.GetObjectKind().GroupVersionKind() == common.ServiceImportGVK ||
-					template.GetObjectKind().GroupVersionKind() == common.EndpointSliceGVK {
-					return true
-				}
-				return false
-			default:
-				return false
+		AddFunc: func(obj interface{}) {
+			fedObj := obj.(fedcorev1a1.GenericFederatedObject)
+			if fedObj.GetLabels()[mcsv1alpha1.GroupVersion.String()] == common.ServiceImportKind {
+				c.worker.Enqueue(newFedObjKey(fedObj, common.ServiceImportKind))
+			}
+			if fedObj.GetLabels()[discoveryv1b1.SchemeGroupVersion.String()] == common.EndpointSliceKind {
+				c.worker.Enqueue(newFedObjKey(fedObj, common.EndpointSliceKind))
 			}
 		},
-		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				fedObj := obj.(fedcorev1a1.GenericFederatedObject)
-				c.worker.Enqueue(common.NewQualifiedName(fedObj))
-			},
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				oldFedObj, newFedObj := oldObj.(fedcorev1a1.GenericFederatedObject), newObj.(fedcorev1a1.GenericFederatedObject)
-				oldTemplate, err := oldFedObj.GetSpec().GetTemplateAsUnstructured()
-				if err != nil {
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldFedObj, newFedObj := oldObj.(fedcorev1a1.GenericFederatedObject), newObj.(fedcorev1a1.GenericFederatedObject)
+			if newFedObj.GetLabels()[mcsv1alpha1.GroupVersion.String()] != common.ServiceImportKind {
+				return
+			}
+			oldTemplate, err := oldFedObj.GetSpec().GetTemplateAsUnstructured()
+			if err != nil {
+				return
+			}
+			newTemplate, err := newFedObj.GetSpec().GetTemplateAsUnstructured()
+			if err != nil {
+				return
+			}
+			oldPlacement := oldFedObj.GetSpec().Placements
+			newPlacement := newFedObj.GetSpec().Placements
+			if !reflect.DeepEqual(oldPlacement, newPlacement) || !reflect.DeepEqual(oldTemplate, newTemplate) {
+				c.worker.Enqueue(newFedObjKey(newFedObj, common.ServiceImportKind))
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+				obj = tombstone.Obj
+				if obj == nil {
 					return
 				}
-				newTemplate, err := newFedObj.GetSpec().GetTemplateAsUnstructured()
-				if err != nil {
-					return
-				}
-				if newTemplate.GroupVersionKind() != common.ServiceImportGVK {
-					return
-				}
-				oldPorts, _, _ := unstructured.NestedSlice(oldTemplate.Object, "spec", "ports")
-				newPorts, _, _ := unstructured.NestedSlice(newTemplate.Object, "spec", "ports")
-				oldPlacement := oldFedObj.GetSpec().Placements
-				newPlacement := newFedObj.GetSpec().Placements
-				if !reflect.DeepEqual(oldPlacement, newPlacement) || !reflect.DeepEqual(oldPorts, newPorts) {
-					c.worker.Enqueue(common.NewQualifiedName(newFedObj))
-				}
-			},
-			DeleteFunc: func(obj interface{}) {
-				if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-					obj = tombstone.Obj
-					if obj == nil {
-						return
-					}
-				}
-				fedObj := obj.(fedcorev1a1.GenericFederatedObject)
-				template, err := fedObj.GetSpec().GetTemplateAsUnstructured()
-				if err != nil {
-					return
-				}
-				if template.GroupVersionKind() != common.ServiceImportGVK {
-					return
-				}
-				c.worker.Enqueue(common.NewQualifiedName(fedObj))
-			},
+			}
+			fedObj := obj.(fedcorev1a1.GenericFederatedObject)
+			if fedObj.GetLabels()[mcsv1alpha1.GroupVersion.String()] != common.ServiceImportKind {
+				return
+			}
+			c.worker.Enqueue(newFedObjKey(fedObj, common.ServiceImportKind))
 		},
 	}
 	if _, err := c.fedObjectInformer.Informer().AddEventHandler(federatedObjectHandler); err != nil {
@@ -200,7 +196,8 @@ func (c *ServiceImportController) Run(ctx context.Context) {
 	<-ctx.Done()
 }
 
-func (c *ServiceImportController) reconcile(ctx context.Context, qualifiedName common.QualifiedName) (status worker.Result) {
+func (c *ServiceImportController) reconcile(ctx context.Context, fedObjKey fedObjKey) (status worker.Result) {
+	qualifiedName := fedObjKey.qualifiedName
 	key := qualifiedName.String()
 	ctx, keyedLogger := logging.InjectLoggerValues(ctx, "control-loop", "reconcile", "object", key)
 
@@ -215,8 +212,20 @@ func (c *ServiceImportController) reconcile(ctx context.Context, qualifiedName c
 		return worker.StatusError
 	}
 
-	if fedObject == nil || fedObject.GetDeletionTimestamp() != nil ||
-		fedObject.GetAnnotations()[common.DryRunAnnotation] == common.AnnotationValueTrue {
+	if fedObject == nil || fedObject.GetDeletionTimestamp() != nil {
+		if fedObjKey.sourceObjKind == common.ServiceImportKind {
+			if err = c.syncPlacementsToEndpointSlice(ctx, fedObjKey.qualifiedName.Namespace, fedObjKey.sourceObjName,
+				nil); err != nil {
+				keyedLogger.Error(err, "Failed to sync placements to endpointSlice")
+				return worker.StatusError
+			}
+			return worker.StatusAllOK
+		}
+
+		return worker.StatusAllOK
+	}
+
+	if follower.SkipSync(fedObject) {
 		return worker.StatusAllOK
 	}
 
@@ -271,7 +280,7 @@ func (c *ServiceImportController) reconcileEpsFedObj(
 		return worker.StatusError
 	}
 
-	if err := c.syncPlacementsToEndpointSlice(ctx, serviceImportObj,
+	if err := c.syncPlacementsToEndpointSlice(ctx, serviceImportObj.Namespace, serviceImportObj.Name,
 		siFedObject.GetSpec().GetControllerPlacement(PrefixedGlobalSchedulerName)); err != nil {
 		logger.Error(err, "Failed to sync placements to endpointSlice")
 		c.eventRecorder.Eventf(
@@ -299,6 +308,11 @@ func (c *ServiceImportController) reconcileSvcImportFedObj(
 		serviceImportObj); err != nil {
 		logger.Error(err, "Failed to convert ServiceImport from unstructured object")
 		return worker.StatusError
+	}
+
+	if serviceImportObj.Spec.Type != mcsv1alpha1.ClusterSetIP {
+		logger.V(2).Info("only support ClusterSetIP type, no need to reconcile")
+		return worker.StatusAllOK
 	}
 
 	derivedSvcFedObj, err := fedobjectadapters.GetFromLister(
@@ -329,7 +343,7 @@ func (c *ServiceImportController) reconcileSvcImportFedObj(
 		}
 	}
 
-	if err := c.syncPlacementsToEndpointSlice(ctx, serviceImportObj,
+	if err := c.syncPlacementsToEndpointSlice(ctx, serviceImportObj.Namespace, serviceImportObj.Name,
 		siFedObject.GetSpec().GetControllerPlacement(PrefixedGlobalSchedulerName)); err != nil {
 		logger.Error(err, "Failed to sync placements to endpointSlice")
 		c.eventRecorder.Eventf(
@@ -368,15 +382,16 @@ func newDerivedService(svcImport *mcsv1alpha1.ServiceImport) *corev1.Service {
 
 func (c *ServiceImportController) syncPlacementsToEndpointSlice(
 	ctx context.Context,
-	serviceImport *mcsv1alpha1.ServiceImport,
+	namespace string,
+	name string,
 	placements []fedcorev1a1.ClusterReference,
 ) error {
 	logger := klog.FromContext(ctx)
 
 	epsLister := c.endpointSliceInformer.Lister()
-	epsList, _ := epsLister.EndpointSlices(serviceImport.Namespace).List(
+	epsList, _ := epsLister.EndpointSlices(namespace).List(
 		labels.SelectorFromSet(labels.Set{
-			discoveryv1b1.LabelServiceName: serviceImport.Name,
+			discoveryv1b1.LabelServiceName: name,
 		}))
 
 	var errs []error
