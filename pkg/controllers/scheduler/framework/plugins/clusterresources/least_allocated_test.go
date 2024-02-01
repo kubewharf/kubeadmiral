@@ -24,6 +24,7 @@ import (
 	"context"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -31,13 +32,29 @@ import (
 )
 
 func schedulingUnitWithGPU(su *framework.SchedulingUnit, value int64) *framework.SchedulingUnit {
-	su.ResourceRequest.SetScalar(framework.ResourceGPU, value)
+	return schedulingUnitWithResourceName(su, framework.ResourceGPU, value)
+}
+
+func schedulingUnitWithResourceName(
+	su *framework.SchedulingUnit,
+	resourceName corev1.ResourceName,
+	value int64,
+) *framework.SchedulingUnit {
+	su.ResourceRequest.SetScalar(resourceName, value)
 	return su
 }
 
 func clusterWithGPU(fc *fedcorev1a1.FederatedCluster, allocatable, available int64) *fedcorev1a1.FederatedCluster {
-	fc.Status.Resources.Allocatable[framework.ResourceGPU] = *resource.NewQuantity(allocatable, resource.BinarySI)
-	fc.Status.Resources.Available[framework.ResourceGPU] = *resource.NewQuantity(available, resource.BinarySI)
+	return clusterWithResourceName(fc, framework.ResourceGPU, allocatable, available)
+}
+
+func clusterWithResourceName(
+	fc *fedcorev1a1.FederatedCluster,
+	resourceName corev1.ResourceName,
+	allocatable, available int64,
+) *fedcorev1a1.FederatedCluster {
+	fc.Status.Resources.Allocatable[resourceName] = *resource.NewQuantity(allocatable, resource.BinarySI)
+	fc.Status.Resources.Available[resourceName] = *resource.NewQuantity(available, resource.BinarySI)
 	return fc
 }
 
@@ -131,6 +148,28 @@ func TestClusterResourcesLeastAllocated(t *testing.T) {
 				{Cluster: clusterWithGPU(makeCluster("cluster2", 15000, 10000, 15000, 10000), 6700, 6700), Score: 45},
 			},
 			name: "nothing scheduled, resources requested with gpu, differently sized machines, gpu fraction differs",
+		},
+		{
+			// Cluster1 scores on 0-100 scale
+			// CPU Fraction: 6000 / 10000 = 60%
+			// Memory Fraction: 5000 / 10000 = 50%
+			// foo.bar/any Fraction: 4000 / 10000 = 40%
+			// Cluster1 Score: (40 + 50 + 60 * 1) / 3 = 50
+			// Cluster2 scores on 0-100 scale
+			// CPU Fraction: 6000 / 15000 = 40%
+			// Memory Fraction: 5000 / 10000 = 50%
+			// foo.bar/any Fraction: 4000 / 20000 = 20%
+			// Cluster2 Score: (60 + 50 + 80 * 1) / 3 = 63
+			su: schedulingUnitWithResourceName(makeSchedulingUnit("su5", 6000, 5000), "foo.bar/any", 4000),
+			clusters: []*fedcorev1a1.FederatedCluster{
+				clusterWithResourceName(makeCluster("cluster1", 10000, 10000, 10000, 10000), "foo.bar/any", 10000, 10000),
+				clusterWithResourceName(makeCluster("cluster2", 15000, 10000, 15000, 10000), "foo.bar/any", 20000, 20000),
+			},
+			expectedList: []framework.ClusterScore{
+				{Cluster: clusterWithResourceName(makeCluster("cluster1", 10000, 10000, 10000, 10000), "foo.bar/any", 10000, 10000), Score: 50},
+				{Cluster: clusterWithResourceName(makeCluster("cluster2", 15000, 10000, 15000, 10000), "foo.bar/any", 20000, 20000), Score: 63},
+			},
+			name: "nothing scheduled, resources requested with external resource, differently sized machines, external resource fraction differs",
 		},
 	}
 

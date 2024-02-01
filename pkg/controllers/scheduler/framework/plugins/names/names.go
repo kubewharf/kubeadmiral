@@ -23,6 +23,7 @@ const (
 	ClusterTerminating                 = "ClusterTerminating"
 	ClusterResourcesFit                = "ClusterResourcesFit"
 	PlacementFilter                    = "PlacementFilter"
+	KatalystResourcesExist             = "KatalystResourcesExist"
 	ClusterAffinity                    = "ClusterAffinity"
 	ClusterResourcesBalancedAllocation = "ClusterResourcesBalancedAllocation"
 	ClusterResourcesLeastAllocated     = "ClusterResourcesLeastAllocated"

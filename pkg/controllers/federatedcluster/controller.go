@@ -23,6 +23,7 @@ package federatedcluster
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	kubeclient "k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
@@ -44,6 +46,8 @@ import (
 	genscheme "github.com/kubewharf/kubeadmiral/pkg/client/generic/scheme"
 	fedcorev1a1informers "github.com/kubewharf/kubeadmiral/pkg/client/informers/externalversions/core/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
+	controllercontext "github.com/kubewharf/kubeadmiral/pkg/controllers/context"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/federatedcluster/plugins"
 	"github.com/kubewharf/kubeadmiral/pkg/stats"
 	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
@@ -81,6 +85,12 @@ type FederatedClusterController struct {
 	clusterJoinTimeout            time.Duration
 	resourceAggregationNodeFilter []labels.Selector
 
+	lock                                       sync.Mutex
+	clusterConnectionHashes                    map[string]string
+	enabledClusterResourcePluginHashes         map[string]string
+	externalClusterResourceInformers           map[string]dynamicinformer.DynamicSharedInformerFactory
+	externalClusterResourceInformerCancelFuncs map[string]context.CancelFunc
+
 	worker              worker.ReconcileWorker[common.QualifiedName]
 	statusCollectWorker worker.ReconcileWorker[common.QualifiedName]
 	eventRecorder       record.EventRecorder
@@ -96,10 +106,9 @@ func NewFederatedClusterController(
 	federatedInformerManager informermanager.FederatedInformerManager,
 	metrics stats.Metrics,
 	logger klog.Logger,
-	clusterJoinTimeout time.Duration,
 	workerCount int,
 	fedSystemNamespace string,
-	resourceAggregationNodeFilter []labels.Selector,
+	componentConfig *controllercontext.ComponentConfig,
 ) (*FederatedClusterController, error) {
 	c := &FederatedClusterController{
 		clusterInformer:          clusterInformer,
@@ -108,13 +117,22 @@ func NewFederatedClusterController(
 		fedClient:                fedClient,
 		fedSystemNamespace:       fedSystemNamespace,
 		clusterHealthCheckConfig: &ClusterHealthCheckConfig{
-			// TODO: make health check period configurable
-			Period: time.Second * 30,
+			Period: componentConfig.ClusterHealthCheckPeriod,
 		},
-		clusterJoinTimeout:            clusterJoinTimeout,
-		resourceAggregationNodeFilter: resourceAggregationNodeFilter,
+
+		lock:                                       sync.Mutex{},
+		clusterConnectionHashes:                    map[string]string{},
+		enabledClusterResourcePluginHashes:         map[string]string{},
+		externalClusterResourceInformers:           map[string]dynamicinformer.DynamicSharedInformerFactory{},
+		externalClusterResourceInformerCancelFuncs: map[string]context.CancelFunc{},
+
+		clusterJoinTimeout:            componentConfig.ClusterJoinTimeout,
+		resourceAggregationNodeFilter: componentConfig.ResourceAggregationNodeFilter,
 		metrics:                       metrics,
 		logger:                        logger.WithValues("controller", FederatedClusterControllerName),
+	}
+	if componentConfig.EnableKatalystSupport {
+		plugins.AddKatalystPluginIntoDefaultPlugins()
 	}
 
 	broadcaster := record.NewBroadcaster()
@@ -238,6 +256,7 @@ func (c *FederatedClusterController) reconcile(
 			logger.Error(err, "Failed to handle terminating cluster")
 			return worker.StatusError
 		}
+		c.removeExternalClusterResourceInformers(cluster.Name)
 		return worker.StatusAllOK
 	}
 
@@ -249,6 +268,7 @@ func (c *FederatedClusterController) reconcile(
 		return worker.StatusError
 	}
 
+	c.addOrUpdateExternalClusterResourceInformers(cluster)
 	if joined, alreadyFailed := isClusterJoined(&cluster.Status); joined || alreadyFailed {
 		return worker.StatusAllOK
 	}

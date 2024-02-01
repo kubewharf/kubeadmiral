@@ -184,12 +184,17 @@ func calculateResourceAllocatableRequest(
 }
 
 func getRelevantResources(su *framework.SchedulingUnit) []corev1.ResourceName {
-	resources := make([]corev1.ResourceName, 0, len(framework.DefaultRequestedRatioResources))
-	for resourceName := range framework.DefaultRequestedRatioResources {
-		if resourceName == corev1.ResourceCPU || resourceName == corev1.ResourceMemory ||
-			su.ResourceRequest.HasScalarResource(resourceName) {
+	// innerResourceCount: milliCPU, memory, ephemeralStorage
+	const innerResourceCount = 3
+	resources := make([]corev1.ResourceName, 0, len(su.ResourceRequest.ScalarResources)+innerResourceCount)
+	resources = append(resources, corev1.ResourceCPU, corev1.ResourceMemory) // always returns CPU and memory
+	for resourceName := range su.ResourceRequest.ScalarResources {
+		if framework.IsScalarResourceName(resourceName) {
 			resources = append(resources, resourceName)
 		}
+	}
+	if su.ResourceRequest.EphemeralStorage != 0 {
+		resources = append(resources, corev1.ResourceEphemeralStorage)
 	}
 
 	return resources

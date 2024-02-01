@@ -172,10 +172,9 @@ func startFederatedClusterController(
 		controllerCtx.FederatedInformerManager,
 		controllerCtx.Metrics,
 		klog.Background(),
-		controllerCtx.ComponentConfig.ClusterJoinTimeout,
 		controllerCtx.WorkerCount,
 		controllerCtx.FedSystemNamespace,
-		controllerCtx.ComponentConfig.ResourceAggregationNodeFilter,
+		controllerCtx.ComponentConfig,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating federate controller: %w", err)
@@ -205,6 +204,7 @@ func startScheduler(
 		controllerCtx.Metrics,
 		klog.Background(),
 		controllerCtx.WorkerCount,
+		controllerCtx.ComponentConfig.EnableKatalystSupport,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating scheduler: %w", err)

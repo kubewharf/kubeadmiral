@@ -73,6 +73,8 @@ type SchedulingUnit struct {
 	MaxReplicas     map[string]int64
 	Weights         map[string]int64
 	Priorities      map[string]int64
+
+	EnableKatalystSupport bool
 }
 
 type AutoMigrationSpec struct {

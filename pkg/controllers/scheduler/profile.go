@@ -30,6 +30,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusterready"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusterresources"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/clusterterminating"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/katalyst"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/maxcluster"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/names"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework/plugins/placement"
@@ -48,6 +49,7 @@ var inTreeRegistry = runtime.Registry{
 	names.ClusterAffinity:                    clusteraffinity.NewClusterAffinity,
 	names.ClusterResourcesFit:                clusterresources.NewClusterResourcesFit,
 	names.PlacementFilter:                    placement.NewPlacementFilter,
+	names.KatalystResourcesExist:             katalyst.NewKatalystResourcesExist,
 	names.TaintToleration:                    tainttoleration.NewTaintToleration,
 	names.ClusterResourcesBalancedAllocation: clusterresources.NewClusterResourcesBalancedAllocation,
 	names.ClusterResourcesLeastAllocated:     clusterresources.NewClusterResourcesLeastAllocated,
@@ -98,6 +100,9 @@ func (s *Scheduler) createFramework(
 ) (framework.Framework, error) {
 	enabledPlugins := fedcorev1a1.GetDefaultEnabledPlugins()
 
+	if s.enableKatalystSupport {
+		enabledPlugins.FilterPlugins = append(enabledPlugins.FilterPlugins, names.KatalystResourcesExist)
+	}
 	if len(replicasPlugin) != 0 {
 		enabledPlugins.ReplicasPlugins = replicasPlugin
 	}

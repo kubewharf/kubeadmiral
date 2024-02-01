@@ -26,6 +26,7 @@ import (
 	"math"
 
 	"github.com/davecgh/go-spew/spew"
+	katalystconsts "github.com/kubewharf/katalyst-api/pkg/consts"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -73,6 +74,9 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 		resourceName := corev1.ResourceCPU
 		if su.ResourceRequest.HasScalarResource(framework.ResourceGPU) {
 			resourceName = framework.ResourceGPU
+		} else if su.EnableKatalystSupport &&
+			su.ResourceRequest.HasScalarResource(katalystconsts.ReclaimedResourceMilliCPU) {
+			resourceName = katalystconsts.ReclaimedResourceMilliCPU
 		}
 		clusterAvailables := QueryClusterResource(clusters, availableResource)
 		if len(clusters) != len(clusterAvailables) {

@@ -83,4 +83,6 @@ type ComponentConfig struct {
 	ClusterJoinTimeout            time.Duration
 	MemberObjectEnqueueDelay      time.Duration
 	ResourceAggregationNodeFilter []labels.Selector
+	EnableKatalystSupport         bool
+	ClusterHealthCheckPeriod      time.Duration
 }
