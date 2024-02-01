@@ -334,6 +334,13 @@ func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 		}
 	}
 
+	if dnsConfig, exists, err := unstructured.NestedFieldNoCopy(desiredObj.Object, "spec", "dnsConfig"); err == nil &&
+		(!exists || dnsConfig == nil) {
+		if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "dnsConfig"); err != nil {
+			return err
+		}
+	}
+
 	if _, _, exists := findServiceAccountVolume(desiredObj); !exists {
 		if volume, idx, exists := findServiceAccountVolume(clusterObj); exists {
 			// If the service account volume exists in clusterObj but not in the desiredObj, it was injected by the
@@ -470,6 +477,18 @@ func retainContainers(desiredContainers, clusterContainers []interface{}) error 
 }
 
 func retainContainer(desiredContainer, clusterContainer map[string]interface{}) error {
+	resources, exists, err := unstructured.NestedFieldNoCopy(clusterContainer, "resources")
+	if err != nil {
+		return err
+	}
+	if exists {
+		if err = unstructured.SetNestedField(desiredContainer, resources, "resources"); err != nil {
+			return err
+		}
+	} else {
+		unstructured.RemoveNestedField(desiredContainer, "resources")
+	}
+
 	if _, _, exists := findServiceAccountVolumeMount(desiredContainer); !exists {
 		if volumeMnt, idx, exists := findServiceAccountVolumeMount(clusterContainer); exists {
 			// The logic for retaining service account volume mounts is the same as retaining service account volumes.

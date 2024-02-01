@@ -21,11 +21,14 @@ are Copyright 2023 The KubeAdmiral Authors.
 package dispatch
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -198,6 +201,152 @@ func TestMergeStringMaps(t *testing.T) {
 
 			merged := mergeStringMaps(testCase.template, testCase.observed, testCase.lastPropagated)
 			g.Expect(merged).To(gomega.Equal(testCase.expected))
+		})
+	}
+}
+
+func Test_retainContainer(t *testing.T) {
+	type args struct {
+		desiredContainer map[string]interface{}
+		clusterContainer map[string]interface{}
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "retain nil resources",
+			args: args{
+				desiredContainer: map[string]interface{}{
+					"name": "container-1",
+					"resources": map[string]interface{}{
+						"requests": map[string]interface{}{
+							"cpu":    "500m",
+							"memory": "512Mi",
+						},
+					},
+				},
+				clusterContainer: map[string]interface{}{
+					"name": "container-1",
+				},
+			},
+		},
+		{
+			name: "retain empty resources",
+			args: args{
+				desiredContainer: map[string]interface{}{
+					"name": "container-1",
+					"resources": map[string]interface{}{
+						"requests": map[string]interface{}{
+							"cpu":    "500m",
+							"memory": "512Mi",
+						},
+					},
+				},
+				clusterContainer: map[string]interface{}{
+					"name":      "container-1",
+					"resources": map[string]interface{}{},
+				},
+			},
+		},
+		{
+			name: "retain non-empty resources",
+			args: args{
+				desiredContainer: map[string]interface{}{
+					"name": "container-1",
+					"resources": map[string]interface{}{
+						"requests": map[string]interface{}{
+							"cpu":    "500m",
+							"memory": "512Mi",
+						},
+					},
+				},
+				clusterContainer: map[string]interface{}{
+					"name": "container-1",
+					"resources": map[string]interface{}{
+						"requests": map[string]interface{}{
+							"cpu":    "100m",
+							"memory": "100Mi",
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := retainContainer(tt.args.desiredContainer, tt.args.clusterContainer); (err != nil) != tt.wantErr {
+				t.Errorf("retainContainer() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !reflect.DeepEqual(tt.args.desiredContainer, tt.args.clusterContainer) {
+				t.Errorf("retainContainer did not retain the resources field correctly")
+			}
+		})
+	}
+}
+
+func Test_retainPodFields(t *testing.T) {
+	type args struct {
+		desiredObj *unstructured.Unstructured
+		clusterObj *unstructured.Unstructured
+	}
+
+	noDNSConfigPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-namespace",
+		},
+	}
+	nilPodUnstructuredMap, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(&noDNSConfigPod)
+	nilPodUnstructured := &unstructured.Unstructured{
+		Object: nilPodUnstructuredMap,
+	}
+
+	dnsConfigPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-namespace",
+		},
+		Spec: corev1.PodSpec{
+			DNSConfig: &corev1.PodDNSConfig{
+				Nameservers: []string{"server1", "server2"},
+			},
+		},
+	}
+	dnsConfigPodUnstructuredMap, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(&dnsConfigPod)
+	dnsConfigPodUnstructured := &unstructured.Unstructured{
+		Object: dnsConfigPodUnstructuredMap,
+	}
+
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "retain non-empty pod",
+			args: args{
+				desiredObj: nilPodUnstructured,
+				clusterObj: nilPodUnstructured,
+			},
+			wantErr: false,
+		},
+		{
+			name: "retain dns config pod",
+			args: args{
+				desiredObj: nilPodUnstructured,
+				clusterObj: dnsConfigPodUnstructured,
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := retainPodFields(tt.args.desiredObj, tt.args.clusterObj); (err != nil) != tt.wantErr {
+				t.Errorf("retainPodFields() error = %v, wantErr %v", err, tt.wantErr)
+			}
 		})
 	}
 }
