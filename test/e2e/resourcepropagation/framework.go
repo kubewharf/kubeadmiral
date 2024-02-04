@@ -31,11 +31,12 @@ import (
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	jsonutil "k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
-	controllerutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util"
+	"github.com/kubewharf/kubeadmiral/pkg/util/naming"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework/policies"
 	"github.com/kubewharf/kubeadmiral/test/e2e/framework/util"
@@ -71,14 +72,13 @@ type resourceClient[T k8sObject] interface {
 }
 
 type resourceStatusCollectionTestConfig struct {
-	// GVR of the federatedstatus.
-	gvr schema.GroupVersionResource
 	// Path to a field in the resource whose value should be collected by status collection.
 	path string
 }
 
 type resourcePropagationTestConfig[T k8sObject] struct {
 	gvr              schema.GroupVersionResource
+	gvk              schema.GroupVersionKind
 	statusCollection *resourceStatusCollectionTestConfig
 	// Returns an object template with the given name.
 	objectFactory func(name string) T
@@ -153,18 +153,17 @@ func resourcePropagationTest[T k8sObject](
 	})
 
 	ginkgo.By("Updating the source object", func() {
-		patch := []map[string]interface{}{
-			{
-				"op": "add",
-				// escape the / in annotation key
-				"path":  "/metadata/annotations/" + strings.Replace(resourceUpdateTestAnnotationKey, "/", "~1", 1),
-				"value": resourceUpdateTestAnnotationValue,
+		patch := map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"annotations": map[string]interface{}{
+					resourceUpdateTestAnnotationKey: resourceUpdateTestAnnotationValue,
+				},
 			},
 		}
 		patchBytes, err := json.Marshal(patch)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 
-		object, err = hostClient.Patch(ctx, object.GetName(), types.JSONPatchType, patchBytes, metav1.PatchOptions{})
+		object, err = hostClient.Patch(ctx, object.GetName(), types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 	})
 
@@ -245,29 +244,33 @@ func resourcePropagationTest[T k8sObject](
 					actualFieldByCluster[cluster.Name] = actualField
 				}
 
-				fedStatusUns, err := f.HostDynamicClient().Resource(config.statusCollection.gvr).Namespace(object.GetNamespace()).Get(
-					ctx, object.GetName(), metav1.GetOptions{})
+				ftc, exists := f.FTCManager().GetResourceFTC(config.gvk)
+				g.Expect(exists).To(gomega.BeTrue())
+
+				collectedStatusName := naming.GenerateFederatedObjectName(object.GetName(), ftc.Name)
+				fedStatus, err := f.HostFedClient().CoreV1alpha1().CollectedStatuses(object.GetNamespace()).Get(
+					ctx, collectedStatusName, metav1.GetOptions{})
 				if err != nil && apierrors.IsNotFound(err) {
 					// status might not have been created yet, use local g to fail only this attempt
 					g.Expect(err).NotTo(gomega.HaveOccurred(), "Federated status object has not been created")
 				}
 				gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 
-				fedStatus := controllerutil.FederatedResource{}
-				err = pkgruntime.DefaultUnstructuredConverter.FromUnstructured(fedStatusUns.Object, &fedStatus)
-				gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
-
-				g.Expect(fedStatus.ClusterStatus).
+				g.Expect(fedStatus.Clusters).
 					To(gomega.HaveLen(len(actualFieldByCluster)), "Collected status has wrong number of clusters")
-				for _, clusterStatus := range fedStatus.ClusterStatus {
-					actualField, exists := actualFieldByCluster[clusterStatus.ClusterName]
-					g.Expect(exists).To(gomega.BeTrue(), fmt.Sprintf("collected from unexpected cluster %s", clusterStatus.ClusterName))
+				for _, clusterStatus := range fedStatus.Clusters {
+					actualField, exists := actualFieldByCluster[clusterStatus.Cluster]
+					g.Expect(exists).
+						To(gomega.BeTrue(), fmt.Sprintf("collected from unexpected cluster %s", clusterStatus.Cluster))
 
-					collectedField, exists, err := unstructured.NestedFieldNoCopy(clusterStatus.CollectedFields, pathSegments...)
+					collectedFields := &map[string]interface{}{}
+					err := jsonutil.Unmarshal(clusterStatus.CollectedFields.Raw, collectedFields)
+					gomega.Expect(err).ToNot(gomega.HaveOccurred())
+					collectedField, exists, err := unstructured.NestedFieldNoCopy(*collectedFields, pathSegments...)
 					gomega.Expect(err).NotTo(gomega.HaveOccurred(), framework.MessageUnexpectedError)
 					g.Expect(exists).To(
 						gomega.BeTrue(),
-						fmt.Sprintf("collected fields does not contain %q for cluster %s", config.statusCollection.path, clusterStatus.ClusterName),
+						fmt.Sprintf("collected fields does not contain %q for cluster %s", config.statusCollection.path, clusterStatus.Cluster),
 					)
 					g.Expect(collectedField).To(gomega.Equal(actualField), "collected and actual fields differ")
 				}
