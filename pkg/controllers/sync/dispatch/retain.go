@@ -301,6 +301,10 @@ func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 		return err
 	}
 
+	if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "volumes"); err != nil {
+		return err
+	}
+
 	// The following fields are fields that can be explicitly set by the user, but are defaulted by the Kubernetes
 	// control plane (after creation) if left unset. For these fields, we retain the defaulted values in clusterObj if
 	// the field was not explicitly set in desiredObj. Otherwise, we respect the user's choice.
@@ -335,13 +339,6 @@ func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 	if dnsConfig, exists, err := unstructured.NestedFieldNoCopy(desiredObj.Object, "spec", "dnsConfig"); err == nil &&
 		(!exists || dnsConfig == nil) {
 		if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "dnsConfig"); err != nil {
-			return err
-		}
-	}
-
-	if volumes, exists, err := unstructured.NestedFieldNoCopy(desiredObj.Object, "spec", "volumes"); err == nil &&
-		(!exists || volumes == nil) {
-		if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "volumes"); err != nil {
 			return err
 		}
 	}
