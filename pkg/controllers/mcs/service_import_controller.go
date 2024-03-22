@@ -219,6 +219,33 @@ func (c *ServiceImportController) reconcile(ctx context.Context, fedObjKey fedOb
 				keyedLogger.Error(err, "Failed to sync placements to endpointSlice")
 				return worker.StatusError
 			}
+
+			// Usually derivedSvcFedObj relies on the cascade deletion mechanism of K8s for cleaning,
+			// but the GC time of K8s is not certain, so when it has not been recycled,
+			// the controller needs to perform the deletion action.
+			derivedSvcFedObj, err := fedobjectadapters.GetFromLister(
+				c.fedObjectInformer.Lister(),
+				nil,
+				fedObjKey.qualifiedName.Namespace,
+				naming.GenerateDerivedSvcFedObjName(fedObjKey.sourceObjName),
+			)
+			if err != nil && !apierrors.IsNotFound(err) {
+				keyedLogger.Error(err, "Failed to get derived service federated object from store")
+				return worker.StatusError
+			}
+
+			if derivedSvcFedObj != nil && derivedSvcFedObj.GetDeletionTimestamp() == nil {
+				if err = fedobjectadapters.Delete(
+					ctx,
+					c.fedClient.CoreV1alpha1(),
+					derivedSvcFedObj.GetNamespace(),
+					derivedSvcFedObj.GetName(),
+					metav1.DeleteOptions{},
+				); err != nil {
+					return worker.StatusError
+				}
+			}
+
 			return worker.StatusAllOK
 		}
 
@@ -334,6 +361,8 @@ func (c *ServiceImportController) reconcileSvcImportFedObj(
 			logger.Error(err, "Failed to create derived service federated object")
 			return worker.StatusError
 		}
+	} else if derivedSvcFedObj.GetDeletionTimestamp() != nil {
+		return worker.StatusError
 	} else {
 		derivedSvcFedObj = derivedSvcFedObj.DeepCopyGenericFederatedObject()
 		if err := c.handleExistingFederatedObject(ctx, serviceImportObj, newDerivedSvc,
