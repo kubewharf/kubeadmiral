@@ -35,8 +35,6 @@ import (
 )
 
 const (
-	// see serviceaccount admission plugin in kubernetes
-	ServiceAccountVolumeNamePrefix = "kube-api-access-"
 	//nolint:gosec
 	DefaultAPITokenMountPath = "/var/run/secrets/kubernetes.io/serviceaccount"
 )
@@ -303,6 +301,10 @@ func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 		return err
 	}
 
+	if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "volumes"); err != nil {
+		return err
+	}
+
 	// The following fields are fields that can be explicitly set by the user, but are defaulted by the Kubernetes
 	// control plane (after creation) if left unset. For these fields, we retain the defaulted values in clusterObj if
 	// the field was not explicitly set in desiredObj. Otherwise, we respect the user's choice.
@@ -338,26 +340,6 @@ func retainPodFields(desiredObj, clusterObj *unstructured.Unstructured) error {
 		(!exists || dnsConfig == nil) {
 		if err := copyUnstructuredField(clusterObj, desiredObj, "spec", "dnsConfig"); err != nil {
 			return err
-		}
-	}
-
-	if _, _, exists := findServiceAccountVolume(desiredObj); !exists {
-		if volume, idx, exists := findServiceAccountVolume(clusterObj); exists {
-			// If the service account volume exists in clusterObj but not in the desiredObj, it was injected by the
-			// service account admission plugin. We retain the service account volume at the same index in desiredObj
-			// (if we do not preserve the ordering of the volumes slice, the update will fail).
-			desiredVolumes, _, _ := unstructured.NestedSlice(desiredObj.Object, "spec", "volumes") // this is a deepcopy
-			if len(desiredVolumes) < idx {
-				return fmt.Errorf("failed to copy service account volume, slice length mismatch")
-			}
-
-			desiredVolumes = append(desiredVolumes, nil)
-			copy(desiredVolumes[idx+1:], desiredVolumes[idx:])
-			desiredVolumes[idx] = volume
-
-			if err := unstructured.SetNestedSlice(desiredObj.Object, desiredVolumes, "spec", "volumes"); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -403,41 +385,6 @@ func copyUnstructuredField(srcObj, destObj *unstructured.Unstructured, fields ..
 	}
 
 	return unstructured.SetNestedField(destObj.Object, value, fields...)
-}
-
-// findServiceAccountVolume checks if the given pod contains a serviceaccount volume as defined by the serviceaccount
-// admission plugin and returns the volume along with the index at which it is located.
-//
-// NOTE: This ONLY WORKS with the BoundServiceAccountTokenVolume feature enabled.
-//
-// Before the BoundServiceAccountTokenVolume feature was introduced, serviceaccount volumes can only be identified by
-// checking if the volume has a secret volumeSource that references the secret containing the serviceaccount token. This
-// would require us to send multiple requests to the apiserver or add new informers to the sync controller. We have
-// decided not to support this.
-func findServiceAccountVolume(pod *unstructured.Unstructured) (volume map[string]interface{}, idx int, exists bool) {
-	volumes, exists, err := unstructured.NestedSlice(pod.Object, "spec", "volumes")
-	if err != nil || !exists {
-		return nil, 0, false
-	}
-
-	for i, v := range volumes {
-		volume, ok := v.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		name, exists, err := unstructured.NestedString(volume, "name")
-		if err != nil || !exists {
-			continue
-		}
-
-		// see serviceaccount admission plugin
-		if strings.HasPrefix(name, ServiceAccountVolumeNamePrefix) {
-			return volume, i, true
-		}
-	}
-
-	return nil, 0, false
 }
 
 func retainContainers(desiredContainers, clusterContainers []interface{}) error {
