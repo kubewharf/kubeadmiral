@@ -461,8 +461,11 @@ func (c *ServiceExportController) filterEndpointSlice(
 
 	svcName := eps.Labels[discoveryv1b1.LabelServiceName]
 	seListerInterface, synced, exists := c.fedInformerManager.GetResourceListerFromFactory(common.ServiceExportGVR, key.cluster)
-	if !exists || !synced() {
-		return true, fmt.Errorf("informer of serviceExport not exists or not synced for cluster %s", key.cluster)
+	if !exists {
+		return false, nil
+	}
+	if !synced() {
+		return true, fmt.Errorf("informer of serviceExport not synced for cluster %s", key.cluster)
 	}
 
 	seLister, ok := seListerInterface.(cache.GenericLister)
