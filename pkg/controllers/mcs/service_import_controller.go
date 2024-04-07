@@ -22,14 +22,14 @@ import (
 	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
-	discoveryv1b1 "k8s.io/api/discovery/v1beta1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	discoveryv1b1informers "k8s.io/client-go/informers/discovery/v1beta1"
+	discoveryv1informers "k8s.io/client-go/informers/discovery/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -65,7 +65,7 @@ const (
 type ServiceImportController struct {
 	name string
 
-	endpointSliceInformer discoveryv1b1informers.EndpointSliceInformer
+	endpointSliceInformer discoveryv1informers.EndpointSliceInformer
 	fedObjectInformer     fedcorev1a1informers.FederatedObjectInformer
 	fedClient             fedclient.Interface
 
@@ -100,7 +100,7 @@ func (c *ServiceImportController) HasSynced() bool {
 
 func NewServiceImportController(
 	kubeClient kubeclient.Interface,
-	endpointSliceInformer discoveryv1b1informers.EndpointSliceInformer,
+	endpointSliceInformer discoveryv1informers.EndpointSliceInformer,
 	fedClient fedclient.Interface,
 	fedObjectInformer fedcorev1a1informers.FederatedObjectInformer,
 	metrics stats.Metrics,
@@ -135,7 +135,7 @@ func NewServiceImportController(
 			if fedObj.GetLabels()[mcsv1alpha1.GroupVersion.String()] == common.ServiceImportKind {
 				c.worker.Enqueue(newFedObjKey(fedObj, common.ServiceImportKind))
 			}
-			if fedObj.GetLabels()[discoveryv1b1.SchemeGroupVersion.String()] == common.EndpointSliceKind {
+			if fedObj.GetLabels()[discoveryv1.SchemeGroupVersion.String()] == common.EndpointSliceKind {
 				c.worker.Enqueue(newFedObjKey(fedObj, common.EndpointSliceKind))
 			}
 		},
@@ -278,7 +278,7 @@ func (c *ServiceImportController) reconcileEpsFedObj(
 ) (status worker.Result) {
 	logger := klog.FromContext(ctx)
 
-	svcName := unstructuredEps.GetLabels()[discoveryv1b1.LabelServiceName]
+	svcName := unstructuredEps.GetLabels()[discoveryv1.LabelServiceName]
 
 	siFedObject, err := fedobjectadapters.GetFromLister(
 		c.fedObjectInformer.Lister(),
@@ -420,7 +420,7 @@ func (c *ServiceImportController) syncPlacementsToEndpointSlice(
 	epsLister := c.endpointSliceInformer.Lister()
 	epsList, _ := epsLister.EndpointSlices(namespace).List(
 		labels.SelectorFromSet(labels.Set{
-			discoveryv1b1.LabelServiceName: name,
+			discoveryv1.LabelServiceName: name,
 		}))
 
 	var errs []error

@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	autoscalingv1 "k8s.io/api/autoscaling/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -248,7 +248,7 @@ func (f *FederatedHPAController) scaleTargetRefToResource(gvk schema.GroupVersio
 	fieldValMap := fieldVal.(map[string]interface{})
 
 	// TODO: does it work for all types？
-	var targetResource autoscalingv1.CrossVersionObjectReference
+	var targetResource autoscalingv2.CrossVersionObjectReference
 	if err = runtime.DefaultUnstructuredConverter.FromUnstructured(fieldValMap, &targetResource); err != nil {
 		return Resource{}, err
 	}
