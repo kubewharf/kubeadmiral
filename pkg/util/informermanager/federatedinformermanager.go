@@ -276,7 +276,7 @@ func (m *federatedInformerManager) processCluster(
 		addPodInformer(ctx, factory, clusterKubeClient, m.podListerSemaphore, false)
 		factory.Core().V1().Nodes().Informer()
 		factory.Core().V1().Services().Informer()
-		factory.Discovery().V1beta1().EndpointSlices().Informer()
+		factory.Discovery().V1().EndpointSlices().Informer()
 
 		dynamicInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(clusterDynamicClient, 0)
 		dynamicInformerFactory.ForResource(common.ServiceExportGVR)
@@ -348,7 +348,7 @@ func (m *federatedInformerManager) processCluster(
 			if gvrRegistrations[handler] == nil {
 				copied := handler.copyWithClusterName(clusterName)
 				if gvr == common.EndpointSliceGVR {
-					if r, err := factory.Discovery().V1beta1().EndpointSlices().Informer().AddEventHandler(copied); err == nil {
+					if r, err := factory.Discovery().V1().EndpointSlices().Informer().AddEventHandler(copied); err == nil {
 						gvrRegistrations[handler] = r
 					}
 				} else {
@@ -522,7 +522,7 @@ func (m *federatedInformerManager) GetResourceListerFromFactory(
 		return factory.Core().V1().Services().Lister(), factory.Core().V1().Services().Informer().HasSynced, true
 	}
 	if gvr == common.EndpointSliceGVR {
-		return factory.Discovery().V1beta1().EndpointSlices().Lister(), factory.Discovery().V1beta1().EndpointSlices().Informer().HasSynced, true
+		return factory.Discovery().V1().EndpointSlices().Lister(), factory.Discovery().V1().EndpointSlices().Informer().HasSynced, true
 	}
 
 	return dynamicFactory.ForResource(gvr).Lister(),

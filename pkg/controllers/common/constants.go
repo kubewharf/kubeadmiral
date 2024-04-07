@@ -24,7 +24,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	discoveryv1b1 "k8s.io/api/discovery/v1beta1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	mcsv1alpha1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -199,7 +199,7 @@ var (
 
 	ServiceExportGVK   = mcsv1alpha1.SchemeGroupVersion.WithKind(ServiceExportKind)
 	ServiceImportGVK   = mcsv1alpha1.SchemeGroupVersion.WithKind(ServiceImportKind)
-	EndpointSliceGVK   = discoveryv1b1.SchemeGroupVersion.WithKind(EndpointSliceKind)
+	EndpointSliceGVK   = discoveryv1.SchemeGroupVersion.WithKind(EndpointSliceKind)
 	FederatedObjectGVK = fedcorev1a1.SchemeGroupVersion.WithKind(FederatedObjectKind)
 )
 
@@ -215,7 +215,7 @@ var (
 	ReplicaSetGVR = appsv1.SchemeGroupVersion.WithResource(ReplicaSetResource)
 
 	ServiceExportGVR = mcsv1alpha1.SchemeGroupVersion.WithResource(ServiceExportResource)
-	EndpointSliceGVR = discoveryv1b1.SchemeGroupVersion.WithResource(EndpointSliceResource)
+	EndpointSliceGVR = discoveryv1.SchemeGroupVersion.WithResource(EndpointSliceResource)
 )
 
 // MaxFederatedObjectNameLength defines the max length of a federated object name.
