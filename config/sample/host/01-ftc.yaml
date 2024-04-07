@@ -320,7 +320,7 @@ spec:
     kind: CronJob
     pluralName: cronjobs
     scope: Namespaced
-    version: v1beta1
+    version: v1
   controllers:
     - - kubeadmiral.io/global-scheduler
     - - kubeadmiral.io/overridepolicy-controller
@@ -417,7 +417,7 @@ spec:
     kind: HorizontalPodAutoscaler
     pluralName: horizontalpodautoscalers
     scope: Namespaced
-    version: v2beta2
+    version: v2
   controllers:
     - - kubeadmiral.io/federatedhpa-controller
     - - kubeadmiral.io/global-scheduler
@@ -467,5 +467,5 @@ spec:
     kind: EndpointSlice
     pluralName: endpointslices
     scope: Namespaced
-    version: v1beta1
+    version: v1
     group: discovery.k8s.io
