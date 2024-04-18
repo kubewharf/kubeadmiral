@@ -463,30 +463,30 @@ func (a *StatusAggregator) reconcileOnClusterChange() {
 
 // getObjectFromStore returns the specified obj from cluster.
 // If cluster is "", get the obj from informerManager.
-func (a *StatusAggregator) getObjectFromStore(qualifedName reconcileKey, cluster string) (*unstructured.Unstructured, error) {
+func (a *StatusAggregator) getObjectFromStore(qualifiedName reconcileKey, cluster string) (*unstructured.Unstructured, error) {
 	var (
 		lister    cache.GenericLister
 		hasSynced cache.InformerSynced
 		exists    bool
 	)
 	if cluster != "" {
-		lister, hasSynced, exists = a.federatedInformer.GetResourceLister(qualifedName.gvk, cluster)
+		lister, hasSynced, exists = a.federatedInformer.GetResourceLister(qualifiedName.gvk, cluster)
 	} else {
-		lister, hasSynced, exists = a.informerManager.GetResourceLister(qualifedName.gvk)
+		lister, hasSynced, exists = a.informerManager.GetResourceLister(qualifiedName.gvk)
 	}
 	if !exists {
-		return nil, fmt.Errorf("lister for %s does not exist", qualifedName.gvk)
+		return nil, fmt.Errorf("lister for %s does not exist", qualifiedName.gvk)
 	}
 	if !hasSynced() {
-		return nil, fmt.Errorf("lister for %s not synced", qualifedName.gvk)
+		return nil, fmt.Errorf("lister for %s not synced", qualifiedName.gvk)
 	}
 
 	var obj pkgruntime.Object
 	var err error
-	if qualifedName.namespace == "" {
-		obj, err = lister.Get(qualifedName.name)
+	if qualifiedName.namespace == "" {
+		obj, err = lister.Get(qualifiedName.name)
 	} else {
-		obj, err = lister.ByNamespace(qualifedName.namespace).Get(qualifedName.name)
+		obj, err = lister.ByNamespace(qualifiedName.namespace).Get(qualifiedName.name)
 	}
 	if err != nil {
 		return nil, err

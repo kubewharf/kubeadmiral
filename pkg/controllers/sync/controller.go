@@ -1225,6 +1225,9 @@ func (s *SyncController) cascadingDeletionForFTC(
 
 		// get the corresponding federated object
 		fedObjName := naming.GenerateFederatedObjectName(clusterObj.GetName(), ftc.Name)
+		if util.IsDerivedService(clusterObj.GetAnnotations()) {
+			fedObjName = naming.GenerateDerivedSvcFedObjName(clusterObj.GetName())
+		}
 		fedObj, err := s.fedAccessor.FederatedResource(common.QualifiedName{
 			Namespace: clusterObj.GetNamespace(),
 			Name:      fedObjName,

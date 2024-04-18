@@ -106,16 +106,16 @@ func (spec *GenericFederatedObjectSpec) SetControllerPlacement(controller string
 		}
 	}
 
-	newPlacmentWithController := PlacementWithController{
+	newPlacementWithController := PlacementWithController{
 		Controller: controller,
 		Placement:  newPlacement,
 	}
 	if oldPlacementWithControllerIdx == -1 {
-		spec.Placements = append(spec.Placements, newPlacmentWithController)
+		spec.Placements = append(spec.Placements, newPlacementWithController)
 		return true
 	}
-	if !reflect.DeepEqual(newPlacmentWithController, spec.Placements[oldPlacementWithControllerIdx]) {
-		spec.Placements[oldPlacementWithControllerIdx] = newPlacmentWithController
+	if !reflect.DeepEqual(newPlacementWithController, spec.Placements[oldPlacementWithControllerIdx]) {
+		spec.Placements[oldPlacementWithControllerIdx] = newPlacementWithController
 		return true
 	}
 
