@@ -119,7 +119,7 @@ func (c *FederatedClusterController) handleNotJoinedCluster(
 
 	// 2. The remaining steps require a cluster kube client, attempt to create one
 
-	_, clusterKubeClient, err := c.getClusterClient(ctx, cluster)
+	_, clusterKubeClient, err := c.getClusterClient(ctx, cluster, true)
 	if err != nil {
 		logger.Error(err, "Failed to create cluster client")
 		msg := fmt.Sprintf("Failed to create cluster client: %v", err.Error())
