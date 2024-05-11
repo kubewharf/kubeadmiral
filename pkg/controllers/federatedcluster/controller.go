@@ -405,7 +405,7 @@ func (c *FederatedClusterController) handleTerminatingCluster(
 
 	// Only perform clean-up if we made any effectual changes to the cluster during join.
 	if cluster.Status.JoinPerformed {
-		clusterSecret, clusterKubeClient, err := c.getClusterClient(ctx, cluster)
+		clusterSecret, clusterKubeClient, err := c.getClusterClient(ctx, cluster, !cluster.Spec.UseServiceAccountToken)
 		if err != nil {
 			c.eventRecorder.Eventf(
 				cluster,
@@ -478,6 +478,7 @@ func (c *FederatedClusterController) handleTerminatingCluster(
 func (c *FederatedClusterController) getClusterClient(
 	ctx context.Context,
 	cluster *fedcorev1a1.FederatedCluster,
+	useBootstrap bool,
 ) (*corev1.Secret, kubeclient.Interface, error) {
 	restConfig := &rest.Config{Host: cluster.Spec.APIEndpoint}
 
@@ -495,7 +496,7 @@ func (c *FederatedClusterController) getClusterClient(
 		return nil, nil, fmt.Errorf("failed to get cluster secret: %w", err)
 	}
 
-	if err := clusterutil.PopulateAuthDetailsFromSecret(restConfig, cluster.Spec.Insecure, clusterSecret, true); err != nil {
+	if err := clusterutil.PopulateAuthDetailsFromSecret(restConfig, cluster.Spec.Insecure, clusterSecret, useBootstrap); err != nil {
 		return nil, nil, fmt.Errorf("cluster secret malformed: %w", err)
 	}
 
