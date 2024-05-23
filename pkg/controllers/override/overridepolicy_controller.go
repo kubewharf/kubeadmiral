@@ -130,7 +130,7 @@ func NewOverridePolicyController(
 
 	if _, err := c.clusterOverridePolicyInformer.Informer().AddEventHandler(eventhandlers.NewTriggerOnAllChanges(func(o pkgruntime.Object) {
 		policy := o.(fedcorev1a1.GenericOverridePolicy)
-		c.enqueueFedObjectsUsingPolicy(policy, OverridePolicyNameLabel)
+		c.enqueueFedObjectsUsingPolicy(policy, ClusterOverridePolicyNameLabel)
 	})); err != nil {
 		return nil, err
 	}
@@ -201,19 +201,17 @@ func (c *Controller) enqueueFedObjectsUsingPolicy(policy fedcorev1a1.GenericOver
 		c.worker.Enqueue(common.QualifiedName{Name: clusterFedObject.GetName()})
 	}
 
-	if policy.GetNamespace() != "" {
-		fedObjects, err := c.fedObjectInformer.Lister().FederatedObjects(policy.GetNamespace()).List(selector)
-		if err != nil {
-			logger.Error(err, "Failed to list reference federated objects")
-			return
-		}
+	fedObjects, err := c.fedObjectInformer.Lister().FederatedObjects(policy.GetNamespace()).List(selector)
+	if err != nil {
+		logger.Error(err, "Failed to list reference federated objects")
+		return
+	}
 
-		for _, fedObject := range fedObjects {
-			c.worker.Enqueue(common.QualifiedName{
-				Namespace: fedObject.GetNamespace(),
-				Name:      fedObject.GetName(),
-			})
-		}
+	for _, fedObject := range fedObjects {
+		c.worker.Enqueue(common.QualifiedName{
+			Namespace: fedObject.GetNamespace(),
+			Name:      fedObject.GetName(),
+		})
 	}
 }
 
