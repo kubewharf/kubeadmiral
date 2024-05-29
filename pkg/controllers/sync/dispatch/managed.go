@@ -194,6 +194,9 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 			return result
 		}
 
+		// Initialize finalizers to an empty list to avoid missing-path-error of JSONPatch.
+		obj.SetFinalizers([]string{})
+
 		err = d.fedResource.ApplyOverrides(obj, clusterName)
 		if err != nil {
 			result = d.recordOperationError(ctx, fedcorev1a1.ApplyOverridesFailed, clusterName, op, err)
@@ -316,10 +319,33 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			return result
 		}
 
+		// Retain finalizers since they will typically be set by
+		// controllers in a member cluster.  It is still possible to set the fields
+		// via overrides.
+		if fs := clusterObj.GetFinalizers(); len(fs) > 0 {
+			obj.SetFinalizers(fs)
+		} else {
+			// Initialize finalizers to an empty list to avoid missing-path-error of JSONPatch.
+			obj.SetFinalizers([]string{})
+		}
+
 		err = d.fedResource.ApplyOverrides(obj, clusterName)
 		if err != nil {
 			result = d.recordOperationError(ctx, fedcorev1a1.ApplyOverridesFailed, clusterName, op, err)
 			return result
+		}
+
+		// make finalizers unique
+		if fs := obj.GetFinalizers(); len(fs) > 0 {
+			i := 0
+			fSet := sets.NewString()
+			for _, v := range fs {
+				if fSet.Len() != fSet.Insert(v).Len() {
+					fs[i] = v
+					i++
+				}
+			}
+			obj.SetFinalizers(fs[:i])
 		}
 
 		recordPropagatedLabelsAndAnnotations(obj)
