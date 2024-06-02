@@ -165,13 +165,13 @@ done
 
 # 5. deploy kubeadmiral-controller-manager component
 echo -e "\nDeploying the kubeadmiral-controller-manager."
-kubectl --kubeconfig="${META_CLUSTER_KUBECONFIG}" --context="${META_CLUSTER_NAME}" apply -f "${CONTROLPLANE_DEPLOY_PATH}/kubeadmiral-controller-manager.yaml"
+util::deploy_components_according_to_different_region "${REGION}" "${CONTROLPLANE_DEPLOY_PATH}/kubeadmiral-controller-manager.yaml" "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}"
 deploy::wait_pod_ready "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}" "${KUBEADMIRAL_CONTROLLER_MANAGER_LABEL}" "${KUBEADMIRAL_SYSTEM_NAMESPACE}"
 
 # 6. deploy kubeadmiral-hpa-aggregator component
 echo -e "\nDeploying the kubeadmiral-hpa-aggregator."
-kubectl --kubeconfig="${HOST_CLUSTER_KUBECONFIG}" --context="${HOST_CLUSTER_CONTEXT}" apply -f "${CONTROLPLANE_DEPLOY_PATH}/kubeadmiral-hpa-aggregator-apiservice.yaml"
-kubectl --kubeconfig="${META_CLUSTER_KUBECONFIG}" --context="${META_CLUSTER_NAME}" apply -f "${CONTROLPLANE_DEPLOY_PATH}/kubeadmiral-hpa-aggregator.yaml"
+util::deploy_components_according_to_different_region "${REGION}" "${CONTROLPLANE_DEPLOY_PATH}/kubeadmiral-hpa-aggregator-apiservice.yaml" "${HOST_CLUSTER_KUBECONFIG}" "${HOST_CLUSTER_CONTEXT}"
+util::deploy_components_according_to_different_region "${REGION}" "${CONTROLPLANE_DEPLOY_PATH}/kubeadmiral-hpa-aggregator.yaml" "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}"
 deploy::wait_pod_ready "${META_CLUSTER_KUBECONFIG}" "${META_CLUSTER_NAME}" "${KUBEADMIRAL_HPA_AGGREGATOR_LABEL}" "${KUBEADMIRAL_SYSTEM_NAMESPACE}"
 kubectl config set-cluster hpa-aggregator-api \
   --server="https://${KUBEADMIRAL_APISERVER_IP}:${KUBEADMIRAL_APISERVER_SECURE_PORT}/apis/hpaaggregator.kubeadmiral.io/v1alpha1/aggregations/hpa/proxy" \
