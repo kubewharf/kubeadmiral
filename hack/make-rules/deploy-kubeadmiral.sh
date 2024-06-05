@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
-# This file is based on https://github.com/karmada-io/karmada/blob/master/hack/deploy-karmada.sh
-# Copyright 2023 The Karmada Authors.
+# Copyright 2023 The KubeAdmiral Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,10 +13,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# This file may have been modified by The KubeAdmiral Authors
-# ("KubeAdmiral Modifications"). All KubeAdmiral Modifications
-# are Copyright 2023 The KubeAdmiral Authors.
 
 set -o errexit
 set -o nounset

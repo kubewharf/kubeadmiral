@@ -1,0 +1,187 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+    kubeadmiral.io/no-federated-resource: "true"
+  creationTimestamp: null
+  name: clusterfederatedobjects.core.kubeadmiral.io
+spec:
+  group: core.kubeadmiral.io
+  names:
+    kind: ClusterFederatedObject
+    listKind: ClusterFederatedObjectList
+    plural: clusterfederatedobjects
+    shortNames:
+      - cfo
+    singular: clusterfederatedobject
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: ClusterFederatedObject describes a cluster-scoped Kubernetes object and how it should be propagated to different member clusters.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: Spec defines the desired behavior of the FederatedObject.
+              properties:
+                follows:
+                  description: Follows defines other objects, or "leaders", that the Kubernetes object should follow during propagation, i.e. the Kubernetes object should be propagated to all member clusters that its "leaders" are placed in.
+                  items:
+                    description: LeaderReference contains the identifying metadata of a "leader" Kubernetes object.
+                    properties:
+                      group:
+                        type: string
+                      kind:
+                        type: string
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                      - kind
+                      - name
+                    type: object
+                  type: array
+                overrides:
+                  description: Overrides describe the overrides that should be applied to the base template of the Kubernetes object before it is propagated to individual member clusters.
+                  items:
+                    description: OverrideWithController describes the overrides that will be applied to a Kubernetes object before it is propagated to individual member clusters.
+                    properties:
+                      clusters:
+                        description: Override is the list of member clusters and their respective override patches.
+                        items:
+                          description: ClusterReferenceWithPatches represents a single member cluster and a list of override patches for the cluster.
+                          properties:
+                            cluster:
+                              description: Cluster is the name of the member cluster.
+                              type: string
+                            patches:
+                              description: Patches is the list of override patches for the member cluster.
+                              items:
+                                description: OverridePatch defines a JSON patch.
+                                properties:
+                                  op:
+                                    type: string
+                                  path:
+                                    type: string
+                                  value:
+                                    x-kubernetes-preserve-unknown-fields: true
+                                required:
+                                  - path
+                                type: object
+                              type: array
+                          required:
+                            - cluster
+                          type: object
+                        type: array
+                      controller:
+                        description: Controller identifies the controller responsible for this override.
+                        type: string
+                    required:
+                      - clusters
+                      - controller
+                    type: object
+                  type: array
+                placements:
+                  description: Placements describe the member clusters that the Kubernetes object will be propagated to, which is a union of all the listed clusters.
+                  items:
+                    description: PlacementWithController describes the member clusters that a Kubernetes object should be propagated to.
+                    properties:
+                      controller:
+                        description: Controller identifies the controller responsible for this placement.
+                        type: string
+                      placement:
+                        description: Placement is the list of member clusters that the Kubernetes object should be propagated to.
+                        items:
+                          description: ClusterReference represents a single member cluster.
+                          properties:
+                            cluster:
+                              description: Cluster is the name of the member cluster.
+                              type: string
+                          required:
+                            - cluster
+                          type: object
+                        type: array
+                    required:
+                      - controller
+                      - placement
+                    type: object
+                  type: array
+                template:
+                  description: Template is the base template of the Kubernetes object to be propagated.
+                  x-kubernetes-preserve-unknown-fields: true
+              required:
+                - template
+              type: object
+            status:
+              description: Status describes the most recently observed status of the FederatedObject.
+              properties:
+                clusters:
+                  description: Clusters contains the propagation status of the Kubernetes object for individual member clusters.
+                  items:
+                    description: PropagationStatus describes the propagation of a Kubernetes object to a given member cluster.
+                    properties:
+                      cluster:
+                        description: Cluster is the name of the member cluster.
+                        type: string
+                      lastObservedGeneration:
+                        description: LastObservedGeneration is the last observed generation of the Kubernetes object in the member cluster.
+                        format: int64
+                        type: integer
+                      status:
+                        description: Status describes the current status of propagating the Kubernetes object to the member cluster.
+                        type: string
+                    required:
+                      - cluster
+                      - status
+                    type: object
+                  type: array
+                conditions:
+                  description: Conditions describe the current state of this FederatedObject.
+                  items:
+                    description: GenericFederatedObjectCondition contains the current details about a particular condition of a FederatedObject.
+                    properties:
+                      lastTransitionTime:
+                        description: LastTransitionTime is the last time the status of this condition changed.
+                        format: date-time
+                        type: string
+                      lastUpdateTime:
+                        description: LastUpdateTime is the last time a reconciliation for this condition occurred.
+                        format: date-time
+                        type: string
+                      reason:
+                        description: Reason is the reason for the last status change of this condition.
+                        type: string
+                      status:
+                        description: Status is the status of the condition, one of True, False or Unknown.
+                        type: string
+                      type:
+                        description: Type is the type of the condition.
+                        type: string
+                    required:
+                      - status
+                      - type
+                    type: object
+                  type: array
+                syncedGeneration:
+                  description: SyncedGeneration is the generation of this FederatedObject when it was last synced to selected member clusters.
+                  format: int64
+                  type: integer
+              type: object
+          required:
+            - spec
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}

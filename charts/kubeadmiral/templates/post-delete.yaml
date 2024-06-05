@@ -1,0 +1,38 @@
+{{- $name := include "kubeadmiral.name" . -}}
+{{- $namespace := include "kubeadmiral.namespace" . -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ $name }}-post-delete"
+  namespace: {{ $namespace }}
+  labels:
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": "hook-succeeded"
+spec:
+  parallelism: 1
+  completions: 1
+  template:
+    metadata:
+      name: {{ $name }}
+      labels:
+        helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    spec:
+      serviceAccountName: {{ $name }}-pre-install-job
+      restartPolicy: Never
+      containers:
+        - name: post-delete
+          image: {{ template "kubeadmiral.kubectl.image" . }}
+          imagePullPolicy: {{ .Values.installTools.kubectl.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              bash <<'EOF'
+              set -ex
+              kubectl delete cm -n {{ $namespace }} -l "helm.sh/chart"="{{ .Chart.Name }}-{{ .Chart.Version }}" --ignore-not-found=true
+              kubectl delete secret -n {{ $namespace }} -l "helm.sh/chart"="{{ .Chart.Name }}-{{ .Chart.Version }}" --ignore-not-found=true
+              kubectl delete deployment -n {{ $namespace }} -l "helm.sh/chart"="{{ .Chart.Name }}-{{ .Chart.Version }}" --ignore-not-found=true
+              EOF

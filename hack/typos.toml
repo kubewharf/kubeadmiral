@@ -1,5 +1,5 @@
 [files]
-extend-exclude = ["go.mod", "go.sum", "config/crds/", "pkg/client/openapi/"]
+extend-exclude = ["go.mod", "go.sum", "config/crds/", "charts/kubeadmiral/_admiral_control_plane/crds", "pkg/client/openapi/"]
 
 [default]
 extend-ignore-re = ["shortName=[a-z]+", "Creater:.*misspell"]

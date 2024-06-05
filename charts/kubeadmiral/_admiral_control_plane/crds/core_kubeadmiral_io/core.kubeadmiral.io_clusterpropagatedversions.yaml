@@ -1,0 +1,64 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+    kubeadmiral.io/no-federated-resource: "true"
+  creationTimestamp: null
+  name: clusterpropagatedversions.core.kubeadmiral.io
+spec:
+  group: core.kubeadmiral.io
+  names:
+    kind: ClusterPropagatedVersion
+    listKind: ClusterPropagatedVersionList
+    plural: clusterpropagatedversions
+    singular: clusterpropagatedversion
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: ClusterPropagatedVersion holds version information about the state propagated from ClusterFederatedObject to member clusters. The name of a ClusterPropagatedVersion is the same as its ClusterFederatedObject. If a target resource has a populated metadata.Generation field, the generation will be stored with a prefix of `gen:` as the version for the cluster.  If metadata.Generation is not available, metadata.ResourceVersion will be stored with a prefix of `rv:` as the version for the cluster.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            status:
+              description: PropagatedVersionStatus defines the observed state of PropagatedVersion
+              properties:
+                clusterVersions:
+                  description: The last versions produced in each cluster for this resource.
+                  items:
+                    properties:
+                      clusterName:
+                        description: The name of the cluster the version is for.
+                        type: string
+                      version:
+                        description: The last version produced for the resource by a KubeAdmiral operation.
+                        type: string
+                    required:
+                      - clusterName
+                      - version
+                    type: object
+                  type: array
+                overridesVersion:
+                  description: The observed version of the overrides for this resource.
+                  type: string
+                templateVersion:
+                  description: The observed version of the template for this resource.
+                  type: string
+              required:
+                - overridesVersion
+                - templateVersion
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
