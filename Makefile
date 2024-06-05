@@ -168,3 +168,8 @@ test:
 .PHONY: e2e
 e2e:
 	ginkgo run -race -tags=e2e $(EXTRA_GINKGO_FLAGS) test/e2e -- --kubeconfig=$(KUBECONFIG) $(EXTRA_E2E_FLAGS)
+
+upload-images: images
+	@echo "push images to $(REGISTRY)"
+	docker push ${REGISTRY}/kubeadmiral-controller-manager:${TAG}
+	docker push ${REGISTRY}/kubeadmiral-hpa-aggregator:${TAG}
