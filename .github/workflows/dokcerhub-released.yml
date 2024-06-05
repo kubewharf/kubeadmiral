@@ -1,0 +1,30 @@
+name: Build and push released images to DockerHub
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  packages: write
+
+jobs:
+  publish-images-to-dockerhub:
+    name: Publish to DockerHub
+    if: ${{ github.repository == 'kubewharf/kubeadmiral' }}
+    runs-on: [ubuntu-latest]
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USER_NAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and publish images
+        env:
+          REGISTRY: kubewharf
+          TAG: ${{ github.ref_name }}
+        run: make upload-images
