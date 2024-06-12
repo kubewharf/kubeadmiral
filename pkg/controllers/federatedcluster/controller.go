@@ -39,6 +39,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
@@ -457,12 +458,19 @@ func (c *FederatedClusterController) handleTerminatingCluster(
 	}
 
 	// We have already checked that we are the last finalizer so we can simply set finalizers to be empty.
-	cluster.SetFinalizers(nil)
-	if _, err := c.fedClient.CoreV1alpha1().FederatedClusters().Update(
-		ctx,
-		cluster,
-		metav1.UpdateOptions{},
-	); err != nil {
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		var err error
+		cluster.SetFinalizers(nil)
+
+		_, updateErr := c.fedClient.CoreV1alpha1().FederatedClusters().Update(ctx, cluster, metav1.UpdateOptions{})
+		if updateErr != nil && apierrors.IsConflict(updateErr) {
+			cluster, err = c.fedClient.CoreV1alpha1().FederatedClusters().Get(ctx, cluster.Name, metav1.GetOptions{ResourceVersion: "0"})
+			if err != nil {
+				return err
+			}
+		}
+		return updateErr
+	}); err != nil {
 		return fmt.Errorf("failed to update cluster for finalizer removal: %w", err)
 	}
 
