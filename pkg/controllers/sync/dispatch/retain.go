@@ -48,10 +48,9 @@ func RetainOrMergeClusterFields(
 	// Pass the same ResourceVersion as in the cluster object for update operation, otherwise operation will fail.
 	desiredObj.SetResourceVersion(clusterObj.GetResourceVersion())
 
-	// Retain finalizers and merge annotations since they will typically be set by
+	// Merge annotations since they will typically be set by
 	// controllers in a member cluster.  It is still possible to set the fields
 	// via overrides.
-	desiredObj.SetFinalizers(clusterObj.GetFinalizers())
 	mergeAnnotations(desiredObj, clusterObj)
 	mergeLabels(desiredObj, clusterObj)
 
