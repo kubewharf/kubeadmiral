@@ -1,0 +1,193 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+    kubeadmiral.io/no-federated-resource: "true"
+  creationTimestamp: null
+  name: federatedclusters.core.kubeadmiral.io
+spec:
+  group: core.kubeadmiral.io
+  names:
+    kind: FederatedCluster
+    listKind: FederatedClusterList
+    plural: federatedclusters
+    shortNames:
+      - fcluster
+    singular: federatedcluster
+  scope: Cluster
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .status.conditions[?(@.type=='Ready')].status
+          name: ready
+          type: string
+        - jsonPath: .status.conditions[?(@.type=='Joined')].status
+          name: joined
+          type: string
+        - jsonPath: .metadata.creationTimestamp
+          name: age
+          type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: FederatedCluster is the Schema for the federatedclusters API
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: FederatedClusterSpec defines the desired state of FederatedCluster
+              properties:
+                apiEndpoint:
+                  description: The API endpoint of the member cluster. This can be a hostname, hostname:port, IP or IP:port.
+                  type: string
+                insecure:
+                  description: Access API endpoint with security.
+                  type: boolean
+                secretRef:
+                  description: Name of the secret containing the token required to access the member cluster. The secret needs to exist in the fed system namespace.
+                  properties:
+                    name:
+                      description: Name of a secret within the enclosing namespace
+                      type: string
+                  required:
+                    - name
+                  type: object
+                taints:
+                  description: If specified, the cluster's taints.
+                  items:
+                    description: The node this Taint is attached to has the "effect" on any pod that does not tolerate the Taint.
+                    properties:
+                      effect:
+                        description: Required. The effect of the taint on pods that do not tolerate the taint. Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
+                        type: string
+                      key:
+                        description: Required. The taint key to be applied to a node.
+                        type: string
+                      timeAdded:
+                        description: TimeAdded represents the time at which the taint was added. It is only written for NoExecute taints.
+                        format: date-time
+                        type: string
+                      value:
+                        description: The taint value corresponding to the taint key.
+                        type: string
+                    required:
+                      - effect
+                      - key
+                    type: object
+                  type: array
+                useServiceAccount:
+                  description: Whether to use service account token to authenticate to the member cluster.
+                  type: boolean
+              required:
+                - apiEndpoint
+                - secretRef
+              type: object
+            status:
+              description: FederatedClusterStatus defines the observed state of FederatedCluster
+              properties:
+                apiResourceTypes:
+                  description: The list of api resource types defined in the federated cluster
+                  items:
+                    description: APIResource represents a Kubernetes API resource.
+                    properties:
+                      group:
+                        description: Group of the resource.
+                        type: string
+                      kind:
+                        description: Kind of the resource.
+                        type: string
+                      pluralName:
+                        description: Lower-cased plural name of the resource (e.g. configmaps).  If not provided, it will be computed by lower-casing the kind and suffixing an 's'.
+                        type: string
+                      scope:
+                        description: Scope of the resource.
+                        type: string
+                      version:
+                        description: Version of the resource.
+                        type: string
+                    required:
+                      - kind
+                      - pluralName
+                      - scope
+                      - version
+                    type: object
+                  type: array
+                conditions:
+                  description: Conditions is an array of current cluster conditions.
+                  items:
+                    description: ClusterCondition describes current state of a cluster.
+                    properties:
+                      lastProbeTime:
+                        description: Last time the condition was checked.
+                        format: date-time
+                        type: string
+                      lastTransitionTime:
+                        description: Last time the condition transit from one status to another.
+                        format: date-time
+                        type: string
+                      message:
+                        description: Human readable message indicating details about the current status.
+                        type: string
+                      reason:
+                        description: Programmatic identifier indicating the reason for the current status.
+                        type: string
+                      status:
+                        description: Status of the condition, one of True, False, Unknown.
+                        type: string
+                      type:
+                        description: Type of cluster condition, Ready or Offline.
+                        type: string
+                    required:
+                      - lastProbeTime
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
+                joinPerformed:
+                  description: Whether any effectual action was performed in the cluster while joining. If true, clean-up is required on cluster removal to undo the side-effects.
+                  type: boolean
+                resources:
+                  description: Resources describes the cluster's resources.
+                  properties:
+                    allocatable:
+                      additionalProperties:
+                        anyOf:
+                          - type: integer
+                          - type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      description: Allocatable represents the total resources that are allocatable for scheduling.
+                      type: object
+                    available:
+                      additionalProperties:
+                        anyOf:
+                          - type: integer
+                          - type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      description: Available represents the resources currently available for scheduling.
+                      type: object
+                    schedulableNodes:
+                      description: SchedulableNodes represents number of nodes which is ready and schedulable.
+                      format: int64
+                      type: integer
+                  type: object
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}

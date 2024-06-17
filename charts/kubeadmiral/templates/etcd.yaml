@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: etcd
+  namespace: {{ include "kubeadmiral.namespace" . }}
+  labels:
+    app: etcd
+spec:
+  replicas: 1
+  serviceName: etcd
+  selector:
+    matchLabels:
+      app: etcd
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: etcd
+    spec:
+      automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - etcd
+              topologyKey: kubernetes.io/hostname
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: etcd
+          image: {{ template "kubeadmiral.etcd.image" . }}
+          imagePullPolicy:  {{ .Values.etcd.image.pullPolicy }}
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - 'etcdctl get /registry --prefix --keys-only  --endpoints https://127.0.0.1:2379  --cacert /etc/kubeadmiral/pki/etcd-ca.crt --cert /etc/kubeadmiral/pki/etcd-server.crt --key /etc/kubeadmiral/pki/etcd-server.key'
+            failureThreshold: 3
+            initialDelaySeconds: 600
+            periodSeconds: 60
+            successThreshold: 1
+            timeoutSeconds: 10
+          ports:
+            - containerPort: 2379
+              name: client
+              protocol: TCP
+            - containerPort: 2380
+              name: server
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /var/lib/etcd
+              name: etcd-data
+            - mountPath: /etc/kubeadmiral/pki
+              name: etcd-certs
+          resources:
+            requests:
+              cpu: 100m
+              memory: 100Mi
+          command:
+            - etcd
+            - --name=etcd0
+            - --listen-peer-urls=http://0.0.0.0:2380
+            - --listen-client-urls=https://0.0.0.0:2379
+            - --advertise-client-urls=https://etcd-client.{{ include "kubeadmiral.namespace" . }}.svc.{{ .Values.clusterDomain }}:2379
+            - --initial-cluster=etcd0=http://etcd-0.etcd.{{ include "kubeadmiral.namespace" . }}.svc.{{ .Values.clusterDomain }}:2380
+            - --initial-cluster-state=new
+            - --cert-file=/etc/kubeadmiral/pki/etcd-server.crt
+            - --client-cert-auth=true
+            - --key-file=/etc/kubeadmiral/pki/etcd-server.key
+            - --trusted-ca-file=/etc/kubeadmiral/pki/etcd-ca.crt
+            - --data-dir=/var/lib/etcd
+            - --snapshot-count=10000
+      volumes:
+        - hostPath:
+            path: /var/lib/kubeadmiral-etcd
+            type: DirectoryOrCreate
+          name: etcd-data
+        - name: etcd-certs
+          secret:
+            secretName: {{ include "kubeadmiral.name" . }}-cert-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: etcd
+  name: etcd-client
+  namespace: {{ include "kubeadmiral.namespace" . }}
+spec:
+  ports:
+    - name: etcd-client-port
+      port: 2379
+      protocol: TCP
+      targetPort: 2379
+  selector:
+    app: etcd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: etcd
+  name: etcd
+  namespace: {{ include "kubeadmiral.namespace" . }}
+spec:
+  ports:
+    - name: client
+      port: 2379
+      protocol: TCP
+      targetPort: 2379
+    - name: server
+      port: 2380
+      protocol: TCP
+      targetPort: 2380
+  clusterIP: None
+  selector:
+    app: etcd

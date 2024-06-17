@@ -1,0 +1,67 @@
+# Default values for kubeadmiral.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+clusterDomain: "cluster.local"
+
+etcd:
+  image:
+    name: "registry.k8s.io/etcd:3.4.13-0"
+    pullPolicy: IfNotPresent
+  certHosts: [
+    "kubernetes.default.svc",
+    "*.etcd.{{ .Release.Namespace }}.svc.{{ .Values.clusterDomain }}",
+    "*.{{ .Release.Namespace }}.svc.{{ .Values.clusterDomain }}",
+    "*.{{ .Release.Namespace }}.svc",
+    "localhost",
+    "127.0.0.1"
+  ]
+
+apiServer:
+  image:
+    name: "registry.k8s.io/kube-apiserver:v1.20.15"
+    pullPolicy: IfNotPresent
+  hostNetwork: false
+  # ClusterIP, NodePort
+  serviceType: ClusterIP
+  # If you want to expose the apiserver to outside, you can set this field in advance,
+  # it will write the externalIP into certificates and generate kubeconfig with externalIP.
+  externalIP: ""
+  nodePort: 0
+  certHosts: [
+    "kubernetes.default.svc",
+    "*.etcd.{{ .Release.Namespace }}.svc.{{ .Values.clusterDomain }}",
+    "*.{{ .Release.Namespace }}.svc.{{ .Values.clusterDomain }}",
+    "*.{{ .Release.Namespace }}.svc",
+    "localhost",
+    "127.0.0.1",
+    "{{ .Values.apiServer.externalIP }}",
+  ]
+
+kubeControllerManager:
+  image:
+    name: "registry.k8s.io/kube-controller-manager:v1.20.15"
+    pullPolicy: IfNotPresent
+  controllers: namespace,garbagecollector
+
+kubeadmiralControllerManager:
+  image:
+    name: "docker.io/kubewharf/kubeadmiral-controller-manager:v1.0.0"
+    pullPolicy: IfNotPresent
+  extraCommandArgs: {}
+
+kubeadmiralHpaAggregator:
+  image:
+    name: "docker.io/kubewharf/kubeadmiral-hpa-aggregator:v1.0.0"
+    pullPolicy: IfNotPresent
+  extraCommandArgs: {}
+
+installTools:
+  cfssl:
+    image:
+      name: "docker.io/cfssl/cfssl:latest"
+      pullPolicy: IfNotPresent
+  kubectl:
+    image:
+      name: "docker.io/bitnami/kubectl:1.22.10"
+      pullPolicy: IfNotPresent

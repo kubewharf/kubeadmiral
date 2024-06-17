@@ -1,0 +1,61 @@
+{{- $name := include "kubeadmiral.name" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-controller-manager
+  namespace: {{ include "kubeadmiral.namespace" . }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "2"
+  labels:
+    app: {{ $name }}-controller-manager
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ $name }}-controller-manager
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}-controller-manager
+    spec:
+      containers:
+        - name: {{ $name }}-controller-manager
+          command:
+            - /kubeadmiral-controller-manager
+            - --kubeconfig=/etc/kubeconfig
+            - --klog-v=4
+            {{- include "kubeadmiral.kubeadmiralControllerManager.extraCommandArgs" . | nindent 12 }}
+          livenessProbe:
+            failureThreshold: 8
+            httpGet:
+              path: /livez
+              port: 11257
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            successThreshold: 1
+            timeoutSeconds: 15
+          readinessProbe:
+            failureThreshold: 4
+            httpGet:
+              path: /readyz
+              port: 11257
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            successThreshold: 1
+            timeoutSeconds: 15
+          image: {{ template "kubeadmiral.kubeadmiralControllerManager.image" . }}
+          imagePullPolicy: {{ .Values.kubeadmiralControllerManager.image.pullPolicy }}
+          volumeMounts:
+            - name: kubeconfig
+              subPath: kubeconfig
+              mountPath: /etc/kubeconfig
+      restartPolicy: Always
+      automountServiceAccountToken: false
+      volumes:
+        - name: kubeconfig
+          secret:
+            secretName: {{ $name }}-kubeconfig-secret

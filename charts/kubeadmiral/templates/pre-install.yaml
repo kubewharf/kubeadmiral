@@ -1,0 +1,309 @@
+# 0. Basic permissions for job running
+{{- $name := include "kubeadmiral.name" . -}}
+{{- $namespace := include "kubeadmiral.namespace" . -}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}-pre-install-job
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "0"
+rules:
+  - apiGroups: ['*']
+    resources: ['*']
+    verbs: ["*"]
+  - nonResourceURLs: ['*']
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}-pre-install-job
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "0"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}-pre-install-job
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}-pre-install-job
+    namespace: {{ $namespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}-pre-install-job
+  namespace: {{ $namespace }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "0"
+# 1.1 Generate certificate storage template
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-pre-install-config
+  namespace: {{ $namespace }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "1"
+  labels:
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+data:
+  {{ $name }}-cert-secret.yaml: |-
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: {{ $name }}-cert-secret
+      namespace: {{ $namespace }}
+      labels:
+        helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    type: Opaque
+    data:
+      ca.crt: |-
+        {{ print "{ca_crt}" }}
+      ca.key: |-
+        {{ print "{ca_key}" }}
+      kubeadmiral.crt: |-
+        {{ print "{client_crt}" }}
+      kubeadmiral.key: |-
+        {{ print "{client_key}" }}
+      apiserver.crt: |-
+        {{ print "{apiserver_crt}" }}
+      apiserver.key: |-
+        {{ print "{apiserver_key}" }}
+      front-proxy-ca.crt: |-
+        {{ print "{front_proxy_ca_crt}" }}
+      front-proxy-client.crt: |-
+        {{ print "{front_proxy_client_crt}" }}
+      front-proxy-client.key: |-
+        {{ print "{front_proxy_client_key}" }}
+      etcd-ca.crt: |-
+        {{ print "{etcd_ca_crt}" }}
+      etcd-server.crt: |-
+        {{ print "{etcd_server_crt}" }}
+      etcd-server.key: |-
+        {{ print "{etcd_server_key}" }}
+      etcd-client.crt: |-
+        {{ print "{etcd_client_crt}" }}
+      etcd-client.key: |-
+        {{ print "{etcd_client_key}" }}
+  {{ $name }}-kubeconfig-secret.yaml: |-
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: {{ $name }}-kubeconfig-secret
+      namespace: {{ $namespace }}
+      labels:
+        helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    stringData:
+      kubeconfig: |-
+        apiVersion: v1
+        kind: Config
+        clusters:
+          - cluster:
+              certificate-authority-data: {{ print "{ca_crt}" }}
+              server: https://{{ $name }}-apiserver.{{ $namespace }}.svc.{{ .Values.clusterDomain }}:5443
+            name: {{ $name }}-apiserver
+        users:
+          - name: {{ $name }}-apiserver
+            user:
+              client-certificate-data: {{ print "{client_crt}" }}
+              client-key-data: {{ print "{client_key}" }}
+        contexts:
+          - name: {{ $name }}-apiserver
+            context:
+              cluster: {{ $name }}-apiserver
+              user: {{ $name }}-apiserver
+        current-context: {{ $name }}-apiserver
+      hpa-kubeconfig: |-
+        apiVersion: v1
+        clusters:
+        - cluster:
+            certificate-authority-data: {{ print "{ca_crt}" }}
+            server: https://{{ $name }}-apiserver.{{ $namespace }}.svc.{{ .Values.clusterDomain }}:5443/apis/hpaaggregator.kubeadmiral.io/v1alpha1/aggregations/hpa/proxy
+          name: {{ $name }}-kubeadmiral-hpa
+        contexts:
+        - context:
+            cluster: {{ $name }}-kubeadmiral-hpa
+            user: {{ $name }}-kubeadmiral-hpa
+          name: kubeadmiral-hpa
+        current-context: kubeadmiral-hpa
+        kind: Config
+        preferences: {}
+        users:
+        - name: {{ $name }}-kubeadmiral-hpa
+          user:
+            client-certificate-data: {{ print "{client_crt}" }}
+            client-key-data: {{ print "{client_key}" }}
+      {{- if .Values.apiServer.externalIP }}
+      external-kubeconfig: |-
+        apiVersion: v1
+        kind: Config
+        clusters:
+          - cluster:
+              certificate-authority-data: {{ print "{ca_crt}" }}
+              server: https://{{ .Values.apiServer.externalIP }}:5443
+            name: {{ $name }}-apiserver
+        users:
+          - name: {{ $name }}-apiserver
+            user:
+              client-certificate-data: {{ print "{client_crt}" }}
+              client-key-data: {{ print "{client_key}" }}
+        contexts:
+          - name: {{ $name }}-apiserver
+            context:
+              cluster: {{ $name }}-apiserver
+              user: {{ $name }}-apiserver
+        current-context: {{ $name }}-apiserver
+      external-hpa-kubeconfig: |-
+        apiVersion: v1
+        clusters:
+        - cluster:
+            certificate-authority-data: {{ print "{ca_crt}" }}
+            server: https://{{ .Values.apiServer.externalIP }}:5443/apis/hpaaggregator.kubeadmiral.io/v1alpha1/aggregations/hpa/proxy
+          name: {{ $name }}-kubeadmiral-hpa
+        contexts:
+        - context:
+            cluster: {{ $name }}-kubeadmiral-hpa
+            user: {{ $name }}-kubeadmiral-hpa
+          name: kubeadmiral-hpa
+        current-context: kubeadmiral-hpa
+        kind: Config
+        preferences: {}
+        users:
+        - name: {{ $name }}-kubeadmiral-hpa
+          user:
+            client-certificate-data: {{ print "{client_crt}" }}
+            client-key-data: {{ print "{client_key}" }}
+      {{- end }}
+---
+# 1.2 Generate certificates and update configmap
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-pre-install-job
+  namespace: {{ $namespace }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": "hook-succeeded"
+spec:
+  parallelism: 1
+  completions: 1
+  template:
+    metadata:
+      name: {{ $name }}
+      labels:
+        app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
+        app.kubernetes.io/instance: {{ $name | quote }}
+        helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    spec:
+      serviceAccountName: {{ $name }}-pre-install-job
+      restartPolicy: Never
+      initContainers:
+        - name: init
+          image: {{ template "kubeadmiral.cfssl.image" . }}
+          imagePullPolicy: {{ .Values.installTools.cfssl.image.pullPolicy }}
+          workingDir: /opt/mount
+          command:
+            - /bin/sh
+            - -c
+            - |
+              bash <<'EOF'
+              set -ex
+              mkdir -p /opt/configs
+              mkdir -p /opt/certs
+              cp -r -L /opt/mount/* /opt/configs/
+
+              openssl req -nodes -newkey rsa:2048 -keyout "/opt/certs/ca.key" -out "/opt/certs/ca.crt" -x509 -sha256 -new -days 3650 -subj "/CN=kubeadmiral/"
+              echo '{"signing":{"default":{"expiry":"43800h","usages":["signing","key encipherment","client auth","server auth"]}}}' > "/opt/certs/ca-config.json"
+              openssl req -nodes -newkey rsa:2048 -keyout "/opt/certs/front-proxy-ca.key" -out "/opt/certs/front-proxy-ca.crt" -x509 -sha256 -new -days 3650 -subj "/CN=front-proxy-ca/"
+              echo '{"signing":{"default":{"expiry":"43800h","usages":["signing","key encipherment","client auth","server auth"]}}}' > "/opt/certs/front-proxy-ca-config.json"
+              openssl req -nodes -newkey rsa:2048 -keyout "/opt/certs/etcd-ca.key" -out "/opt/certs/etcd-ca.crt" -x509 -sha256 -new -days 3650 -subj "/CN=etcd-ca/"
+              echo '{"signing":{"default":{"expiry":"43800h","usages":["signing","key encipherment","client auth","server auth"]}}}' > "/opt/certs/etcd-ca-config.json"
+
+              cd /opt/certs
+              echo '{"CN":"system:admin","hosts":{{ tpl (toJson .Values.apiServer.certHosts) . }},"names":[{"O":"system:masters"}],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.crt -ca-key=ca.key -config=ca-config.json - | cfssljson -bare kubeadmiral
+              echo '{"CN":"kubeadmiral-apiserver","hosts":{{ tpl (toJson .Values.apiServer.certHosts) . }},"names":[{"O":""}],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.crt -ca-key=ca.key -config=ca-config.json - | cfssljson -bare apiserver
+              echo '{"CN":"front-proxy-client","hosts":{{ tpl (toJson .Values.apiServer.certHosts) . }},"names":[{"O":""}],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=front-proxy-ca.crt -ca-key=front-proxy-ca.key -config=front-proxy-ca-config.json - | cfssljson -bare front-proxy-client
+              echo '{"CN":"etcd-server","hosts":{{ tpl (toJson .Values.etcd.certHosts) . }},"names":[{"O":""}],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=etcd-ca.crt -ca-key=etcd-ca.key -config=etcd-ca-config.json - | cfssljson -bare etcd-server
+              echo '{"CN":"etcd-client","hosts":{{ tpl (toJson .Values.etcd.certHosts) . }},"names":[{"O":""}],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=etcd-ca.crt -ca-key=etcd-ca.key -config=etcd-ca-config.json - | cfssljson -bare etcd-client
+
+              id_array=(kubeadmiral apiserver front-proxy-client etcd-server etcd-client)
+              for i in ${!id_array[@]}; do
+                mv "${id_array[$i]}-key.pem" "${id_array[$i]}.key"
+                mv "${id_array[$i]}.pem" "${id_array[$i]}.crt"
+                rm -f "${id_array[$i]}.csr"
+              done
+
+              kubeadmiral_ca=$(base64 -i "/opt/certs/ca.crt" | tr -d '\r\n')
+              kubeadmiral_ca_key=$(base64 -i "/opt/certs/ca.key" | tr -d '\r\n')
+
+              kubeadmiral_crt=$(base64 -i "/opt/certs/kubeadmiral.crt" | tr -d '\r\n')
+              kubeadmiral_key=$(base64 -i "/opt/certs/kubeadmiral.key" | tr -d '\r\n')
+
+              kubeadmiral_apiserver_crt=$(base64 -i "/opt/certs/apiserver.crt" | tr -d '\r\n')
+              kubeadmiral_apiserver_key=$(base64 -i "/opt/certs/apiserver.key" | tr -d '\r\n')
+
+              front_proxy_ca_crt=$(base64 -i "/opt/certs/front-proxy-ca.crt" | tr -d '\r\n')
+              front_proxy_client_crt=$(base64 -i "/opt/certs/front-proxy-client.crt" | tr -d '\r\n')
+              front_proxy_client_key=$(base64 -i "/opt/certs/front-proxy-client.key" | tr -d '\r\n')
+
+              etcd_ca_crt=$(base64 -i "/opt/certs/etcd-ca.crt" | tr -d '\r\n')
+              etcd_server_crt=$(base64 -i "/opt/certs/etcd-server.crt" | tr -d '\r\n')
+              etcd_server_key=$(base64 -i "/opt/certs/etcd-server.key" | tr -d '\r\n')
+              etcd_client_crt=$(base64 -i "/opt/certs/etcd-client.crt" | tr -d '\r\n')
+              etcd_client_key=$(base64 -i "/opt/certs/etcd-client.key" | tr -d '\r\n')
+
+              target_array=(ca_crt ca_key client_crt client_key apiserver_crt apiserver_key front_proxy_ca_crt front_proxy_client_crt front_proxy_client_key etcd_ca_crt etcd_server_crt etcd_server_key etcd_client_crt etcd_client_key)
+              value_array=($kubeadmiral_ca $kubeadmiral_ca_key $kubeadmiral_crt $kubeadmiral_key $kubeadmiral_apiserver_crt $kubeadmiral_apiserver_key $front_proxy_ca_crt $front_proxy_client_crt $front_proxy_client_key $etcd_ca_crt $etcd_server_crt $etcd_server_key $etcd_client_crt $etcd_client_key)
+              cmd_string=""
+              for i in ${!target_array[@]}; do
+                cmd_string+="s/{${target_array[$i]}}/${value_array[$i]}/g;"
+              done
+
+              sed -i'' -e "$cmd_string" /opt/configs/{{ $name }}-cert-secret.yaml
+
+              target_array=(ca_crt client_crt client_key)
+              value_array=($kubeadmiral_ca $kubeadmiral_crt $kubeadmiral_key)
+              cmd_string=""
+              for i in ${!target_array[@]}; do
+                cmd_string+="s/{${target_array[$i]}}/${value_array[$i]}/g;"
+              done
+
+              sed -i'' -e "$cmd_string" /opt/configs/{{ $name }}-kubeconfig-secret.yaml
+              EOF
+          volumeMounts:
+            - name: mount
+              mountPath: /opt/mount
+            - name: configs
+              mountPath: /opt/configs
+      containers:
+        - name: pre-install
+          image: {{ template "kubeadmiral.kubectl.image" . }}
+          imagePullPolicy: {{ .Values.installTools.kubectl.image.pullPolicy }}
+          workingDir: /opt/mount
+          command:
+            - /bin/sh
+            - -c
+            - |
+              bash <<'EOF'
+              set -ex
+              kubectl apply --server-side -f /opt/configs/
+              EOF
+          volumeMounts:
+            - name: mount
+              mountPath: /opt/mount
+            - name: configs
+              mountPath: /opt/configs
+      volumes:
+        - name: mount
+          configMap:
+            name: {{ $name }}-pre-install-config
+        - name: configs
+          emptyDir: {}
+---

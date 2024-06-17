@@ -1,0 +1,227 @@
+{{- $name := include "kubeadmiral.name" . -}}
+{{- $namespace := include "kubeadmiral.namespace" . -}}
+# 0. store all crds in the configmap of the host cluster
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-crds
+  namespace: {{ $namespace }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "0"
+  labels:
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+data:
+  {{ range $path, $bytes := .Files.Glob (printf "_admiral_control_plane/crds/core_kubeadmiral_io/**")}}
+  {{ $name := base $path }}
+  {{- (printf "%s: " $name) | nindent 6 }} |-
+    {{- $.Files.Get $path | nindent 8 }}
+  {{ end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-sample
+  namespace: {{ $namespace }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "0"
+  labels:
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+data:
+  {{ range $path, $bytes := .Files.Glob (printf "_admiral_control_plane/sample/host/**")}}
+  {{ $name := base $path }}
+  {{- (printf "%s: " $name) | nindent 6 }} |-
+    {{- $.Files.Get $path | nindent 8 }}
+  {{ end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-hpa-apiservice
+  namespace: {{ $namespace }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "0"
+  labels:
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+data:
+  {{ $name }}-namespace.yaml: |-
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: {{ $namespace }}
+  {{ $name }}-hpa-aggregator-apiservice.yaml: |-
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: {{ $name }}-hpa-aggregator
+      namespace: {{ $namespace }}
+    spec:
+      externalName: {{ $name }}-hpa-aggregator
+      ports:
+        - port: 443
+          protocol: TCP
+          targetPort: 443
+      sessionAffinity: None
+      type: ExternalName
+    ---
+    apiVersion: apiregistration.k8s.io/v1
+    kind: APIService
+    metadata:
+      labels:
+        apiserver: "true"
+        app: {{ $name }}-hpa-aggregator
+      name: v1beta1.metrics.k8s.io
+    spec:
+      group: metrics.k8s.io
+      groupPriorityMinimum: 2000
+      insecureSkipTLSVerify: true
+      service:
+        name: {{ $name }}-hpa-aggregator
+        namespace: {{ $namespace }}
+        port: 443
+      version: v1beta1
+      versionPriority: 1
+    ---
+    apiVersion: apiregistration.k8s.io/v1
+    kind: APIService
+    metadata:
+      labels:
+        apiserver: "true"
+        app: {{ $name }}-hpa-aggregator
+      name: v1beta1.custom.metrics.k8s.io
+    spec:
+      group: custom.metrics.k8s.io
+      groupPriorityMinimum: 2000
+      insecureSkipTLSVerify: true
+      service:
+        name: {{ $name }}-hpa-aggregator
+        namespace: {{ $namespace }}
+        port: 443
+      version: v1beta1
+      versionPriority: 1
+    ---
+    apiVersion: apiregistration.k8s.io/v1
+    kind: APIService
+    metadata:
+      labels:
+        apiserver: "true"
+        app: {{ $name }}-hpa-aggregator
+      name: v1alpha1.hpaaggregator.kubeadmiral.io
+    spec:
+      group: hpaaggregator.kubeadmiral.io
+      groupPriorityMinimum: 2000
+      insecureSkipTLSVerify: true
+      service:
+        name: {{ $name }}-hpa-aggregator
+        namespace: {{ $namespace }}
+        port: 443
+      version: v1alpha1
+      versionPriority: 1
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: admiral-system:controller:horizontal-pod-autoscaler
+    rules:
+      - apiGroups:
+          - hpaaggregator.kubeadmiral.io
+        resources:
+          - '*'
+        verbs:
+          - '*'
+      - apiGroups:
+          - coordination.k8s.io
+        resources:
+          - leases
+        verbs:
+          - '*'
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: admiral-system:controller:horizontal-pod-autoscaler
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: admiral-system:controller:horizontal-pod-autoscaler
+    subjects:
+      - apiGroup: rbac.authorization.k8s.io
+        kind: User
+        name: system:controller:horizontal-pod-autoscaler
+      - kind: ServiceAccount
+        name: horizontal-pod-autoscaler
+        namespace: kube-system
+---
+# 1. install crds/hpa apiservice in the admiral control panel
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ $name }}-post-install"
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
+    app.kubernetes.io/instance: {{ $name | quote }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+  annotations:
+    # This is what defines this resource as a hook. Without this line, the
+    # job is considered part of the release.
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": "hook-succeeded"
+spec:
+  parallelism: 1
+  completions: 1
+  template:
+    metadata:
+      name: {{ $name }}
+      labels:
+        app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
+        app.kubernetes.io/instance: {{ $name | quote }}
+        helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: post-install
+        image: {{ template "kubeadmiral.kubectl.image" . }}
+        imagePullPolicy: {{ .Values.installTools.kubectl.image.pullPolicy }}
+        command:
+          - /bin/sh
+          - -c
+          - |
+            bash <<'EOF'
+            set -ex
+            sleep 15
+            kubectl apply -f /crds --kubeconfig /etc/kubeconfig
+            kubectl apply -f /sample --kubeconfig /etc/kubeconfig
+
+            NOFED="kubeadmiral.io/no-federated-resource=1"
+            TARGET_ARRAY=(deploy daemonset cm secret role rolebinding clusterrole clusterrolebinding svc)
+            for target in ${TARGET_ARRAY[@]}; do
+              kubectl --kubeconfig=/etc/kubeconfig annotate ${target} -A --all --overwrite=true ${NOFED}
+            done
+
+            kubectl apply -f /hpa-apiservice --kubeconfig /etc/kubeconfig
+            EOF
+        volumeMounts:
+          - name: {{ $name }}-crds
+            mountPath: /crds
+          - name: {{ $name }}-hpa-apiservice
+            mountPath: /hpa-apiservice
+          - name: {{ $name }}-sample
+            mountPath: /sample
+          {{ include "kubeadmiral.kubeconfig.volumeMount" . | nindent 10 }}
+      volumes:
+        - name: {{ $name }}-crds
+          configMap:
+            name: {{ $name }}-crds
+        - name: {{ $name }}-hpa-apiservice
+          configMap:
+            name: {{ $name }}-hpa-apiservice
+        - name: {{ $name }}-sample
+          configMap:
+            name: {{ $name }}-sample
+        {{ include "kubeadmiral.kubeconfig.volume" . | nindent 8 }}

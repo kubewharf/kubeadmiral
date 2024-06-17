@@ -11,6 +11,7 @@ coverage:
         if_ci_failed: error
 # https://docs.codecov.com/docs/ignoring-paths
 ignore:
+  - "charts"
   - "config"
   - "docs"
   - "examples"
