@@ -75,6 +75,7 @@ var _ = ginkgo.Context("Job Propagation", func() {
 					f,
 					&resourcePropagationTestConfig[*batchv1.Job]{
 						gvr:           batchv1.SchemeGroupVersion.WithResource("jobs"),
+						gvk:           batchv1.SchemeGroupVersion.WithKind("Job"),
 						objectFactory: testCase.jobFactory,
 						clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*batchv1.Job] {
 							return client.BatchV1().Jobs(namespace)
@@ -87,7 +88,6 @@ var _ = ginkgo.Context("Job Propagation", func() {
 							return resources.IsJobComplete(job), nil
 						},
 						statusCollection: &resourceStatusCollectionTestConfig{
-							gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federatedjobstatuses"),
 							path: "status",
 						},
 					},
