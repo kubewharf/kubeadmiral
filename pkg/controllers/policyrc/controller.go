@@ -158,7 +158,7 @@ func NewPolicyRCController(
 	}
 
 	if _, err := c.clusterOverridePolicyInformer.Informer().AddEventHandler(
-		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistPpWorker.Enqueue),
+		eventhandlers.NewTriggerOnAllChangesWithTransform(common.NewQualifiedName, c.persistOpWorker.Enqueue),
 	); err != nil {
 		return nil, err
 	}
