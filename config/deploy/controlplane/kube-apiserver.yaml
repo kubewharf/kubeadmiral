@@ -65,7 +65,7 @@ spec:
             - --tls-cert-file=/etc/kubeadmiral/pki/apiserver.crt
             - --tls-private-key-file=/etc/kubeadmiral/pki/apiserver.key
           name: kubeadmiral-apiserver
-          image: registry.k8s.io/kube-apiserver:v1.20.15
+          image: registry.k8s.io/kube-apiserver:v1.26.10
           imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 8
