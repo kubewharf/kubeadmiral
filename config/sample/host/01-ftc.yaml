@@ -59,6 +59,7 @@ spec:
     enabled: true
     fields:
       - metadata.creationTimestamp
+      - metadata.generation
       - spec.replicas
       - status
 ---
@@ -263,6 +264,7 @@ spec:
     enabled: true
     fields:
       - metadata.creationTimestamp
+      - metadata.generation
       - spec.replicas
       - status
 ---
@@ -284,6 +286,7 @@ spec:
     enabled: true
     fields:
       - metadata.creationTimestamp
+      - metadata.generation
       - status
 ---
 apiVersion: core.kubeadmiral.io/v1alpha1
@@ -304,6 +307,7 @@ spec:
     enabled: true
     fields:
       - metadata.creationTimestamp
+      - metadata.generation
       - status
 ---
 apiVersion: core.kubeadmiral.io/v1alpha1
@@ -324,6 +328,7 @@ spec:
     enabled: true
     fields:
       - metadata.creationTimestamp
+      - metadata.generation
       - status
 ---
 apiVersion: core.kubeadmiral.io/v1alpha1
