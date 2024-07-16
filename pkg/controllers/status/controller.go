@@ -439,19 +439,6 @@ func (s *StatusController) reconcile(
 			metav1.CreateOptions{},
 		)
 		if err != nil {
-			keyedLogger.Error(err, "Failed to set annotations about replicas")
-		}
-	}
-
-	if existingStatus == nil {
-		collectedStatus.GetLastUpdateTime().Time = time.Now()
-		_, err = collectedstatusadapters.Create(
-			ctx,
-			s.fedClient.CoreV1alpha1(),
-			collectedStatus,
-			metav1.CreateOptions{},
-		)
-		if err != nil {
 			if apierrors.IsAlreadyExists(err) {
 				return worker.StatusConflict
 			}
