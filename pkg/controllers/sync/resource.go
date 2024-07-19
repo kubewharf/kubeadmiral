@@ -166,9 +166,7 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 	obj := r.template.DeepCopy()
 
 	if obj.GetGeneration() != 0 {
-		if _, err := annotationutil.AddAnnotation(obj, common.SourceGenerationAnnotation, fmt.Sprintf("%d", obj.GetGeneration())); err != nil {
-			return nil, err
-		}
+		annotationutil.AddAnnotation(obj, common.SourceGenerationAnnotation, fmt.Sprintf("%d", obj.GetGeneration()))
 	}
 
 	switch r.TargetGVK() {
