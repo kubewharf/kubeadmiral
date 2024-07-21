@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"reflect"
 
-	discoveryv1b1 "k8s.io/api/discovery/v1beta1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,10 +30,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	discoveryv1b1informers "k8s.io/client-go/informers/discovery/v1beta1"
+	discoveryv1informers "k8s.io/client-go/informers/discovery/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	corev1listers "k8s.io/client-go/listers/core/v1"
-	discoveryv1b1listers "k8s.io/client-go/listers/discovery/v1beta1"
+	discoveryv1listers "k8s.io/client-go/listers/discovery/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
@@ -78,7 +78,7 @@ func (r reconcileKey) String() string {
 type ServiceExportController struct {
 	name string
 
-	endpointSliceInformer discoveryv1b1informers.EndpointSliceInformer
+	endpointSliceInformer discoveryv1informers.EndpointSliceInformer
 	kubeClient            kubeclient.Interface
 	fedInformerManager    informermanager.FederatedInformerManager
 
@@ -99,7 +99,7 @@ func (c *ServiceExportController) HasSynced() bool {
 
 func NewServiceExportController(
 	kubeClient kubeclient.Interface,
-	endpointSliceInformer discoveryv1b1informers.EndpointSliceInformer,
+	endpointSliceInformer discoveryv1informers.EndpointSliceInformer,
 	fedInformerManager informermanager.FederatedInformerManager,
 	logger klog.Logger,
 	metrics stats.Metrics,
@@ -160,8 +160,8 @@ func NewServiceExportController(
 	c.fedInformerManager.AddResourceEventHandler(common.EndpointSliceGVR, &informermanager.FilteringResourceEventHandlerWithClusterFuncs{
 		FilterFunc: func(obj interface{}, cluster string) bool {
 			switch t := obj.(type) {
-			case *discoveryv1b1.EndpointSlice:
-				if _, ok := t.Labels[discoveryv1b1.LabelServiceName]; !ok {
+			case *discoveryv1.EndpointSlice:
+				if _, ok := t.Labels[discoveryv1.LabelServiceName]; !ok {
 					return false
 				}
 				if _, ok := t.Labels[EndpointSliceSourceClusterLabel]; ok {
@@ -174,7 +174,7 @@ func NewServiceExportController(
 		},
 		Handler: informermanager.ResourceEventHandlerWithClusterFuncs{
 			AddFunc: func(obj interface{}, cluster string) {
-				eps := obj.(*discoveryv1b1.EndpointSlice)
+				eps := obj.(*discoveryv1.EndpointSlice)
 				c.worker.Enqueue(reconcileKey{
 					cluster:   cluster,
 					gvk:       common.EndpointSliceGVK,
@@ -183,7 +183,7 @@ func NewServiceExportController(
 				})
 			},
 			UpdateFunc: func(oldObj, newObj interface{}, cluster string) {
-				eps := newObj.(*discoveryv1b1.EndpointSlice)
+				eps := newObj.(*discoveryv1.EndpointSlice)
 				c.worker.Enqueue(reconcileKey{
 					cluster:   cluster,
 					gvk:       common.EndpointSliceGVK,
@@ -198,7 +198,7 @@ func NewServiceExportController(
 						return
 					}
 				}
-				eps := obj.(*discoveryv1b1.EndpointSlice)
+				eps := obj.(*discoveryv1.EndpointSlice)
 				c.worker.Enqueue(reconcileKey{
 					cluster:   cluster,
 					gvk:       common.EndpointSliceGVK,
@@ -274,10 +274,10 @@ func (c *ServiceExportController) reconcileServiceExport(ctx context.Context, ke
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.V(2).Info("Cleanup imported endpointSlice due to serviceExport event")
-			deleteErr := c.kubeClient.DiscoveryV1beta1().EndpointSlices(key.namespace).DeleteCollection(ctx,
+			deleteErr := c.kubeClient.DiscoveryV1().EndpointSlices(key.namespace).DeleteCollection(ctx,
 				metav1.DeleteOptions{}, metav1.ListOptions{
 					LabelSelector: labels.SelectorFromSet(labels.Set{
-						discoveryv1b1.LabelServiceName:  key.name,
+						discoveryv1.LabelServiceName:    key.name,
 						EndpointSliceSourceClusterLabel: naming.GenerateSourceClusterValue(key.cluster),
 					}).String(),
 				})
@@ -294,13 +294,13 @@ func (c *ServiceExportController) reconcileServiceExport(ctx context.Context, ke
 		return fmt.Errorf("informer of endpointSlice not exists or not synced for cluster %s", key.cluster)
 	}
 
-	clusterEpsLister, ok := clusterEpsListerInterface.(discoveryv1b1listers.EndpointSliceLister)
+	clusterEpsLister, ok := clusterEpsListerInterface.(discoveryv1listers.EndpointSliceLister)
 	if !ok {
 		return fmt.Errorf("failed to convert interface to clusterEpsLister")
 	}
 
 	clusterEndpointSlices, err := clusterEpsLister.List(labels.SelectorFromSet(labels.Set{
-		discoveryv1b1.LabelServiceName: key.name,
+		discoveryv1.LabelServiceName: key.name,
 	}))
 	if err != nil {
 		return err
@@ -318,7 +318,7 @@ func (c *ServiceExportController) reconcileServiceExport(ctx context.Context, ke
 			Namespace: eps.Namespace,
 			Name:      naming.GenerateImportedEndpointSliceName(eps.GetName(), key.cluster),
 			Labels: map[string]string{
-				discoveryv1b1.LabelServiceName:  key.name,
+				discoveryv1.LabelServiceName:    key.name,
 				EndpointSliceSourceClusterLabel: naming.GenerateSourceClusterValue(key.cluster),
 			},
 		}
@@ -327,7 +327,7 @@ func (c *ServiceExportController) reconcileServiceExport(ctx context.Context, ke
 		if getErr != nil {
 			if apierrors.IsNotFound(getErr) {
 				logger.V(2).Info("Creating imported endpointSlice due to serviceExport event")
-				_, err = c.kubeClient.DiscoveryV1beta1().EndpointSlices(key.namespace).Create(ctx, importedEps, metav1.CreateOptions{})
+				_, err = c.kubeClient.DiscoveryV1().EndpointSlices(key.namespace).Create(ctx, importedEps, metav1.CreateOptions{})
 				if err != nil {
 					errs = append(errs, err)
 				}
@@ -348,7 +348,7 @@ func (c *ServiceExportController) reconcileEndpointSlice(ctx context.Context, ke
 		return fmt.Errorf("informer of endpointSlice not exists or not synced for cluster %s", key.cluster)
 	}
 
-	clusterEpsLister, ok := clusterEpsListerInterface.(discoveryv1b1listers.EndpointSliceLister)
+	clusterEpsLister, ok := clusterEpsListerInterface.(discoveryv1listers.EndpointSliceLister)
 	if !ok {
 		return fmt.Errorf("failed to convert interface to clusterEpsLister")
 	}
@@ -357,7 +357,7 @@ func (c *ServiceExportController) reconcileEndpointSlice(ctx context.Context, ke
 	clusterEps, err := clusterEpsLister.EndpointSlices(key.namespace).Get(key.name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			deleteErr := c.kubeClient.DiscoveryV1beta1().EndpointSlices(key.namespace).Delete(ctx,
+			deleteErr := c.kubeClient.DiscoveryV1().EndpointSlices(key.namespace).Delete(ctx,
 				importedEpsName, metav1.DeleteOptions{})
 			if apierrors.IsNotFound(deleteErr) {
 				deleteErr = nil
@@ -383,7 +383,7 @@ func (c *ServiceExportController) reconcileEndpointSlice(ctx context.Context, ke
 		Namespace: key.namespace,
 		Name:      importedEpsName,
 		Labels: map[string]string{
-			discoveryv1b1.LabelServiceName:  clusterEps.Labels[discoveryv1b1.LabelServiceName],
+			discoveryv1.LabelServiceName:    clusterEps.Labels[discoveryv1.LabelServiceName],
 			EndpointSliceSourceClusterLabel: naming.GenerateSourceClusterValue(key.cluster),
 		},
 	}
@@ -393,7 +393,7 @@ func (c *ServiceExportController) reconcileEndpointSlice(ctx context.Context, ke
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.V(2).Info("Creating imported endpointSlice due to endpointSlice event")
-			_, createErr := c.kubeClient.DiscoveryV1beta1().EndpointSlices(key.namespace).Create(ctx, clusterEps, metav1.CreateOptions{})
+			_, createErr := c.kubeClient.DiscoveryV1().EndpointSlices(key.namespace).Create(ctx, clusterEps, metav1.CreateOptions{})
 			if createErr != nil {
 				logger.Error(createErr, "Failed to create imported endpointSlice in control plane")
 				return createErr
@@ -412,7 +412,7 @@ func (c *ServiceExportController) reconcileEndpointSlice(ctx context.Context, ke
 	}
 
 	logger.V(2).Info("Updating imported endpointSlice due to endpointSlice event")
-	_, err = c.kubeClient.DiscoveryV1beta1().EndpointSlices(key.namespace).Update(ctx, newFedEps, metav1.UpdateOptions{})
+	_, err = c.kubeClient.DiscoveryV1().EndpointSlices(key.namespace).Update(ctx, newFedEps, metav1.UpdateOptions{})
 	if err != nil {
 		logger.Error(err, "Failed to update imported endpointSlice in control plane")
 		return err
@@ -455,11 +455,11 @@ func (c *ServiceExportController) filterServiceExport(ctx context.Context, key r
 
 func (c *ServiceExportController) filterEndpointSlice(
 	ctx context.Context, key reconcileKey,
-	eps *discoveryv1b1.EndpointSlice,
+	eps *discoveryv1.EndpointSlice,
 ) (bool, error) {
 	logger := klog.FromContext(ctx)
 
-	svcName := eps.Labels[discoveryv1b1.LabelServiceName]
+	svcName := eps.Labels[discoveryv1.LabelServiceName]
 	seListerInterface, synced, exists := c.fedInformerManager.GetResourceListerFromFactory(common.ServiceExportGVR, key.cluster)
 	if !exists {
 		return false, nil
