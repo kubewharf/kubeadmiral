@@ -47,6 +47,7 @@ const (
 	ArgsTarget        = "args"
 	AnnotationsTarget = "annotations"
 	LabelsTarget      = "labels"
+	EnvTarget         = "env"
 
 	InitContainers = "initContainers"
 	Containers     = "containers"
@@ -269,6 +270,13 @@ func parsePatchesFromOverriders(
 		return nil, fmt.Errorf("failed to parse args overriders: %w", err)
 	} else {
 		patches = append(patches, argsPatches...)
+	}
+
+	// parse patches from env overriders
+	if envsPatches, err := parseEnvOverriders(fedObject, overriders.Envs); err != nil {
+		return nil, fmt.Errorf("failed to parse env overriders: %w", err)
+	} else {
+		patches = append(patches, envsPatches...)
 	}
 
 	// parse patches from annotation overriders

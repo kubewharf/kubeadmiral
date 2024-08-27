@@ -3,6 +3,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -86,6 +87,7 @@ type TargetClusters struct {
 // - Image
 // - Command
 // - Args
+// - Envs
 // - Annotations
 // - Labels
 // - JsonPatch
@@ -110,9 +112,27 @@ type Overriders struct {
 	// +optional
 	Labels []StringMapOverrider `json:"labels,omitempty"`
 
+	// Envs specifies overriders that apply to the container envs.
+	// +optional
+	Envs []EnvOverrider `json:"envs,omitempty"`
+
 	// JsonPatch specifies overriders in a syntax similar to RFC6902 JSON Patch.
 	// +optional
 	JsonPatch []JsonPatchOverrider `json:"jsonpatch,omitempty"`
+}
+
+type EnvOverrider struct {
+	// ContainerName targets the specified container or init container in the pod template.
+	ContainerName string `json:"containerName"`
+
+	// Operator specifies the operation.
+	// If omitted, defaults to "overwrite".
+	// +kubebuilder:validation:Enum=addIfAbsent;overwrite;delete
+	// +optional
+	Operator string `json:"operator,omitempty"`
+
+	// List of environment variables to set in the container.
+	Value []corev1.EnvVar `json:"value"`
 }
 
 type EntrypointOverrider struct {
