@@ -912,7 +912,11 @@ func Test_parseImageOverriders(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			overridePatches, err := parseImageOverriders(testCase.fedObject, testCase.imageOverriders)
+			helper, err := getHelpDataFromFedObj(testCase.fedObject)
+			if err != nil {
+				t.Fatalf("failed to construct helper: %v", err)
+			}
+			overridePatches, err := parseImageOverriders(helper, testCase.imageOverriders)
 			if (err != nil) != testCase.isErrorExpected {
 				t.Fatalf("err = %v, but testCase.isErrorExpected = %v", err, testCase.isErrorExpected)
 			}
@@ -948,7 +952,8 @@ var (
 			"apiVersion": "apps/v1",
 			"kind":       "Deployment",
 			"metadata": map[string]interface{}{
-				"name": "deployment-test",
+				"name":   "deployment-test",
+				"labels": map[string]interface{}{},
 			},
 			"spec": map[string]interface{}{
 				"replicas": int64(1),
@@ -1036,7 +1041,8 @@ var (
 			"apiVersion": "v1",
 			"kind":       "Pod",
 			"metadata": map[string]interface{}{
-				"name": "pod-test",
+				"name":   "pod-test",
+				"labels": map[string]interface{}{},
 			},
 			"spec": map[string]interface{}{
 				"containers": []interface{}{},

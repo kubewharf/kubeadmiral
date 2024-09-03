@@ -39,6 +39,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/dispatch"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/sync/version"
+	"github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	annotationutil "github.com/kubewharf/kubeadmiral/pkg/util/annotation"
 	"github.com/kubewharf/kubeadmiral/pkg/util/finalizers"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
@@ -250,7 +251,7 @@ func (r *federatedResource) ApplyOverrides(
 		return fmt.Errorf("invalid override path(s): %v", invalidPathsFound.UnsortedList())
 	}
 	if overrides != nil {
-		if err := ApplyJSONPatch(obj, overrides); err != nil {
+		if err := util.ApplyJSONPatch(obj, overrides); err != nil {
 			return err
 		}
 	}

@@ -323,9 +323,10 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 	}
 
 	var overrides, currentOverrides overridesMap
+	helpers := map[string]*helpData{}
 	// Apply overrides from each policy in order
 	for _, policy := range policies {
-		newOverrides, err := parseOverrides(policy, placedClusters, fedObject)
+		newOverrides, err := parseOverrides(policy, placedClusters, fedObject, helpers)
 		if err != nil {
 			c.eventRecorder.Eventf(
 				fedObject,

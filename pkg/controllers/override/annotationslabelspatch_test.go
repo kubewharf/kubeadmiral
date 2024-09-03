@@ -252,7 +252,11 @@ func Test_parseAnnotationsOrLabelsOverriders(t *testing.T) {
 		testCases := generateTestCases(testTarget)
 		for testName, testCase := range testCases {
 			t.Run(testName, func(t *testing.T) {
-				overridePatches, err := parseStringMapOverriders(testCase.fedObject, testCase.stringMapOverriders, testTarget)
+				helper, err := getHelpDataFromFedObj(testCase.fedObject)
+				if err != nil {
+					t.Fatalf("failed to construct helper: %v", err)
+				}
+				overridePatches, err := parseStringMapOverriders(helper, testCase.stringMapOverriders, testTarget)
 				if (err != nil) != testCase.isErrorExpected {
 					t.Fatalf("err = %v, but testCase.isErrorExpected = %v", err, testCase.isErrorExpected)
 				}

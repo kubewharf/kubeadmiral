@@ -21,13 +21,7 @@ are Copyright 2023 The KubeAdmiral Authors.
 package sync
 
 import (
-	"encoding/json"
-
-	jsonpatch "github.com/evanphx/json-patch"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
-
-	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 )
 
 // Namespace and name may not be overridden since these fields are the primary
@@ -46,35 +40,3 @@ var invalidOverridePaths = sets.New(
 	"/metadata/generateName",
 	"/kind",
 )
-
-// ApplyJSONPatch applies the override on to the given unstructured object.
-func ApplyJSONPatch(obj *unstructured.Unstructured, overrides fedcorev1a1.OverridePatches) error {
-	// TODO: Do the defaulting of "op" field to "replace" in API defaulting
-	for i, overrideItem := range overrides {
-		if overrideItem.Op == "" {
-			overrides[i].Op = "replace"
-		}
-	}
-	jsonPatchBytes, err := json.Marshal(overrides)
-	if err != nil {
-		return err
-	}
-
-	patch, err := jsonpatch.DecodePatch(jsonPatchBytes)
-	if err != nil {
-		return err
-	}
-
-	objectJSONBytes, err := obj.MarshalJSON()
-	if err != nil {
-		return err
-	}
-
-	patchedObjectJSONBytes, err := patch.Apply(objectJSONBytes)
-	if err != nil {
-		return err
-	}
-
-	err = obj.UnmarshalJSON(patchedObjectJSONBytes)
-	return err
-}

@@ -23,11 +23,13 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	fedcorev1a1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	fedcorev1a1listers "github.com/kubewharf/kubeadmiral/pkg/client/listers/core/v1alpha1"
+	ctrutil "github.com/kubewharf/kubeadmiral/pkg/controllers/util"
 	"github.com/kubewharf/kubeadmiral/pkg/util/clusterselector"
 	podutil "github.com/kubewharf/kubeadmiral/pkg/util/pod"
 )
@@ -112,12 +114,36 @@ func lookForMatchedPolicies(
 	return policies, false, nil
 }
 
+type helpData struct {
+	gvk       schema.GroupVersionKind
+	sourceObj *unstructured.Unstructured
+}
+
+func getHelpDataFromFedObj(fedObj fedcorev1a1.GenericFederatedObject) (*helpData, error) {
+	gvk, err := getGVKFromFederatedObject(fedObj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get gvk from fedObj: %w", err)
+	}
+	sourceObj, err := fedObj.GetSpec().GetTemplateAsUnstructured()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sourceObj from fedObj: %w", err)
+	}
+	return &helpData{
+		gvk:       gvk,
+		sourceObj: sourceObj,
+	}, nil
+}
+
 func parseOverrides(
 	policy fedcorev1a1.GenericOverridePolicy,
 	clusters []*fedcorev1a1.FederatedCluster,
 	fedObject fedcorev1a1.GenericFederatedObject,
+	helpers map[string]*helpData,
 ) (overridesMap, error) {
 	overridesMap := make(overridesMap)
+	if helpers == nil {
+		helpers = make(map[string]*helpData)
+	}
 
 	for _, cluster := range clusters {
 		patches := make(fedcorev1a1.OverridePatches, 0)
@@ -139,7 +165,14 @@ func parseOverrides(
 				continue
 			}
 
-			currPatches, err := parsePatchesFromOverriders(fedObject, rule.Overriders)
+			var helper *helpData
+			if v, ok := helpers[cluster.Name]; ok {
+				helper = v
+			} else if helper, err = getHelpDataFromFedObj(fedObject); err != nil {
+				return nil, err
+			}
+
+			currPatches, err := parsePatchesFromOverriders(helper, rule.Overriders)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"failed to parse patches from policy %q's overrideRules[%v], error: %w",
@@ -148,6 +181,12 @@ func parseOverrides(
 					err,
 				)
 			}
+
+			if err = ctrutil.ApplyJSONPatch(helper.sourceObj, currPatches); err != nil {
+				return nil, err
+			}
+			helpers[cluster.Name] = helper
+
 			patches = append(patches, currPatches...)
 		}
 
@@ -241,7 +280,7 @@ func isClusterMatchedByClusterAffinity(
 }
 
 func parsePatchesFromOverriders(
-	fedObject fedcorev1a1.GenericFederatedObject,
+	helper *helpData,
 	overriders *fedcorev1a1.Overriders,
 ) (fedcorev1a1.OverridePatches, error) {
 	patches := make(fedcorev1a1.OverridePatches, 0)
@@ -252,42 +291,42 @@ func parsePatchesFromOverriders(
 	}
 
 	// parse patches from image overriders
-	if imagePatches, err := parseImageOverriders(fedObject, overriders.Image); err != nil {
+	if imagePatches, err := parseImageOverriders(helper, overriders.Image); err != nil {
 		return nil, fmt.Errorf("failed to parse image overriders: %w", err)
 	} else {
 		patches = append(patches, imagePatches...)
 	}
 
 	// parse patches from command overriders
-	if commandPatches, err := parseEntrypointOverriders(fedObject, overriders.Command, CommandTarget); err != nil {
+	if commandPatches, err := parseEntrypointOverriders(helper, overriders.Command, CommandTarget); err != nil {
 		return nil, fmt.Errorf("failed to parse command overriders: %w", err)
 	} else {
 		patches = append(patches, commandPatches...)
 	}
 
 	// parse patches from args overriders
-	if argsPatches, err := parseEntrypointOverriders(fedObject, overriders.Args, ArgsTarget); err != nil {
+	if argsPatches, err := parseEntrypointOverriders(helper, overriders.Args, ArgsTarget); err != nil {
 		return nil, fmt.Errorf("failed to parse args overriders: %w", err)
 	} else {
 		patches = append(patches, argsPatches...)
 	}
 
 	// parse patches from env overriders
-	if envsPatches, err := parseEnvOverriders(fedObject, overriders.Envs); err != nil {
+	if envsPatches, err := parseEnvOverriders(helper, overriders.Envs); err != nil {
 		return nil, fmt.Errorf("failed to parse env overriders: %w", err)
 	} else {
 		patches = append(patches, envsPatches...)
 	}
 
 	// parse patches from annotation overriders
-	if annotationsPatches, err := parseStringMapOverriders(fedObject, overriders.Annotations, AnnotationsTarget); err != nil {
+	if annotationsPatches, err := parseStringMapOverriders(helper, overriders.Annotations, AnnotationsTarget); err != nil {
 		return nil, fmt.Errorf("failed to parse annotations overriders: %w", err)
 	} else {
 		patches = append(patches, annotationsPatches...)
 	}
 
 	// parse patches from labels overriders
-	if labelsPatches, err := parseStringMapOverriders(fedObject, overriders.Labels, LabelsTarget); err != nil {
+	if labelsPatches, err := parseStringMapOverriders(helper, overriders.Labels, LabelsTarget); err != nil {
 		return nil, fmt.Errorf("failed to parse labels overriders: %w", err)
 	} else {
 		patches = append(patches, labelsPatches...)
