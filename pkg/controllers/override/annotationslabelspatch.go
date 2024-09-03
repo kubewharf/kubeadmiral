@@ -27,22 +27,17 @@ import (
 )
 
 func parseStringMapOverriders(
-	fedObject fedcorev1a1.GenericFederatedObject,
+	helper *helpData,
 	overriders []fedcorev1a1.StringMapOverrider,
 	target string,
 ) (fedcorev1a1.OverridePatches, error) {
 	if len(overriders) == 0 {
 		return fedcorev1a1.OverridePatches{}, nil
 	}
-
-	sourceObj, err := fedObject.GetSpec().GetTemplateAsUnstructured()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sourceObj from fedObj: %w", err)
-	}
-
 	// get labels or annotations of sourceObj
-	mapValue := getLabelsOrAnnotationsFromObject(sourceObj, target)
+	mapValue := getLabelsOrAnnotationsFromObject(helper.sourceObj, target)
 
+	var err error
 	// apply StringMapOverriders to mapValue
 	for index := range overriders {
 		mapValue, err = applyStringMapOverrider(mapValue, &overriders[index])

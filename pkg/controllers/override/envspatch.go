@@ -29,7 +29,7 @@ import (
 )
 
 func parseEnvOverriders(
-	fedObject fedcorev1a1.GenericFederatedObject,
+	helper *helpData,
 	overriders []fedcorev1a1.EnvOverrider,
 ) (fedcorev1a1.OverridePatches, error) {
 	if len(overriders) == 0 {
@@ -39,12 +39,7 @@ func parseEnvOverriders(
 	// patchMap(<targetPath, []target]>) is used to store the newest env values of each command path
 	patchMap := make(map[string][]corev1.EnvVar)
 
-	// get gvk from fedObj
-	gvk, err := getGVKFromFederatedObject(fedObject)
-	if err != nil {
-		return nil, err
-	}
-	podSpec, err := podutil.GetResourcePodSpec(fedObject, gvk)
+	podSpec, err := podutil.GetResourcePodSpecFromUnstructuredObj(helper.sourceObj, helper.gvk)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get podSpec from sourceObj: %w", err)
 	}
@@ -58,7 +53,7 @@ func parseEnvOverriders(
 			continue
 		}
 
-		targetPath, err := generateTargetPathForPodSpec(gvk, containerKind, EnvTarget, containerIndex)
+		targetPath, err := generateTargetPathForPodSpec(helper.gvk, containerKind, EnvTarget, containerIndex)
 		if err != nil {
 			return nil, err
 		}

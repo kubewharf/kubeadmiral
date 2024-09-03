@@ -47,15 +47,8 @@ var PodSpecPaths = map[schema.GroupKind]string{
 	{Group: "", Kind: common.PodKind}:                       "spec",
 }
 
-func GetPodSpec(fedObject fedcorev1a1.GenericFederatedObject, podSpecPath string) (*corev1.PodSpec, error) {
-	if fedObject == nil {
-		return nil, fmt.Errorf("fedObject is nil")
-	}
-	unsFedObject, err := fedObject.GetSpec().GetTemplateAsUnstructured()
-	if err != nil {
-		return nil, err
-	}
-	podSpecMap, found, err := unstructured.NestedMap(unsFedObject.Object, strings.Split(podSpecPath, ".")...)
+func getPodSpecFromUnstructuredObj(unstructuredObj *unstructured.Unstructured, podSpecPath string) (*corev1.PodSpec, error) {
+	podSpecMap, found, err := unstructured.NestedMap(unstructuredObj.Object, strings.Split(podSpecPath, ".")...)
 	if err != nil {
 		return nil, err
 	}
@@ -69,10 +62,31 @@ func GetPodSpec(fedObject fedcorev1a1.GenericFederatedObject, podSpecPath string
 	return podSpec, nil
 }
 
+func GetPodSpec(fedObject fedcorev1a1.GenericFederatedObject, podSpecPath string) (*corev1.PodSpec, error) {
+	if fedObject == nil {
+		return nil, fmt.Errorf("fedObject is nil")
+	}
+	unsFedObject, err := fedObject.GetSpec().GetTemplateAsUnstructured()
+	if err != nil {
+		return nil, err
+	}
+	return getPodSpecFromUnstructuredObj(unsFedObject, podSpecPath)
+}
+
 func GetResourcePodSpec(fedObject fedcorev1a1.GenericFederatedObject, gvk schema.GroupVersionKind) (*corev1.PodSpec, error) {
 	path, ok := PodSpecPaths[gvk.GroupKind()]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownTypeToGetPodSpec, gvk.String())
 	}
 	return GetPodSpec(fedObject, path)
+}
+
+func GetResourcePodSpecFromUnstructuredObj(
+	unstructuredObj *unstructured.Unstructured, gvk schema.GroupVersionKind,
+) (*corev1.PodSpec, error) {
+	podSpecPath, ok := PodSpecPaths[gvk.GroupKind()]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrUnknownTypeToGetPodSpec, gvk.String())
+	}
+	return getPodSpecFromUnstructuredObj(unstructuredObj, podSpecPath)
 }

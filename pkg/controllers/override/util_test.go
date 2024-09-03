@@ -22,8 +22,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	jsonutil "k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/tools/cache"
 
@@ -393,6 +395,7 @@ func TestParseOverrides(t *testing.T) {
 			isErrorExpected:      false,
 		},
 		"single cluster multiple OverrideRules - should return overrides from matched rules in order": {
+			fedObject: generateCustomObjectForJSONTest(),
 			policy: &fedcorev1a1.OverridePolicy{
 				Spec: fedcorev1a1.GenericOverridePolicySpec{
 					OverrideRules: []fedcorev1a1.OverrideRule{
@@ -496,6 +499,7 @@ func TestParseOverrides(t *testing.T) {
 			isErrorExpected: false,
 		},
 		"multiple clusters multiple Overrides - should return overrides for each cluster in order": {
+			fedObject: generateCustomObjectForJSONTest(),
 			policy: &fedcorev1a1.OverridePolicy{
 				Spec: fedcorev1a1.GenericOverridePolicySpec{
 					OverrideRules: []fedcorev1a1.OverrideRule{
@@ -649,16 +653,16 @@ func TestParseOverrides(t *testing.T) {
 								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
 									{
 										Operator: "add",
-										Path:     "/a/b",
+										Path:     "/metadata/labels/json1",
 										Value: apiextensionsv1.JSON{
-											Raw: []byte(`1`),
+											Raw: []byte(`"all"`),
 										},
 									},
 									{
-										Operator: "replace",
-										Path:     "/aa/bb",
+										Operator: "add",
+										Path:     "/metadata/labels/json2",
 										Value: apiextensionsv1.JSON{
-											Raw: []byte(`["banana","mango"]`),
+											Raw: []byte(`"all"`),
 										},
 									},
 								},
@@ -684,16 +688,9 @@ func TestParseOverrides(t *testing.T) {
 								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
 									{
 										Operator: "replace",
-										Path:     "/c/d",
+										Path:     "/metadata/labels/json1",
 										Value: apiextensionsv1.JSON{
-											Raw: []byte(`1`),
-										},
-									},
-									{
-										Operator: "replace",
-										Path:     "/cc/dd",
-										Value: apiextensionsv1.JSON{
-											Raw: []byte(`{"key":"value"}`),
+											Raw: []byte(`"cluster1"`),
 										},
 									},
 								},
@@ -719,14 +716,7 @@ func TestParseOverrides(t *testing.T) {
 								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
 									{
 										Operator: "remove",
-										Path:     "/e/f",
-									},
-									{
-										Operator: "add",
-										Path:     "/ee/ff",
-										Value: apiextensionsv1.JSON{
-											Raw: []byte(`"some string"`),
-										},
+										Path:     "/metadata/labels/json2",
 									},
 								},
 								Image: []fedcorev1a1.ImageOverrider{
@@ -765,13 +755,13 @@ func TestParseOverrides(t *testing.T) {
 					),
 					{
 						Op:    "add",
-						Path:  "/a/b",
-						Value: asJSON(float64(1)),
+						Path:  "/metadata/labels/json1",
+						Value: asJSON("all"),
 					},
 					{
-						Op:    "replace",
-						Path:  "/aa/bb",
-						Value: asJSON([]interface{}{"banana", "mango"}),
+						Op:    "add",
+						Path:  "/metadata/labels/json2",
+						Value: asJSON("all"),
 					},
 					generatePatch(
 						OperatorReplace,
@@ -780,15 +770,8 @@ func TestParseOverrides(t *testing.T) {
 					),
 					{
 						Op:    "replace",
-						Path:  "/c/d",
-						Value: asJSON(float64(1)),
-					},
-					{
-						Op:   "replace",
-						Path: "/cc/dd",
-						Value: asJSON(map[string]interface{}{
-							"key": "value",
-						}),
+						Path:  "/metadata/labels/json1",
+						Value: asJSON("cluster1"),
 					},
 				},
 				"cluster2": fedcorev1a1.OverridePatches{
@@ -799,13 +782,13 @@ func TestParseOverrides(t *testing.T) {
 					),
 					{
 						Op:    "add",
-						Path:  "/a/b",
-						Value: asJSON(float64(1)),
+						Path:  "/metadata/labels/json1",
+						Value: asJSON("all"),
 					},
 					{
-						Op:    "replace",
-						Path:  "/aa/bb",
-						Value: asJSON([]interface{}{"banana", "mango"}),
+						Op:    "add",
+						Path:  "/metadata/labels/json2",
+						Value: asJSON("all"),
 					},
 					generatePatch(
 						OperatorReplace,
@@ -814,18 +797,15 @@ func TestParseOverrides(t *testing.T) {
 					),
 					{
 						Op:   "remove",
-						Path: "/e/f",
-					},
-					{
-						Op:    "add",
-						Path:  "/ee/ff",
-						Value: asJSON("some string"),
+						Path: "/metadata/labels/json2",
 					},
 				},
 			},
 			isErrorExpected: false,
 		},
 		"OverrideRule.Overriders is nil - should return no overrides": {
+			fedObject: generateFedDeploymentWithImage(
+				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
 			policy: &fedcorev1a1.OverridePolicy{
 				Spec: fedcorev1a1.GenericOverridePolicySpec{
 					OverrideRules: []fedcorev1a1.OverrideRule{
@@ -849,7 +829,7 @@ func TestParseOverrides(t *testing.T) {
 			expectedOverridesMap: make(overridesMap),
 			isErrorExpected:      false,
 		},
-		"multiple clusters multiple Overrides(image, command, args, annotations, labels, jsonPatch)" +
+		"multiple clusters multiple Overrides(image, command, args, envs, annotations, labels, jsonPatch)" +
 			"- should return overrides for each cluster in order": {
 			fedObject: generateFedObjWithPodWithTwoNormalAndTwoInit(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
@@ -883,6 +863,9 @@ func TestParseOverrides(t *testing.T) {
 									generateEntrypointOverrider("init-server-1", OperatorAppend, "-a", "-b"),
 									generateEntrypointOverrider("server-1", OperatorOverwrite, "-c", "-d"),
 								},
+								Envs: []fedcorev1a1.EnvOverrider{
+									generateEnvOverrider("server-1", OperatorAddIfAbsent, corev1.EnvVar{Name: "all", Value: "xxx"}),
+								},
 								Annotations: []fedcorev1a1.StringMapOverrider{
 									generateStringMapOverrider(OperatorAddIfAbsent, map[string]string{
 										"abc": "xxx",
@@ -904,16 +887,16 @@ func TestParseOverrides(t *testing.T) {
 								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
 									{
 										Operator: "add",
-										Path:     "/a/b",
+										Path:     "/metadata/labels/json1",
 										Value: apiextensionsv1.JSON{
-											Raw: []byte(`1`),
+											Raw: []byte(`"all"`),
 										},
 									},
 									{
-										Operator: "replace",
-										Path:     "/aa/bb",
+										Operator: "add",
+										Path:     "/metadata/labels/json2",
 										Value: apiextensionsv1.JSON{
-											Raw: []byte(`["banana","mango"]`),
+											Raw: []byte(`"all"`),
 										},
 									},
 								},
@@ -926,22 +909,6 @@ func TestParseOverrides(t *testing.T) {
 								},
 							},
 							Overriders: &fedcorev1a1.Overriders{
-								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
-									{
-										Operator: "replace",
-										Path:     "/c/d",
-										Value: apiextensionsv1.JSON{
-											Raw: []byte(`1`),
-										},
-									},
-									{
-										Operator: "replace",
-										Path:     "/cc/dd",
-										Value: apiextensionsv1.JSON{
-											Raw: []byte(`{"key":"value"}`),
-										},
-									},
-								},
 								Image: []fedcorev1a1.ImageOverrider{
 									{
 										ContainerNames: []string{"server-1"},
@@ -953,6 +920,27 @@ func TestParseOverrides(t *testing.T) {
 											"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
 									},
 								},
+								Args: []fedcorev1a1.EntrypointOverrider{
+									generateEntrypointOverrider("server-1", OperatorDelete, "-d"),
+									generateEntrypointOverrider("init-server-1", OperatorAppend, "cluster1"),
+								},
+								Envs: []fedcorev1a1.EnvOverrider{
+									generateEnvOverrider("server-1", OperatorAddIfAbsent, corev1.EnvVar{Name: "cluster1", Value: "xxx"}),
+								},
+								Annotations: []fedcorev1a1.StringMapOverrider{
+									generateStringMapOverrider(OperatorAddIfAbsent, map[string]string{
+										"cluster1": "xxx",
+									}),
+								},
+								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
+									{
+										Operator: "replace",
+										Path:     "/metadata/labels/json1",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`"cluster1"`),
+										},
+									},
+								},
 							},
 						},
 						{
@@ -962,19 +950,6 @@ func TestParseOverrides(t *testing.T) {
 								},
 							},
 							Overriders: &fedcorev1a1.Overriders{
-								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
-									{
-										Operator: "remove",
-										Path:     "/e/f",
-									},
-									{
-										Operator: "add",
-										Path:     "/ee/ff",
-										Value: apiextensionsv1.JSON{
-											Raw: []byte(`"some string"`),
-										},
-									},
-								},
 								Image: []fedcorev1a1.ImageOverrider{
 									{
 										ContainerNames: []string{"server-1"},
@@ -984,6 +959,24 @@ func TestParseOverrides(t *testing.T) {
 											"cluster-two/echo-server",
 											"two",
 											"sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
+									},
+								},
+								Command: []fedcorev1a1.EntrypointOverrider{
+									generateEntrypointOverrider("server-1", OperatorAppend, "cluster2"),
+									generateEntrypointOverrider("init-server-1", OperatorOverwrite, "cluster2"),
+								},
+								Labels: []fedcorev1a1.StringMapOverrider{
+									generateStringMapOverrider(OperatorAddIfAbsent, map[string]string{
+										"cluster2": "xxx",
+									}),
+									generateStringMapOverrider(OperatorOverwrite, map[string]string{
+										"def": "cluster2",
+									}),
+								},
+								JsonPatch: []fedcorev1a1.JsonPatchOverrider{
+									{
+										Operator: "remove",
+										Path:     "/metadata/labels/json2",
 									},
 								},
 							},
@@ -1030,6 +1023,10 @@ func TestParseOverrides(t *testing.T) {
 						"/spec/initContainers/0/args",
 						[]string{"-a", "-b"},
 					),
+					// envs
+					generatePatch("replace",
+						"/spec/containers/0/env",
+						[]corev1.EnvVar{{Name: "all", Value: "xxx"}}),
 					// annotations
 					generatePatch("replace",
 						"/metadata/annotations",
@@ -1043,13 +1040,13 @@ func TestParseOverrides(t *testing.T) {
 					// jsonPatch
 					{
 						Op:    "add",
-						Path:  "/a/b",
-						Value: asJSON(float64(1)),
+						Path:  "/metadata/labels/json1",
+						Value: asJSON("all"),
 					},
 					{
-						Op:    "replace",
-						Path:  "/aa/bb",
-						Value: asJSON([]interface{}{"banana", "mango"}),
+						Op:    "add",
+						Path:  "/metadata/labels/json2",
+						Value: asJSON("all"),
 					},
 					// patches from overrideRules which apply to cluster-1
 					// image
@@ -1058,18 +1055,29 @@ func TestParseOverrides(t *testing.T) {
 						"/spec/containers/0/image",
 						"cluster.one.io/cluster-one/echo-server:one@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 					),
+					// args
+					generatePatch("replace",
+						"/spec/containers/0/args",
+						[]string{"-c"},
+					),
+					generatePatch("replace",
+						"/spec/initContainers/0/args",
+						[]string{"-a", "-b", "cluster1"},
+					),
+					// envs
+					generatePatch("replace",
+						"/spec/containers/0/env",
+						[]corev1.EnvVar{{Name: "all", Value: "xxx"}, {Name: "cluster1", Value: "xxx"}}),
+					// annotations
+					generatePatch("replace",
+						"/metadata/annotations",
+						map[string]string{"abc": "xxx", "cluster1": "xxx"},
+					),
 					// jsonPatch
 					{
 						Op:    "replace",
-						Path:  "/c/d",
-						Value: asJSON(float64(1)),
-					},
-					{
-						Op:   "replace",
-						Path: "/cc/dd",
-						Value: asJSON(map[string]interface{}{
-							"key": "value",
-						}),
+						Path:  "/metadata/labels/json1",
+						Value: asJSON("cluster1"),
 					},
 				},
 				"cluster2": fedcorev1a1.OverridePatches{
@@ -1098,6 +1106,10 @@ func TestParseOverrides(t *testing.T) {
 						"/spec/initContainers/0/args",
 						[]string{"-a", "-b"},
 					),
+					// envs
+					generatePatch("replace",
+						"/spec/containers/0/env",
+						[]corev1.EnvVar{{Name: "all", Value: "xxx"}}),
 					// annotations
 					generatePatch("replace",
 						"/metadata/annotations",
@@ -1111,13 +1123,13 @@ func TestParseOverrides(t *testing.T) {
 					// jsonPatch
 					{
 						Op:    "add",
-						Path:  "/a/b",
-						Value: asJSON(float64(1)),
+						Path:  "/metadata/labels/json1",
+						Value: asJSON("all"),
 					},
 					{
-						Op:    "replace",
-						Path:  "/aa/bb",
-						Value: asJSON([]interface{}{"banana", "mango"}),
+						Op:    "add",
+						Path:  "/metadata/labels/json2",
+						Value: asJSON("all"),
 					},
 					// patches from overrideRules which apply to cluster-2
 					generatePatch(
@@ -1125,14 +1137,24 @@ func TestParseOverrides(t *testing.T) {
 						"/spec/containers/0/image",
 						"cluster.two.io/cluster-two/echo-server:two@sha256:aaaaf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726",
 					),
+					// command
+					generatePatch("replace",
+						"/spec/containers/0/command",
+						[]string{"/bin/bash", "cluster2"},
+					),
+					generatePatch("replace",
+						"/spec/initContainers/0/command",
+						[]string{"cluster2"},
+					),
+					// labels
+					generatePatch("replace",
+						"/metadata/labels",
+						map[string]string{"abc": "xxx", "def": "cluster2", "json1": "all", "json2": "all", "cluster2": "xxx"},
+					),
+					// jsonPatch
 					{
 						Op:   "remove",
-						Path: "/e/f",
-					},
-					{
-						Op:    "add",
-						Path:  "/ee/ff",
-						Value: asJSON("some string"),
+						Path: "/metadata/labels/json2",
 					},
 				},
 			},
@@ -1142,7 +1164,7 @@ func TestParseOverrides(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			overrides, err := parseOverrides(testCase.policy, testCase.clusters, testCase.fedObject)
+			overrides, err := parseOverrides(testCase.policy, testCase.clusters, testCase.fedObject, nil)
 			if (err != nil) != testCase.isErrorExpected {
 				t.Fatalf("err = %v, but testCase.isErrorExpected = %v", err, testCase.isErrorExpected)
 			}
@@ -1697,5 +1719,35 @@ func TestConvertOverridesListToMap(t *testing.T) {
 		if !reflect.DeepEqual(tt.expectedMap, actualMap) {
 			t.Errorf("ConvertOverridesListToMap Error, expected: %+v, actual: %+v", tt.expectedMap, actualMap)
 		}
+	}
+}
+
+func generateCustomObjectForJSONTest() *fedcorev1a1.FederatedObject {
+	basicTemplate := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "example.com/v1",
+			"kind":       "Test",
+			"metadata": map[string]interface{}{
+				"name": "job-test",
+			},
+			"spec": map[string]interface{}{},
+			"a":    map[string]interface{}{},
+			"b":    map[string]interface{}{},
+			"c":    map[string]interface{}{},
+			"d":    map[string]interface{}{},
+			"e": map[string]interface{}{
+				"f": "f",
+			},
+			"f":  map[string]interface{}{},
+			"aa": map[string]interface{}{},
+			"cc": map[string]interface{}{},
+			"ee": map[string]interface{}{},
+		},
+	}
+	rawTargetTemplate, _ := basicTemplate.MarshalJSON()
+	return &fedcorev1a1.FederatedObject{
+		Spec: fedcorev1a1.GenericFederatedObjectSpec{
+			Template: apiextensionsv1.JSON{Raw: rawTargetTemplate},
+		},
 	}
 }

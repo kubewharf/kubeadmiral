@@ -39,7 +39,7 @@ const (
 )
 
 func parseImageOverriders(
-	fedObject fedcorev1a1.GenericFederatedObject,
+	helper *helpData,
 	imageOverriders []fedcorev1a1.ImageOverrider,
 ) (fedcorev1a1.OverridePatches, error) {
 	// patchMap(<imagePath, imageValue>) is used to store the newest image value of each image path
@@ -49,11 +49,11 @@ func parseImageOverriders(
 	for i := range imageOverriders {
 		imageOverrider := &imageOverriders[i]
 		if imageOverrider.ImagePath != "" {
-			if err := parsePatchesFromImagePath(fedObject, imageOverrider, patchMap); err != nil {
+			if err := parsePatchesFromImagePath(helper, imageOverrider, patchMap); err != nil {
 				return nil, err
 			}
 		} else {
-			if err := parsePatchesFromWorkload(fedObject, imageOverrider, patchMap); err != nil {
+			if err := parsePatchesFromWorkload(helper, imageOverrider, patchMap); err != nil {
 				return nil, err
 			}
 		}
@@ -83,10 +83,10 @@ func parseImageOverriders(
 // parsePatchesFromImagePath applies overrider to image value on the specified path,
 // and generates a patch which is stored in patchMap
 func parsePatchesFromImagePath(
-	fedObject fedcorev1a1.GenericFederatedObject,
+	helper *helpData,
 	imageOverrider *fedcorev1a1.ImageOverrider,
 	patchMap map[string]string,
-) error {
+) (err error) {
 	imagePath := imageOverrider.ImagePath
 	if !strings.HasPrefix(imagePath, pathSeparator) {
 		return fmt.Errorf("image path should be start with %s", pathSeparator)
@@ -95,13 +95,7 @@ func parsePatchesFromImagePath(
 
 	// get image value
 	if imageValue == "" {
-		// get source obj
-		sourceObj, err := fedObject.GetSpec().GetTemplateAsUnstructured()
-		if err != nil {
-			return fmt.Errorf("failed to get sourceObj from fedObj: %w", err)
-		}
-
-		imageValue, err = GetStringFromUnstructuredObj(sourceObj, imageOverrider.ImagePath)
+		imageValue, err = GetStringFromUnstructuredObj(helper.sourceObj, imageOverrider.ImagePath)
 		if err != nil {
 			return fmt.Errorf("failed to parse image value from unstructured obj: %w", err)
 		}
@@ -120,16 +114,13 @@ func parsePatchesFromImagePath(
 // parsePatchesFromWorkload applies overrider to image value on the default path of workload,
 // and generates a patch which is stored in patchMap
 func parsePatchesFromWorkload(
-	fedObject fedcorev1a1.GenericFederatedObject,
+	helper *helpData,
 	imageOverrider *fedcorev1a1.ImageOverrider,
 	patchMap map[string]string,
 ) error {
 	// get pod spec from fedObj
-	gvk, err := getGVKFromFederatedObject(fedObject)
-	if err != nil {
-		return err
-	}
-	podSpec, err := podutil.GetResourcePodSpec(fedObject, gvk)
+	gvk := helper.gvk
+	podSpec, err := podutil.GetResourcePodSpecFromUnstructuredObj(helper.sourceObj, gvk)
 	if err != nil {
 		return fmt.Errorf("failed to get podSpec from sourceObj: %w", err)
 	}

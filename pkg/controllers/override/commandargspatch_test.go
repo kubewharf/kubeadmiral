@@ -646,7 +646,11 @@ func Test_parseCommandOrArgsOverriders(t *testing.T) {
 	for _, testTarget := range testTargets {
 		for testName, testCase := range generateTestCases(testTarget) {
 			t.Run(testName, func(t *testing.T) {
-				overridePatches, err := parseEntrypointOverriders(testCase.fedObject, testCase.entrypointOverriders, testTarget)
+				helper, err := getHelpDataFromFedObj(testCase.fedObject)
+				if err != nil {
+					t.Fatalf("failed to construct helper: %v", err)
+				}
+				overridePatches, err := parseEntrypointOverriders(helper, testCase.entrypointOverriders, testTarget)
 				if (err != nil) != testCase.isErrorExpected {
 					t.Fatalf("err = %v, but testCase.isErrorExpected = %v", err, testCase.isErrorExpected)
 				}

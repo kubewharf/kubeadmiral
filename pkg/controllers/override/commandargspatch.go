@@ -31,7 +31,7 @@ import (
 
 // parseEntrypointOverriders parse OverridePatches from command/args overriders
 func parseEntrypointOverriders(
-	fedObject fedcorev1a1.GenericFederatedObject,
+	helper *helpData,
 	overriders []fedcorev1a1.EntrypointOverrider,
 	target string,
 ) (fedcorev1a1.OverridePatches, error) {
@@ -42,12 +42,8 @@ func parseEntrypointOverriders(
 	// patchMap(<targetPath, []target]>) is used to store the newest command/args values of each command path
 	patchMap := make(map[string][]string)
 
-	// get gvk from fedObj
-	gvk, err := getGVKFromFederatedObject(fedObject)
-	if err != nil {
-		return nil, err
-	}
-	podSpec, err := podutil.GetResourcePodSpec(fedObject, gvk)
+	// get podSpec from sourceObj
+	podSpec, err := podutil.GetResourcePodSpecFromUnstructuredObj(helper.sourceObj, helper.gvk)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get podSpec from sourceObj: %w", err)
 	}
@@ -61,7 +57,7 @@ func parseEntrypointOverriders(
 			continue
 		}
 
-		targetPath, err := generateTargetPathForPodSpec(gvk, containerKind, target, containerIndex)
+		targetPath, err := generateTargetPathForPodSpec(helper.gvk, containerKind, target, containerIndex)
 		if err != nil {
 			return nil, err
 		}

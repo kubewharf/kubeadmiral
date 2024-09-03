@@ -1089,7 +1089,11 @@ func Test_parseEnvOverriders(t *testing.T) {
 
 	for testName, testCase := range generateTestCases() {
 		t.Run(testName, func(t *testing.T) {
-			overridePatches, err := parseEnvOverriders(testCase.fedObject, testCase.envOverriders)
+			helper, err := getHelpDataFromFedObj(testCase.fedObject)
+			if err != nil {
+				t.Fatalf("failed to construct helper: %v", err)
+			}
+			overridePatches, err := parseEnvOverriders(helper, testCase.envOverriders)
 			if (err != nil) != testCase.isErrorExpected {
 				t.Fatalf("err = %v, but testCase.isErrorExpected = %v", err, testCase.isErrorExpected)
 			}
