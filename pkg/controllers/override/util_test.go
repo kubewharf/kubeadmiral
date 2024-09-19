@@ -829,7 +829,7 @@ func TestParseOverrides(t *testing.T) {
 			expectedOverridesMap: make(overridesMap),
 			isErrorExpected:      false,
 		},
-		"multiple clusters multiple Overrides(image, command, args, envs, annotations, labels, jsonPatch)" +
+		"multiple clusters multiple Overrides(image, command, args, envs, annotations, labels, jsonPatch with finalizers)" +
 			"- should return overrides for each cluster in order": {
 			fedObject: generateFedObjWithPodWithTwoNormalAndTwoInit(
 				"docker.io/ealen/echo-server:latest@sha256:bbbbf56b44807c64d294e6c8059b479f35350b454492398225034174808d1726"),
@@ -899,6 +899,13 @@ func TestParseOverrides(t *testing.T) {
 											Raw: []byte(`"all"`),
 										},
 									},
+									{
+										Operator: "add",
+										Path:     "/metadata/finalizers/-",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`"foo.bar.com/test"`),
+										},
+									},
 								},
 							},
 						},
@@ -940,6 +947,13 @@ func TestParseOverrides(t *testing.T) {
 											Raw: []byte(`"cluster1"`),
 										},
 									},
+									{
+										Operator: "replace",
+										Path:     "/metadata/finalizers/0",
+										Value: apiextensionsv1.JSON{
+											Raw: []byte(`"foo.bar.com/cluster1"`),
+										},
+									},
 								},
 							},
 						},
@@ -977,6 +991,10 @@ func TestParseOverrides(t *testing.T) {
 									{
 										Operator: "remove",
 										Path:     "/metadata/labels/json2",
+									},
+									{
+										Operator: "remove",
+										Path:     "/metadata/finalizers/0",
 									},
 								},
 							},
@@ -1048,6 +1066,11 @@ func TestParseOverrides(t *testing.T) {
 						Path:  "/metadata/labels/json2",
 						Value: asJSON("all"),
 					},
+					{
+						Op:    "add",
+						Path:  "/metadata/finalizers/-",
+						Value: asJSON("foo.bar.com/test"),
+					},
 					// patches from overrideRules which apply to cluster-1
 					// image
 					generatePatch(
@@ -1078,6 +1101,11 @@ func TestParseOverrides(t *testing.T) {
 						Op:    "replace",
 						Path:  "/metadata/labels/json1",
 						Value: asJSON("cluster1"),
+					},
+					{
+						Op:    "replace",
+						Path:  "/metadata/finalizers/0",
+						Value: asJSON("foo.bar.com/cluster1"),
 					},
 				},
 				"cluster2": fedcorev1a1.OverridePatches{
@@ -1131,6 +1159,11 @@ func TestParseOverrides(t *testing.T) {
 						Path:  "/metadata/labels/json2",
 						Value: asJSON("all"),
 					},
+					{
+						Op:    "add",
+						Path:  "/metadata/finalizers/-",
+						Value: asJSON("foo.bar.com/test"),
+					},
 					// patches from overrideRules which apply to cluster-2
 					generatePatch(
 						OperatorReplace,
@@ -1155,6 +1188,10 @@ func TestParseOverrides(t *testing.T) {
 					{
 						Op:   "remove",
 						Path: "/metadata/labels/json2",
+					},
+					{
+						Op:   "remove",
+						Path: "/metadata/finalizers/0",
 					},
 				},
 			},

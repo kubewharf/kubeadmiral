@@ -182,7 +182,9 @@ func parseOverrides(
 				)
 			}
 
-			if err = ctrutil.ApplyJSONPatch(helper.sourceObj, currPatches); err != nil {
+			// Ignore finalizer patches because they depend on objects in the member cluster.
+			// The finalizer patches will be applied in sync controller.
+			if err = ctrutil.ApplyJSONPatch(helper.sourceObj, ignoreFinalizerPatches(currPatches)); err != nil {
 				return nil, err
 			}
 			helpers[cluster.Name] = helper
@@ -340,6 +342,17 @@ func parsePatchesFromOverriders(
 	}
 
 	return patches, nil
+}
+
+func ignoreFinalizerPatches(p fedcorev1a1.OverridePatches) fedcorev1a1.OverridePatches {
+	newPatches := make(fedcorev1a1.OverridePatches, 0, len(p))
+	for _, patch := range p {
+		if strings.HasPrefix(patch.Path, "/metadata/finalizers") {
+			continue
+		}
+		newPatches = append(newPatches, patch)
+	}
+	return newPatches
 }
 
 func getGVKFromFederatedObject(fedObject fedcorev1a1.GenericFederatedObject) (schema.GroupVersionKind, error) {
