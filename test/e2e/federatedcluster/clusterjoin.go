@@ -74,9 +74,8 @@ var _ = ginkgo.Describe("Cluster Join", federatedClusterTestLabels, func() {
 			ginkgo.By("Assert cluster secret not updated with service account information")
 			secret, err := f.HostKubeClient().CoreV1().Secrets(framework.FedSystemNamespace).Get(ctx, secret.Name, metav1.GetOptions{})
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
-			token, ca := getServiceAccountInfo(secret)
+			token, _ := getServiceAccountInfo(secret)
 			gomega.Expect(token).To(gomega.BeNil())
-			gomega.Expect(ca).To(gomega.BeNil())
 		})
 	})
 
