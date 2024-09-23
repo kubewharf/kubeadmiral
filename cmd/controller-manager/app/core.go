@@ -352,7 +352,7 @@ func startServiceExportController(
 ) (controllermanager.Controller, error) {
 	serviceExportController, err := mcs.NewServiceExportController(
 		controllerCtx.KubeClientset,
-		controllerCtx.KubeInformerFactory.Discovery().V1beta1().EndpointSlices(),
+		controllerCtx.KubeInformerFactory.Discovery().V1().EndpointSlices(),
 		controllerCtx.FederatedInformerManager,
 		klog.Background(),
 		controllerCtx.Metrics,
@@ -373,7 +373,7 @@ func startServiceImportController(
 ) (controllermanager.Controller, error) {
 	serviceImportController, err := mcs.NewServiceImportController(
 		controllerCtx.KubeClientset,
-		controllerCtx.KubeInformerFactory.Discovery().V1beta1().EndpointSlices(),
+		controllerCtx.KubeInformerFactory.Discovery().V1().EndpointSlices(),
 		controllerCtx.FedClientset,
 		controllerCtx.FedInformerFactory.Core().V1alpha1().FederatedObjects(),
 		controllerCtx.Metrics,
