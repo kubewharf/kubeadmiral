@@ -151,7 +151,9 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 	var lock sync.Mutex
 	watchClusters := sets.Set[string]{}
 	proxyCh := make(chan watch.Event)
+	recoveryCh := make(chan string)
 	proxyWatcher := watch.NewProxyWatcher(proxyCh)
+	clusterWatchers := make(map[string]watch.Interface, len(clusters))
 	for i := range clusters {
 		client, exist := p.federatedInformerManager.GetClusterKubeClient(clusters[i].Name)
 		if !exist {
@@ -164,25 +166,32 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 		if err != nil {
 			continue
 		}
+		clusterWatchers[clusters[i].Name] = watcher
 		watchClusters.Insert(clusters[i].Name)
 		go func(cluster string) {
-			defer watcher.Stop()
 			for {
+				clusterWatcher := clusterWatchers[cluster]
 				select {
 				case <-proxyWatcher.StopChan():
+					clusterWatcher.Stop()
 					return
-				case event, ok := <-watcher.ResultChan():
+				case event, ok := <-clusterWatcher.ResultChan():
 					if !ok {
+						klog.Infof("closed %s channel, selector %s", cluster, label.String())
+						clusterWatcher.Stop()
 						lock.Lock()
-						defer lock.Unlock()
-
 						watchClusters.Delete(cluster)
 						if watchClusters.Len() == 0 {
 							close(proxyCh)
+							close(recoveryCh)
+							return
 						}
-						return
+						recoveryCh <- cluster
+						lock.Unlock()
+						continue
 					}
 					if pod, ok := event.Object.(*corev1.Pod); ok {
+						klog.Infof("pod event name: %v %v", pod.Name, event.Type)
 						clusterobject.MakePodUnique(pod, cluster)
 						event.Object = pod
 					}
@@ -191,6 +200,28 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 			}
 		}(clusters[i].Name)
 	}
+
+	go func() {
+		for cluster := range recoveryCh {
+			client, exist := p.federatedInformerManager.GetClusterKubeClient(cluster)
+			if !exist {
+				continue
+			}
+			watcher, err := client.CoreV1().Pods(namespace).Watch(ctx, metav1.ListOptions{
+				LabelSelector: label.String(),
+				FieldSelector: options.FieldSelector.String(),
+			})
+			if err != nil {
+				continue
+			}
+
+			lock.Lock()
+			clusterWatchers[cluster] = watcher
+			watchClusters.Insert(cluster)
+			lock.Unlock()
+		}
+	}()
+
 	return proxyWatcher, nil
 }
 
