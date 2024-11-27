@@ -414,14 +414,11 @@ func (s *StatusController) reconcile(
 
 	var hasRSDigestsAnnotation bool
 	if existingStatus != nil {
-		hasRSDigestsAnnotation, err = annotation.HasAnnotationKeyValue(
+		hasRSDigestsAnnotation = annotation.HasAnnotationKeyValue(
 			existingStatus,
 			common.LatestReplicasetDigestsAnnotation,
 			rsDigestsAnnotation,
 		)
-		if err != nil {
-			return worker.StatusError
-		}
 	}
 
 	collectedStatus := newCollectedStatusObject(fedObject, clusterStatuses)

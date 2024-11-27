@@ -18,7 +18,6 @@ package nsautoprop
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -371,12 +370,7 @@ func (c *Controller) ensureAnnotation(
 	fedNamespace *fedcorev1a1.ClusterFederatedObject,
 	key, value string,
 ) (bool, error) {
-	needsUpdate, err := annotationutil.AddAnnotation(fedNamespace, key, value)
-	if err != nil {
-		return false, fmt.Errorf(
-			"failed to add %s annotation to %s, err: %w",
-			key, fedNamespace.GetName(), err)
-	}
+	needsUpdate := annotationutil.AddAnnotation(fedNamespace, key, value)
 
 	return needsUpdate, nil
 }
