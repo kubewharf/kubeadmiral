@@ -91,6 +91,18 @@ func Run(ctx context.Context, opts *options.Options) {
 
 	healthCheckHandler := healthcheck.NewMutableHealthCheckHandler()
 	healthCheckHandler.AddLivezChecker("ping", healthz.Ping)
+	healthCheckHandler.AddReadyzChecker("informer-manager", func(_ *http.Request) error {
+		if controllerCtx.InformerManager.HasSynced() {
+			return nil
+		}
+		return fmt.Errorf("informer-manager not ready")
+	})
+	healthCheckHandler.AddReadyzChecker("federated-informer-manager", func(_ *http.Request) error {
+		if controllerCtx.FederatedInformerManager.HasSynced() {
+			return nil
+		}
+		return fmt.Errorf("federated-informer-manager not ready")
+	})
 
 	run := func(ctx context.Context) {
 		defer klog.Infoln("Ready to stop controllers")
