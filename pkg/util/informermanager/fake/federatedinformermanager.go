@@ -38,6 +38,7 @@ type FakeFederatedInformerManager struct {
 	HasSync  bool
 	Shutdown bool
 
+	RestConfigs                map[string]*rest.Config
 	ReadyClusters              []*fedcorev1a1.FederatedCluster
 	ReadyClusterDynamicClients map[string]dynamic.Interface
 	NodeListers                map[string]FakeLister
@@ -74,8 +75,7 @@ func (f *FakeFederatedInformerManager) GetClusterKubeClient(cluster string) (cli
 }
 
 func (f *FakeFederatedInformerManager) GetClusterRestConfig(cluster string) (config *rest.Config, exists bool) {
-	// TODO implement me
-	panic("implement me")
+	return f.RestConfigs[cluster], true
 }
 
 func (f *FakeFederatedInformerManager) AddPodEventHandler(handler *informermanager.ResourceEventHandlerWithClusterFuncs) {
