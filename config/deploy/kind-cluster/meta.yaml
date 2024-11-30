@@ -4,7 +4,7 @@ networking:
   apiServerAddress: "{{meta_ipaddress}}"
 nodes:
   - role: control-plane
-    image: kindest/node:v1.20.15
+    image: kindest/node:v1.24.15
     extraPortMappings:
       - containerPort: 5443
         hostPort: 5443
