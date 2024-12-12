@@ -186,20 +186,25 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 				case event, ok := <-watcher.ResultChan():
 					if !ok {
 						lock.Lock()
-						defer lock.Unlock()
-
 						if !isProxyChClosed {
 							close(proxyCh)
 							isProxyChClosed = true
 							logger.WithValues("cluster", cluster).Info("Closed proxy watcher channel")
 						}
+						lock.Unlock()
+
 						return
 					}
 					if pod, ok := event.Object.(*corev1.Pod); ok {
 						clusterobject.MakePodUnique(pod, cluster)
 						event.Object = pod
 					}
-					proxyCh <- event
+
+					lock.Lock()
+					if !isProxyChClosed {
+						proxyCh <- event
+					}
+					lock.Unlock()
 				}
 			}
 		}(clusters[i].Name)
