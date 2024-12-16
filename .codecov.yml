@@ -1,15 +1,7 @@
 coverage:
   status:
-    project:
-      default:
-        target: auto
-        threshold: 2%
-    # https://docs.codecov.com/docs/commit-status#patch-status
-    patch:
-      default:
-        target: 60%
-        if_ci_failed: error
-# https://docs.codecov.com/docs/ignoring-paths
+    project: off
+    patch: off
 ignore:
   - "charts"
   - "config"

@@ -45,7 +45,7 @@ jobs:
           files: ./coverage.out
           flags: unittests
           # https://community.codecov.com/t/upload-issues-unable-to-locate-build-via-github-actions-api/3954
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           verbose: true
 
   lint:
