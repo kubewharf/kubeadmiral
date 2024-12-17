@@ -1,15 +1,15 @@
-coverage:
-  status:
-    project: off
-    patch: off
-ignore:
-  - "charts"
-  - "config"
-  - "docs"
-  - "examples"
-  - "hack"
-  - "pkg/apis"
-  - "pkg/client"
-  - "test"
-  - "*_test.go"
-  - "fake_*.go"
+#coverage:
+#  status:
+#    project: off
+#    patch: off
+#ignore:
+#  - "charts"
+#  - "config"
+#  - "docs"
+#  - "examples"
+#  - "hack"
+#  - "pkg/apis"
+#  - "pkg/client"
+#  - "test"
+#  - "*_test.go"
+#  - "fake_*.go"
