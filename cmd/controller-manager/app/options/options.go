@@ -55,6 +55,7 @@ type Options struct {
 
 	NSAutoPropExcludeRegexp  string
 	ClusterJoinTimeout       time.Duration
+	ClusterStatusThreshold   time.Duration
 	MemberObjectEnqueueDelay time.Duration
 
 	MaxPodListers    int64
@@ -173,6 +174,13 @@ func (o *Options) AddFlags(flags *pflag.FlagSet, allControllers []string, disabl
 		"cluster-health-check-period",
 		time.Second*30,
 		"The period of health check for member clusters. The minimum value is "+MinClusterHealthCheckPeriod.String()+".",
+	)
+
+	flags.DurationVar(
+		&o.ClusterStatusThreshold,
+		"cluster-status-threshold",
+		time.Second*100,
+		"The threshold of member clusters status change.",
 	)
 }
 

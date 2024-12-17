@@ -85,6 +85,7 @@ type FederatedClusterController struct {
 	clusterHealthCheckConfig      *ClusterHealthCheckConfig
 	clusterJoinTimeout            time.Duration
 	resourceAggregationNodeFilter []labels.Selector
+	clusterStatusCache            clusterStatusStore
 
 	lock                                       sync.Mutex
 	clusterConnectionHashes                    map[string]string
@@ -119,6 +120,10 @@ func NewFederatedClusterController(
 		fedSystemNamespace:       fedSystemNamespace,
 		clusterHealthCheckConfig: &ClusterHealthCheckConfig{
 			Period: componentConfig.ClusterHealthCheckPeriod,
+		},
+		clusterStatusCache: clusterStatusStore{
+			clusterStatusData:      sync.Map{},
+			clusterStatusThreshold: componentConfig.ClusterStatusThreshold,
 		},
 
 		lock:                                       sync.Mutex{},

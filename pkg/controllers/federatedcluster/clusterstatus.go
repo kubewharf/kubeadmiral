@@ -298,8 +298,11 @@ func (c *FederatedClusterController) collectIndividualClusterStatus(
 	}
 
 	offlineCondition := getNewClusterOfflineCondition(offlineStatus, conditionTime)
-	setClusterCondition(&cluster.Status, &offlineCondition)
 	readyCondition := getNewClusterReadyCondition(readyStatus, readyReason, readyMessage, conditionTime)
+
+	offlineCondition, readyCondition = c.clusterStatusCache.thresholdAdjustedStatusCondition(ctx, cluster, offlineCondition, readyCondition)
+
+	setClusterCondition(&cluster.Status, &offlineCondition)
 	setClusterCondition(&cluster.Status, &readyCondition)
 
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {

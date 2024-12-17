@@ -85,4 +85,5 @@ type ComponentConfig struct {
 	ResourceAggregationNodeFilter []labels.Selector
 	EnableKatalystSupport         bool
 	ClusterHealthCheckPeriod      time.Duration
+	ClusterStatusThreshold        time.Duration
 }

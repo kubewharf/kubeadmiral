@@ -185,6 +185,7 @@ func getComponentConfig(opts *options.Options) (*controllercontext.ComponentConf
 		MemberObjectEnqueueDelay: opts.MemberObjectEnqueueDelay,
 		EnableKatalystSupport:    opts.EnableKatalystSupport,
 		ClusterHealthCheckPeriod: opts.ClusterHealthCheckPeriod,
+		ClusterStatusThreshold:   opts.ClusterStatusThreshold,
 	}
 
 	if opts.ClusterHealthCheckPeriod < options.MinClusterHealthCheckPeriod {
