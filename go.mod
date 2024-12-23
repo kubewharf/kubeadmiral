@@ -7,7 +7,7 @@ require (
 	github.com/distribution/reference v0.5.0
 	github.com/evanphx/json-patch v5.6.0+incompatible
 	github.com/evanphx/json-patch/v5 v5.6.0
-	github.com/go-logr/logr v1.2.4
+	github.com/go-logr/logr v1.4.2
 	github.com/google/go-cmp v0.6.0
 	github.com/kubewharf/katalyst-api v0.3.3
 	github.com/onsi/ginkgo/v2 v2.11.0
