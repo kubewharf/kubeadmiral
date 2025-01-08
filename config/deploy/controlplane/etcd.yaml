@@ -33,7 +33,7 @@ spec:
         - operator: Exists
       containers:
         - name: etcd
-          image: registry.k8s.io/etcd:3.4.13-0
+          image: registry.k8s.io/etcd:3.5.4-0
           imagePullPolicy: IfNotPresent
           livenessProbe:
             exec:
