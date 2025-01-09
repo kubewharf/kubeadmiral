@@ -17,13 +17,13 @@ limitations under the License.
 package metrics
 
 import (
+	"github.com/kubewharf/kubeadmiral/pkg/util/aggregatedlister"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	corev1listers "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/metrics/pkg/apis/metrics"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
@@ -36,7 +36,7 @@ func BuildResourceMetrics(
 	parameterCodec runtime.ParameterCodec,
 	codecs serializer.CodecFactory,
 	m resource.MetricsGetter,
-	podMetadataLister cache.GenericLister,
+	podMetadataLister aggregatedlister.AggregatedLister,
 	nodeLister corev1listers.NodeLister,
 	nodeSelector []labels.Requirement,
 ) genericapiserver.APIGroupInfo {

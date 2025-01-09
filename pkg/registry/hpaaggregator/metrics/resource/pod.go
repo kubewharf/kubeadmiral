@@ -22,9 +22,11 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
+	"github.com/kubewharf/kubeadmiral/pkg/util/aggregatedlister"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -36,7 +38,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/klog/v2"
 	"k8s.io/metrics/pkg/apis/metrics"
@@ -46,7 +47,7 @@ import (
 type PodMetrics struct {
 	groupResource schema.GroupResource
 	metrics       PodMetricsGetter
-	podLister     cache.GenericLister
+	podLister     aggregatedlister.AggregatedLister
 }
 
 var (
@@ -58,7 +59,7 @@ var (
 	_ rest.Scoper         = &PodMetrics{}
 )
 
-func NewPodMetrics(groupResource schema.GroupResource, metrics PodMetricsGetter, podLister cache.GenericLister) *PodMetrics {
+func NewPodMetrics(groupResource schema.GroupResource, metrics PodMetricsGetter, podLister aggregatedlister.AggregatedLister) *PodMetrics {
 	registerIntoLegacyRegistryOnce.Do(func() {
 		err := RegisterAPIMetrics(legacyregistry.Register)
 		if err != nil {
@@ -114,14 +115,24 @@ func (m *PodMetrics) pods(ctx context.Context, options *metainternalversion.List
 	}
 
 	namespace := genericapirequest.NamespaceValue(ctx)
-	pods, err := m.podLister.ByNamespace(namespace).List(labelSelector)
+	podsObj, err := m.podLister.ByNamespace(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector.String(),
+	})
 	if err != nil {
 		klog.ErrorS(err, "Failed listing pods", "labelSelector", labelSelector, "namespace", klog.KRef("", namespace))
 		return nil, fmt.Errorf("failed listing pods: %w", err)
 	}
+	podList, ok := podsObj.(*corev1.PodList)
+	if !ok {
+		return nil, errors.New("failed to convert obj to PodList")
+	}
+	var runtimeObjs []runtime.Object
+	for _, pod := range podList.Items {
+		runtimeObjs = append(runtimeObjs, &pod)
+	}
 
-	partialPods := make([]runtime.Object, 0, len(pods))
-	for _, obj := range pods {
+	partialPods := make([]runtime.Object, 0, len(runtimeObjs))
+	for _, obj := range runtimeObjs {
 		var partialObj *metav1.PartialObjectMetadata
 		switch t := obj.(type) {
 		case *metav1.PartialObjectMetadata:
@@ -144,7 +155,7 @@ func (m *PodMetrics) pods(ctx context.Context, options *metainternalversion.List
 func (m *PodMetrics) Get(ctx context.Context, name string, opts *metav1.GetOptions) (runtime.Object, error) {
 	namespace := genericapirequest.NamespaceValue(ctx)
 
-	obj, err := m.podLister.ByNamespace(namespace).Get(name)
+	obj, err := m.podLister.ByNamespace(namespace).Get(ctx, name, *opts)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// return not-found errors directly

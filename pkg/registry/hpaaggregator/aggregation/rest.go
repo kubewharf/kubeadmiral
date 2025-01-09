@@ -24,6 +24,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/kubewharf/kubeadmiral/pkg/util/aggregatedlister"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -31,7 +32,6 @@ import (
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
 	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	"github.com/kubewharf/kubeadmiral/pkg/apis/hpaaggregator/v1alpha1"
@@ -46,7 +46,7 @@ type REST struct {
 
 	resolver genericapirequest.RequestInfoResolver
 
-	podLister  cache.GenericLister
+	podLister  aggregatedlister.AggregatedLister
 	podHandler forward.PodHandler
 
 	forwardHandler forward.ForwardHandler
@@ -65,7 +65,7 @@ var proxyMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OP
 // NewREST returns a RESTStorage object that will work against API services.
 func NewREST(
 	federatedInformerManager informermanager.FederatedInformerManager,
-	podLister cache.GenericLister,
+	podLister aggregatedlister.AggregatedLister,
 	config *restclient.Config,
 	minRequestTimeout time.Duration,
 	logger klog.Logger,
