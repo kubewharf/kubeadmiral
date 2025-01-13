@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/kubewharf/kubeadmiral/pkg/util/aggregatedlister"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -42,6 +41,8 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/metrics/pkg/apis/metrics"
 	_ "k8s.io/metrics/pkg/apis/metrics/install"
+
+	"github.com/kubewharf/kubeadmiral/pkg/util/aggregatedlister"
 )
 
 type PodMetrics struct {
@@ -126,9 +127,9 @@ func (m *PodMetrics) pods(ctx context.Context, options *metainternalversion.List
 	if !ok {
 		return nil, errors.New("failed to convert obj to PodList")
 	}
-	var runtimeObjs []runtime.Object
-	for _, pod := range podList.Items {
-		runtimeObjs = append(runtimeObjs, &pod)
+	runtimeObjs := make([]runtime.Object, len(podList.Items))
+	for i := range podList.Items {
+		runtimeObjs[i] = &podList.Items[i]
 	}
 
 	partialPods := make([]runtime.Object, 0, len(runtimeObjs))
@@ -155,7 +156,11 @@ func (m *PodMetrics) pods(ctx context.Context, options *metainternalversion.List
 func (m *PodMetrics) Get(ctx context.Context, name string, opts *metav1.GetOptions) (runtime.Object, error) {
 	namespace := genericapirequest.NamespaceValue(ctx)
 
-	obj, err := m.podLister.ByNamespace(namespace).Get(ctx, name, *opts)
+	getOpts := metav1.GetOptions{}
+	if opts != nil {
+		getOpts = *opts
+	}
+	obj, err := m.podLister.ByNamespace(namespace).Get(ctx, name, getOpts)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// return not-found errors directly

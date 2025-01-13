@@ -17,7 +17,6 @@ limitations under the License.
 package metrics
 
 import (
-	"github.com/kubewharf/kubeadmiral/pkg/util/aggregatedlister"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -28,6 +27,7 @@ import (
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
 	"github.com/kubewharf/kubeadmiral/pkg/registry/hpaaggregator/metrics/resource"
+	"github.com/kubewharf/kubeadmiral/pkg/util/aggregatedlister"
 )
 
 // BuildResourceMetrics constructs APIGroupInfo the metrics.k8s.io API group using the given getters.

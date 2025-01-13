@@ -118,7 +118,7 @@ func marshalRvs(rvs map[string]string) []byte {
 		return slice[i].Cluster < slice[j].Cluster
 	})
 
-	var encoded = make([]byte, 0)
+	encoded := make([]byte, 0)
 	encoded = append(encoded, '{')
 	for i, n := 0, len(slice); i < n; i++ {
 		encoded = append(encoded, '"')

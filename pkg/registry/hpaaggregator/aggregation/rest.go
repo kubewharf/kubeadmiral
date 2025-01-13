@@ -24,7 +24,6 @@ import (
 	"path"
 	"time"
 
-	"github.com/kubewharf/kubeadmiral/pkg/util/aggregatedlister"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -37,6 +36,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/apis/hpaaggregator/v1alpha1"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/registry/hpaaggregator/aggregation/forward"
+	"github.com/kubewharf/kubeadmiral/pkg/util/aggregatedlister"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
@@ -46,8 +46,9 @@ type REST struct {
 
 	resolver genericapirequest.RequestInfoResolver
 
-	podLister  aggregatedlister.AggregatedLister
-	podHandler forward.PodHandler
+	podHandler           forward.PodHandler
+	serviceHandler       forward.ServiceHandler
+	endpointSliceHandler forward.EndpointSliceHandler
 
 	forwardHandler forward.ForwardHandler
 
@@ -66,6 +67,8 @@ var proxyMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OP
 func NewREST(
 	federatedInformerManager informermanager.FederatedInformerManager,
 	podLister aggregatedlister.AggregatedLister,
+	serviceLister aggregatedlister.AggregatedLister,
+	endpointSliceLister aggregatedlister.AggregatedLister,
 	config *restclient.Config,
 	minRequestTimeout time.Duration,
 	logger klog.Logger,
@@ -73,6 +76,18 @@ func NewREST(
 	podHandler := forward.NewPodREST(
 		federatedInformerManager,
 		podLister,
+		minRequestTimeout,
+	)
+
+	serviceHandler := forward.NewServiceREST(
+		federatedInformerManager,
+		serviceLister,
+		minRequestTimeout,
+	)
+
+	endpointSliceHandler := forward.NewEndpointSliceREST(
+		federatedInformerManager,
+		endpointSliceLister,
 		minRequestTimeout,
 	)
 
@@ -87,8 +102,9 @@ func NewREST(
 		restConfig:               config,
 		federatedInformerManager: federatedInformerManager,
 		resolver:                 resolver,
-		podLister:                podLister,
 		podHandler:               podHandler,
+		serviceHandler:           serviceHandler,
+		endpointSliceHandler:     endpointSliceHandler,
 		forwardHandler:           forwardHandler,
 		logger:                   logger,
 	}, nil
@@ -149,6 +165,10 @@ func (r *REST) Connect(ctx context.Context, _ string, _ runtime.Object, resp res
 				err = errors.New("can't proxy to self")
 			case isRequestForPod(proxyInfo):
 				proxyHandler, err = r.podHandler.Handler(proxyInfo)
+			case isRequestForService(proxyInfo):
+				proxyHandler, err = r.serviceHandler.Handler(proxyInfo)
+			case isRequestForEndpointSlice(proxyInfo):
+				proxyHandler, err = r.endpointSliceHandler.Handler(proxyInfo)
 			default:
 				// TODO: if we provide an API for ResourceMetrics or CustomMetrics, we can serve it directly without proxy
 				proxyHandler, err = r.forwardHandler.Handler(proxyInfo, r.isRequestForHPA(proxyInfo))
@@ -194,4 +214,12 @@ func (r *REST) isRequestForHPA(request *genericapirequest.RequestInfo) bool {
 		return true
 	}
 	return false
+}
+
+func isRequestForService(request *genericapirequest.RequestInfo) bool {
+	return request.APIGroup == "" && request.APIVersion == "v1" && request.Resource == "services"
+}
+
+func isRequestForEndpointSlice(request *genericapirequest.RequestInfo) bool {
+	return request.APIGroup == "discovery.k8s.io" && request.APIVersion == "v1" && request.Resource == "endpointslices"
 }

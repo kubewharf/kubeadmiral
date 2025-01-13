@@ -27,7 +27,7 @@ linters:
     # - decorder # little value-add
     # - depguard # little value-add
     # - dogsled # little value-add
-    - dupl
+    # - dupl
     # - dupword # too many false-positives
     - durationcheck
     - errchkjson
