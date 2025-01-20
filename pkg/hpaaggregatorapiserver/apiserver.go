@@ -149,11 +149,15 @@ func (c completedConfig) New() (*Server, error) {
 
 	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(hpaaggregatorapi.GroupName, Scheme, ParameterCodec, Codecs)
 	podLister := aggregatedlister.NewPodLister(c.ExtraConfig.FederatedInformerManager)
+	serviceLister := aggregatedlister.NewServiceLister(c.ExtraConfig.FederatedInformerManager)
+	endpointSliceLister := aggregatedlister.NewEndpointSliceLister(c.ExtraConfig.FederatedInformerManager)
 
 	v1alpha1storage := map[string]rest.Storage{}
 	aggregationAPI, err := aggregation.NewREST(
 		c.ExtraConfig.FederatedInformerManager,
 		podLister,
+		serviceLister,
+		endpointSliceLister,
 		c.ExtraConfig.RestConfig,
 		time.Duration(c.GenericConfig.MinRequestTimeout)*time.Second,
 		klog.Background().WithValues("api", "aggregations"),

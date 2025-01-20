@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The KubeAdmiral Authors.
+Copyright 2025 The KubeAdmiral Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -44,41 +44,41 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 )
 
-type PodHandler interface {
+type ServiceHandler interface {
 	Handler(requestInfo *genericapirequest.RequestInfo) (http.Handler, error)
 }
 
-type PodREST struct {
-	podLister                aggregatedlister.AggregatedLister
+type ServiceREST struct {
+	serviceLister            aggregatedlister.AggregatedLister
 	federatedInformerManager informermanager.FederatedInformerManager
 	minRequestTimeout        time.Duration
 }
 
 var (
-	_ rest.Getter  = &PodREST{}
-	_ rest.Lister  = &PodREST{}
-	_ rest.Watcher = &PodREST{}
-	_ PodHandler   = &PodREST{}
+	_ rest.Getter    = &ServiceREST{}
+	_ rest.Lister    = &ServiceREST{}
+	_ rest.Watcher   = &ServiceREST{}
+	_ ServiceHandler = &ServiceREST{}
 )
 
-func NewPodREST(
+func NewServiceREST(
 	f informermanager.FederatedInformerManager,
-	podLister aggregatedlister.AggregatedLister,
+	serviceLister aggregatedlister.AggregatedLister,
 	minRequestTimeout time.Duration,
-) *PodREST {
-	return &PodREST{
+) *ServiceREST {
+	return &ServiceREST{
 		federatedInformerManager: f,
-		podLister:                podLister,
+		serviceLister:            serviceLister,
 		minRequestTimeout:        minRequestTimeout,
 	}
 }
 
-func (p *PodREST) Handler(requestInfo *genericapirequest.RequestInfo) (http.Handler, error) {
+func (s *ServiceREST) Handler(requestInfo *genericapirequest.RequestInfo) (http.Handler, error) {
 	switch requestInfo.Verb {
 	case getVerb:
-		return handlers.GetResource(p, podScope), nil
+		return handlers.GetResource(s, serviceScope), nil
 	case listVerb, watchVerb:
-		return handlers.ListResource(p, p, podScope, false, p.minRequestTimeout), nil
+		return handlers.ListResource(s, s, serviceScope, false, s.minRequestTimeout), nil
 	default:
 		return nil, apierrors.NewMethodNotSupported(schema.GroupResource{
 			Group:    requestInfo.APIGroup,
@@ -87,31 +87,29 @@ func (p *PodREST) Handler(requestInfo *genericapirequest.RequestInfo) (http.Hand
 	}
 }
 
-// Get ...
-func (p *PodREST) Get(ctx context.Context, name string, opts *metav1.GetOptions) (runtime.Object, error) {
+func (s *ServiceREST) Get(ctx context.Context, name string, opts *metav1.GetOptions) (runtime.Object, error) {
 	namespace := genericapirequest.NamespaceValue(ctx)
 	getOpts := metav1.GetOptions{}
 	if opts != nil {
 		getOpts = *opts
 	}
-	obj, err := p.podLister.ByNamespace(namespace).Get(ctx, name, getOpts)
+	obj, err := s.serviceLister.ByNamespace(namespace).Get(ctx, name, getOpts)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// return not-found errors directly
 			return nil, err
 		}
-		klog.ErrorS(err, "Failed getting pod", "pod", klog.KRef(namespace, name))
-		return nil, fmt.Errorf("failed getting pod: %w", err)
+		klog.ErrorS(err, "Failed getting service", "service", klog.KRef(namespace, name))
+		return nil, fmt.Errorf("failed getting service: %w", err)
 	}
-
 	return obj, nil
 }
 
-func (p *PodREST) NewList() runtime.Object {
-	return &corev1.PodList{}
+func (s *ServiceREST) NewList() runtime.Object {
+	return &corev1.ServiceList{}
 }
 
-func (p *PodREST) List(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
+func (s *ServiceREST) List(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
 	namespace := genericapirequest.NamespaceValue(ctx)
 	label := labels.Everything()
 	if options != nil && options.LabelSelector != nil {
@@ -125,24 +123,23 @@ func (p *PodREST) List(ctx context.Context, options *metainternalversion.ListOpt
 	if options != nil {
 		resourceVersion = options.ResourceVersion
 	}
-
-	objs, err := p.podLister.ByNamespace(namespace).List(ctx, metav1.ListOptions{
+	objs, err := s.serviceLister.ByNamespace(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector:   label.String(),
 		FieldSelector:   field.String(),
 		ResourceVersion: resourceVersion,
 	})
 	if err != nil {
-		klog.ErrorS(err, "Failed listing pods", "namespace", klog.KRef("", namespace))
-		return nil, fmt.Errorf("failed listing pods: %w", err)
+		klog.ErrorS(err, "Failed listing services", "namespace", klog.KRef("", namespace))
+		return nil, fmt.Errorf("failed listing services: %w", err)
 	}
 	return objs, nil
 }
 
-func (p *PodREST) ConvertToTable(ctx context.Context, object runtime.Object, tableOptions runtime.Object) (*metav1.Table, error) {
+func (s *ServiceREST) ConvertToTable(ctx context.Context, object runtime.Object, tableOptions runtime.Object) (*metav1.Table, error) {
 	return tableConvertor.ConvertToTable(ctx, object, tableOptions)
 }
 
-func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
+func (s *ServiceREST) Watch(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
 	resourceVersion := ""
 	if options != nil {
 		resourceVersion = options.ResourceVersion
@@ -168,10 +165,10 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 		"namespace", namespace,
 	)
 
-	clusters, err := p.federatedInformerManager.GetReadyClusters()
+	clusters, err := s.federatedInformerManager.GetReadyClusters()
 	if err != nil {
 		logger.Error(err, "Failed to get ready clusters")
-		return nil, fmt.Errorf("failed watching pods: %w", err)
+		return nil, fmt.Errorf("failed watching services: %w", err)
 	}
 
 	// TODO: support cluster addition and deletion during the watch
@@ -180,18 +177,18 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 	proxyCh := make(chan watch.Event)
 	proxyWatcher := watch.NewProxyWatcher(proxyCh)
 	for i := range clusters {
-		client, exist := p.federatedInformerManager.GetClusterKubeClient(clusters[i].Name)
+		client, exist := s.federatedInformerManager.GetClusterKubeClient(clusters[i].Name)
 		if !exist {
 			continue
 		}
-		watcher, err := client.CoreV1().Pods(namespace).Watch(ctx, metav1.ListOptions{
+		watcher, err := client.CoreV1().Services(namespace).Watch(ctx, metav1.ListOptions{
 			LabelSelector:   label.String(),
 			FieldSelector:   field.String(),
 			TimeoutSeconds:  pointer.Int64(1200),
 			ResourceVersion: grv.Get(clusters[i].Name),
 		})
 		if err != nil {
-			logger.Error(err, "Failed watching pods")
+			logger.Error(err, "Failed watching services")
 			continue
 		}
 		go func(cluster string) {
@@ -215,11 +212,11 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 
 						return
 					}
-					if pod, ok := event.Object.(*corev1.Pod); ok {
-						clusterobject.MakePodUnique(pod, cluster)
-						retGrv.Set(cluster, pod.ResourceVersion)
-						pod.SetResourceVersion(retGrv.String())
-						event.Object = pod
+					if svc, ok := event.Object.(*corev1.Service); ok {
+						clusterobject.MakeObjectUnique(svc, cluster)
+						retGrv.Set(cluster, svc.ResourceVersion)
+						svc.SetResourceVersion(retGrv.String())
+						event.Object = svc
 					}
 
 					lock.Lock()

@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The KubeAdmiral Authors.
+Copyright 2025 The KubeAdmiral Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,41 +44,41 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 )
 
-type PodHandler interface {
+type EndpointSliceHandler interface {
 	Handler(requestInfo *genericapirequest.RequestInfo) (http.Handler, error)
 }
 
-type PodREST struct {
-	podLister                aggregatedlister.AggregatedLister
+type EndpointSliceREST struct {
+	endpointSliceLister      aggregatedlister.AggregatedLister
 	federatedInformerManager informermanager.FederatedInformerManager
 	minRequestTimeout        time.Duration
 }
 
 var (
-	_ rest.Getter  = &PodREST{}
-	_ rest.Lister  = &PodREST{}
-	_ rest.Watcher = &PodREST{}
-	_ PodHandler   = &PodREST{}
+	_ rest.Getter          = &EndpointSliceREST{}
+	_ rest.Lister          = &EndpointSliceREST{}
+	_ rest.Watcher         = &EndpointSliceREST{}
+	_ EndpointSliceHandler = &EndpointSliceREST{}
 )
 
-func NewPodREST(
+func NewEndpointSliceREST(
 	f informermanager.FederatedInformerManager,
-	podLister aggregatedlister.AggregatedLister,
+	endpointSliceLister aggregatedlister.AggregatedLister,
 	minRequestTimeout time.Duration,
-) *PodREST {
-	return &PodREST{
+) *EndpointSliceREST {
+	return &EndpointSliceREST{
 		federatedInformerManager: f,
-		podLister:                podLister,
+		endpointSliceLister:      endpointSliceLister,
 		minRequestTimeout:        minRequestTimeout,
 	}
 }
 
-func (p *PodREST) Handler(requestInfo *genericapirequest.RequestInfo) (http.Handler, error) {
+func (e *EndpointSliceREST) Handler(requestInfo *genericapirequest.RequestInfo) (http.Handler, error) {
 	switch requestInfo.Verb {
 	case getVerb:
-		return handlers.GetResource(p, podScope), nil
+		return handlers.GetResource(e, endpointSliceScope), nil
 	case listVerb, watchVerb:
-		return handlers.ListResource(p, p, podScope, false, p.minRequestTimeout), nil
+		return handlers.ListResource(e, e, endpointSliceScope, false, e.minRequestTimeout), nil
 	default:
 		return nil, apierrors.NewMethodNotSupported(schema.GroupResource{
 			Group:    requestInfo.APIGroup,
@@ -87,31 +87,29 @@ func (p *PodREST) Handler(requestInfo *genericapirequest.RequestInfo) (http.Hand
 	}
 }
 
-// Get ...
-func (p *PodREST) Get(ctx context.Context, name string, opts *metav1.GetOptions) (runtime.Object, error) {
+func (e *EndpointSliceREST) Get(ctx context.Context, name string, opts *metav1.GetOptions) (runtime.Object, error) {
 	namespace := genericapirequest.NamespaceValue(ctx)
 	getOpts := metav1.GetOptions{}
 	if opts != nil {
 		getOpts = *opts
 	}
-	obj, err := p.podLister.ByNamespace(namespace).Get(ctx, name, getOpts)
+	obj, err := e.endpointSliceLister.ByNamespace(namespace).Get(ctx, name, getOpts)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// return not-found errors directly
 			return nil, err
 		}
-		klog.ErrorS(err, "Failed getting pod", "pod", klog.KRef(namespace, name))
-		return nil, fmt.Errorf("failed getting pod: %w", err)
+		klog.ErrorS(err, "Failed getting endpointSlice", "endpointSlice", klog.KRef(namespace, name))
+		return nil, fmt.Errorf("failed getting endpointSlice: %w", err)
 	}
-
 	return obj, nil
 }
 
-func (p *PodREST) NewList() runtime.Object {
-	return &corev1.PodList{}
+func (e *EndpointSliceREST) NewList() runtime.Object {
+	return &discoveryv1.EndpointSliceList{}
 }
 
-func (p *PodREST) List(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
+func (e *EndpointSliceREST) List(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
 	namespace := genericapirequest.NamespaceValue(ctx)
 	label := labels.Everything()
 	if options != nil && options.LabelSelector != nil {
@@ -125,24 +123,23 @@ func (p *PodREST) List(ctx context.Context, options *metainternalversion.ListOpt
 	if options != nil {
 		resourceVersion = options.ResourceVersion
 	}
-
-	objs, err := p.podLister.ByNamespace(namespace).List(ctx, metav1.ListOptions{
+	objs, err := e.endpointSliceLister.ByNamespace(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector:   label.String(),
 		FieldSelector:   field.String(),
 		ResourceVersion: resourceVersion,
 	})
 	if err != nil {
-		klog.ErrorS(err, "Failed listing pods", "namespace", klog.KRef("", namespace))
-		return nil, fmt.Errorf("failed listing pods: %w", err)
+		klog.ErrorS(err, "Failed listing endpointSlices", "namespace", klog.KRef("", namespace))
+		return nil, fmt.Errorf("failed listing endpointSlices: %w", err)
 	}
 	return objs, nil
 }
 
-func (p *PodREST) ConvertToTable(ctx context.Context, object runtime.Object, tableOptions runtime.Object) (*metav1.Table, error) {
+func (e *EndpointSliceREST) ConvertToTable(ctx context.Context, object runtime.Object, tableOptions runtime.Object) (*metav1.Table, error) {
 	return tableConvertor.ConvertToTable(ctx, object, tableOptions)
 }
 
-func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
+func (e *EndpointSliceREST) Watch(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
 	resourceVersion := ""
 	if options != nil {
 		resourceVersion = options.ResourceVersion
@@ -168,10 +165,10 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 		"namespace", namespace,
 	)
 
-	clusters, err := p.federatedInformerManager.GetReadyClusters()
+	clusters, err := e.federatedInformerManager.GetReadyClusters()
 	if err != nil {
 		logger.Error(err, "Failed to get ready clusters")
-		return nil, fmt.Errorf("failed watching pods: %w", err)
+		return nil, fmt.Errorf("failed watching endpointSlices: %w", err)
 	}
 
 	// TODO: support cluster addition and deletion during the watch
@@ -180,18 +177,18 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 	proxyCh := make(chan watch.Event)
 	proxyWatcher := watch.NewProxyWatcher(proxyCh)
 	for i := range clusters {
-		client, exist := p.federatedInformerManager.GetClusterKubeClient(clusters[i].Name)
+		client, exist := e.federatedInformerManager.GetClusterKubeClient(clusters[i].Name)
 		if !exist {
 			continue
 		}
-		watcher, err := client.CoreV1().Pods(namespace).Watch(ctx, metav1.ListOptions{
+		watcher, err := client.DiscoveryV1().EndpointSlices(namespace).Watch(ctx, metav1.ListOptions{
 			LabelSelector:   label.String(),
 			FieldSelector:   field.String(),
 			TimeoutSeconds:  pointer.Int64(1200),
 			ResourceVersion: grv.Get(clusters[i].Name),
 		})
 		if err != nil {
-			logger.Error(err, "Failed watching pods")
+			logger.Error(err, "Failed watching endpointSlices")
 			continue
 		}
 		go func(cluster string) {
@@ -215,11 +212,11 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 
 						return
 					}
-					if pod, ok := event.Object.(*corev1.Pod); ok {
-						clusterobject.MakePodUnique(pod, cluster)
-						retGrv.Set(cluster, pod.ResourceVersion)
-						pod.SetResourceVersion(retGrv.String())
-						event.Object = pod
+					if eps, ok := event.Object.(*discoveryv1.EndpointSlice); ok {
+						clusterobject.MakeObjectUnique(eps, cluster)
+						retGrv.Set(cluster, eps.ResourceVersion)
+						eps.SetResourceVersion(retGrv.String())
+						event.Object = eps
 					}
 
 					lock.Lock()

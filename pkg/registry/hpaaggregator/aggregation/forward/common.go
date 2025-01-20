@@ -21,6 +21,7 @@ import (
 	"errors"
 
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,6 +37,12 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/lifted/kubernetes/pkg/printers"
 	"github.com/kubewharf/kubeadmiral/pkg/lifted/kubernetes/pkg/printers/internalversion"
 	printerstorage "github.com/kubewharf/kubeadmiral/pkg/lifted/kubernetes/pkg/printers/storage"
+)
+
+const (
+	getVerb   = "get"
+	listVerb  = "list"
+	watchVerb = "watch"
 )
 
 var (
@@ -55,7 +62,7 @@ var (
 	tableConvertor = printerstorage.TableConvertor{
 		TableGenerator: printers.NewTableGenerator().With(internalversion.AddHandlers),
 	}
-	scope = &handlers.RequestScope{
+	podScope = &handlers.RequestScope{
 		Namer: &handlers.ContextBasedNaming{
 			Namer:         runtime.Namer(meta.NewAccessor()),
 			ClusterScoped: false,
@@ -67,11 +74,36 @@ var (
 		MetaGroupVersion: metav1.SchemeGroupVersion,
 		Resource:         common.PodGVR,
 	}
+	serviceScope = &handlers.RequestScope{
+		Namer: &handlers.ContextBasedNaming{
+			Namer:         runtime.Namer(meta.NewAccessor()),
+			ClusterScoped: false,
+		},
+		Serializer:       codecs,
+		Kind:             common.ServiceGVK,
+		TableConvertor:   tableConvertor,
+		Convertor:        scheme,
+		MetaGroupVersion: metav1.SchemeGroupVersion,
+		Resource:         common.ServiceGVR,
+	}
+	endpointSliceScope = &handlers.RequestScope{
+		Namer: &handlers.ContextBasedNaming{
+			Namer:         runtime.Namer(meta.NewAccessor()),
+			ClusterScoped: false,
+		},
+		Serializer:       codecs,
+		Kind:             common.EndpointSliceGVK,
+		TableConvertor:   tableConvertor,
+		Convertor:        scheme,
+		MetaGroupVersion: metav1.SchemeGroupVersion,
+		Resource:         common.EndpointSliceGVR,
+	}
 )
 
 func init() {
 	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Version: "v1"})
 	utilruntime.Must(corev1.AddToScheme(scheme))
+	utilruntime.Must(discoveryv1.AddToScheme(scheme))
 	utilruntime.Must(scheme.SetVersionPriority(corev1.SchemeGroupVersion))
 
 	scheme.AddUnversionedTypes(unversionedVersion, unversionedTypes...)
