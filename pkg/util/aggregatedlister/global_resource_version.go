@@ -76,6 +76,8 @@ func (g *GlobalResourceVersion) Get(cluster string) string {
 }
 
 func (g *GlobalResourceVersion) String() string {
+	g.RLock()
+	defer g.RUnlock()
 	if g.isZero {
 		return "0"
 	}
