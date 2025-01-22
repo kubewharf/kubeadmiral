@@ -45,6 +45,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/stats/metrics"
 	"github.com/kubewharf/kubeadmiral/pkg/util/adoption"
 	"github.com/kubewharf/kubeadmiral/pkg/util/managedlabel"
+	"github.com/kubewharf/kubeadmiral/pkg/util/yaml"
 )
 
 const (
@@ -381,6 +382,20 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 		d.recordEvent(clusterName, op, "Updating")
 
 		keyedLogger.V(1).Info("Updating target object in cluster")
+		clusterObjYaml, err := yaml.MarshalYAML(clusterObj)
+		if err != nil {
+			return false
+		}
+		currentObjYaml, err := yaml.MarshalYAML(obj)
+		if err != nil {
+			return false
+		}
+		fedObjYaml, err := yaml.MarshalYAML(d.fedResource.Object())
+		if err != nil {
+			return false
+		}
+		keyedLogger.V(1).Info("Print the updating obj", "originalObj", string(clusterObjYaml), "currentObj", string(currentObjYaml),
+			"federatedObj", string(fedObjYaml))
 		obj, err = client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Update(
 			ctx, obj, metav1.UpdateOptions{},
 		)
