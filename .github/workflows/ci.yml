@@ -90,6 +90,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: crate-ci/typos@master
+      - uses: crate-ci/typos@v1.29.5
         with:
           config: hack/typos.toml
