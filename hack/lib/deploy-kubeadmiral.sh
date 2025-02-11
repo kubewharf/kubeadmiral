@@ -79,6 +79,29 @@ function deploy::wait_pod_ready() {
     return ${ret}
 }
 
+# deploy::wait_apiservice_ready waits for apiservice state becomes Available until timeout.
+# Parmeters:
+#  - $1: kubeconfig_path, the path of kubeconfig
+#  - $2: k8s context name, such as "kubeadmiral-apiserver"
+#  - $3: apiservice label, such as "app=etcd"
+#  - $4: time out, such as "200s"
+function deploy::wait_apiservice_ready() {
+    local kubeconfig_path=$1
+    local context_name=$2
+    local apiservice_label=$3
+
+    echo "wait the $apiservice_label Available..."
+    set +e
+    deploy::kubectl_with_retry --kubeconfig="${kubeconfig_path}" --context="${context_name}" wait --for=condition=Available --timeout=30s apiservices -l ${apiservice_label}
+    ret=$?
+    set -e
+    if [ $ret -ne 0 ];then
+      echo "kubectl describe info:"
+      kubectl --kubeconfig="${kubeconfig_path}" --context="${context_name}" describe apiservices -l app=${apiservice_label}
+    fi
+    return ${ret}
+}
+
 # deploy::create_signing_certkey creates a CA, args are sudo, dest-dir, ca-id, cn, purpose
 function deploy::create_signing_certkey {
     local sudo=$1
