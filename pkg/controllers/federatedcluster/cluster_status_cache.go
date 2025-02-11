@@ -49,17 +49,28 @@ func (c *clusterStatusStore) thresholdAdjustedStatusCondition(
 ) (fedcorev1a1.ClusterCondition, fedcorev1a1.ClusterCondition) {
 	logger := klog.FromContext(ctx)
 
+	curOfflineCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterOffline)
+	curReadyCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterReady)
+
 	saved := c.get(cluster.Name)
 	if saved == nil {
-		// the cluster is just joined
+		// The cluster has been joined, we will maintain the state detected during the last probe of the cluster.
+		if curOfflineCondition != nil && curReadyCondition != nil {
+			c.update(cluster.Name, &clusterStatusConditionData{
+				offlineCondition: *curOfflineCondition,
+				readyCondition:   *curReadyCondition,
+			})
+			return *curOfflineCondition, *curReadyCondition
+		}
+
+		// The cluster is just joined.
 		c.update(cluster.Name, &clusterStatusConditionData{
 			offlineCondition: observedOfflineCondition,
 			readyCondition:   observedReadyCondition,
 		})
 		return observedOfflineCondition, observedReadyCondition
 	}
-	curOfflineCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterOffline)
-	curReadyCondition := getClusterCondition(&cluster.Status, fedcorev1a1.ClusterReady)
+
 	if curOfflineCondition == nil || curReadyCondition == nil {
 		return observedOfflineCondition, observedReadyCondition
 	}
