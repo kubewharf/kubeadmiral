@@ -16,7 +16,7 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.4
-	golang.org/x/sync v0.10.0
+	golang.org/x/sync v0.12.0
 	golang.org/x/time v0.3.0
 	k8s.io/api v0.27.1
 	k8s.io/apiextensions-apiserver v0.26.15
@@ -32,6 +32,7 @@ require (
 	sigs.k8s.io/custom-metrics-apiserver v1.27.0
 	sigs.k8s.io/kind v0.17.0
 	sigs.k8s.io/mcs-api v0.1.0
+	sigs.k8s.io/yaml v1.3.0
 )
 
 require (
@@ -120,7 +121,6 @@ require (
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.1.1 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
-	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
 replace (
