@@ -8,7 +8,6 @@ import (
 	v1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -20,9 +19,9 @@ type FakeCollectedStatuses struct {
 	ns   string
 }
 
-var collectedstatusesResource = schema.GroupVersionResource{Group: "core.kubeadmiral.io", Version: "v1alpha1", Resource: "collectedstatuses"}
+var collectedstatusesResource = v1alpha1.SchemeGroupVersion.WithResource("collectedstatuses")
 
-var collectedstatusesKind = schema.GroupVersionKind{Group: "core.kubeadmiral.io", Version: "v1alpha1", Kind: "CollectedStatus"}
+var collectedstatusesKind = v1alpha1.SchemeGroupVersion.WithKind("CollectedStatus")
 
 // Get takes name of the collectedStatus, and returns the corresponding collectedStatus object, and an error if there is any.
 func (c *FakeCollectedStatuses) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.CollectedStatus, err error) {

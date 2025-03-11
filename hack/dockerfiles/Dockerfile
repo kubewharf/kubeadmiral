@@ -1,5 +1,5 @@
 # multi-arch image building for kubeadmiral-controller-manager
-FROM --platform=${BUILDPLATFORM} golang:1.19 as builder
+FROM --platform=${BUILDPLATFORM} golang:1.23 as builder
 ARG TARGETPLATFORM GOPROXY BUILD_FLAGS COMPENT
 ADD . /build
 WORKDIR /build/

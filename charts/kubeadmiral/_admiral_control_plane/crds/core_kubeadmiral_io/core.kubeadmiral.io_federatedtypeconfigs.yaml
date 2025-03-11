@@ -3,9 +3,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.1
+    controller-gen.kubebuilder.io/version: v0.16.5
     kubeadmiral.io/no-federated-resource: "true"
-  creationTimestamp: null
   name: federatedtypeconfigs.core.kubeadmiral.io
 spec:
   group: core.kubeadmiral.io
@@ -24,10 +23,19 @@ spec:
           description: FederatedTypeConfig specifies an API resource type to federate and various type-specific options.
           properties:
             apiVersion:
-              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
               type: string
             kind:
-              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
               type: string
             metadata:
               type: object
@@ -43,7 +51,10 @@ spec:
                     - enabled
                   type: object
                 controllers:
-                  description: The controllers that must run before the source object can be propagated to member clusters. Each inner slice specifies a step. Step T must complete before step T+1 can commence. Controllers within each step can execute in parallel.
+                  description: |-
+                    The controllers that must run before the source object can be propagated to member clusters.
+                    Each inner slice specifies a step. Step T must complete before step T+1 can commence.
+                    Controllers within each step can execute in parallel.
                   items:
                     items:
                       type: string
@@ -53,19 +64,29 @@ spec:
                   description: Defines the paths to various fields in the target object's schema.
                   properties:
                     availableReplicasStatus:
-                      description: Path to a numeric field that reflects the number of available replicas that the object currently has. E.g. `status.availableReplicas` for Deployment and ReplicaSet.
+                      description: |-
+                        Path to a numeric field that reflects the number of available replicas that the object currently has.
+                        E.g. `status.availableReplicas` for Deployment and ReplicaSet.
                       type: string
                     labelSelector:
-                      description: Path to a metav1.LabelSelector field that selects the replicas for this object. E.g. `spec.selector` for Deployment and ReplicaSet.
+                      description: |-
+                        Path to a metav1.LabelSelector field that selects the replicas for this object.
+                        E.g. `spec.selector` for Deployment and ReplicaSet.
                       type: string
                     readyReplicasStatus:
-                      description: Path to a numeric field that reflects the number of ready replicas that the object currently has. E.g. `status.readyReplicas` for Deployment and ReplicaSet.
+                      description: |-
+                        Path to a numeric field that reflects the number of ready replicas that the object currently has.
+                        E.g. `status.readyReplicas` for Deployment and ReplicaSet.
                       type: string
                     replicasSpec:
-                      description: Path to a numeric field that indicates the number of replicas that an object can be divided into. E.g. `spec.replicas` for Deployment and ReplicaSet.
+                      description: |-
+                        Path to a numeric field that indicates the number of replicas that an object can be divided into.
+                        E.g. `spec.replicas` for Deployment and ReplicaSet.
                       type: string
                     replicasStatus:
-                      description: Path to a numeric field that reflects the number of replicas that the object currently has. E.g. `status.replicas` for Deployment and ReplicaSet.
+                      description: |-
+                        Path to a numeric field that reflects the number of replicas that the object currently has.
+                        E.g. `status.replicas` for Deployment and ReplicaSet.
                       type: string
                   type: object
                 sourceType:
@@ -78,7 +99,7 @@ spec:
                       description: Kind of the resource.
                       type: string
                     pluralName:
-                      description: Lower-cased plural name of the resource (e.g. configmaps).  If not provided, it will be computed by lower-casing the kind and suffixing an 's'.
+                      description: "Lower-cased plural name of the resource (e.g. configmaps).  If not provided,\n\tit will be computed by lower-casing the kind and suffixing an 's'."
                       type: string
                     scope:
                       description: Scope of the resource.
@@ -111,7 +132,10 @@ spec:
                       description: Whether or not to enable status collection.
                       type: boolean
                     fields:
-                      description: Contains the fields to be collected during status collection. Each field is a dot separated string that corresponds to its path in the source object's schema. E.g. `metadata.creationTimestamp`.
+                      description: |-
+                        Contains the fields to be collected during status collection. Each field is a dot separated string that
+                        corresponds to its path in the source object's schema.
+                        E.g. `metadata.creationTimestamp`.
                       items:
                         type: string
                       type: array

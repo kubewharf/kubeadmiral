@@ -3,9 +3,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.1
+    controller-gen.kubebuilder.io/version: v0.16.5
     kubeadmiral.io/no-federated-resource: "true"
-  creationTimestamp: null
   name: clusterfederatedobjects.core.kubeadmiral.io
 spec:
   group: core.kubeadmiral.io
@@ -21,13 +20,24 @@ spec:
     - name: v1alpha1
       schema:
         openAPIV3Schema:
-          description: ClusterFederatedObject describes a cluster-scoped Kubernetes object and how it should be propagated to different member clusters.
+          description: |-
+            ClusterFederatedObject describes a cluster-scoped Kubernetes object and how it should be propagated to different
+            member clusters.
           properties:
             apiVersion:
-              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
               type: string
             kind:
-              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
               type: string
             metadata:
               type: object
@@ -35,7 +45,9 @@ spec:
               description: Spec defines the desired behavior of the FederatedObject.
               properties:
                 follows:
-                  description: Follows defines other objects, or "leaders", that the Kubernetes object should follow during propagation, i.e. the Kubernetes object should be propagated to all member clusters that its "leaders" are placed in.
+                  description: |-
+                    Follows defines other objects, or "leaders", that the Kubernetes object should follow during propagation, i.e.
+                    the Kubernetes object should be propagated to all member clusters that its "leaders" are placed in.
                   items:
                     description: LeaderReference contains the identifying metadata of a "leader" Kubernetes object.
                     properties:
@@ -53,9 +65,13 @@ spec:
                     type: object
                   type: array
                 overrides:
-                  description: Overrides describe the overrides that should be applied to the base template of the Kubernetes object before it is propagated to individual member clusters.
+                  description: |-
+                    Overrides describe the overrides that should be applied to the base template of the Kubernetes object before it
+                    is propagated to individual member clusters.
                   items:
-                    description: OverrideWithController describes the overrides that will be applied to a Kubernetes object before it is propagated to individual member clusters.
+                    description: |-
+                      OverrideWithController describes the overrides that will be applied to a Kubernetes object before it is propagated to
+                      individual member clusters.
                     properties:
                       clusters:
                         description: Override is the list of member clusters and their respective override patches.
@@ -93,7 +109,9 @@ spec:
                     type: object
                   type: array
                 placements:
-                  description: Placements describe the member clusters that the Kubernetes object will be propagated to, which is a union of all the listed clusters.
+                  description: |-
+                    Placements describe the member clusters that the Kubernetes object will be propagated to, which is a union of all
+                    the listed clusters.
                   items:
                     description: PlacementWithController describes the member clusters that a Kubernetes object should be propagated to.
                     properties:
