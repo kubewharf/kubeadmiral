@@ -485,11 +485,7 @@ func (s *Scheduler) prepareToSchedule(
 		logger.Error(err, "Failed to compute scheduling annotations")
 		return nil, nil, nil, &worker.StatusError
 	}
-	annotationChanged, err := updateSchedulingAnnotations(triggersText, deferredReasons, fedObject)
-	if err != nil {
-		logger.Error(err, "Failed to update scheduling annotations")
-		return nil, nil, nil, &worker.StatusError
-	}
+	annotationChanged := updateSchedulingAnnotations(triggersText, deferredReasons, fedObject)
 
 	shouldSkipScheduling := false
 	if !triggersChanged {

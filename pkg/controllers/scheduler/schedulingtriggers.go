@@ -225,17 +225,14 @@ func computeSchedulingAnnotations(
 func updateSchedulingAnnotations(
 	triggers, deferredReasons string,
 	fedObject fedcorev1a1.GenericFederatedObject,
-) (annotationChanged bool, err error) {
-	triggersChanged, err := annotation.AddAnnotation(fedObject, SchedulingTriggersAnnotation, triggers)
-	if err != nil {
-		return false, err
-	}
+) (annotationChanged bool) {
+	triggersChanged := annotation.AddAnnotation(fedObject, SchedulingTriggersAnnotation, triggers)
 	if len(deferredReasons) == 0 {
-		deferred, err := annotation.RemoveAnnotation(fedObject, SchedulingDeferredReasonsAnnotation)
-		return triggersChanged || deferred, err
+		deferred := annotation.RemoveAnnotation(fedObject, SchedulingDeferredReasonsAnnotation)
+		return triggersChanged || deferred
 	}
-	deferred, err := annotation.AddAnnotation(fedObject, SchedulingDeferredReasonsAnnotation, deferredReasons)
-	return triggersChanged || deferred, err
+	deferred := annotation.AddAnnotation(fedObject, SchedulingDeferredReasonsAnnotation, deferredReasons)
+	return triggersChanged || deferred
 }
 
 func computeSchedulingTriggers(
