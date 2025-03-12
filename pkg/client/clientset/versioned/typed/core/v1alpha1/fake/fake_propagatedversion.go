@@ -8,7 +8,6 @@ import (
 	v1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -20,9 +19,9 @@ type FakePropagatedVersions struct {
 	ns   string
 }
 
-var propagatedversionsResource = schema.GroupVersionResource{Group: "core.kubeadmiral.io", Version: "v1alpha1", Resource: "propagatedversions"}
+var propagatedversionsResource = v1alpha1.SchemeGroupVersion.WithResource("propagatedversions")
 
-var propagatedversionsKind = schema.GroupVersionKind{Group: "core.kubeadmiral.io", Version: "v1alpha1", Kind: "PropagatedVersion"}
+var propagatedversionsKind = v1alpha1.SchemeGroupVersion.WithKind("PropagatedVersion")
 
 // Get takes name of the propagatedVersion, and returns the corresponding propagatedVersion object, and an error if there is any.
 func (c *FakePropagatedVersions) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.PropagatedVersion, err error) {

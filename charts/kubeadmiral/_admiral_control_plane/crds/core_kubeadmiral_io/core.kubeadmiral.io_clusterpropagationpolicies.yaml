@@ -3,9 +3,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.1
+    controller-gen.kubebuilder.io/version: v0.16.5
     kubeadmiral.io/no-federated-resource: "true"
-  creationTimestamp: null
   name: clusterpropagationpolicies.core.kubeadmiral.io
 spec:
   group: core.kubeadmiral.io
@@ -24,10 +23,19 @@ spec:
           description: ClusterPropagationPolicy describes the scheduling rules for a resource.
           properties:
             apiVersion:
-              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
               type: string
             kind:
-              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
               type: string
             metadata:
               type: object
@@ -42,7 +50,9 @@ spec:
                   properties:
                     keepUnschedulableReplicas:
                       default: false
-                      description: Besides starting new replicas in other cluster(s), whether to keep the unschedulable replicas in the original cluster so we can go back to the desired state when the cluster recovers.
+                      description: |-
+                        Besides starting new replicas in other cluster(s), whether to keep the unschedulable replicas
+                        in the original cluster so we can go back to the desired state when the cluster recovers.
                       type: boolean
                     when:
                       default:
@@ -51,13 +61,17 @@ spec:
                       minProperties: 1
                       properties:
                         podUnschedulableFor:
-                          description: A pod will be subject to auto migration if it remains unschedulable beyond this duration. Duration should be specified in a format that can be parsed by Go's time.ParseDuration.
+                          description: |-
+                            A pod will be subject to auto migration if it remains unschedulable beyond this duration.
+                            Duration should be specified in a format that can be parsed by Go's time.ParseDuration.
                           format: duration
                           type: string
                       type: object
                   type: object
                 clusterAffinity:
-                  description: ClusterAffinity is a list of cluster selector terms, the terms are ORed. A empty or nil ClusterAffinity selects everything.
+                  description: |-
+                    ClusterAffinity is a list of cluster selector terms, the terms are ORed.
+                    A empty or nil ClusterAffinity selects everything.
                   items:
                     properties:
                       matchExpressions:
@@ -119,13 +133,22 @@ spec:
                 clusterSelector:
                   additionalProperties:
                     type: string
-                  description: ClusterSelector is a label query over clusters to consider for scheduling. An empty or nil ClusterSelector selects everything.
+                  description: |-
+                    ClusterSelector is a label query over clusters to consider for scheduling.
+                    An empty or nil ClusterSelector selects everything.
                   type: object
                 disableFollowerScheduling:
-                  description: DisableFollowerScheduling is a boolean that determines if follower scheduling is disabled. Resources that depend on other resources (e.g. deployments) are called leaders, and resources that are depended on (e.g. configmaps and secrets) are called followers. If a leader enables follower scheduling, its followers will additionally be scheduled to clusters where the leader is scheduled.
+                  description: |-
+                    DisableFollowerScheduling is a boolean that determines if follower scheduling is disabled.
+                    Resources that depend on other resources (e.g. deployments) are called leaders,
+                    and resources that are depended on (e.g. configmaps and secrets) are called followers.
+                    If a leader enables follower scheduling, its followers will additionally be scheduled
+                    to clusters where the leader is scheduled.
                   type: boolean
                 maxClusters:
-                  description: MaxClusters is the maximum number of replicas that the federated object can be propagated to. The maximum number of clusters is unbounded if no value is provided.
+                  description: |-
+                    MaxClusters is the maximum number of replicas that the federated object can be propagated to.
+                    The maximum number of clusters is unbounded if no value is provided.
                   format: int64
                   type: integer
                 placement:
@@ -140,7 +163,9 @@ spec:
                         description: Preferences contains the cluster's propagation preferences.
                         properties:
                           maxReplicas:
-                            description: Maximum number of replicas that should be assigned to this cluster workload object. Unbounded if no value provided (default).
+                            description: |-
+                              Maximum number of replicas that should be assigned to this cluster workload object.
+                              Unbounded if no value provided (default).
                             format: int64
                             minimum: 0
                             type: integer
@@ -150,12 +175,18 @@ spec:
                             minimum: 0
                             type: integer
                           priority:
-                            description: A number expressing the priority of the cluster. The higher the value, the higher the priority. When selecting clusters for propagation, clusters with higher priority are preferred. When the Binpack ReplicasStrategy is selected, replicas will be scheduled to clusters with higher priority first.
+                            description: |-
+                              A number expressing the priority of the cluster.
+                              The higher the value, the higher the priority.
+                              When selecting clusters for propagation, clusters with higher priority are preferred.
+                              When the Binpack ReplicasStrategy is selected, replicas will be scheduled to clusters with higher priority first.
                             format: int64
                             minimum: 0
                             type: integer
                           weight:
-                            description: A number expressing the preference to put an additional replica to this cluster workload object. It will not take effect when ReplicasStrategy is Binpack.
+                            description: |-
+                              A number expressing the preference to put an additional replica to this cluster workload object.
+                              It will not take effect when ReplicasStrategy is Binpack.
                             format: int64
                             minimum: 0
                             type: integer
@@ -181,11 +212,18 @@ spec:
                       description: DisableRescheduling determines if a federated object can be rescheduled.
                       type: boolean
                     replicaRescheduling:
-                      description: Configures behaviors related to replica rescheduling. Default set via a post-generation patch. See patch file for details.
+                      description: |-
+                        Configures behaviors related to replica rescheduling.
+                        Default set via a post-generation patch.
+                        See patch file for details.
                       properties:
                         avoidDisruption:
                           default: true
-                          description: If set to true, the scheduler will attempt to prevent migrating existing replicas during rescheduling. In order to do so, replica scheduling preferences might not be fully respected. If set to false, the scheduler will always rebalance the replicas based on the specified preferences, which might cause temporary service disruption.
+                          description: |-
+                            If set to true, the scheduler will attempt to prevent migrating existing replicas during rescheduling.
+                            In order to do so, replica scheduling preferences might not be fully respected.
+                            If set to false, the scheduler will always rebalance the replicas based on the specified preferences, which might
+                            cause temporary service disruption.
                           type: boolean
                       type: object
                       default: {}
@@ -194,19 +232,33 @@ spec:
                       properties:
                         clusterAPIResourcesChanged:
                           default: false
-                          description: If set to true, changes to clusters' enabled list of api resources will trigger rescheduling. It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the requested resources of the template changed.
+                          description: |-
+                            If set to true, changes to clusters' enabled list of api resources will trigger rescheduling.
+                            It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the
+                            requested resources of the template changed.
                           type: boolean
                         clusterJoined:
                           default: false
-                          description: If set to true, clusters joining the federation will trigger rescheduling. It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the requested resources of the template changed.
+                          description: |-
+                            If set to true, clusters joining the federation will trigger rescheduling.
+                            It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the
+                            requested resources of the template changed.
                           type: boolean
                         clusterLabelsChanged:
                           default: false
-                          description: If set to true, changes to cluster labels will trigger rescheduling. It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the requested resources of the template changed.
+                          description: |-
+                            If set to true, changes to cluster labels will trigger rescheduling.
+                            It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the
+                            requested resources of the template changed.
                           type: boolean
                         policyContentChanged:
                           default: true
-                          description: If set to true, the scheduler will trigger rescheduling when the semantics of the policy changes. For example, modifying placement, schedulingMode, maxClusters, clusterSelector, and other configurations related to scheduling (includes reschedulePolicy itself) will immediately trigger rescheduling. Modifying the labels, annotations, autoMigration configuration will not trigger rescheduling. It set to false, the scheduler will not reschedule when the policy content changes.
+                          description: |-
+                            If set to true, the scheduler will trigger rescheduling when the semantics of the policy changes. For example,
+                            modifying placement, schedulingMode, maxClusters, clusterSelector, and other configurations related to
+                            scheduling (includes reschedulePolicy itself) will immediately trigger rescheduling. Modifying the labels,
+                            annotations, autoMigration configuration will not trigger rescheduling.
+                            It set to false, the scheduler will not reschedule when the policy content changes.
                           type: boolean
                       type: object
                   type: object
@@ -222,23 +274,39 @@ spec:
                 tolerations:
                   description: Tolerations describe a set of cluster taints that the policy tolerates.
                   items:
-                    description: The pod this Toleration is attached to tolerates any taint that matches the triple <key,value,effect> using the matching operator <operator>.
+                    description: |-
+                      The pod this Toleration is attached to tolerates any taint that matches
+                      the triple <key,value,effect> using the matching operator <operator>.
                     properties:
                       effect:
-                        description: Effect indicates the taint effect to match. Empty means match all taint effects. When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                        description: |-
+                          Effect indicates the taint effect to match. Empty means match all taint effects.
+                          When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
                         type: string
                       key:
-                        description: Key is the taint key that the toleration applies to. Empty means match all taint keys. If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                        description: |-
+                          Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                          If the key is empty, operator must be Exists; this combination means to match all values and all keys.
                         type: string
                       operator:
-                        description: Operator represents a key's relationship to the value. Valid operators are Exists and Equal. Defaults to Equal. Exists is equivalent to wildcard for value, so that a pod can tolerate all taints of a particular category.
+                        description: |-
+                          Operator represents a key's relationship to the value.
+                          Valid operators are Exists and Equal. Defaults to Equal.
+                          Exists is equivalent to wildcard for value, so that a pod can
+                          tolerate all taints of a particular category.
                         type: string
                       tolerationSeconds:
-                        description: TolerationSeconds represents the period of time the toleration (which must be of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default, it is not set, which means tolerate the taint forever (do not evict). Zero and negative values will be treated as 0 (evict immediately) by the system.
+                        description: |-
+                          TolerationSeconds represents the period of time the toleration (which must be
+                          of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                          it is not set, which means tolerate the taint forever (do not evict). Zero and
+                          negative values will be treated as 0 (evict immediately) by the system.
                         format: int64
                         type: integer
                       value:
-                        description: Value is the taint value the toleration matches to. If the operator is Exists, the value should be empty, otherwise just a regular string.
+                        description: |-
+                          Value is the taint value the toleration matches to.
+                          If the operator is Exists, the value should be empty, otherwise just a regular string.
                         type: string
                     type: object
                   type: array

@@ -339,7 +339,7 @@ func (h *countingResourceEventHandler) GenerateEventHandler(ftc *fedcorev1a1.Fed
 	return h
 }
 
-func (h *countingResourceEventHandler) OnAdd(obj interface{}) {
+func (h *countingResourceEventHandler) OnAdd(obj interface{}, isInInitialList bool) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 

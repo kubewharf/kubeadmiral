@@ -8,7 +8,6 @@ import (
 	v1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -20,9 +19,9 @@ type FakeFederatedObjects struct {
 	ns   string
 }
 
-var federatedobjectsResource = schema.GroupVersionResource{Group: "core.kubeadmiral.io", Version: "v1alpha1", Resource: "federatedobjects"}
+var federatedobjectsResource = v1alpha1.SchemeGroupVersion.WithResource("federatedobjects")
 
-var federatedobjectsKind = schema.GroupVersionKind{Group: "core.kubeadmiral.io", Version: "v1alpha1", Kind: "FederatedObject"}
+var federatedobjectsKind = v1alpha1.SchemeGroupVersion.WithKind("FederatedObject")
 
 // Get takes name of the federatedObject, and returns the corresponding federatedObject object, and an error if there is any.
 func (c *FakeFederatedObjects) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.FederatedObject, err error) {
