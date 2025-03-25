@@ -20,6 +20,7 @@ import (
 	"context"
 
 	genericapiserver "k8s.io/apiserver/pkg/server"
+	utilversion "k8s.io/apiserver/pkg/util/version"
 
 	"github.com/kubewharf/kubeadmiral/cmd/hpa-aggregator/app/options"
 )
@@ -31,6 +32,7 @@ func Run(ctx context.Context, opts *options.Options) error {
 		return err
 	}
 
+	config.GenericConfig.EffectiveVersion = utilversion.NewEffectiveVersion("1.0")
 	server, err := config.Complete().New()
 	if err != nil {
 		return err

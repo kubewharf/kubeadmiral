@@ -239,3 +239,7 @@ func (m *PodMetrics) getMetrics(pods ...runtime.Object) ([]metrics.PodMetrics, e
 func (m *PodMetrics) NamespaceScoped() bool {
 	return true
 }
+
+func (m *PodMetrics) GetSingularName() string {
+	return "podmetrics"
+}

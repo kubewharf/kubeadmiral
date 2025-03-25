@@ -195,3 +195,7 @@ func (m *NodeMetrics) getMetrics(nodes ...*corev1.Node) ([]metrics.NodeMetrics, 
 func (m *NodeMetrics) NamespaceScoped() bool {
 	return false
 }
+
+func (m *NodeMetrics) GetSingularName() string {
+	return "nodemetrics"
+}
