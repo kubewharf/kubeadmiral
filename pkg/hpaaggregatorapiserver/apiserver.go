@@ -27,6 +27,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
+	"k8s.io/apiserver/pkg/util/version"
 	dynamicclient "k8s.io/client-go/dynamic"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -126,6 +127,7 @@ func (cfg *Config) Complete() CompletedConfig {
 		cfg.GenericConfig.Complete(),
 		cfg.ExtraConfig,
 	}
+	c.GenericConfig.EffectiveVersion = version.NewEffectiveVersion("1.0")
 
 	return CompletedConfig{&c}
 }

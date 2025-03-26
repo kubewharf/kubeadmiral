@@ -223,3 +223,7 @@ func isRequestForService(request *genericapirequest.RequestInfo) bool {
 func isRequestForEndpointSlice(request *genericapirequest.RequestInfo) bool {
 	return request.APIGroup == "discovery.k8s.io" && request.APIVersion == "v1" && request.Resource == "endpointslices"
 }
+
+func (r *REST) GetSingularName() string {
+	return "aggregation"
+}

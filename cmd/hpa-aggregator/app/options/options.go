@@ -33,7 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/endpoints/openapi"
-	"k8s.io/apiserver/pkg/features"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/filters"
 	"k8s.io/apiserver/pkg/server/healthz"
@@ -155,15 +154,13 @@ func (o *Options) Config() (*apiserver.Config, error) {
 		return r.OperationName() + r.Path(), nil, nil
 	}
 
-	if utilfeature.DefaultFeatureGate.Enabled(features.OpenAPIV3) {
-		serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
-			fedopenapi.GetOpenAPIDefinitions,
-			openapi.NewDefinitionNamer(apiserver.Scheme),
-		)
-		serverConfig.OpenAPIV3Config.Info.Title = openAPITitle
-		serverConfig.OpenAPIV3Config.GetOperationIDAndTagsFromRoute = func(r restfulcommon.Route) (string, []string, error) {
-			return r.OperationName() + r.Path(), nil, nil
-		}
+	serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
+		fedopenapi.GetOpenAPIDefinitions,
+		openapi.NewDefinitionNamer(apiserver.Scheme),
+	)
+	serverConfig.OpenAPIV3Config.Info.Title = openAPITitle
+	serverConfig.OpenAPIV3Config.GetOperationIDAndTagsFromRoute = func(r restfulcommon.Route) (string, []string, error) {
+		return r.OperationName() + r.Path(), nil, nil
 	}
 
 	if err := o.RecommendedOptions.ApplyTo(serverConfig); err != nil {
