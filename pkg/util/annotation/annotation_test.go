@@ -22,7 +22,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	meta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -38,11 +37,6 @@ func TestHasAnnotationKey(t *testing.T) {
 		annotation string
 		result     bool
 	}{
-		{
-			newObj(map[string]string{}),
-			"",
-			false,
-		},
 		{
 			newObj(map[string]string{}),
 			"someAnnotation",
@@ -70,7 +64,7 @@ func TestHasAnnotationKey(t *testing.T) {
 		},
 	}
 	for index, test := range testCases {
-		hasAnnotationKey, _ := HasAnnotationKey(test.obj, test.annotation)
+		hasAnnotationKey := HasAnnotationKey(test.obj, test.annotation)
 		assert.Equal(
 			t,
 			hasAnnotationKey,
@@ -89,19 +83,7 @@ func TestHasAnnotationKeyValue(t *testing.T) {
 	}{
 		{
 			newObj(map[string]string{}),
-			"",
-			"",
-			false,
-		},
-		{
-			newObj(map[string]string{}),
 			"someAnnotation",
-			"",
-			false,
-		},
-		{
-			newObj(map[string]string{"someAnnotation": ""}),
-			"",
 			"",
 			false,
 		},
@@ -137,7 +119,7 @@ func TestHasAnnotationKeyValue(t *testing.T) {
 		},
 	}
 	for index, test := range testCases {
-		hasAnnotationKeyValue, _ := HasAnnotationKeyValue(test.obj, test.key, test.value)
+		hasAnnotationKeyValue := HasAnnotationKeyValue(test.obj, test.key, test.value)
 		assert.Equal(
 			t,
 			hasAnnotationKeyValue,
@@ -155,20 +137,6 @@ func TestAddAnnotation(t *testing.T) {
 		isUpdated      bool
 		newAnnotations map[string]string
 	}{
-		{
-			newObj(map[string]string{}),
-			"",
-			"",
-			false,
-			map[string]string{},
-		},
-		{
-			newObj(nil),
-			"",
-			"",
-			false,
-			map[string]string(nil),
-		},
 		{
 			newObj(map[string]string{}),
 			"someAnnotation",
@@ -206,15 +174,14 @@ func TestAddAnnotation(t *testing.T) {
 		},
 	}
 	for index, test := range testCases {
-		isUpdated, _ := AddAnnotation(test.obj, test.key, test.value)
+		isUpdated := AddAnnotation(test.obj, test.key, test.value)
 		assert.Equal(
 			t,
 			isUpdated,
 			test.isUpdated,
 			fmt.Sprintf("Test case %d failed. Expected isUpdated: %v, actual: %v", index, test.isUpdated, isUpdated),
 		)
-		accessor, _ := meta.Accessor(test.obj)
-		newAnnotations := accessor.GetAnnotations()
+		newAnnotations := test.obj.GetAnnotations()
 		assert.Equal(
 			t,
 			test.newAnnotations,
@@ -238,18 +205,6 @@ func TestRemoveAnnotation(t *testing.T) {
 	}{
 		{
 			newObj(map[string]string{}),
-			"",
-			false,
-			map[string]string{},
-		},
-		{
-			newObj(nil),
-			"",
-			false,
-			nil,
-		},
-		{
-			newObj(map[string]string{}),
 			"someAnnotation",
 			false,
 			map[string]string{},
@@ -268,15 +223,14 @@ func TestRemoveAnnotation(t *testing.T) {
 		},
 	}
 	for index, test := range testCases {
-		isUpdated, _ := RemoveAnnotation(test.obj, test.key)
+		isUpdated := RemoveAnnotation(test.obj, test.key)
 		assert.Equal(
 			t,
 			isUpdated,
 			test.isUpdated,
 			fmt.Sprintf("Test case %d failed. Expected isUpdated: %v, actual: %v", index, test.isUpdated, isUpdated),
 		)
-		accessor, _ := meta.Accessor(test.obj)
-		newAnnotations := accessor.GetAnnotations()
+		newAnnotations := test.obj.GetAnnotations()
 		assert.Equal(
 			t,
 			test.newAnnotations,
