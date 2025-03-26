@@ -25,6 +25,7 @@ BUILD_OUTPUT_DIR=${BUILD_OUTPUT_DIR:-"${REPO_ROOT}/output/bin"}
 BINARY_TARGET_SOURCE=(
   kubeadmiral-controller-manager=cmd/controller-manager
   kubeadmiral-hpa-aggregator=cmd/hpa-aggregator
+  kubeadmiral-aggregated-apiserver=cmd/aggregated-apiserver
 )
 
 # This function builds multi-platform binaries for kubeadmiral-controller-manager
