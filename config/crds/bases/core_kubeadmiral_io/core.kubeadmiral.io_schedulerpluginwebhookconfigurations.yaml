@@ -3,8 +3,9 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.5
+    controller-gen.kubebuilder.io/version: v0.11.1
     kubeadmiral.io/no-federated-resource: "true"
+  creationTimestamp: null
   name: schedulerpluginwebhookconfigurations.core.kubeadmiral.io
 spec:
   group: core.kubeadmiral.io
@@ -21,19 +22,10 @@ spec:
           description: SchedulerPluginWebhookConfiguration is a webhook that can be used as a scheduler plugin.
           properties:
             apiVersion:
-              description: |-
-                APIVersion defines the versioned schema of this representation of an object.
-                Servers should convert recognized schemas to the latest internal value, and
-                may reject unrecognized values.
-                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
               type: string
             kind:
-              description: |-
-                Kind is a string value representing the REST resource this object represents.
-                Servers may infer this from the endpoint the client submits requests to.
-                Cannot be updated.
-                In CamelCase.
-                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
               type: string
             metadata:
               type: object
@@ -44,18 +36,11 @@ spec:
                   type: string
                 httpTimeout:
                   default: 5s
-                  description: |-
-                    HTTPTimeout specifies the timeout duration for a call to the webhook. Timeout fails the scheduling of the workload.
-                    Defaults to 5 seconds.
+                  description: HTTPTimeout specifies the timeout duration for a call to the webhook. Timeout fails the scheduling of the workload. Defaults to 5 seconds.
                   format: duration
                   type: string
                 payloadVersions:
-                  description: |-
-                    PayloadVersions is an ordered list of preferred request and response
-                    versions the webhook expects.
-                    The scheduler will try to use the first version in
-                    the list which it supports. If none of the versions specified in this list
-                    supported by the scheduler, scheduling will fail for this object.
+                  description: PayloadVersions is an ordered list of preferred request and response versions the webhook expects. The scheduler will try to use the first version in the list which it supports. If none of the versions specified in this list supported by the scheduler, scheduling will fail for this object.
                   items:
                     type: string
                   minItems: 1
@@ -85,10 +70,7 @@ spec:
                       format: byte
                       type: string
                     serverName:
-                      description: |-
-                        ServerName is passed to the server for SNI and is used in the client to check server
-                        certificates against. If ServerName is empty, the hostname used to contact the
-                        server is used.
+                      description: ServerName is passed to the server for SNI and is used in the client to check server certificates against. If ServerName is empty, the hostname used to contact the server is used.
                       type: string
                   type: object
                 urlPrefix:

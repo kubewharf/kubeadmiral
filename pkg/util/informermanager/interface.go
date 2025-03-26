@@ -48,11 +48,11 @@ type FilteringResourceEventHandlerWithClusterFuncs struct {
 }
 
 // OnAdd calls the nested handler only if the filter succeeds
-func (p *FilteringResourceEventHandlerWithClusterFuncs) OnAdd(obj interface{}, isInInitialList bool) {
+func (p *FilteringResourceEventHandlerWithClusterFuncs) OnAdd(obj interface{}) {
 	if !p.FilterFunc(obj, p.Handler.clusterName) {
 		return
 	}
-	p.Handler.OnAdd(obj, false)
+	p.Handler.OnAdd(obj)
 }
 
 // OnUpdate ensures the proper handler is called depending on whether the filter matches
@@ -63,7 +63,7 @@ func (p *FilteringResourceEventHandlerWithClusterFuncs) OnUpdate(oldObj, newObj 
 	case newer && older:
 		p.Handler.OnUpdate(oldObj, newObj)
 	case newer && !older:
-		p.Handler.OnAdd(newObj, false)
+		p.Handler.OnAdd(newObj)
 	case !newer && older:
 		p.Handler.OnDelete(oldObj)
 	default:
@@ -107,7 +107,7 @@ type ResourceEventHandlerWithClusterFuncs struct {
 }
 
 // OnAdd calls AddFunc if it's not nil.
-func (p *ResourceEventHandlerWithClusterFuncs) OnAdd(obj interface{}, isInInitialList bool) {
+func (p *ResourceEventHandlerWithClusterFuncs) OnAdd(obj interface{}) {
 	if p.AddFunc != nil {
 		p.AddFunc(obj, p.clusterName)
 	}

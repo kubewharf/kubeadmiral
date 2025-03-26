@@ -8,6 +8,7 @@ import (
 	v1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -18,9 +19,9 @@ type FakeClusterPropagationPolicies struct {
 	Fake *FakeCoreV1alpha1
 }
 
-var clusterpropagationpoliciesResource = v1alpha1.SchemeGroupVersion.WithResource("clusterpropagationpolicies")
+var clusterpropagationpoliciesResource = schema.GroupVersionResource{Group: "core.kubeadmiral.io", Version: "v1alpha1", Resource: "clusterpropagationpolicies"}
 
-var clusterpropagationpoliciesKind = v1alpha1.SchemeGroupVersion.WithKind("ClusterPropagationPolicy")
+var clusterpropagationpoliciesKind = schema.GroupVersionKind{Group: "core.kubeadmiral.io", Version: "v1alpha1", Kind: "ClusterPropagationPolicy"}
 
 // Get takes name of the clusterPropagationPolicy, and returns the corresponding clusterPropagationPolicy object, and an error if there is any.
 func (c *FakeClusterPropagationPolicies) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ClusterPropagationPolicy, err error) {

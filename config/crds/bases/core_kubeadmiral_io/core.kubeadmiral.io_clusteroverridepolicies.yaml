@@ -3,8 +3,9 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.5
+    controller-gen.kubebuilder.io/version: v0.11.1
     kubeadmiral.io/no-federated-resource: "true"
+  creationTimestamp: null
   name: clusteroverridepolicies.core.kubeadmiral.io
 spec:
   group: core.kubeadmiral.io
@@ -23,28 +24,17 @@ spec:
           description: ClusterOverridePolicy describes the override rules for a resource.
           properties:
             apiVersion:
-              description: |-
-                APIVersion defines the versioned schema of this representation of an object.
-                Servers should convert recognized schemas to the latest internal value, and
-                may reject unrecognized values.
-                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
               type: string
             kind:
-              description: |-
-                Kind is a string value representing the REST resource this object represents.
-                Servers may infer this from the endpoint the client submits requests to.
-                Cannot be updated.
-                In CamelCase.
-                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
               type: string
             metadata:
               type: object
             spec:
               properties:
                 overrideRules:
-                  description: |-
-                    OverrideRules specify the override rules.
-                    Each rule specifies the overriders and the clusters these overriders should be applied to.
+                  description: OverrideRules specify the override rules. Each rule specifies the overriders and the clusters these overriders should be applied to.
                   items:
                     properties:
                       overriders:
@@ -56,9 +46,7 @@ spec:
                               description: StringMapOverrider represents the rules dedicated to handling resource labels/annotations
                               properties:
                                 operator:
-                                  description: |-
-                                    Operator specifies the operation.
-                                    If omitted, defaults to "overwrite".
+                                  description: Operator specifies the operation. If omitted, defaults to "overwrite".
                                   enum:
                                     - addIfAbsent
                                     - overwrite
@@ -67,12 +55,7 @@ spec:
                                 value:
                                   additionalProperties:
                                     type: string
-                                  description: |-
-                                    Value is the value(s) that will be applied to annotations/labels of resource.
-                                    If Operator is 'addIfAbsent', items in Value (empty is not allowed) will be added in annotations/labels.
-                                      - For 'addIfAbsent' Operator, the keys in Value cannot conflict with annotations/labels.
-                                    If Operator is 'overwrite', items in Value which match in annotations/labels will be replaced.
-                                    If Operator is 'delete', items in Value which match in annotations/labels will be deleted.
+                                  description: Value is the value(s) that will be applied to annotations/labels of resource. If Operator is 'addIfAbsent', items in Value (empty is not allowed) will be added in annotations/labels. - For 'addIfAbsent' Operator, the keys in Value cannot conflict with annotations/labels. If Operator is 'overwrite', items in Value which match in annotations/labels will be replaced. If Operator is 'delete', items in Value which match in annotations/labels will be deleted.
                                   type: object
                               required:
                                 - value
@@ -86,20 +69,14 @@ spec:
                                   description: ContainerName targets the specified container or init container in the pod template.
                                   type: string
                                 operator:
-                                  description: |-
-                                    Operator specifies the operation.
-                                    If omitted, defaults to "overwrite".
+                                  description: Operator specifies the operation. If omitted, defaults to "overwrite".
                                   enum:
                                     - append
                                     - overwrite
                                     - delete
                                   type: string
                                 value:
-                                  description: |-
-                                    Value is the value(s) that will be applied to command/args of ContainerName.
-                                    If Operator is 'append', items in Value (empty is not allowed) will be appended to command/args.
-                                    If Operator is 'overwrite', current command/args of ContainerName will be completely replaced by Value.
-                                    If Operator is 'delete', items in Value that match in command/args will be deleted.
+                                  description: Value is the value(s) that will be applied to command/args of ContainerName. If Operator is 'append', items in Value (empty is not allowed) will be appended to command/args. If Operator is 'overwrite', current command/args of ContainerName will be completely replaced by Value. If Operator is 'delete', items in Value that match in command/args will be deleted.
                                   items:
                                     type: string
                                   type: array
@@ -116,20 +93,14 @@ spec:
                                   description: ContainerName targets the specified container or init container in the pod template.
                                   type: string
                                 operator:
-                                  description: |-
-                                    Operator specifies the operation.
-                                    If omitted, defaults to "overwrite".
+                                  description: Operator specifies the operation. If omitted, defaults to "overwrite".
                                   enum:
                                     - append
                                     - overwrite
                                     - delete
                                   type: string
                                 value:
-                                  description: |-
-                                    Value is the value(s) that will be applied to command/args of ContainerName.
-                                    If Operator is 'append', items in Value (empty is not allowed) will be appended to command/args.
-                                    If Operator is 'overwrite', current command/args of ContainerName will be completely replaced by Value.
-                                    If Operator is 'delete', items in Value that match in command/args will be deleted.
+                                  description: Value is the value(s) that will be applied to command/args of ContainerName. If Operator is 'append', items in Value (empty is not allowed) will be appended to command/args. If Operator is 'overwrite', current command/args of ContainerName will be completely replaced by Value. If Operator is 'delete', items in Value that match in command/args will be deleted.
                                   items:
                                     type: string
                                   type: array
@@ -146,9 +117,7 @@ spec:
                                   description: ContainerName targets the specified container or init container in the pod template.
                                   type: string
                                 operator:
-                                  description: |-
-                                    Operator specifies the operation.
-                                    If omitted, defaults to "overwrite".
+                                  description: Operator specifies the operation. If omitted, defaults to "overwrite".
                                   enum:
                                     - addIfAbsent
                                     - overwrite
@@ -163,16 +132,7 @@ spec:
                                         description: Name of the environment variable. Must be a C_IDENTIFIER.
                                         type: string
                                       value:
-                                        description: |-
-                                          Variable references $(VAR_NAME) are expanded
-                                          using the previously defined environment variables in the container and
-                                          any service environment variables. If a variable cannot be resolved,
-                                          the reference in the input string will be unchanged. Double $$ are reduced
-                                          to a single $, which allows for escaping the $(VAR_NAME) syntax: i.e.
-                                          "$$(VAR_NAME)" will produce the string literal "$(VAR_NAME)".
-                                          Escaped references will never be expanded, regardless of whether the variable
-                                          exists or not.
-                                          Defaults to "".
+                                        description: 'Variable references $(VAR_NAME) are expanded using the previously defined environment variables in the container and any service environment variables. If a variable cannot be resolved, the reference in the input string will be unchanged. Double $$ are reduced to a single $, which allows for escaping the $(VAR_NAME) syntax: i.e. "$$(VAR_NAME)" will produce the string literal "$(VAR_NAME)". Escaped references will never be expanded, regardless of whether the variable exists or not. Defaults to "".'
                                         type: string
                                       valueFrom:
                                         description: Source for the environment variable's value. Cannot be used if value is not empty.
@@ -184,13 +144,7 @@ spec:
                                                 description: The key to select.
                                                 type: string
                                               name:
-                                                default: ""
-                                                description: |-
-                                                  Name of the referent.
-                                                  This field is effectively required, but due to backwards compatibility is
-                                                  allowed to be empty. Instances of this type with an empty value here are
-                                                  almost certainly wrong.
-                                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
                                                 type: string
                                               optional:
                                                 description: Specify whether the ConfigMap or its key must be defined
@@ -200,9 +154,7 @@ spec:
                                             type: object
                                             x-kubernetes-map-type: atomic
                                           fieldRef:
-                                            description: |-
-                                              Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
-                                              spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                            description: 'Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels[''<KEY>'']`, `metadata.annotations[''<KEY>'']`, spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.'
                                             properties:
                                               apiVersion:
                                                 description: Version of the schema the FieldPath is written in terms of, defaults to "v1".
@@ -215,9 +167,7 @@ spec:
                                             type: object
                                             x-kubernetes-map-type: atomic
                                           resourceFieldRef:
-                                            description: |-
-                                              Selects a resource of the container: only resources limits and requests
-                                              (limits.cpu, limits.memory, limits.ephemeral-storage, requests.cpu, requests.memory and requests.ephemeral-storage) are currently supported.
+                                            description: 'Selects a resource of the container: only resources limits and requests (limits.cpu, limits.memory, limits.ephemeral-storage, requests.cpu, requests.memory and requests.ephemeral-storage) are currently supported.'
                                             properties:
                                               containerName:
                                                 description: 'Container name: required for volumes, optional for env vars'
@@ -243,13 +193,7 @@ spec:
                                                 description: The key of the secret to select from.  Must be a valid secret key.
                                                 type: string
                                               name:
-                                                default: ""
-                                                description: |-
-                                                  Name of the referent.
-                                                  This field is effectively required, but due to backwards compatibility is
-                                                  allowed to be empty. Instances of this type with an empty value here are
-                                                  almost certainly wrong.
-                                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
                                                 type: string
                                               optional:
                                                 description: Specify whether the Secret or its key must be defined
@@ -273,20 +217,12 @@ spec:
                             items:
                               properties:
                                 containerNames:
-                                  description: |-
-                                    ContainerNames are ignored when ImagePath is set.
-                                    If empty, the image override rule applies to all containers.
-                                    Otherwise, this override targets the specified container(s) or init container(s) in the pod template.
+                                  description: ContainerNames are ignored when ImagePath is set. If empty, the image override rule applies to all containers. Otherwise, this override targets the specified container(s) or init container(s) in the pod template.
                                   items:
                                     type: string
                                   type: array
                                 imagePath:
-                                  description: |-
-                                    ImagePath indicates the image path to target.
-                                    For Example: /spec/template/spec/containers/0/image
-
-                                    If empty, the system will automatically resolve the image path if the resource type is
-                                    Pod, CronJob, Deployment, StatefulSet, DaemonSet or Job.
+                                  description: "ImagePath indicates the image path to target. For Example: /spec/template/spec/containers/0/image \n If empty, the system will automatically resolve the image path if the resource type is Pod, CronJob, Deployment, StatefulSet, DaemonSet or Job."
                                   type: string
                                 operations:
                                   description: Operations are the specific operations to be performed on ContainerNames or ImagePath.
@@ -301,18 +237,14 @@ spec:
                                           - Digest
                                         type: string
                                       operator:
-                                        description: |-
-                                          Operator specifies the operation.
-                                          If omitted, defaults to "overwrite".
+                                        description: Operator specifies the operation. If omitted, defaults to "overwrite".
                                         enum:
                                           - addIfAbsent
                                           - overwrite
                                           - delete
                                         type: string
                                       value:
-                                        description: |-
-                                          Value is the value required by the operation.
-                                          For 'addIfAbsent' Operator, the old value of ImageComponent should be empty, and the Value shouldn't be empty.
+                                        description: Value is the value required by the operation. For 'addIfAbsent' Operator, the old value of ImageComponent should be empty, and the Value shouldn't be empty.
                                         type: string
                                     required:
                                       - imageComponent
@@ -327,18 +259,10 @@ spec:
                             items:
                               properties:
                                 operator:
-                                  description: |-
-                                    Operator specifies the operation.
-                                    If omitted, defaults to "replace".
+                                  description: Operator specifies the operation. If omitted, defaults to "replace".
                                   type: string
                                 path:
-                                  description: |-
-                                    Path is a JSON pointer (RFC 6901) specifying the location within the resource document where the
-                                    operation is performed.
-                                    Each key in the path should be prefixed with "/",
-                                    while "~" and "/" should be escaped as "~0" and "~1" respectively.
-                                    For example, to add a label "kubeadmiral.io/label",
-                                    the path should be "/metadata/labels/kubeadmiral.io~1label".
+                                  description: Path is a JSON pointer (RFC 6901) specifying the location within the resource document where the operation is performed. Each key in the path should be prefixed with "/", while "~" and "/" should be escaped as "~0" and "~1" respectively. For example, to add a label "kubeadmiral.io/label", the path should be "/metadata/labels/kubeadmiral.io~1label".
                                   type: string
                                 value:
                                   description: Value is the value(s) required by the operation.
@@ -353,9 +277,7 @@ spec:
                               description: StringMapOverrider represents the rules dedicated to handling resource labels/annotations
                               properties:
                                 operator:
-                                  description: |-
-                                    Operator specifies the operation.
-                                    If omitted, defaults to "overwrite".
+                                  description: Operator specifies the operation. If omitted, defaults to "overwrite".
                                   enum:
                                     - addIfAbsent
                                     - overwrite
@@ -364,12 +286,7 @@ spec:
                                 value:
                                   additionalProperties:
                                     type: string
-                                  description: |-
-                                    Value is the value(s) that will be applied to annotations/labels of resource.
-                                    If Operator is 'addIfAbsent', items in Value (empty is not allowed) will be added in annotations/labels.
-                                      - For 'addIfAbsent' Operator, the keys in Value cannot conflict with annotations/labels.
-                                    If Operator is 'overwrite', items in Value which match in annotations/labels will be replaced.
-                                    If Operator is 'delete', items in Value which match in annotations/labels will be deleted.
+                                  description: Value is the value(s) that will be applied to annotations/labels of resource. If Operator is 'addIfAbsent', items in Value (empty is not allowed) will be added in annotations/labels. - For 'addIfAbsent' Operator, the keys in Value cannot conflict with annotations/labels. If Operator is 'overwrite', items in Value which match in annotations/labels will be replaced. If Operator is 'delete', items in Value which match in annotations/labels will be deleted.
                                   type: object
                               required:
                                 - value
@@ -377,14 +294,10 @@ spec:
                             type: array
                         type: object
                       targetClusters:
-                        description: |-
-                          TargetClusters selects the clusters in which the overriders in this rule should be applied.
-                          If multiple types of selectors are specified, the overall result is the intersection of all of them.
+                        description: TargetClusters selects the clusters in which the overriders in this rule should be applied. If multiple types of selectors are specified, the overall result is the intersection of all of them.
                         properties:
                           clusterAffinity:
-                            description: |-
-                              ClusterAffinity selects FederatedClusters by matching their labels and fields against expressions.
-                              If multiple terms are specified, their results are ORed.
+                            description: ClusterAffinity selects FederatedClusters by matching their labels and fields against expressions. If multiple terms are specified, their results are ORed.
                             items:
                               properties:
                                 matchExpressions:
@@ -446,14 +359,10 @@ spec:
                           clusterSelector:
                             additionalProperties:
                               type: string
-                            description: |-
-                              ClusterSelector selects FederatedClusters by their labels.
-                              Empty labels selects all FederatedClusters.
+                            description: ClusterSelector selects FederatedClusters by their labels. Empty labels selects all FederatedClusters.
                             type: object
                           clusters:
-                            description: |-
-                              Clusters selects FederatedClusters by their names.
-                              Empty Clusters selects all FederatedClusters.
+                            description: Clusters selects FederatedClusters by their names. Empty Clusters selects all FederatedClusters.
                             items:
                               type: string
                             type: array
