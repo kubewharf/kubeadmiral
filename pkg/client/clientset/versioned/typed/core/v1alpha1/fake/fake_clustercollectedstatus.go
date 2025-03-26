@@ -8,6 +8,7 @@ import (
 	v1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -18,9 +19,9 @@ type FakeClusterCollectedStatuses struct {
 	Fake *FakeCoreV1alpha1
 }
 
-var clustercollectedstatusesResource = v1alpha1.SchemeGroupVersion.WithResource("clustercollectedstatuses")
+var clustercollectedstatusesResource = schema.GroupVersionResource{Group: "core.kubeadmiral.io", Version: "v1alpha1", Resource: "clustercollectedstatuses"}
 
-var clustercollectedstatusesKind = v1alpha1.SchemeGroupVersion.WithKind("ClusterCollectedStatus")
+var clustercollectedstatusesKind = schema.GroupVersionKind{Group: "core.kubeadmiral.io", Version: "v1alpha1", Kind: "ClusterCollectedStatus"}
 
 // Get takes name of the clusterCollectedStatus, and returns the corresponding clusterCollectedStatus object, and an error if there is any.
 func (c *FakeClusterCollectedStatuses) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ClusterCollectedStatus, err error) {

@@ -8,6 +8,7 @@ import (
 	v1alpha1 "github.com/kubewharf/kubeadmiral/pkg/apis/core/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -18,9 +19,9 @@ type FakeSchedulerPluginWebhookConfigurations struct {
 	Fake *FakeCoreV1alpha1
 }
 
-var schedulerpluginwebhookconfigurationsResource = v1alpha1.SchemeGroupVersion.WithResource("schedulerpluginwebhookconfigurations")
+var schedulerpluginwebhookconfigurationsResource = schema.GroupVersionResource{Group: "core.kubeadmiral.io", Version: "v1alpha1", Resource: "schedulerpluginwebhookconfigurations"}
 
-var schedulerpluginwebhookconfigurationsKind = v1alpha1.SchemeGroupVersion.WithKind("SchedulerPluginWebhookConfiguration")
+var schedulerpluginwebhookconfigurationsKind = schema.GroupVersionKind{Group: "core.kubeadmiral.io", Version: "v1alpha1", Kind: "SchedulerPluginWebhookConfiguration"}
 
 // Get takes name of the schedulerPluginWebhookConfiguration, and returns the corresponding schedulerPluginWebhookConfiguration object, and an error if there is any.
 func (c *FakeSchedulerPluginWebhookConfigurations) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.SchedulerPluginWebhookConfiguration, err error) {
