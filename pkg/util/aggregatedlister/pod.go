@@ -68,13 +68,13 @@ func (p *PodNamespaceLister) List(ctx context.Context, opts metav1.ListOptions) 
 			ResourceVersion: grv.Get(cluster.Name),
 		})
 		if err != nil {
-			continue
+			return nil, err
 		}
 		pods := podList.Items
 
 		list, err := meta.ListAccessor(podList)
 		if err != nil {
-			continue
+			return nil, err
 		}
 
 		if resultObject == nil {
