@@ -67,13 +67,13 @@ func (e *EndpointSliceNamespaceLister) List(ctx context.Context, opts metav1.Lis
 			ResourceVersion: grv.Get(cluster.Name),
 		})
 		if err != nil {
-			continue
+			return nil, err
 		}
 		endpointSlices := endpointSliceList.Items
 
 		list, err := meta.ListAccessor(endpointSliceList)
 		if err != nil {
-			continue
+			return nil, err
 		}
 
 		if resultObject == nil {

@@ -67,13 +67,13 @@ func (s *ServiceNamespaceLister) List(ctx context.Context, opts metav1.ListOptio
 			ResourceVersion: grv.Get(cluster.Name),
 		})
 		if err != nil {
-			continue
+			return nil, err
 		}
 		services := serviceList.Items
 
 		list, err := meta.ListAccessor(serviceList)
 		if err != nil {
-			continue
+			return nil, err
 		}
 
 		if resultObject == nil {
