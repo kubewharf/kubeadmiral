@@ -18,6 +18,7 @@ package aggregatedlister
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -58,7 +59,7 @@ func (s *ServiceNamespaceLister) List(ctx context.Context, opts metav1.ListOptio
 	for _, cluster := range clusters {
 		client, exists := s.federatedInformerManager.GetClusterKubeClient(cluster.Name)
 		if !exists {
-			continue
+			return nil, fmt.Errorf("failed to get cluster client of %s", cluster.Name)
 		}
 
 		serviceList, err := client.CoreV1().Services(s.namespace).List(ctx, metav1.ListOptions{
