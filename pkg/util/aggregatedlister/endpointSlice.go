@@ -18,6 +18,7 @@ package aggregatedlister
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -58,7 +59,7 @@ func (e *EndpointSliceNamespaceLister) List(ctx context.Context, opts metav1.Lis
 	for _, cluster := range clusters {
 		client, exists := e.federatedInformerManager.GetClusterKubeClient(cluster.Name)
 		if !exists {
-			continue
+			return nil, fmt.Errorf("failed to get cluster client of %s", cluster.Name)
 		}
 
 		endpointSliceList, err := client.DiscoveryV1().EndpointSlices(e.namespace).List(ctx, metav1.ListOptions{
