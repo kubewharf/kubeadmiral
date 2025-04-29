@@ -18,8 +18,6 @@ package aggregatedlister
 
 import (
 	"context"
-	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -28,6 +26,7 @@ import (
 
 	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 )
 
 type PodLister struct {
@@ -49,10 +48,18 @@ func (p *PodLister) ByNamespace(namespace string) AggregatedNamespaceLister {
 }
 
 func (p *PodNamespaceLister) List(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+	ctx, logger := logging.InjectLoggerValues(
+		ctx,
+		"label_selector", opts.LabelSelector,
+		"field_selector", opts.FieldSelector,
+		"grv", opts.ResourceVersion,
+		"namespace", p.namespace,
+	)
 	grv := NewGlobalResourceVersionFromString(opts.ResourceVersion)
 	retGrv := grv.Clone()
 	clusters, err := p.federatedInformerManager.GetReadyClusters()
 	if err != nil {
+		logger.Error(err, "Failed to get ready clusters for listing pods")
 		return nil, err
 	}
 	var resultObject runtime.Object
@@ -60,7 +67,8 @@ func (p *PodNamespaceLister) List(ctx context.Context, opts metav1.ListOptions) 
 	for _, cluster := range clusters {
 		client, exists := p.federatedInformerManager.GetClusterKubeClient(cluster.Name)
 		if !exists {
-			return nil, fmt.Errorf("failed to get cluster client of %s", cluster.Name)
+			logger.Info("Failed to get cluster kubeClient", "cluster", cluster.Name)
+			continue
 		}
 
 		podList, err := client.CoreV1().Pods(p.namespace).List(ctx, metav1.ListOptions{
@@ -69,13 +77,15 @@ func (p *PodNamespaceLister) List(ctx context.Context, opts metav1.ListOptions) 
 			ResourceVersion: grv.Get(cluster.Name),
 		})
 		if err != nil {
-			return nil, err
+			logger.Error(err, "Failed to list pods", "cluster", cluster.Name)
+			continue
 		}
 		pods := podList.Items
 
 		list, err := meta.ListAccessor(podList)
 		if err != nil {
-			return nil, err
+			logger.Error(err, "Failed to convert podList to list interface", "cluster", cluster.Name)
+			continue
 		}
 
 		if resultObject == nil {
@@ -104,10 +114,12 @@ func (p *PodNamespaceLister) List(ctx context.Context, opts metav1.ListOptions) 
 
 	err = meta.SetList(resultObject, items)
 	if err != nil {
+		logger.Error(err, "Failed to set list object for podList")
 		return nil, err
 	}
 	accessor, err := meta.ListAccessor(resultObject)
 	if err != nil {
+		logger.Error(err, "Failed to get accessor for podList")
 		return nil, err
 	}
 	accessor.SetResourceVersion(retGrv.String())

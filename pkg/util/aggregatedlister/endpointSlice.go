@@ -18,7 +18,6 @@ package aggregatedlister
 
 import (
 	"context"
-	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 )
 
 type EndpointSliceLister struct {
@@ -48,10 +48,18 @@ func (e *EndpointSliceLister) ByNamespace(namespace string) AggregatedNamespaceL
 }
 
 func (e *EndpointSliceNamespaceLister) List(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+	ctx, logger := logging.InjectLoggerValues(
+		ctx,
+		"label_selector", opts.LabelSelector,
+		"field_selector", opts.FieldSelector,
+		"grv", opts.ResourceVersion,
+		"namespace", e.namespace,
+	)
 	grv := NewGlobalResourceVersionFromString(opts.ResourceVersion)
 	retGrv := grv.Clone()
 	clusters, err := e.federatedInformerManager.GetReadyClusters()
 	if err != nil {
+		logger.Error(err, "Failed to get ready clusters for listing endpointSlices")
 		return nil, err
 	}
 	var resultObject runtime.Object
@@ -59,7 +67,8 @@ func (e *EndpointSliceNamespaceLister) List(ctx context.Context, opts metav1.Lis
 	for _, cluster := range clusters {
 		client, exists := e.federatedInformerManager.GetClusterKubeClient(cluster.Name)
 		if !exists {
-			return nil, fmt.Errorf("failed to get cluster client of %s", cluster.Name)
+			logger.Info("Failed to get cluster kubeClient", "cluster", cluster.Name)
+			continue
 		}
 
 		endpointSliceList, err := client.DiscoveryV1().EndpointSlices(e.namespace).List(ctx, metav1.ListOptions{
@@ -68,13 +77,15 @@ func (e *EndpointSliceNamespaceLister) List(ctx context.Context, opts metav1.Lis
 			ResourceVersion: grv.Get(cluster.Name),
 		})
 		if err != nil {
-			return nil, err
+			logger.Error(err, "Failed to list endpointSlices", "cluster", cluster.Name)
+			continue
 		}
 		endpointSlices := endpointSliceList.Items
 
 		list, err := meta.ListAccessor(endpointSliceList)
 		if err != nil {
-			return nil, err
+			logger.Error(err, "Failed to convert endpointSliceList to list interface", "cluster", cluster.Name)
+			continue
 		}
 
 		if resultObject == nil {
@@ -103,10 +114,12 @@ func (e *EndpointSliceNamespaceLister) List(ctx context.Context, opts metav1.Lis
 
 	err = meta.SetList(resultObject, items)
 	if err != nil {
+		logger.Error(err, "Failed to set list object for endpointSliceList")
 		return nil, err
 	}
 	accessor, err := meta.ListAccessor(resultObject)
 	if err != nil {
+		logger.Error(err, "Failed to get accessor for endpointSliceList")
 		return nil, err
 	}
 	accessor.SetResourceVersion(retGrv.String())

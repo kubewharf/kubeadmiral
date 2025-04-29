@@ -123,15 +123,26 @@ func (s *ServiceREST) List(ctx context.Context, options *metainternalversion.Lis
 	if options != nil {
 		resourceVersion = options.ResourceVersion
 	}
+
+	ctx, logger := logging.InjectLoggerValues(
+		ctx,
+		"label_selector", label,
+		"field_selector", field,
+		"resourceVersion", resourceVersion,
+		"namespace", namespace,
+	)
+
+	logger.Info("Start to list services in aggregation api")
 	objs, err := s.serviceLister.ByNamespace(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector:   label.String(),
 		FieldSelector:   field.String(),
 		ResourceVersion: resourceVersion,
 	})
 	if err != nil {
-		klog.ErrorS(err, "Failed listing services", "namespace", klog.KRef("", namespace))
+		logger.Error(err, "Failed listing services")
 		return nil, fmt.Errorf("failed listing services: %w", err)
 	}
+	logger.Info("Successfully listed services in aggregation api")
 	return objs, nil
 }
 
@@ -165,9 +176,10 @@ func (s *ServiceREST) Watch(ctx context.Context, options *metainternalversion.Li
 		"namespace", namespace,
 	)
 
+	logger.Info("Start to watch services in aggregation api")
 	clusters, err := s.federatedInformerManager.GetReadyClusters()
 	if err != nil {
-		logger.Error(err, "Failed to get ready clusters")
+		logger.Error(err, "Failed to get ready clusters for watching services")
 		return nil, fmt.Errorf("failed watching services: %w", err)
 	}
 
@@ -179,6 +191,7 @@ func (s *ServiceREST) Watch(ctx context.Context, options *metainternalversion.Li
 	for i := range clusters {
 		client, exist := s.federatedInformerManager.GetClusterKubeClient(clusters[i].Name)
 		if !exist {
+			logger.Info("Failed to get cluster kubeClient", "cluster", clusters[i].Name)
 			continue
 		}
 		watcher, err := client.CoreV1().Services(namespace).Watch(ctx, metav1.ListOptions{
@@ -188,7 +201,7 @@ func (s *ServiceREST) Watch(ctx context.Context, options *metainternalversion.Li
 			ResourceVersion: grv.Get(clusters[i].Name),
 		})
 		if err != nil {
-			logger.Error(err, "Failed watching services")
+			logger.Error(err, "Failed watching services", "cluster", clusters[i].Name)
 			continue
 		}
 		go func(cluster string) {
