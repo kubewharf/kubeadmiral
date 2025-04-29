@@ -18,7 +18,6 @@ package aggregatedlister
 
 import (
 	"context"
-	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
+	"github.com/kubewharf/kubeadmiral/pkg/util/logging"
 )
 
 type ServiceLister struct {
@@ -48,10 +48,18 @@ func (s *ServiceLister) ByNamespace(namespace string) AggregatedNamespaceLister 
 }
 
 func (s *ServiceNamespaceLister) List(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+	ctx, logger := logging.InjectLoggerValues(
+		ctx,
+		"label_selector", opts.LabelSelector,
+		"field_selector", opts.FieldSelector,
+		"grv", opts.ResourceVersion,
+		"namespace", s.namespace,
+	)
 	grv := NewGlobalResourceVersionFromString(opts.ResourceVersion)
 	retGrv := grv.Clone()
 	clusters, err := s.federatedInformerManager.GetReadyClusters()
 	if err != nil {
+		logger.Error(err, "Failed to get ready clusters for listing services")
 		return nil, err
 	}
 	var resultObject runtime.Object
@@ -59,7 +67,8 @@ func (s *ServiceNamespaceLister) List(ctx context.Context, opts metav1.ListOptio
 	for _, cluster := range clusters {
 		client, exists := s.federatedInformerManager.GetClusterKubeClient(cluster.Name)
 		if !exists {
-			return nil, fmt.Errorf("failed to get cluster client of %s", cluster.Name)
+			logger.Info("Failed to get cluster kubeClient", "cluster", cluster.Name)
+			continue
 		}
 
 		serviceList, err := client.CoreV1().Services(s.namespace).List(ctx, metav1.ListOptions{
@@ -68,13 +77,15 @@ func (s *ServiceNamespaceLister) List(ctx context.Context, opts metav1.ListOptio
 			ResourceVersion: grv.Get(cluster.Name),
 		})
 		if err != nil {
-			return nil, err
+			logger.Error(err, "Failed to list services", "cluster", cluster.Name)
+			continue
 		}
 		services := serviceList.Items
 
 		list, err := meta.ListAccessor(serviceList)
 		if err != nil {
-			return nil, err
+			logger.Error(err, "Failed to convert serviceList to list interface", "cluster", cluster.Name)
+			continue
 		}
 
 		if resultObject == nil {
@@ -103,10 +114,12 @@ func (s *ServiceNamespaceLister) List(ctx context.Context, opts metav1.ListOptio
 
 	err = meta.SetList(resultObject, items)
 	if err != nil {
+		logger.Error(err, "Failed to set list object for serviceList")
 		return nil, err
 	}
 	accessor, err := meta.ListAccessor(resultObject)
 	if err != nil {
+		logger.Error(err, "Failed to get accessor for serviceList")
 		return nil, err
 	}
 	accessor.SetResourceVersion(retGrv.String())

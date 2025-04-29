@@ -126,15 +126,25 @@ func (p *PodREST) List(ctx context.Context, options *metainternalversion.ListOpt
 		resourceVersion = options.ResourceVersion
 	}
 
+	ctx, logger := logging.InjectLoggerValues(
+		ctx,
+		"label_selector", label,
+		"field_selector", field,
+		"resourceVersion", resourceVersion,
+		"namespace", namespace,
+	)
+
+	logger.Info("Start to list pods in aggregation api")
 	objs, err := p.podLister.ByNamespace(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector:   label.String(),
 		FieldSelector:   field.String(),
 		ResourceVersion: resourceVersion,
 	})
 	if err != nil {
-		klog.ErrorS(err, "Failed listing pods", "namespace", klog.KRef("", namespace))
+		logger.Error(err, "Failed listing pods")
 		return nil, fmt.Errorf("failed listing pods: %w", err)
 	}
+	logger.Info("Successfully listed pods in aggregation api")
 	return objs, nil
 }
 
@@ -168,9 +178,10 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 		"namespace", namespace,
 	)
 
+	logger.Info("Start to watch pods in aggregation api")
 	clusters, err := p.federatedInformerManager.GetReadyClusters()
 	if err != nil {
-		logger.Error(err, "Failed to get ready clusters")
+		logger.Error(err, "Failed to get ready clusters for watching pods")
 		return nil, fmt.Errorf("failed watching pods: %w", err)
 	}
 
@@ -182,6 +193,7 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 	for i := range clusters {
 		client, exist := p.federatedInformerManager.GetClusterKubeClient(clusters[i].Name)
 		if !exist {
+			logger.Info("Failed to get cluster kubeClient", "cluster", clusters[i].Name)
 			continue
 		}
 		watcher, err := client.CoreV1().Pods(namespace).Watch(ctx, metav1.ListOptions{
@@ -191,7 +203,7 @@ func (p *PodREST) Watch(ctx context.Context, options *metainternalversion.ListOp
 			ResourceVersion: grv.Get(clusters[i].Name),
 		})
 		if err != nil {
-			logger.Error(err, "Failed watching pods")
+			logger.Error(err, "Failed watching pods", "cluster", clusters[i].Name)
 			continue
 		}
 		go func(cluster string) {

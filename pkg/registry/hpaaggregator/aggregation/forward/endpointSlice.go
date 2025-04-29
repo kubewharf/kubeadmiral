@@ -123,15 +123,26 @@ func (e *EndpointSliceREST) List(ctx context.Context, options *metainternalversi
 	if options != nil {
 		resourceVersion = options.ResourceVersion
 	}
+
+	ctx, logger := logging.InjectLoggerValues(
+		ctx,
+		"label_selector", label,
+		"field_selector", field,
+		"resourceVersion", resourceVersion,
+		"namespace", namespace,
+	)
+
+	logger.Info("Start to list endpointSlices in aggregation api")
 	objs, err := e.endpointSliceLister.ByNamespace(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector:   label.String(),
 		FieldSelector:   field.String(),
 		ResourceVersion: resourceVersion,
 	})
 	if err != nil {
-		klog.ErrorS(err, "Failed listing endpointSlices", "namespace", klog.KRef("", namespace))
+		logger.Error(err, "Failed listing endpointSlices")
 		return nil, fmt.Errorf("failed listing endpointSlices: %w", err)
 	}
+	logger.Info("Successfully listed endpointSlices in aggregation api")
 	return objs, nil
 }
 
@@ -165,9 +176,10 @@ func (e *EndpointSliceREST) Watch(ctx context.Context, options *metainternalvers
 		"namespace", namespace,
 	)
 
+	logger.Info("Start to watch endpointSlices in aggregation api")
 	clusters, err := e.federatedInformerManager.GetReadyClusters()
 	if err != nil {
-		logger.Error(err, "Failed to get ready clusters")
+		logger.Error(err, "Failed to get ready clusters for watching endpointSlices")
 		return nil, fmt.Errorf("failed watching endpointSlices: %w", err)
 	}
 
@@ -179,6 +191,7 @@ func (e *EndpointSliceREST) Watch(ctx context.Context, options *metainternalvers
 	for i := range clusters {
 		client, exist := e.federatedInformerManager.GetClusterKubeClient(clusters[i].Name)
 		if !exist {
+			logger.Info("Failed to get cluster kubeClient", "cluster", clusters[i].Name)
 			continue
 		}
 		watcher, err := client.DiscoveryV1().EndpointSlices(namespace).Watch(ctx, metav1.ListOptions{
@@ -188,7 +201,7 @@ func (e *EndpointSliceREST) Watch(ctx context.Context, options *metainternalvers
 			ResourceVersion: grv.Get(clusters[i].Name),
 		})
 		if err != nil {
-			logger.Error(err, "Failed watching endpointSlices")
+			logger.Error(err, "Failed watching endpointSlices", "cluster", clusters[i].Name)
 			continue
 		}
 		go func(cluster string) {
