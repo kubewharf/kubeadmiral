@@ -5,7 +5,7 @@ ADD . /build
 WORKDIR /build/
 RUN BUILD_PLATFORMS=${TARGETPLATFORM} GOPROXY=${GOPROXY} BUILD_FLAGS=${BUILD_FLAGS} TARGET_NAME=${COMPENT} make build
 
-FROM --platform=${TARGETPLATFORM} debian:buster
+FROM --platform=${TARGETPLATFORM} debian:bullseye
 ARG TARGETOS TARGETARCH REGION COMPENT
 RUN if [ "${REGION}" = "cn" ]; then sed -i 's#http://deb.debian.org#http://mirrors.tuna.tsinghua.edu.cn#g' /etc/apt/sources.list; fi
 RUN apt-get update -y && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*

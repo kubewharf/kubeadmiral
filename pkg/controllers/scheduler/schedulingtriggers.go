@@ -34,6 +34,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/common"
 	"github.com/kubewharf/kubeadmiral/pkg/controllers/scheduler/framework"
 	"github.com/kubewharf/kubeadmiral/pkg/util/annotation"
+	clusterutil "github.com/kubewharf/kubeadmiral/pkg/util/cluster"
 	utilunstructured "github.com/kubewharf/kubeadmiral/pkg/util/unstructured"
 )
 
@@ -90,6 +91,8 @@ type schedulingTriggers struct {
 	ClusterTaintsHashes map[string]string `json:"clusterTaintsHashes"`
 	// a map from each cluster to its apiresources
 	ClusterAPIResourceTypesHashes map[string]string `json:"clusterAPIResourceTypesHashes"`
+	// a map from each cluster to its ready state
+	ClusterReadyStateHashes map[string]bool `json:"clusterReadyStateHashes"`
 }
 
 func (t *schedulingTriggers) Marshal() (string, error) {
@@ -124,6 +127,21 @@ func isClusterTriggerChanged(newClusters, oldClusters map[string]string) bool {
 
 	for cluster, trigger := range oldClusters {
 		if t, ok := newClusters[cluster]; !ok || t != trigger {
+			return true
+		}
+	}
+	return false
+}
+
+func isClusterRecovered(newClusters, oldClusters map[string]bool) bool {
+	newLen, oldLen := len(newClusters), len(oldClusters)
+	if newLen == 0 {
+		return oldLen != 0
+	}
+
+	for cluster, trigger := range oldClusters {
+		// Currently, we only trigger rescheduling when the cluster state changes from "not ready" to "ready".
+		if t, ok := newClusters[cluster]; !ok || (!trigger && t) {
 			return true
 		}
 	}
@@ -211,6 +229,13 @@ func computeSchedulingAnnotations(
 		reasons = append(reasons, "clusterAPIResourcesChanged:false")
 	}
 
+	if isClusterRecovered(newTriggers.ClusterReadyStateHashes, oldTriggers.ClusterReadyStateHashes) {
+		if policyTrigger.ClusterRecovered {
+			return triggers, "", true, nil
+		}
+		reasons = append(reasons, "clusterRecovered:false")
+	}
+
 	newClusters, oldClusters := sets.NewString(newTriggers.Clusters...), sets.NewString(oldTriggers.Clusters...)
 	if newClusters.IsSuperset(oldClusters) && len(newClusters) != len(oldClusters) {
 		if policyTrigger.ClusterJoined {
@@ -290,6 +315,7 @@ func computeSchedulingTriggers(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cluster API resource types hashes: %w", err)
 	}
+	trigger.ClusterReadyStateHashes = getClusterReadyStateHashes(clusters)
 
 	return trigger, nil
 }
@@ -440,4 +466,14 @@ func getClusterAPIResourceTypesHashes(clusters []*fedcorev1a1.FederatedCluster) 
 		ret[cluster.Name] = hash
 	}
 	return ret, nil
+}
+
+func getClusterReadyStateHashes(clusters []*fedcorev1a1.FederatedCluster) map[string]bool {
+	ret := make(map[string]bool, len(clusters))
+
+	for _, cluster := range clusters {
+		ret[cluster.Name] = clusterutil.IsClusterReady(&cluster.Status)
+	}
+
+	return ret
 }

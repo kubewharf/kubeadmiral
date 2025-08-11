@@ -256,4 +256,10 @@ type RescheduleTrigger struct {
 	// +optional
 	// +kubebuilder:default:=false
 	ClusterAPIResourcesChanged bool `json:"clusterAPIResourcesChanged"`
+	// If set to true, cluster will trigger rescheduling after recovering from an abnormal state.
+	// It set to false, the scheduler will reschedule only when other options are triggered or the replicas or the
+	// requested resources of the template changed.
+	// +optional
+	// +kubebuilder:default:=false
+	ClusterRecovered bool `json:"clusterRecovered"`
 }
