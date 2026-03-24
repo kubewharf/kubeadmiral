@@ -59,9 +59,9 @@ type SchedulingUnit struct {
 	ClusterAffinity []fedcorev1a1.ClusterSelectorTerm `json:"clusterAffinity,omitempty"`
 	// Tolerations is the Tolerations set in the PropagationPolicy.
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
-	// MaxClusters is the max clusters set in the PropgationPolicy.
+	// MaxClusters is the max clusters set in the PropagationPolicy.
 	MaxClusters *int64 `json:"maxClusters,omitempty"`
-	// Placements is the placements set in the PropgationPolicy.
+	// Placements is the placements set in the PropagationPolicy.
 	Placements []fedcorev1a1.DesiredPlacement `json:"placements,omitempty"`
 }
 
