@@ -14,6 +14,9 @@ KubeAdmiral is a multi-cluster management system for Kubernetes, developed from 
 
 # Getting started
 
+> [!WARNING]
+> If you want to deploy the KubeAdmiral into production environments, please add authentication to the website and evaluate your security check of the KubeAdmiral components.
+
 KubeAdmiral supports Kubernetes versions from 1.16 up to 1.24. Using lower or higher Kubernetes versions may cause compatibility issues. For setup please refer to [Quickstart](./docs/quickstart.md).
 
 
