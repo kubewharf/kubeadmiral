@@ -69,7 +69,7 @@ const (
 	MaxTotalScore int64 = math.MaxInt64
 )
 
-// TODO(feature), make the RequestedRatioResources configable
+// TODO(feature), make the RequestedRatioResources configurable
 
 // DefaultRequestedRatioResources is an empirical value derived from practice.
 var DefaultRequestedRatioResources = ResourceToWeightMap{corev1.ResourceMemory: 1, corev1.ResourceCPU: 1, ResourceGPU: 4}
