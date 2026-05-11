@@ -71,10 +71,7 @@ func SetPendingControllers(
 	if err != nil {
 		return false, fmt.Errorf("failed to marshal json: %w", err)
 	}
-	updated, err = annotationutil.AddAnnotation(fedObject, PendingControllersAnnotation, string(annotationValue))
-	if err != nil {
-		return updated, fmt.Errorf("failed to add annotation: %w", err)
-	}
+	updated = annotationutil.AddAnnotation(fedObject, PendingControllersAnnotation, string(annotationValue))
 	return updated, err
 }
 

@@ -156,14 +156,11 @@ func (receiver *DeploymentPlugin) AggregateStatuses(
 	}
 
 	rsDigestsAnnotation := string(rsDigestsAnnotationBytes)
-	hasRSDigestsAnnotation, err := annotation.HasAnnotationKeyValue(
+	hasRSDigestsAnnotation := annotation.HasAnnotationKeyValue(
 		sourceObject,
 		common.LatestReplicasetDigestsAnnotation,
 		rsDigestsAnnotation,
 	)
-	if err != nil {
-		return nil, false, err
-	}
 
 	if hasRSDigestsAnnotation {
 		return sourceObject, needUpdate, nil
@@ -171,10 +168,7 @@ func (receiver *DeploymentPlugin) AggregateStatuses(
 		needUpdate = true
 	}
 
-	_, err = annotation.AddAnnotation(sourceObject, common.LatestReplicasetDigestsAnnotation, rsDigestsAnnotation)
-	if err != nil {
-		return nil, false, err
-	}
+	annotation.AddAnnotation(sourceObject, common.LatestReplicasetDigestsAnnotation, rsDigestsAnnotation)
 
 	return sourceObject, needUpdate, nil
 }

@@ -17,9 +17,6 @@ limitations under the License.
 package annotation
 
 import (
-	"fmt"
-	"reflect"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -30,49 +27,32 @@ const (
 )
 
 // HasAnnotationKey returns true if the given object has the given annotation key in its ObjectMeta.
-func HasAnnotationKey(obj metav1.Object, key string) (bool, error) {
-	if IsNilPointer(obj) {
-		return false, fmt.Errorf("object(%T) is nil pointer", obj)
-	}
+func HasAnnotationKey(obj metav1.Object, key string) bool {
 	annotations := obj.GetAnnotations()
 	if annotations == nil {
-		return false, nil
+		return false
 	}
 	_, ok := annotations[key]
-	return ok, nil
+	return ok
 }
 
 // HasAnnotationKeyValue returns true if the given object has the given annotation key and value in its ObjectMeta.
-func HasAnnotationKeyValue(obj metav1.Object, key, value string) (bool, error) {
-	if IsNilPointer(obj) {
-		return false, fmt.Errorf("object(%T) is nil pointer", obj)
-	}
+func HasAnnotationKeyValue(obj metav1.Object, key, value string) bool {
 	annotations := obj.GetAnnotations()
 	if annotations == nil {
-		return false, nil
+		return false
 	}
 	val, ok := annotations[key]
-	return ok && value == val, nil
+	return ok && value == val
 }
 
 // AddAnnotation adds the given annotation key and value to the given objects ObjectMeta,
 // and overwrites the annotation value if it already exists.
 // Returns true if the object was updated.
-func AddAnnotation(obj metav1.Object, key, value string) (bool, error) {
-	if IsNilPointer(obj) {
-		return false, fmt.Errorf("object(%T) is nil pointer", obj)
-	}
-
-	if key == "" {
-		return false, fmt.Errorf("key is a empty string.")
-	}
-
-	has, err := HasAnnotationKeyValue(obj, key, value)
-	if has && err == nil {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
+func AddAnnotation(obj metav1.Object, key, value string) bool {
+	has := HasAnnotationKeyValue(obj, key, value)
+	if has {
+		return false
 	}
 	annotations := obj.GetAnnotations()
 	if annotations == nil {
@@ -80,37 +60,23 @@ func AddAnnotation(obj metav1.Object, key, value string) (bool, error) {
 	}
 	annotations[key] = value
 	obj.SetAnnotations(annotations)
-	return true, nil
+	return true
 }
 
 // RemoveAnnotation removes the given annotation key from the given objects ObjectMeta.
 // Returns true if the object was updated.
-func RemoveAnnotation(obj metav1.Object, key string) (bool, error) {
-	if IsNilPointer(obj) {
-		return false, fmt.Errorf("object(%T) is nil pointer", obj)
-	}
-	has, err := HasAnnotationKey(obj, key)
-	if !has && err == nil {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
+func RemoveAnnotation(obj metav1.Object, key string) bool {
+	has := HasAnnotationKey(obj, key)
+	if !has {
+		return false
 	}
 
 	annotations := obj.GetAnnotations()
 	if annotations == nil {
-		return false, nil
+		return false
 	}
 
 	delete(annotations, key)
 	obj.SetAnnotations(annotations)
-	return true, nil
-}
-
-// IsNilPointer returns true if i is nil pointer or value of i is nil.
-func IsNilPointer(i interface{}) bool {
-	if i == nil || (reflect.ValueOf(i).Kind() == reflect.Ptr && reflect.ValueOf(i).IsNil()) {
-		return true
-	}
-	return false
+	return true
 }

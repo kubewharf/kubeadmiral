@@ -614,11 +614,7 @@ func Test_computeSchedulingAnnotations(t *testing.T) {
 					t.Errorf("Marshal() unexpected err: %v", err)
 					return
 				}
-				_, err = annotation.AddAnnotation(fedObj, SchedulingTriggersAnnotation, oldTriggerText)
-				if err != nil {
-					t.Errorf("AddAnnotation() unexpected err: %v", err)
-					return
-				}
+				annotation.AddAnnotation(fedObj, SchedulingTriggersAnnotation, oldTriggerText)
 			}
 
 			newPolicy := generatePolicy(tt.newStatus.policyName, tt.newStatus.reschedulePolicy)
