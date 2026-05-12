@@ -1,0 +1,57 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubeadmiral-aggregated-apiserver
+  namespace: kube-admiral-system
+spec:
+  externalName: kubeadmiral-aggregated-apiserver
+  ports:
+    - port: 443
+      protocol: TCP
+      targetPort: 443
+  sessionAffinity: None
+  type: ExternalName
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  labels:
+    apiserver: "true"
+    app: kubeadmiral-aggregated-apiserver
+  name: v1alpha1.aggregated.kubeadmiral.io
+spec:
+  group: aggregated.kubeadmiral.io
+  groupPriorityMinimum: 2000
+  insecureSkipTLSVerify: true
+  service:
+    name: kubeadmiral-aggregated-apiserver
+    namespace: kube-admiral-system
+    port: 443
+  version: v1alpha1
+  versionPriority: 1
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aggregated-apiserver
+rules:
+  - apiGroups:
+      - aggregated.kubeadmiral.io
+    resources:
+      - '*'
+    verbs:
+      - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aggregated-apiserver
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aggregated-apiserver
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: system:admin

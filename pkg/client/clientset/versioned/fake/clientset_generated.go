@@ -4,6 +4,8 @@ package fake
 
 import (
 	clientset "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned"
+	aggregatedv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/aggregatedapiserver/v1alpha1"
+	fakeaggregatedv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/aggregatedapiserver/v1alpha1/fake"
 	corev1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	fakecorev1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/core/v1alpha1/fake"
 	hpaaggregatorv1alpha1 "github.com/kubewharf/kubeadmiral/pkg/client/clientset/versioned/typed/hpaaggregator/v1alpha1"
@@ -64,6 +66,11 @@ var (
 	_ clientset.Interface = &Clientset{}
 	_ testing.FakeClient  = &Clientset{}
 )
+
+// AggregatedV1alpha1 retrieves the AggregatedV1alpha1Client
+func (c *Clientset) AggregatedV1alpha1() aggregatedv1alpha1.AggregatedV1alpha1Interface {
+	return &fakeaggregatedv1alpha1.FakeAggregatedV1alpha1{Fake: &c.Fake}
+}
 
 // CoreV1alpha1 retrieves the CoreV1alpha1Client
 func (c *Clientset) CoreV1alpha1() corev1alpha1.CoreV1alpha1Interface {
