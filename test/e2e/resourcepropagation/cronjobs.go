@@ -43,7 +43,8 @@ var _ = ginkgo.Describe("CronJob Propagation", func() {
 			resourcePropagationTest(
 				f,
 				&resourcePropagationTestConfig[*batchv1.CronJob]{
-					gvr:           batchv1.SchemeGroupVersion.WithResource("jobs"),
+					gvr:           batchv1.SchemeGroupVersion.WithResource("cronjobs"),
+					gvk:           batchv1.SchemeGroupVersion.WithKind("CronJob"),
 					objectFactory: resources.GetSimpleV1CronJob,
 					clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*batchv1.CronJob] {
 						return client.BatchV1().CronJobs(namespace)
@@ -56,7 +57,6 @@ var _ = ginkgo.Describe("CronJob Propagation", func() {
 						return resources.IsV1CronJobScheduledOnce(cronjob), nil
 					},
 					statusCollection: &resourceStatusCollectionTestConfig{
-						gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federatedcronjobstatuses"),
 						path: "status",
 					},
 				},
@@ -66,7 +66,8 @@ var _ = ginkgo.Describe("CronJob Propagation", func() {
 			resourcePropagationTest(
 				f,
 				&resourcePropagationTestConfig[*batchv1b1.CronJob]{
-					gvr:           batchv1.SchemeGroupVersion.WithResource("jobs"),
+					gvr:           batchv1b1.SchemeGroupVersion.WithResource("cronjobs"),
+					gvk:           batchv1b1.SchemeGroupVersion.WithKind("CronJob"),
 					objectFactory: resources.GetSimpleV1Beta1CronJob,
 					clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*batchv1b1.CronJob] {
 						return client.BatchV1beta1().CronJobs(namespace)
@@ -79,7 +80,6 @@ var _ = ginkgo.Describe("CronJob Propagation", func() {
 						return resources.IsV1Beta1CronJobScheduledOnce(cronjob), nil
 					},
 					statusCollection: &resourceStatusCollectionTestConfig{
-						gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federatedcronjobstatuses"),
 						path: "status",
 					},
 				},

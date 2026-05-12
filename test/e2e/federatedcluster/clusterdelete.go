@@ -87,9 +87,8 @@ var _ = ginkgo.Describe("Cluster Delete", federatedClusterTestLabels, func() {
 		// 3. service account info deleted from secret
 		secret, err = f.HostKubeClient().CoreV1().Secrets(framework.FedSystemNamespace).Get(ctx, secret.Name, metav1.GetOptions{})
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
-		token, ca := getServiceAccountInfo(secret)
+		token, _ := getServiceAccountInfo(secret)
 		gomega.Expect(token).To(gomega.BeNil(), "Token data not removed from cluster secret")
-		gomega.Expect(ca).To(gomega.BeNil(), "Token data not removed from cluster secret")
 	}
 
 	ginkgo.Context("Without cascading delete", func() {

@@ -52,7 +52,7 @@ var (
 	assertNoAutoMigrationDuration = 20 * time.Second
 )
 
-var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
+var _ = ginkgo.Describe("Auto Migration", autoMigrationTestLabel, func() {
 	f := framework.NewFramework("auto-migration", framework.FrameworkOptions{CreateNamespace: true})
 
 	var clusters []*fedcorev1a1.FederatedCluster
@@ -161,6 +161,7 @@ var _ = ginkgo.Describe("auto migration", autoMigrationTestLabel, func() {
 						ctx, dp.Name, metav1.GetOptions{},
 					)
 					gomega.Expect(err).NotTo(gomega.HaveOccurred())
+					g.Expect(clusterDp.Status).ToNot(gomega.BeNil())
 					g.Expect(clusterDp.Status.ReadyReplicas).To(gomega.Equal(replicasPerCluster))
 				}).WithPolling(defaultPollingInterval).Should(gomega.Succeed())
 			})

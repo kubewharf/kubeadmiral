@@ -34,6 +34,7 @@ var _ = ginkgo.Describe("Deployment Propagation", func() {
 			f,
 			&resourcePropagationTestConfig[*appsv1.Deployment]{
 				gvr:           appsv1.SchemeGroupVersion.WithResource("deployments"),
+				gvk:           appsv1.SchemeGroupVersion.WithKind("Deployment"),
 				objectFactory: resources.GetSimpleDeployment,
 				clientGetter: func(client kubernetes.Interface, namespace string) resourceClient[*appsv1.Deployment] {
 					return client.AppsV1().Deployments(namespace)
@@ -46,7 +47,6 @@ var _ = ginkgo.Describe("Deployment Propagation", func() {
 					return resources.IsDeploymentProgressing(deployment), nil
 				},
 				statusCollection: &resourceStatusCollectionTestConfig{
-					gvr:  fedtypesv1a1.SchemeGroupVersion.WithResource("federateddeploymentstatuses"),
 					path: "status",
 				},
 			},
