@@ -24,6 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"context"
+    "github.com/kubewharf/kubeadmiral/pkg/util/logging"
 
 	"github.com/kubewharf/kubeadmiral/pkg/util/clusterobject"
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
@@ -67,6 +69,9 @@ func (s *ServiceNamespaceLister) List(ctx context.Context, opts metav1.ListOptio
 			ResourceVersion: grv.Get(cluster.Name),
 		})
 		if err != nil {
+			logging.Errorf(ctx, "Failed to list services from cluster %s (namespace %s): %v",
+                cluster.Name, s.namespace, err,
+            )
 			continue
 		}
 		services := serviceList.Items
