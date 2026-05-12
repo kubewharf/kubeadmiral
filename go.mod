@@ -1,8 +1,7 @@
 module github.com/kubewharf/kubeadmiral
 
 go 1.22.0
-
-toolchain go1.23.5
+toolchain go1.24.1
 
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
@@ -18,7 +17,7 @@ require (
 	github.com/prometheus/client_golang v1.19.1
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/sync v0.10.0
+	golang.org/x/sync v0.13.0
 	golang.org/x/time v0.3.0
 	k8s.io/api v0.31.0
 	k8s.io/apiextensions-apiserver v0.31.0
@@ -34,7 +33,6 @@ require (
 	sigs.k8s.io/custom-metrics-apiserver v1.27.0
 	sigs.k8s.io/kind v0.17.0
 	sigs.k8s.io/mcs-api v0.1.0
-	sigs.k8s.io/yaml v1.4.0
 )
 
 require (
@@ -123,4 +121,5 @@ require (
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.30.3 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
+	sigs.k8s.io/yaml v1.4.0 // indirect
 )
